@@ -46,7 +46,9 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist` で localStor
 - **World** — description（常時）＋`entries: LoreEntry[]`＋`scheduledEvents: ScheduledEvent[]`（`{day,name,note}`）
 - **Persona** — 利用者が演じる人物
 - **SceneType**（グローバル素材）— `{name,guidance,weight,minGap,color,builtin}`。既定6種を初回シード
-- **Session** — characterIds/worldId/personaId/authorNote/story/`scenes: Scene[]`/currentSceneId/timeline/choiceMode（off|always|auto）/narrativeStyle（novel|chat）/`reviewModel`/`choicesModel`/director（`{enabled,typeIds}`）/usedEventIds/messages/model/temperature/maxTokens
+- **Session** — characterIds/worldId/personaId/authorNote/story/`scenes: Scene[]`/currentSceneId/timeline/choiceMode（off|always|auto）/narrativeStyle（novel|chat）/`reviewModel`/`choicesModel`/director（`{enabled,typeIds}`）/usedEventIds/`state: SessionState`/messages/model/temperature/maxTokens
+- **SessionState**（セッション固有・素材化しない）— `{relationships: Relationship[], moods: {characterId,mood}[]}`
+- **Relationship** — `{characterId,axis,value}`。キャラ→主人公の片方向、ユーザー定義自由軸、value 0〜100（中立50）
 - **Scene** — `{title,activeCharacterIds,note,summary,timeLabel?,sceneTypeId?,endedAt?}`
 - **Message** — role/characterId?/sceneId?/content/choices?/truncated?/pending?
 
@@ -61,15 +63,16 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist` で localStor
 ヘルパ: `mainModelOf(session, character?)` / `reviewModelOf(session)` / `choicesModelOf(session)`（store.ts エクスポート）
 
 ## 永続化と移行（重要）
-`store.ts` の persist `name: 'ai-storytelling-store'`、**現在 `version: 8`**。
+`store.ts` の persist `name: 'ai-storytelling-store'`、**現在 `version: 9`**。
 
-移行チェーン: v0→v1（素材ライブラリ化）/ v1→v2（シーン導入）/ v2→v3（タイムライン・選択肢・developments）/ v3→v4（文体）/ v4→v5（developmentsオブジェクト化）/ v5→v6（シーンタイプ・特別イベント・director）/ v6→v7（providers・reviewModel・choicesModel）/ v7→v8（Character.model?）
+移行チェーン: v0→v1（素材ライブラリ化）/ v1→v2（シーン導入）/ v2→v3（タイムライン・選択肢・developments）/ v3→v4（文体）/ v4→v5（developmentsオブジェクト化）/ v5→v6（シーンタイプ・特別イベント・director）/ v6→v7（providers・reviewModel・choicesModel）/ v7→v8（Character.model?）/ v8→v9（Session.state＝感情・関係値トラッカー）
 
 **スキーマ変更時は必ず: 型更新 → migrateVXtoVY 追加 → version++ → 初期state/factory更新 → exportBundle version++ → importBundle 連鎖に追加 → partialize に新フィールド。**
 
 ## 主要な振る舞い
-- **シーン進行**: `このシーンを終える` → `prepareSceneReview`（要約＋`directNextScene`＋成長案生成）→ レビュー確認 → `confirmSceneReview`（成長/イベント反映・タイムライン前進・新シーン作成）→ `beginScene()`（導入生成）→ 選択肢。物語開始は `startStory()`。
+- **シーン進行**: `このシーンを終える` → `prepareSceneReview`（要約＋`directNextScene`＋成長案＋関係値差分生成）→ レビュー確認 → `confirmSceneReview`（成長/イベント反映・**関係値加算/気分更新**・タイムライン前進・新シーン作成）→ `beginScene()`（導入生成）→ 選択肢。物語開始は `startStory()`。
 - **ディレクター** `directNextScene`: ①特別イベント（`day<=nextDay`・未消化）最優先 → ②`director.typeIds` から重み＋クールダウン（`minGap`）で抽選。
+- **感情・関係値トラッカー** (`Session.state`): キャラ→主人公の片方向・セッション固有・ユーザー定義自由軸（0〜100、中立50）。`reviewSystem(axes)` がレビュー時に `relationshipDeltas`/`moods` を出力（自由軸の auto-discovery：初出はモデルが軸定義、以降は既存軸に拘束）。**数値の加算はコードが行う**（`confirmSceneReview` で `clampValue`、現在シーン確定時のみ反映＝過去シーン再レビューでは加算しない）。現在値は `buildRelationshipInfo`→`refs.relationshipInfo`→本編 system プロンプトの【主人公への感情】ブロックに注入（数値＋`valueLabel` の段階ラベル）。**Phase 2（サイドパネル可視化・SessionEditor 軸管理）・Phase 3（しきい値→Director連動）は未実装。**
 - **選択肢** `genChoices`: choiceMode≠off で各応答後に生成。`choicesModelOf` 使用、JSON配列を `extractJson`。
 - **文体** novel=地の文＋「」混在（話者プレフィックスなし）/ chat=キャラ別吹き出し（「名前:」先頭をパースして characterId 判定）。
 - **出力停止対策**: `finish_reason==='length'` で `message.truncated` → 「⤵ 続きを生成」（`continueLast`＝appendToId で同一メッセージへ追記）。生成開始の一時エラーは最大3回自動リトライ。

@@ -170,6 +170,28 @@ export interface StorySetup {
   protagonist: string
 }
 
+/**
+ * キャラが主人公（ユーザーのペルソナ）に対して抱く感情の1軸。
+ * セッション固有（素材ライブラリではなくこの物語限定）。値は 0〜100、中立 50。
+ */
+export interface Relationship {
+  characterId: string
+  /** 軸名（ユーザー定義の自由軸。例: 好感 / 信頼 / 警戒）。レビューで初出時に登録される */
+  axis: string
+  value: number
+}
+
+/**
+ * セッション固有の感情・関係の状態。
+ * シーン終了レビューで差分加算され、本編プロンプトに現在値が注入される。
+ */
+export interface SessionState {
+  /** キャラ→主人公の関係値（軸ごと） */
+  relationships: Relationship[]
+  /** シーン単位の気分（質的ラベル。毎レビューで上書き） */
+  moods: { characterId: string; mood: string }[]
+}
+
 export interface Session {
   id: string
   title: string
@@ -200,6 +222,8 @@ export interface Session {
   director: { enabled: boolean; typeIds: string[] }
   /** 消化済みの特別イベント ID */
   usedEventIds: string[]
+  /** 感情・関係値の状態（セッション固有） */
+  state: SessionState
   messages: Message[]
   temperature: number
   maxTokens: number
@@ -249,6 +273,23 @@ export interface WorldGrowth {
   content: string
 }
 
+/** 関係値の変化案（コードが session.state に加算する相対値） */
+export interface RelationshipDelta {
+  characterId: string
+  name: string
+  axis: string
+  /** 相対変化量（おおむね -10〜+10）。コード側で 0〜100 にクランプ加算 */
+  delta: number
+  reason: string
+}
+
+/** 気分の更新案 */
+export interface MoodChange {
+  characterId: string
+  name: string
+  mood: string
+}
+
 /** シーン終了レビューの生成結果（runtime） */
 export interface SceneReview {
   sceneId: string
@@ -256,6 +297,10 @@ export interface SceneReview {
   suggestions: NextSceneSuggestion[]
   characterGrowth: CharacterGrowth[]
   worldGrowth: WorldGrowth[]
+  /** 主人公への関係値の変化案（コードが加算） */
+  relationshipDeltas: RelationshipDelta[]
+  /** 各キャラの気分の更新案 */
+  moodChanges: MoodChange[]
   /** ディレクターが選んだ次シーンの種類 */
   nextTypeId?: string
   nextTypeName?: string

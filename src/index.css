@@ -1392,6 +1392,14 @@ select {
   color: var(--accent);
   font-size: 12px;
 }
+.delta-up {
+  color: #4cc9a4;
+  font-weight: 700;
+}
+.delta-down {
+  color: #ef6f6c;
+  font-weight: 700;
+}
 .growth-edit {
   display: flex;
   gap: 8px;
