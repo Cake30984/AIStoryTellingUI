@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useStore } from '../store'
+import { advanceTimeline, timeLabelOf } from '../lib/timeline'
 
 export default function SceneReviewModal() {
   const {
@@ -19,6 +20,12 @@ export default function SceneReviewModal() {
   const pool = (session?.director.typeIds ?? [])
     .map((id) => sceneTypes.find((t) => t.id === id))
     .filter((t): t is NonNullable<typeof t> => !!t)
+
+  // 次シーンで進む時間帯（現在シーン確定時のみ。タイムライン有効時）
+  const nextTimeLabel =
+    session && session.timeline.enabled && !isPastScene
+      ? timeLabelOf(advanceTimeline(session.timeline))
+      : null
 
   const [summary, setSummary] = useState(review.summary)
   const [pick, setPick] = useState<number>(review.suggestions.length > 0 ? 0 : -1)
@@ -114,7 +121,15 @@ export default function SceneReviewModal() {
               {/* 次シーン提案 */}
               <div className="field">
                 <label>➡ 次のシーン</label>
-                <div className="desc">いずれかを選ぶと、その方向で次のシーンを用意します。</div>
+                <div className="desc">
+                  各案はこのシーン終了時点からの並列の候補です。いずれかを選ぶと、その方向で次のシーンを用意します。
+                  {nextTimeLabel && (
+                    <>
+                      {' '}
+                      <span className="event-badge">⏰ 時間帯が進む → {nextTimeLabel}</span>
+                    </>
+                  )}
+                </div>
                 <div className="review-cards">
                   {review.suggestions.map((s, i) => (
                     <button

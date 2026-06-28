@@ -960,8 +960,18 @@ export const useStore = create<AppState>()(
             if (refs.world) ctxParts.push(`【世界観】${refs.world.name}: ${refs.world.description}`)
             if (refs.timelineInfo) ctxParts.push(`【時間】${refs.timelineInfo}`)
 
+            // 次シーンの時刻（タイムラインが有効なら一区切り進む）を明示
+            const nextTimeline = s.timeline.enabled ? advanceTimeline(s.timeline) : null
+            if (nextTimeline) {
+              ctxParts.push(
+                `【次シーンの時間】このシーンが終わると時間帯が一区切り進み、次シーンは「${timeLabelOf(
+                  nextTimeline,
+                )}」になります。suggestions は時間が経過した後の場面として、その時刻にふさわしい状況で書いてください（直前の場面の続きをそのまま続けない）。`,
+              )
+            }
+
             // ディレクター：次シーンの方向を決定（イベント優先→抽選）
-            const nextDay = s.timeline.enabled ? advanceTimeline(s.timeline).currentDay : null
+            const nextDay = nextTimeline ? nextTimeline.currentDay : null
             const pick = directNextScene(s, refs.world, get().sceneTypes, nextDay)
             const pickedType = pick.typeId
               ? get().sceneTypes.find((t) => t.id === pick.typeId)
