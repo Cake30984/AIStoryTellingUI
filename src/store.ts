@@ -20,6 +20,7 @@ import { fetchModels, streamChat } from './lib/openrouter'
 import {
   buildMessages,
   choicesSystem,
+  choicesUserNudge,
   CONTINUE_PROMPT,
   nextSceneSystem,
   reviewSystem,
@@ -750,12 +751,29 @@ export const useStore = create<AppState>()(
         try {
           const refs = resolveRefs(session)
           const base = buildMessages(session, refs)
-          const msgs = [{ role: 'system' as const, content: choicesSystem(mode) }, ...base.slice(1)]
-          const raw = await streamChat(
-            { provider, model, messages: msgs, temperature: 0.8, maxTokens: 400 },
-            () => {},
-          )
-          const choices = coerceChoices(extractJson<unknown>(raw.text))
+          // 末尾に user の念押しを積み、本編の続き（地の文）ではなく JSON を出させる
+          const msgs = [
+            { role: 'system' as const, content: choicesSystem(mode) },
+            ...base.slice(1),
+            { role: 'user' as const, content: choicesUserNudge(mode) },
+          ]
+          // always はモデルが本編を続けてしまうことがあるため最大2回試行（auto の空配列は正当なので1回）
+          const maxAttempts = mode === 'always' ? 2 : 1
+          let choices: string[] = []
+          for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            const raw = await streamChat(
+              { provider, model, messages: msgs, temperature: 0.5, maxTokens: 400 },
+              () => {},
+            )
+            choices = coerceChoices(extractJson<unknown>(raw.text))
+            if (choices.length > 0) break
+            if (mode === 'always') {
+              console.warn(
+                `[choices] 選択肢を抽出できませんでした（試行${attempt}/${maxAttempts}）。モデル出力:`,
+                raw.text || '<empty>',
+              )
+            }
+          }
           if (choices.length > 0) {
             const cur = active()
             if (cur && cur.id === session.id) {
@@ -765,9 +783,6 @@ export const useStore = create<AppState>()(
                 ),
               })
             }
-          } else if (mode === 'always') {
-            // always 指定なのに抽出できない＝モデル出力が想定外。診断用に控えめに記録
-            console.warn('[choices] 選択肢を抽出できませんでした。モデル出力:', raw.text)
           }
         } catch (e) {
           // 選択肢は失敗しても本編には影響させない（診断用にのみ記録）
