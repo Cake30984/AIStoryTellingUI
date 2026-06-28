@@ -1,0 +1,48 @@
+import { useState } from 'react'
+import { newSceneType, useStore } from '../../store'
+import type { SceneType } from '../../types'
+import SceneTypeEditor from './SceneTypeEditor'
+
+export default function SceneTypeLibrary() {
+  const sceneTypes = useStore((s) => s.sceneTypes)
+  const [editing, setEditing] = useState<SceneType | null>(null)
+
+  return (
+    <div className="library">
+      <div className="library-head">
+        <h2>🎬 シーンの種類</h2>
+        <button className="btn primary" onClick={() => setEditing(newSceneType())}>
+          ＋ 新規タイプ
+        </button>
+      </div>
+
+      <div className="library-empty" style={{ marginBottom: 16, padding: 16 }}>
+        セッション設定で「演出ディレクター」を有効にすると、ここで定義した種類から
+        重み・クールダウンに基づいて次シーンが自動抽選されます。
+      </div>
+
+      {sceneTypes.length > 0 && (
+        <div className="card-grid">
+          {sceneTypes.map((t) => (
+            <div key={t.id} className="entity-card" onClick={() => setEditing(t)}>
+              <div className="entity-avatar" style={{ background: t.color }}>
+                🎬
+              </div>
+              <div className="entity-body">
+                <div className="entity-name">{t.name || '無名'}</div>
+                <div className="entity-desc">{t.guidance || '演出ガイドなし'}</div>
+                <div className="tag-row">
+                  <span className="tag">重み {t.weight}</span>
+                  <span className="tag">間隔 {t.minGap}</span>
+                  {t.builtin && <span className="tag">既定</span>}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {editing && <SceneTypeEditor sceneType={editing} onClose={() => setEditing(null)} />}
+    </div>
+  )
+}
