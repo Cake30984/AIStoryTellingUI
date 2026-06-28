@@ -28,7 +28,7 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist` で localStor
   - `timeline.ts` — `advanceTimeline`/`timeLabelOf`/`timelinePromptInfo`/`isNearEnd`
   - `json.ts` — `extractJson`（モデル出力から堅牢な JSON 抽出）
   - `tokens.ts` — `estimateTokens`/`tokenLevel`
-  - `io.ts` — `downloadBundle`（JSON DL）/`parseBundle`（取り込みファイルの検証・整形）。※エクスポートバンドルの組み立て本体は `store.exportBundle`（`buildBundle` は現状未使用）
+  - `io.ts` — `downloadBundle`（JSON DL）/`parseBundle`（取り込みファイルの検証・整形）。※エクスポートバンドルの組み立て本体は `store.exportBundle`
 - `src/components/`
   - `Sidebar.tsx` — 左ナビ＋セッション一覧
   - `ChatPanel.tsx` — 会話画面（トップバー・シーン仕切り・話者/選択肢・コンポーザー・メッセージ操作）
