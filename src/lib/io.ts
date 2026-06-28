@@ -1,20 +1,4 @@
-import type { Character, ExportBundle, Persona, Session, World } from '../types'
-
-export const EXPORT_VERSION = 1
-
-export function buildBundle(data: {
-  characters: Character[]
-  worlds: World[]
-  personas: Persona[]
-  sessions: Session[]
-}): ExportBundle {
-  return {
-    type: 'ai-storytelling-studio',
-    version: EXPORT_VERSION,
-    exportedAt: Date.now(),
-    ...data,
-  }
-}
+import type { ExportBundle } from '../types'
 
 /** バンドルをファイルとしてダウンロードさせる */
 export function downloadBundle(bundle: ExportBundle): void {
