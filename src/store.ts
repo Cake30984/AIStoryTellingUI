@@ -62,6 +62,33 @@ function clampValue(v: number): number {
   return Math.max(0, Math.min(100, Math.round(v)))
 }
 
+/**
+ * モデルが返した JSON から選択肢の文字列配列を取り出す。
+ * 素直な ["a","b"] のほか、`{"choices":[...]}` のラップや
+ * `[{"text":"a"}]` のオブジェクト配列にも対応する（モデル差吸収）。
+ */
+function coerceChoices(parsed: unknown): string[] {
+  const arr: unknown[] = Array.isArray(parsed)
+    ? parsed
+    : parsed && typeof parsed === 'object'
+      ? ((Object.values(parsed as Record<string, unknown>).find((v) => Array.isArray(v)) as
+          | unknown[]
+          | undefined) ?? [])
+      : []
+  return arr
+    .map((x) => {
+      if (typeof x === 'string') return x
+      if (x && typeof x === 'object') {
+        const v = Object.values(x as Record<string, unknown>).find((y) => typeof y === 'string')
+        return typeof v === 'string' ? v : ''
+      }
+      return ''
+    })
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0)
+    .slice(0, 4)
+}
+
 export function newCharacter(): Character {
   const now = Date.now()
   return {
@@ -713,13 +740,10 @@ export const useStore = create<AppState>()(
           const base = buildMessages(session, refs)
           const msgs = [{ role: 'system' as const, content: choicesSystem(mode) }, ...base.slice(1)]
           const raw = await streamChat(
-            { provider, model, messages: msgs, temperature: 0.8, maxTokens: 250 },
+            { provider, model, messages: msgs, temperature: 0.8, maxTokens: 400 },
             () => {},
           )
-          const arr = extractJson<unknown>(raw.text)
-          const choices = Array.isArray(arr)
-            ? arr.filter((x): x is string => typeof x === 'string' && x.trim().length > 0).slice(0, 4)
-            : []
+          const choices = coerceChoices(extractJson<unknown>(raw.text))
           if (choices.length > 0) {
             const cur = active()
             if (cur && cur.id === session.id) {
@@ -729,9 +753,13 @@ export const useStore = create<AppState>()(
                 ),
               })
             }
+          } else if (mode === 'always') {
+            // always 指定なのに抽出できない＝モデル出力が想定外。診断用に控えめに記録
+            console.warn('[choices] 選択肢を抽出できませんでした。モデル出力:', raw.text)
           }
-        } catch {
-          /* 選択肢は失敗しても無視（本編には影響させない） */
+        } catch (e) {
+          // 選択肢は失敗しても本編には影響させない（診断用にのみ記録）
+          console.warn('[choices] 生成に失敗:', (e as Error)?.message)
         } finally {
           set({ isGeneratingChoices: false })
         }
