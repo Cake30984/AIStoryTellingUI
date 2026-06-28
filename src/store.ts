@@ -48,6 +48,20 @@ function pickColor(): string {
   return COLORS[Math.floor(Math.random() * COLORS.length)]
 }
 
+/** 関係値 0〜100 を段階ラベルに変換（プロンプト注入用） */
+export function valueLabel(v: number): string {
+  if (v >= 80) return '非常に高'
+  if (v >= 60) return '高'
+  if (v >= 40) return '中'
+  if (v >= 20) return '低'
+  return '非常に低'
+}
+
+/** 関係値を 0〜100 に丸める */
+function clampValue(v: number): number {
+  return Math.max(0, Math.min(100, Math.round(v)))
+}
+
 export function newCharacter(): Character {
   const now = Date.now()
   return {
@@ -172,6 +186,7 @@ function newSession(mode: SessionMode): Session {
     narrativeStyle: mode === 'story' ? 'novel' : 'chat',
     director: { enabled: false, typeIds: [] },
     usedEventIds: [],
+    state: { relationships: [], moods: [] },
     messages: [],
     temperature: 0.9,
     maxTokens: 1024,
@@ -242,6 +257,7 @@ interface AppState {
     suggestion?: NextSceneSuggestion
     characterGrowthIdx: number[]
     worldGrowthIdx: number[]
+    relationshipDeltaIdx: number[]
   }) => void
   setReviewNextType: (typeId: string | null) => void
   rerollReviewType: () => void
@@ -266,6 +282,32 @@ interface AppState {
 }
 
 let controller: AbortController | null = null
+
+/** キャラ→主人公の関係値・気分をプロンプト用テキストに整形（空なら ''） */
+function buildRelationshipInfo(session: Session, characters: Character[]): string {
+  const rels = session.state?.relationships ?? []
+  const moods = session.state?.moods ?? []
+  if (rels.length === 0 && moods.length === 0) return ''
+  const nameOf = (id: string) => characters.find((c) => c.id === id)?.name ?? 'キャラ'
+  const axesByChar = new Map<string, string[]>()
+  for (const r of rels) {
+    const arr = axesByChar.get(r.characterId) ?? []
+    arr.push(`${r.axis} ${r.value}(${valueLabel(r.value)})`)
+    axesByChar.set(r.characterId, arr)
+  }
+  const moodOf = (id: string) => moods.find((m) => m.characterId === id)?.mood
+  const lines: string[] = []
+  // 関係値を持つキャラ（気分も併記）
+  for (const [cid, axisList] of axesByChar) {
+    const mood = moodOf(cid)
+    lines.push(`- ${nameOf(cid)} → 主人公: ${axisList.join(' / ')}${mood ? ` ｜ 気分: ${mood}` : ''}`)
+  }
+  // 気分のみのキャラ
+  for (const m of moods) {
+    if (!axesByChar.has(m.characterId)) lines.push(`- ${nameOf(m.characterId)}: 気分 ${m.mood}`)
+  }
+  return lines.join('\n')
+}
 
 /**
  * ディレクター：次シーンの方向を決める。
@@ -463,6 +505,21 @@ function migrateV7toV8(persisted: any): any {
   return persisted
 }
 
+/** v8→v9: セッションに感情・関係値の状態（state）を追加 */
+function migrateV8toV9(persisted: any): any {
+  const sessions = (persisted.sessions ?? []).map((s: any) => ({
+    ...s,
+    state:
+      s.state && Array.isArray(s.state.relationships)
+        ? {
+            relationships: s.state.relationships,
+            moods: Array.isArray(s.state.moods) ? s.state.moods : [],
+          }
+        : { relationships: [], moods: [] },
+  }))
+  return { ...persisted, sessions }
+}
+
 function migrateV6toV7(persisted: any): any {
   // セッションの utilityModel → reviewModel / choicesModel
   const sessions = (persisted.sessions ?? []).map((s: any) => {
@@ -518,6 +575,7 @@ export const useStore = create<AppState>()(
           sceneTypeGuidance: scene?.sceneTypeId
             ? (get().sceneTypes.find((t) => t.id === scene.sceneTypeId)?.guidance ?? '')
             : '',
+          relationshipInfo: buildRelationshipInfo(session, characters),
         }
       }
 
@@ -922,12 +980,17 @@ export const useStore = create<AppState>()(
             }
             const context = ctxParts.join('\n')
 
+            // 既存の関係軸（自由軸の auto-discovery：初出はモデルが定義、以降は拘束）
+            const existingAxes = Array.from(
+              new Set((s.state?.relationships ?? []).map((r) => r.axis)),
+            )
+
             const raw = await streamChat(
               {
                 provider,
                 model,
                 messages: [
-                  { role: 'system', content: reviewSystem() },
+                  { role: 'system', content: reviewSystem(existingAxes) },
                   {
                     role: 'user',
                     content: `${context}\n\n【シーン「${scene.title}」の会話】\n${transcript}`,
@@ -978,6 +1041,26 @@ export const useStore = create<AppState>()(
                     }))
                     .filter((g: any) => g.content.trim())
                 : [],
+              relationshipDeltas: Array.isArray(parsed?.relationshipDeltas)
+                ? parsed.relationshipDeltas
+                    .map((x: any) => ({
+                      characterId: findId(String(x?.character ?? x?.name ?? '')) ?? '',
+                      name: String(x?.character ?? x?.name ?? ''),
+                      axis: String(x?.axis ?? '').trim(),
+                      delta: Math.max(-50, Math.min(50, Math.round(Number(x?.delta) || 0))),
+                      reason: String(x?.reason ?? ''),
+                    }))
+                    .filter((d: any) => d.characterId && d.axis && d.delta !== 0)
+                : [],
+              moodChanges: Array.isArray(parsed?.moods)
+                ? parsed.moods
+                    .map((x: any) => ({
+                      characterId: findId(String(x?.character ?? x?.name ?? '')) ?? '',
+                      name: String(x?.character ?? x?.name ?? ''),
+                      mood: String(x?.mood ?? '').trim(),
+                    }))
+                    .filter((m: any) => m.characterId && m.mood)
+                : [],
               nextTypeId: pickedType?.id,
               nextTypeName: pickedType?.name,
               scheduledEventId: event?.id,
@@ -1005,6 +1088,37 @@ export const useStore = create<AppState>()(
           const selectedWorld = opts.worldGrowthIdx
             .map((i) => review.worldGrowth[i])
             .filter(Boolean)
+          const selectedDeltas = opts.relationshipDeltaIdx
+            .map((i) => review.relationshipDeltas[i])
+            .filter(Boolean)
+
+          // 関係値の差分を加算し、気分を上書きした新しい state を返す
+          const applyState = (prev: Session['state']): Session['state'] => {
+            const base = prev ?? { relationships: [], moods: [] }
+            const relationships = base.relationships.map((r) => ({ ...r }))
+            for (const d of selectedDeltas) {
+              const idx = relationships.findIndex(
+                (r) => r.characterId === d.characterId && r.axis === d.axis,
+              )
+              if (idx >= 0) {
+                relationships[idx].value = clampValue(relationships[idx].value + d.delta)
+              } else {
+                // 初出の軸は中立 50 を起点に加算
+                relationships.push({
+                  characterId: d.characterId,
+                  axis: d.axis,
+                  value: clampValue(50 + d.delta),
+                })
+              }
+            }
+            const moods = base.moods.map((m) => ({ ...m }))
+            for (const m of review.moodChanges) {
+              const idx = moods.findIndex((x) => x.characterId === m.characterId)
+              if (idx >= 0) moods[idx].mood = m.mood
+              else moods.push({ characterId: m.characterId, mood: m.mood })
+            }
+            return { relationships, moods }
+          }
 
           const applyGrowth = (st: AppState) => ({
             characters: st.characters.map((c) => {
@@ -1105,6 +1219,7 @@ export const useStore = create<AppState>()(
                     currentSceneId: next.id,
                     timeline: tl,
                     usedEventIds,
+                    state: applyState(sess.state),
                     updatedAt: Date.now(),
                   }
                 : sess,
@@ -1336,7 +1451,7 @@ export const useStore = create<AppState>()(
           const { providers, characters, worlds, personas, sceneTypes, sessions } = get()
           return {
             type: 'ai-storytelling-studio',
-            version: 8,
+            version: 9,
             exportedAt: Date.now(),
             providers,
             characters,
@@ -1350,19 +1465,21 @@ export const useStore = create<AppState>()(
         importBundle: (bundle) => {
           let added = 0
           // 古いバンドルも取り込めるよう補正（シーン・タイムライン・成長欄・演出・プロバイダ）
-          const normalized = migrateV7toV8(
-            migrateV6toV7(
-              migrateV5toV6(
-                migrateV4toV5(
-                  migrateV3toV4(
-                    migrateV2toV3(
-                      migrateV1toV2({
-                        characters: bundle.characters,
-                        worlds: bundle.worlds,
-                        sessions: bundle.sessions,
-                        sceneTypes: bundle.sceneTypes,
-                        providers: bundle.providers,
-                      }),
+          const normalized = migrateV8toV9(
+            migrateV7toV8(
+              migrateV6toV7(
+                migrateV5toV6(
+                  migrateV4toV5(
+                    migrateV3toV4(
+                      migrateV2toV3(
+                        migrateV1toV2({
+                          characters: bundle.characters,
+                          worlds: bundle.worlds,
+                          sessions: bundle.sessions,
+                          sceneTypes: bundle.sceneTypes,
+                          providers: bundle.providers,
+                        }),
+                      ),
                     ),
                   ),
                 ),
@@ -1394,7 +1511,7 @@ export const useStore = create<AppState>()(
     },
     {
       name: 'ai-storytelling-store',
-      version: 8,
+      version: 9,
       partialize: (st) => ({
         providers: st.providers,
         favoriteModels: st.favoriteModels,
@@ -1416,6 +1533,7 @@ export const useStore = create<AppState>()(
         if (version < 6) state = migrateV5toV6(state)
         if (version < 7) state = migrateV6toV7(state)
         if (version < 8) state = migrateV7toV8(state)
+        if (version < 9) state = migrateV8toV9(state)
         return state
       },
     },

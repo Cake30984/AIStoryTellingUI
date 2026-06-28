@@ -28,6 +28,9 @@ export default function SceneReviewModal() {
   const [worldSel, setWorldSel] = useState<Set<number>>(
     new Set(review.worldGrowth.map((_, i) => i)),
   )
+  const [relSel, setRelSel] = useState<Set<number>>(
+    new Set(review.relationshipDeltas.map((_, i) => i)),
+  )
 
   // 再生成完了時にローカル状態をリセット
   useEffect(() => {
@@ -35,6 +38,7 @@ export default function SceneReviewModal() {
     setPick(review.suggestions.length > 0 ? 0 : -1)
     setCharSel(new Set(review.characterGrowth.map((_, i) => i)))
     setWorldSel(new Set(review.worldGrowth.map((_, i) => i)))
+    setRelSel(new Set(review.relationshipDeltas.map((_, i) => i)))
   }, [review])
 
   const toggle = (set: Set<number>, setFn: (s: Set<number>) => void, i: number) => {
@@ -49,6 +53,7 @@ export default function SceneReviewModal() {
       suggestion: pick >= 0 ? review.suggestions[pick] : undefined,
       characterGrowthIdx: [...charSel],
       worldGrowthIdx: [...worldSel],
+      relationshipDeltaIdx: [...relSel],
     })
   }
 
@@ -170,6 +175,41 @@ export default function SceneReviewModal() {
                         </span>
                       </label>
                     ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 関係値の変化（現在シーン確定時のみ反映） */}
+              {!isPastScene && review.relationshipDeltas.length > 0 && (
+                <div className="field">
+                  <label>💗 主人公への感情の変化（チェックした項目を関係値に加算）</label>
+                  <div className="growth-list">
+                    {review.relationshipDeltas.map((d, i) => (
+                      <label key={i} className="growth-item">
+                        <input
+                          type="checkbox"
+                          checked={relSel.has(i)}
+                          onChange={() => toggle(relSel, setRelSel, i)}
+                        />
+                        <span>
+                          <strong>{d.name}</strong> の <strong>{d.axis}</strong>{' '}
+                          <span className={d.delta >= 0 ? 'delta-up' : 'delta-down'}>
+                            {d.delta >= 0 ? `+${d.delta}` : d.delta}
+                          </span>
+                          {d.reason && <span className="growth-keys">（{d.reason}）</span>}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 気分の更新（確定時に上書き） */}
+              {!isPastScene && review.moodChanges.length > 0 && (
+                <div className="field">
+                  <label>🎭 気分の更新</label>
+                  <div className="desc">
+                    {review.moodChanges.map((m) => `${m.name}: ${m.mood}`).join(' ／ ')}
                   </div>
                 </div>
               )}

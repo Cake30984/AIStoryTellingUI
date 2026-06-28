@@ -19,6 +19,8 @@ export interface ResolvedRefs {
   nearEnd: boolean
   /** 現在シーンの種類ガイド（演出エンジン） */
   sceneTypeGuidance: string
+  /** キャラ→主人公の関係値・気分の現在値（空なら無効） */
+  relationshipInfo: string
 }
 
 /** キャラ1人の定義ブロックを作る */
@@ -81,6 +83,14 @@ export function buildSystemPrompt(
   // 1.8 今回のシーンの方向性（演出エンジン）
   if (refs.sceneTypeGuidance.trim()) {
     parts.push(`【今回のシーンの方向性】\n${refs.sceneTypeGuidance.trim()}`)
+  }
+
+  // 1.9 主人公への感情（現在の関係値・気分）
+  if (refs.relationshipInfo.trim()) {
+    parts.push(
+      `【主人公への感情（現在値・0〜100）】\n${refs.relationshipInfo.trim()}\n` +
+        `この数値と矛盾しない態度・口調・距離感で各キャラを描写してください（数値そのものはセリフに出さない）。`,
+    )
   }
 
   const novel = session.narrativeStyle === 'novel'
@@ -228,20 +238,30 @@ export function choicesSystem(mode: 'always' | 'auto'): string {
   return base + `2〜4個の選択肢を返してください。`
 }
 
-/** シーン終了レビュー（要約＋次シーン提案＋成長）生成用の system プロンプト */
-export function reviewSystem(): string {
+/**
+ * シーン終了レビュー（要約＋次シーン提案＋成長＋関係値）生成用の system プロンプト。
+ * @param axes 既存の関係軸名。空でなければ「新しい軸を作らずこの軸のみ使う」よう拘束する。
+ */
+export function reviewSystem(axes: string[]): string {
+  const axisLine = axes.length
+    ? `relationshipDeltas の axis は既存の【${axes.join('・')}】のみを使う（新しい軸を作らない）。`
+    : `relationshipDeltas の axis は物語に最適なものを自分で定義してよい（例: 好感・信頼・警戒）。多くても3軸まで。`
   return (
     `あなたは物語編集アシスタントです。直前のシーンの会話を分析し、次の JSON のみを出力してください（前後に文章・コードフェンスを付けない）。\n` +
     `{\n` +
     `  "summary": "このシーンの引き継ぎ要約（日本語の文字列。改行は \\\\n で表現。重要な出来事・関係や心情の変化・約束や未解決事項・終了時の状況を含む）",\n` +
     `  "suggestions": [ {"title":"次シーンの短い見出し","note":"次シーンの状況・方向性の説明（2〜3文）"} ],\n` +
     `  "characterGrowth": [ {"name":"キャラ名","addition":"今回の展開で新たに判明/深化した性格・背景を一文で"} ],\n` +
-    `  "worldGrowth": [ {"keys":["トリガー語"],"content":"新たに判明した世界設定"} ]\n` +
+    `  "worldGrowth": [ {"keys":["トリガー語"],"content":"新たに判明した世界設定"} ],\n` +
+    `  "relationshipDeltas": [ {"character":"キャラ名","axis":"軸名","delta":5,"reason":"変化の理由（一文）"} ],\n` +
+    `  "moods": [ {"character":"キャラ名","mood":"終了時点の気分（一語〜短句）"} ]\n` +
     `}\n` +
     `指針:\n` +
     `- summary は必ず JSON 文字列（string）で返す。配列や改行そのままは不可。\n` +
     `- suggestions は必ず2〜3個。方向性を変える（「このシーンの続き」「一段落して別のイベント」など）。\n` +
     `- characterGrowth / worldGrowth は、既存設定に無い"新しく分かったこと"のみ。無ければ空配列。\n` +
+    `- relationshipDeltas は各キャラが主人公（ユーザー）に抱く感情の"変化量"のみ。delta は概ね -10〜+10 の相対値（絶対値・合計ではない）。変化が無ければ空配列。${axisLine}\n` +
+    `- moods は各キャラの終了時点の気分。変化が無いキャラは省略可。\n` +
     `- 推測の捏造はせず、会話に根拠があるものだけ。`
   )
 }
