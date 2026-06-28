@@ -25,6 +25,7 @@ export default function ChatPanel({ session }: Props) {
     prepareSceneReview,
     startStory,
     continueLast,
+    regenChoices,
     editMessage,
     deleteMessage,
     regenerateFrom,
@@ -449,6 +450,19 @@ export default function ChatPanel({ session }: Props) {
               ))}
             </div>
           )}
+          {/* 選択肢が出ない時の手動生成（モデル出力が想定外でも復旧できる） */}
+          {!isStreaming &&
+            !isGeneratingChoices &&
+            session.choiceMode !== 'off' &&
+            lastMsg?.role === 'assistant' &&
+            !!lastMsg.content.trim() &&
+            (!lastMsg.choices || lastMsg.choices.length === 0) && (
+              <div className="story-actions">
+                <button onClick={() => regenChoices()} title="この応答の選択肢を生成し直す">
+                  🔁 選択肢を生成
+                </button>
+              </div>
+            )}
 
           <div className="input-row">
             <textarea

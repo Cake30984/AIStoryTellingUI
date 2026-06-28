@@ -21,6 +21,7 @@ import {
   buildMessages,
   choicesSystem,
   CONTINUE_PROMPT,
+  nextSceneSystem,
   reviewSystem,
   SCENE_START_PROMPT,
   type ResolvedRefs,
@@ -245,6 +246,8 @@ interface AppState {
   isStreaming: boolean
   isGeneratingChoices: boolean
   isReviewing: boolean
+  /** 次シーン候補（suggestions）だけを再生成中 */
+  isRegenSuggestions: boolean
   sceneReview: SceneReview | null
   error: string | null
 
@@ -287,8 +290,12 @@ interface AppState {
     relationshipDeltaIdx: number[]
   }) => void
   setReviewNextType: (typeId: string | null) => void
-  rerollReviewType: () => void
+  rerollReviewType: () => Promise<void>
+  /** 現在の方向性で次シーン候補だけを再生成する */
+  regenerateSuggestions: () => Promise<void>
   cancelReview: () => void
+  /** 直近のアシスタント応答に対して選択肢を手動で生成し直す */
+  regenChoices: () => Promise<void>
 
   // 生成
   startSession: () => void
@@ -732,7 +739,12 @@ export const useStore = create<AppState>()(
       /** 直近のアシスタント応答に対する選択肢を生成して付与 */
       async function genChoices(session: Session, messageId: string): Promise<void> {
         const { provider, model } = parseModelRef(choicesModelOf(session), get().providers)
-        if (!provider?.apiKey.trim()) return
+        if (!provider?.apiKey.trim()) {
+          console.warn(
+            `[choices] 選択肢用モデルの接続先「${provider?.label ?? '?'}」にAPIキーが無いため生成をスキップしました。設定で選択肢用モデル/キーを確認してください。`,
+          )
+          return
+        }
         const mode = session.choiceMode === 'auto' ? 'auto' : 'always'
         set({ isGeneratingChoices: true })
         try {
@@ -781,6 +793,7 @@ export const useStore = create<AppState>()(
         isStreaming: false,
         isGeneratingChoices: false,
         isReviewing: false,
+        isRegenSuggestions: false,
         sceneReview: null,
         error: null,
 
@@ -1283,9 +1296,11 @@ export const useStore = create<AppState>()(
               scheduledEventName: undefined,
             },
           })
+          // 方向性が変わったので次シーン候補を作り直す
+          void get().regenerateSuggestions()
         },
 
-        rerollReviewType: () => {
+        rerollReviewType: async () => {
           const review = get().sceneReview
           const s = active()
           if (!review || !s) return
@@ -1305,9 +1320,86 @@ export const useStore = create<AppState>()(
               scheduledEventName: undefined,
             },
           })
+          // 引き直した方向性に合わせて次シーン候補を再生成
+          await get().regenerateSuggestions()
+        },
+
+        regenerateSuggestions: async () => {
+          const review = get().sceneReview
+          const s = active()
+          if (!review || !s || get().isReviewing || get().isRegenSuggestions) return
+          const scene = s.scenes.find((sc) => sc.id === review.sceneId)
+          if (!scene) return
+          const { provider, model } = parseModelRef(reviewModelOf(s), get().providers)
+          if (!provider?.apiKey.trim()) {
+            set({ error: `接続先「${provider?.label ?? ''}」の API キーが未設定です。` })
+            return
+          }
+          set({ isRegenSuggestions: true, error: null })
+          try {
+            const refs = resolveRefs(s)
+            // 方向性テキスト（イベント優先→種類→自由）
+            const guidance = review.nextTypeId
+              ? (get().sceneTypes.find((t) => t.id === review.nextTypeId)?.guidance ?? '')
+              : ''
+            const dirText = review.scheduledEventName
+              ? `特別イベント「${review.scheduledEventName}」が発生します。`
+              : review.nextTypeName
+                ? `次シーンの種類は「${review.nextTypeName}」。${guidance}`
+                : '特に指定なし（自由に提案）。'
+            const nextTimeline = s.timeline.enabled ? advanceTimeline(s.timeline) : null
+            const ctxParts = [`【これまでのあらすじ】\n${review.summary}`]
+            if (refs.world) ctxParts.push(`【世界観】${refs.world.name}: ${refs.world.description}`)
+            ctxParts.push(`【次シーンの方向性】${dirText}`)
+            if (nextTimeline) {
+              ctxParts.push(
+                `【次シーンの時間】次シーンは「${timeLabelOf(
+                  nextTimeline,
+                )}」。時間が経過した後の場面として書いてください。`,
+              )
+            }
+            const raw = await streamChat(
+              {
+                provider,
+                model,
+                messages: [
+                  { role: 'system', content: nextSceneSystem() },
+                  { role: 'user', content: ctxParts.join('\n\n') },
+                ],
+                temperature: 0.7,
+                maxTokens: 800,
+              },
+              () => {},
+            )
+            const parsed = extractJson<any>(raw.text)
+            const suggestions = Array.isArray(parsed?.suggestions)
+              ? parsed.suggestions
+                  .filter((x: any) => x && (x.title || x.note))
+                  .map((x: any) => ({ title: String(x.title ?? ''), note: String(x.note ?? '') }))
+                  .slice(0, 4)
+              : []
+            const cur = get().sceneReview
+            if (cur && cur.sceneId === review.sceneId && suggestions.length > 0) {
+              set({ sceneReview: { ...cur, suggestions } })
+            }
+          } catch (e) {
+            if ((e as Error).name !== 'AbortError') set({ error: (e as Error).message })
+          } finally {
+            set({ isRegenSuggestions: false })
+          }
         },
 
         cancelReview: () => set({ sceneReview: null }),
+
+        regenChoices: async () => {
+          const s = active()
+          if (!s || get().isStreaming || get().isGeneratingChoices || s.choiceMode === 'off') return
+          const last = [...s.messages]
+            .reverse()
+            .find((m) => m.role === 'assistant' && m.content.trim().length > 0)
+          if (!last) return
+          await genChoices(s, last.id)
+        },
 
         startSession: () => {
           const s = active()
