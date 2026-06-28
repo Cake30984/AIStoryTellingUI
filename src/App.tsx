@@ -1,0 +1,78 @@
+import { useEffect, useState } from 'react'
+import { useStore } from './store'
+import Sidebar from './components/Sidebar'
+import ChatPanel from './components/ChatPanel'
+import SettingsModal from './components/SettingsModal'
+import CharacterLibrary from './components/library/CharacterLibrary'
+import WorldLibrary from './components/library/WorldLibrary'
+import PersonaLibrary from './components/library/PersonaLibrary'
+import SceneTypeLibrary from './components/library/SceneTypeLibrary'
+import SceneReviewModal from './components/SceneReviewModal'
+
+export default function App() {
+  const { sessions, activeId, view, providers, error, clearError, createSession, sceneReview } =
+    useStore()
+  const [showSettings, setShowSettings] = useState(false)
+
+  // いずれかのプロバイダに API キーが設定されているか
+  const hasApiKey = providers.some((p) => p.apiKey.trim() !== '')
+
+  const active = sessions.find((s) => s.id === activeId)
+
+  useEffect(() => {
+    if (!hasApiKey) setShowSettings(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  return (
+    <div className="app">
+      <Sidebar onOpenSettings={() => setShowSettings(true)} />
+
+      {view === 'characters' ? (
+        <CharacterLibrary />
+      ) : view === 'worlds' ? (
+        <WorldLibrary />
+      ) : view === 'personas' ? (
+        <PersonaLibrary />
+      ) : view === 'sceneTypes' ? (
+        <SceneTypeLibrary />
+      ) : active ? (
+        <ChatPanel key={active.id} session={active} />
+      ) : (
+        <div className="main">
+          <div className="empty">
+            <div>
+              <h2>AI とロールプレイ・物語づくりを</h2>
+              <p>
+                OpenRouter のお好きなモデルで、キャラとの会話や
+                <br />
+                自動で進む物語を楽しめます。
+              </p>
+              <div className="cta">
+                <button onClick={() => createSession('roleplay')}>ロールプレイを始める</button>
+                <button className="ghost" onClick={() => createSession('story')}>
+                  物語を始める
+                </button>
+              </div>
+              {!hasApiKey && (
+                <p style={{ marginTop: 20, fontSize: 13, color: 'var(--text-faint)' }}>
+                  まず左下の設定から OpenRouter の API キーを登録してください。
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
+      {sceneReview && <SceneReviewModal />}
+
+      {error && (
+        <div className="toast">
+          <span>{error}</span>
+          <button onClick={clearError}>閉じる</button>
+        </div>
+      )}
+    </div>
+  )
+}
