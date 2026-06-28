@@ -239,6 +239,20 @@ export function choicesSystem(mode: 'always' | 'auto'): string {
 }
 
 /**
+ * 選択肢生成の直前に積む user メッセージ。
+ * モデルは直近の user 指示に強く従うため、本編の続き（地の文）ではなく
+ * JSON 配列を確実に出力させるための念押し。
+ */
+export function choicesUserNudge(mode: 'always' | 'auto'): string {
+  const head =
+    `↑の直前の場面を踏まえ、主人公（ユーザー）が次に取る行動の選択肢を、` +
+    `指示どおりの JSON 配列だけで出力してください。物語の続き・地の文・説明は書かないこと。`
+  return mode === 'auto'
+    ? `${head}（選択を挟むのが不自然なら [] を返す）`
+    : `${head} 例: ["剣を抜いて立ち向かう","そっと後ずさる","話しかけてみる"]`
+}
+
+/**
  * シーン終了レビュー（要約＋次シーン提案＋成長＋関係値）生成用の system プロンプト。
  * @param axes 既存の関係軸名。空でなければ「新しい軸を作らずこの軸のみ使う」よう拘束する。
  */
