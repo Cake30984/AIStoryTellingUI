@@ -10,6 +10,7 @@ export default function SceneReviewModal() {
     setReviewNextType,
     rerollReviewType,
     isReviewing,
+    isRegenSuggestions,
     sceneTypes,
     sessions,
     activeId,
@@ -39,14 +40,20 @@ export default function SceneReviewModal() {
     new Set(review.relationshipDeltas.map((_, i) => i)),
   )
 
-  // 再生成完了時にローカル状態をリセット
+  // 別のレビュー（別シーン）に切り替わったときだけ全体をリセット。
+  // 候補だけ再生成した場合は編集中の要約を保持する。
   useEffect(() => {
     setSummary(review.summary)
-    setPick(review.suggestions.length > 0 ? 0 : -1)
     setCharSel(new Set(review.characterGrowth.map((_, i) => i)))
     setWorldSel(new Set(review.worldGrowth.map((_, i) => i)))
     setRelSel(new Set(review.relationshipDeltas.map((_, i) => i)))
-  }, [review])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [review.sceneId])
+
+  // 候補が変わったら選択をリセット（先頭を選ぶ）
+  useEffect(() => {
+    setPick(review.suggestions.length > 0 ? 0 : -1)
+  }, [review.suggestions])
 
   const toggle = (set: Set<number>, setFn: (s: Set<number>) => void, i: number) => {
     const next = new Set(set)
@@ -91,7 +98,11 @@ export default function SceneReviewModal() {
                   {review.scheduledEventName ? (
                     <div className="director-row">
                       <span className="event-badge">特別イベント: {review.scheduledEventName}</span>
-                      <button className="btn" onClick={() => setReviewNextType(null)}>
+                      <button
+                        className="btn"
+                        onClick={() => setReviewNextType(null)}
+                        disabled={isRegenSuggestions}
+                      >
                         解除
                       </button>
                     </div>
@@ -100,6 +111,7 @@ export default function SceneReviewModal() {
                       <select
                         value={review.nextTypeId ?? ''}
                         onChange={(e) => setReviewNextType(e.target.value || null)}
+                        disabled={isRegenSuggestions}
                       >
                         <option value="">指定なし（自由）</option>
                         {pool.map((t) => (
@@ -109,7 +121,12 @@ export default function SceneReviewModal() {
                         ))}
                       </select>
                       {pool.length > 0 && (
-                        <button className="btn" onClick={rerollReviewType} title="抽選し直す">
+                        <button
+                          className="btn"
+                          onClick={rerollReviewType}
+                          disabled={isRegenSuggestions}
+                          title="抽選し直して候補も作り直す"
+                        >
                           🎲 引き直す
                         </button>
                       )}
@@ -130,7 +147,10 @@ export default function SceneReviewModal() {
                     </>
                   )}
                 </div>
-                <div className="review-cards">
+                {isRegenSuggestions && (
+                  <div className="choices-loading">次シーンの候補を生成中…</div>
+                )}
+                <div className="review-cards" style={isRegenSuggestions ? { opacity: 0.5 } : undefined}>
                   {review.suggestions.map((s, i) => (
                     <button
                       key={i}
@@ -235,7 +255,11 @@ export default function SceneReviewModal() {
           <button className="btn" onClick={cancelReview}>
             キャンセル
           </button>
-          <button className="btn primary" onClick={confirm} disabled={isReviewing}>
+          <button
+            className="btn primary"
+            onClick={confirm}
+            disabled={isReviewing || isRegenSuggestions}
+          >
             {isPastScene ? '要約を更新' : '確定して次のシーンへ'}
           </button>
         </div>
