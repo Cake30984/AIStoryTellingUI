@@ -1392,6 +1392,17 @@ select {
   color: var(--accent);
   font-size: 12px;
 }
+.rel-aspect {
+  display: block;
+  font-size: 12px;
+  color: var(--text-faint);
+  margin-top: 2px;
+}
+.rel-aspect em {
+  color: var(--accent);
+  font-style: normal;
+  margin-right: 4px;
+}
 .delta-up {
   color: #4cc9a4;
   font-weight: 700;

@@ -1,0 +1,174 @@
+import { useState } from 'react'
+import { useStore } from '../store'
+import type { Session, SessionState } from '../types'
+
+interface Props {
+  session: Session
+  onClose: () => void
+}
+
+/** セッションの状態（関係性 prose ＋ 事実の数）の閲覧・手動編集パネル */
+export default function StatusPanel({ session, onClose }: Props) {
+  const { worlds, characters, personas, updateSession } = useStore()
+  const world = worlds.find((w) => w.id === session.worldId)
+  const heroName = personas.find((p) => p.id === session.personaId)?.name || '主人公'
+  const cast = session.characterIds
+    .map((id) => characters.find((c) => c.id === id))
+    .filter((c): c is NonNullable<typeof c> => !!c)
+  const aspectName = (id: string) => world?.relationAspects.find((a) => a.id === id)?.name ?? ''
+
+  const [st, setSt] = useState<SessionState>(() => ({
+    relations: session.state.relations.map((r) => ({
+      ...r,
+      aspects: r.aspects.map((a) => ({ ...a })),
+      flags: [...r.flags],
+    })),
+    moods: session.state.moods.map((m) => ({ ...m })),
+    stats: session.state.stats.map((s) => ({ ...s })),
+  }))
+
+  const statValue = (defId: string, characterId?: string): number => {
+    const v = st.stats.find((s) => s.defId === defId && s.characterId === characterId)
+    if (v) return v.value
+    return world?.stats.find((d) => d.id === defId)?.default ?? 0
+  }
+  const setStat = (defId: string, characterId: string | undefined, value: number) =>
+    setSt((prev) => {
+      const stats = prev.stats.slice()
+      const idx = stats.findIndex((s) => s.defId === defId && s.characterId === characterId)
+      if (idx >= 0) stats[idx] = { ...stats[idx], value }
+      else stats.push({ defId, characterId, value })
+      return { ...prev, stats }
+    })
+  const setStance = (i: number, stance: string) =>
+    setSt((prev) => {
+      const relations = prev.relations.slice()
+      relations[i] = { ...relations[i], stance }
+      return { ...prev, relations }
+    })
+  const setAspectNote = (i: number, aspectId: string, note: string) =>
+    setSt((prev) => {
+      const relations = prev.relations.slice()
+      relations[i] = {
+        ...relations[i],
+        aspects: relations[i].aspects.map((a) => (a.aspectId === aspectId ? { ...a, note } : a)),
+      }
+      return { ...prev, relations }
+    })
+
+  const globalStats = world?.stats.filter((d) => d.scope === 'global') ?? []
+  const charStats = world?.stats.filter((d) => d.scope === 'character') ?? []
+
+  const save = () => {
+    updateSession(session.id, { state: st })
+    onClose()
+  }
+
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <h3>📊 状態</h3>
+          <button className="icon-btn" onClick={onClose}>
+            ✕
+          </button>
+        </div>
+        <div className="modal-body">
+          {!world && (
+            <p className="inline-empty">
+              ワールドを設定すると、関係性・ステータスを管理できます。
+            </p>
+          )}
+
+          {/* 主人公・世界の数値 */}
+          {globalStats.length > 0 && (
+            <div className="field">
+              <label>主人公・世界の状態</label>
+              <div className="row2">
+                {globalStats.map((d) => (
+                  <label key={d.id} className="chk">
+                    {d.name}
+                    <input
+                      type="number"
+                      value={statValue(d.id)}
+                      style={{ width: 90, background: 'var(--bg)' }}
+                      onChange={(e) => setStat(d.id, undefined, Number(e.target.value))}
+                    />
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* キャラ別の関係性＋数値 */}
+          {cast.map((c) => {
+            const relIdx = st.relations.findIndex((r) => r.fromId === c.id && r.toId === 'hero')
+            const rel = relIdx >= 0 ? st.relations[relIdx] : null
+            const mood = st.moods.find((m) => m.characterId === c.id)?.mood
+            return (
+              <div key={c.id} className="field">
+                <label>
+                  <span className="dot-avatar" style={{ background: c.avatar.color }}>
+                    {c.avatar.emoji}
+                  </span>{' '}
+                  {c.name || '無名'} → {heroName}
+                </label>
+                {charStats.length > 0 && (
+                  <div className="row2" style={{ marginBottom: 6 }}>
+                    {charStats.map((d) => (
+                      <label key={d.id} className="chk">
+                        {d.name}
+                        <input
+                          type="number"
+                          value={statValue(d.id, c.id)}
+                          style={{ width: 80, background: 'var(--bg)' }}
+                          onChange={(e) => setStat(d.id, c.id, Number(e.target.value))}
+                        />
+                      </label>
+                    ))}
+                  </div>
+                )}
+                {rel ? (
+                  <>
+                    <textarea
+                      rows={2}
+                      value={rel.stance}
+                      placeholder="関係の現在地（stance）"
+                      onChange={(e) => setStance(relIdx, e.target.value)}
+                    />
+                    {rel.aspects.map((a) => (
+                      <div key={a.aspectId} className="sub-field" style={{ marginTop: 6 }}>
+                        <span className="sub-label">{aspectName(a.aspectId)}</span>
+                        <textarea
+                          rows={2}
+                          value={a.note}
+                          onChange={(e) => setAspectNote(relIdx, a.aspectId, e.target.value)}
+                        />
+                      </div>
+                    ))}
+                    {rel.flags.length > 0 && (
+                      <div className="desc" style={{ marginTop: 4 }}>
+                        🚩 {rel.flags.join('・')}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="desc">まだ関係性の記録はありません（シーンを終えると生成されます）。</div>
+                )}
+                {mood && <div className="desc" style={{ marginTop: 4 }}>気分: {mood}</div>}
+              </div>
+            )
+          })}
+        </div>
+        <div className="modal-foot">
+          <button className="btn" onClick={onClose}>
+            キャンセル
+          </button>
+          <button className="btn primary" onClick={save}>
+            保存
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}

@@ -78,7 +78,32 @@ export interface ScheduledEvent {
   note: string
 }
 
-/** 世界観（ロアブック） */
+/** prose 関係性の次元（ワールド固定。レビューはこの次元名でのみ記述を返す） */
+export interface RelationAspectDef {
+  id: string
+  /** 次元名（例: 信頼 / 恋愛 / 警戒） */
+  name: string
+  /** レビューへの指示（例: 相手の言動の何を信じ何を疑うか） */
+  guidance?: string
+}
+
+/** 事実の数のスコープ。character=キャラ別1値（対主人公の好感度メーター含む） / global=主人公・世界で1値 */
+export type StatScope = 'character' | 'global'
+
+/** 事実の数の定義（好感度メーター・レベル・所持金・名声 等。ワールド固定） */
+export interface StatDef {
+  id: string
+  name: string
+  scope: StatScope
+  default: number
+  /** 数値型の下限・上限（任意。好感度メーターは 0〜100 など） */
+  min?: number
+  max?: number
+  /** 本編プロンプトに現在値を注入するか（好感度メーターは通常 false＝LLM は prose を読む） */
+  inject: boolean
+}
+
+/** 世界観（ロアブック＋ゲームシステム定義） */
 export interface World {
   id: string
   name: string
@@ -87,6 +112,10 @@ export interface World {
   entries: LoreEntry[]
   /** 日付指定の特別イベント */
   scheduledEvents: ScheduledEvent[]
+  /** prose 関係性の次元（ワールド固定） */
+  relationAspects: RelationAspectDef[]
+  /** 事実の数の定義 */
+  stats: StatDef[]
   createdAt: number
   updatedAt: number
 }
@@ -171,25 +200,42 @@ export interface StorySetup {
 }
 
 /**
- * キャラが主人公（ユーザーのペルソナ）に対して抱く感情の1軸。
- * セッション固有（素材ライブラリではなくこの物語限定）。値は 0〜100、中立 50。
+ * 関係性の prose（言語記述）状態。キャラ→相手（主人公 or 別キャラ）の有向ペアごと。
+ * 「判断は言葉」：感情の機微は数値化せず記述で持つ。条件判定には使わない（→ stats/flags が担う）。
+ * セッション固有。シーン終了レビューが唯一の書き手（追記でなく全文書き直し）。
  */
-export interface Relationship {
-  characterId: string
-  /** 軸名（ユーザー定義の自由軸。例: 好感 / 信頼 / 警戒）。レビューで初出時に登録される */
-  axis: string
+export interface Relation {
+  /** 誰が */
+  fromId: string
+  /** 誰に対して（'hero' = 主人公、または characterId） */
+  toId: string
+  /** 関係の現在地を1〜2文で。本編注入と表示の中心 */
+  stance: string
+  /** ワールド固定の次元（aspect）ごとの記述。band（数値ティア）は持たない */
+  aspects: { aspectId: string; note: string }[]
+  /** ゲート用に立った恒久事実（約束・秘密・不可逆な出来事）。例: ["命を救われた"] */
+  flags: string[]
+  updatedAt: number
+}
+
+/** 事実の数の現在値（好感度メーター・レベル・所持金 等）。characterId 無し = global */
+export interface StatValue {
+  defId: string
+  characterId?: string
   value: number
 }
 
 /**
- * セッション固有の感情・関係の状態。
- * シーン終了レビューで差分加算され、本編プロンプトに現在値が注入される。
+ * セッション固有の状態。「事実は数、判断は言葉」。
+ * relations/moods = prose（LLM が読む）、stats = 数（プレイヤーとコードが読む）。
  */
 export interface SessionState {
-  /** キャラ→主人公の関係値（軸ごと） */
-  relationships: Relationship[]
-  /** シーン単位の気分（質的ラベル。毎レビューで上書き） */
+  /** prose 関係性（有向ペアごと） */
+  relations: Relation[]
+  /** キャラ自身の一時的な気分（prose・毎レビューで上書き） */
   moods: { characterId: string; mood: string }[]
+  /** 事実の数（好感度ポイント・各種スタット） */
+  stats: StatValue[]
 }
 
 export interface Session {
@@ -273,12 +319,30 @@ export interface WorldGrowth {
   content: string
 }
 
-/** 関係値の変化案（コードが session.state に加算する相対値） */
-export interface RelationshipDelta {
-  characterId: string
+/** 関係性の更新案（レビューが返す。コードが session.state.relations を全文書き直し） */
+export interface RelationUpdate {
+  fromId: string
+  fromName: string
+  /** 'hero' = 主人公 */
+  toId: string
+  toName: string
+  /** 関係の現在地（全文置換） */
+  stance: string
+  /** ワールド固定の次元ごとの記述（未知の次元名は解決時に除外済み） */
+  aspects: { aspectId: string; name: string; note: string }[]
+  /** 追加する恒久フラグ（和集合で追加） */
+  flagsAdd: string[]
+  reason: string
+}
+
+/** 事実の数の変化案（コードが clamp 加算する相対値） */
+export interface StatChange {
+  defId: string
   name: string
-  axis: string
-  /** 相対変化量（おおむね -10〜+10）。コード側で 0〜100 にクランプ加算 */
+  /** scope=character のとき対象キャラ。global は undefined */
+  characterId?: string
+  charName?: string
+  /** 相対変化量。コード側で min..max にクランプ加算 */
   delta: number
   reason: string
 }
@@ -297,8 +361,10 @@ export interface SceneReview {
   suggestions: NextSceneSuggestion[]
   characterGrowth: CharacterGrowth[]
   worldGrowth: WorldGrowth[]
-  /** 主人公への関係値の変化案（コードが加算） */
-  relationshipDeltas: RelationshipDelta[]
+  /** 関係性 prose の更新案（コードが全文書き直し） */
+  relationUpdates: RelationUpdate[]
+  /** 事実の数の変化案（コードが clamp 加算） */
+  statChanges: StatChange[]
   /** 各キャラの気分の更新案 */
   moodChanges: MoodChange[]
   /** ディレクターが選んだ次シーンの種類 */

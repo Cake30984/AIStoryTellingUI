@@ -19,8 +19,8 @@ export interface ResolvedRefs {
   nearEnd: boolean
   /** 現在シーンの種類ガイド（演出エンジン） */
   sceneTypeGuidance: string
-  /** キャラ→主人公の関係値・気分の現在値（空なら無効） */
-  relationshipInfo: string
+  /** 関係性 prose・気分・注入対象スタットの現在値（空なら無効） */
+  stateInfo: string
 }
 
 /** キャラ1人の定義ブロックを作る */
@@ -85,11 +85,11 @@ export function buildSystemPrompt(
     parts.push(`【今回のシーンの方向性】\n${refs.sceneTypeGuidance.trim()}`)
   }
 
-  // 1.9 主人公への感情（現在の関係値・気分）
-  if (refs.relationshipInfo.trim()) {
+  // 1.9 状態（関係性 prose・気分・注入対象スタット）
+  if (refs.stateInfo.trim()) {
     parts.push(
-      `【主人公への感情（現在値・0〜100）】\n${refs.relationshipInfo.trim()}\n` +
-        `この数値と矛盾しない態度・口調・距離感で各キャラを描写してください（数値そのものはセリフに出さない）。`,
+      `【状態（現在）】\n${refs.stateInfo.trim()}\n` +
+        `関係性の記述と矛盾しない態度・口調・距離感で各キャラを描写してください（記述やステータスの数値はセリフに出さない）。`,
     )
   }
 
@@ -253,13 +253,18 @@ export function choicesUserNudge(mode: 'always' | 'auto'): string {
 }
 
 /**
- * シーン終了レビュー（要約＋次シーン提案＋成長＋関係値）生成用の system プロンプト。
- * @param axes 既存の関係軸名。空でなければ「新しい軸を作らずこの軸のみ使う」よう拘束する。
+ * シーン終了レビュー（要約＋次シーン提案＋成長＋関係性 prose＋スタット）生成用の system プロンプト。
+ * 原則「事実は数、判断は言葉」：関係の機微は relationUpdates（prose）、数値の増減は statChanges。
+ * @param aspectNames ワールド固定の関係次元名。空でなければその次元のみ使うよう拘束。
+ * @param statNames   ワールド定義のステータス名。空なら statChanges は空配列。
  */
-export function reviewSystem(axes: string[]): string {
-  const axisLine = axes.length
-    ? `relationshipDeltas の axis は既存の【${axes.join('・')}】のみを使う（新しい軸を作らない）。`
-    : `relationshipDeltas の axis は物語に最適なものを自分で定義してよい（例: 好感・信頼・警戒）。多くても3軸まで。`
+export function reviewSystem(aspectNames: string[], statNames: string[]): string {
+  const aspectLine = aspectNames.length
+    ? `relationUpdates.aspects の name は既存の【${aspectNames.join('・')}】のみを使う（新しい次元を作らない）。該当する変化が無い次元は省略してよい。`
+    : `次元未定義のため relationUpdates.aspects は空配列にし、stance のみ更新する。`
+  const statLine = statNames.length
+    ? `statChanges.name は既存の【${statNames.join('・')}】のみを使う。該当が無ければ空配列。`
+    : `ステータス未定義のため statChanges は空配列。`
   return (
     `あなたは物語編集アシスタントです。直前のシーンの会話を分析し、次の JSON のみを出力してください（前後に文章・コードフェンスを付けない）。\n` +
     `{\n` +
@@ -267,16 +272,18 @@ export function reviewSystem(axes: string[]): string {
     `  "suggestions": [ {"title":"次シーンの短い見出し","note":"次シーンの状況・方向性の説明（2〜3文）"} ],\n` +
     `  "characterGrowth": [ {"name":"キャラ名","addition":"今回の展開で新たに判明/深化した性格・背景を一文で"} ],\n` +
     `  "worldGrowth": [ {"keys":["トリガー語"],"content":"新たに判明した世界設定"} ],\n` +
-    `  "relationshipDeltas": [ {"character":"キャラ名","axis":"軸名","delta":5,"reason":"変化の理由（一文）"} ],\n` +
-    `  "moods": [ {"character":"キャラ名","mood":"終了時点の気分（一語〜短句）"} ]\n` +
+    `  "relationUpdates": [ {"character":"キャラ名","stance":"そのキャラの主人公への関係の現在地を1〜2文で","aspects":[{"name":"次元名","note":"その次元の現在の機微（肯定・否定の両面を具体的に）"}],"flagsAdd":["立った恒久的事実"],"reason":"変化の根拠（一文）"} ],\n` +
+    `  "moods": [ {"character":"キャラ名","mood":"終了時点の気分（一語〜短句）"} ],\n` +
+    `  "statChanges": [ {"name":"ステータス名","character":"キャラ名（省略可＝主人公/全体）","delta":3,"reason":"変化の理由（一文）"} ]\n` +
     `}\n` +
     `指針:\n` +
     `- summary は必ず JSON 文字列（string）で返す。配列や改行そのままは不可。\n` +
-    `- suggestions は2〜3個。**各案はこのシーン終了直後の「同一の起点」から分岐する、相互に排他な"次シーンの候補"**。案どうしは時系列でつながってはならない（案2が案1の続き・結果になってはいけない）。それぞれ方向性の異なる入口を1つずつ示す。\n` +
-    `- 次シーンは前シーンから時間帯が一区切り進んだ後の場面。【次シーンの時間】が与えられていれば、その時刻にふさわしい状況で suggestions を書く（時間が経過した前提で、直前の続きをそのまま続けない）。\n` +
+    `- suggestions は2〜3個。**各案はこのシーン終了直後の「同一の起点」から分岐する、相互に排他な"次シーンの候補"**。案どうしは時系列でつながってはならない。【次シーンの時間】があればその時刻にふさわしい状況で書く（直前の続きをそのまま続けない）。\n` +
     `- characterGrowth / worldGrowth は、既存設定に無い"新しく分かったこと"のみ。無ければ空配列。\n` +
-    `- relationshipDeltas は各キャラが主人公（ユーザー）に抱く感情の"変化量"のみ。delta は概ね -10〜+10 の相対値（絶対値・合計ではない）。変化が無ければ空配列。${axisLine}\n` +
+    `- **relationUpdates**：各キャラが主人公（ユーザー）に抱く関係を、与えられた【現在の関係性】を踏まえて**書き直す**（差分でなく現時点の全文）。今シーンで変化していない機微（好悪・約束）は失わず維持して書く。変化が無いキャラは省略可。${aspectLine}\n` +
+    `- flagsAdd は「約束した」「秘密を知った」「命を救われた」など後で取り消されない事実だけ。無ければ空配列。\n` +
     `- moods は各キャラの終了時点の気分。変化が無いキャラは省略可。\n` +
+    `- **statChanges**：行動・出来事に対応する数値の増減のみ（delta は相対値。例: デートした→好感度+3）。感情の"査定"ではなく、起きた事実に対応する固定的な変化として出す。${statLine}\n` +
     `- 推測の捏造はせず、会話に根拠があるものだけ。`
   )
 }
