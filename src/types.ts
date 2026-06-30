@@ -103,6 +103,17 @@ export interface StatDef {
   inject: boolean
 }
 
+/** 行動カウンターの定義（単調増加の累計回数。ワールド固定） */
+export interface CounterDef {
+  id: string
+  /** 名称（例: デート回数 / 戦闘回数 / 来店回数） */
+  name: string
+  /** character=キャラ別累計 / global=全体累計 */
+  scope: StatScope
+  /** 本編プロンプトに現在値を注入するか */
+  inject: boolean
+}
+
 /** 世界観（ロアブック＋ゲームシステム定義） */
 export interface World {
   id: string
@@ -116,6 +127,8 @@ export interface World {
   relationAspects: RelationAspectDef[]
   /** 事実の数の定義 */
   stats: StatDef[]
+  /** 行動カウンターの定義 */
+  counters: CounterDef[]
   createdAt: number
   updatedAt: number
 }
@@ -225,6 +238,13 @@ export interface StatValue {
   value: number
 }
 
+/** 行動カウンターの現在値（累計回数）。characterId 無し = global */
+export interface CounterValue {
+  defId: string
+  characterId?: string
+  value: number
+}
+
 /**
  * セッション固有の状態。「事実は数、判断は言葉」。
  * relations/moods = prose（LLM が読む）、stats = 数（プレイヤーとコードが読む）。
@@ -236,6 +256,8 @@ export interface SessionState {
   moods: { characterId: string; mood: string }[]
   /** 事実の数（好感度ポイント・各種スタット） */
   stats: StatValue[]
+  /** 行動カウンターの累計 */
+  counters: CounterValue[]
 }
 
 export interface Session {
@@ -347,6 +369,17 @@ export interface StatChange {
   reason: string
 }
 
+/** 行動カウンターの加算案（今シーンで起きた行動の回数。コードが加算） */
+export interface CounterEvent {
+  defId: string
+  name: string
+  characterId?: string
+  charName?: string
+  /** 加算する回数（通常 1 以上） */
+  amount: number
+  reason: string
+}
+
 /** 気分の更新案 */
 export interface MoodChange {
   characterId: string
@@ -365,6 +398,8 @@ export interface SceneReview {
   relationUpdates: RelationUpdate[]
   /** 事実の数の変化案（コードが clamp 加算） */
   statChanges: StatChange[]
+  /** 行動カウンターの加算案（コードが加算） */
+  counterEvents: CounterEvent[]
   /** 各キャラの気分の更新案 */
   moodChanges: MoodChange[]
   /** ディレクターが選んだ次シーンの種類 */

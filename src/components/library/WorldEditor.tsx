@@ -1,6 +1,21 @@
 import { useState } from 'react'
-import { newLoreEntry, newRelationAspect, newStatDef, uid, useStore, WORLD_PRESETS } from '../../store'
-import type { LoreEntry, RelationAspectDef, ScheduledEvent, StatDef, World } from '../../types'
+import {
+  newCounterDef,
+  newLoreEntry,
+  newRelationAspect,
+  newStatDef,
+  uid,
+  useStore,
+  WORLD_PRESETS,
+} from '../../store'
+import type {
+  CounterDef,
+  LoreEntry,
+  RelationAspectDef,
+  ScheduledEvent,
+  StatDef,
+  World,
+} from '../../types'
 import CsvInput from '../CsvInput'
 
 interface Props {
@@ -43,7 +58,14 @@ export default function WorldEditor({ world, onClose }: Props) {
   const addStat = () => patch({ stats: [...stats, newStatDef()] })
   const removeStat = (id: string) => patch({ stats: stats.filter((s) => s.id !== id) })
 
-  // プリセット：既存と重複しない次元・スタットを追記
+  // 行動カウンター定義
+  const counters = d.counters ?? []
+  const updateCounter = (id: string, p: Partial<CounterDef>) =>
+    patch({ counters: counters.map((c) => (c.id === id ? { ...c, ...p } : c)) })
+  const addCounter = () => patch({ counters: [...counters, newCounterDef()] })
+  const removeCounter = (id: string) => patch({ counters: counters.filter((c) => c.id !== id) })
+
+  // プリセット：既存と重複しない次元・スタット・カウンターを追記
   const applyPreset = (presetId: string) => {
     const p = WORLD_PRESETS.find((x) => x.id === presetId)
     if (!p) return
@@ -59,6 +81,12 @@ export default function WorldEditor({ world, onClose }: Props) {
         ...p.stats
           .filter((sd) => !stats.some((s) => s.name === sd.name))
           .map((sd) => ({ id: uid(), ...sd })),
+      ],
+      counters: [
+        ...counters,
+        ...p.counters
+          .filter((cd) => !counters.some((c) => c.name === cd.name))
+          .map((cd) => ({ id: uid(), ...cd })),
       ],
     })
   }
@@ -330,6 +358,49 @@ export default function WorldEditor({ world, onClose }: Props) {
           ))}
           <button className="btn" style={{ marginTop: 8 }} onClick={addStat}>
             ＋ ステータスを追加
+          </button>
+
+          <div className="lore-head" style={{ marginTop: 12 }}>
+            <label>行動カウンター</label>
+            <div className="desc">
+              累計回数（例: デート回数 / 戦闘回数）。レビューで起きた行動を加算し、条件に使えます。
+            </div>
+          </div>
+          {counters.map((c) => (
+            <div key={c.id} className="lore-entry">
+              <div className="lore-entry-top">
+                <input
+                  className="lore-keys"
+                  value={c.name}
+                  placeholder="名称（例: デート回数）"
+                  onChange={(e) => updateCounter(c.id, { name: e.target.value })}
+                />
+                <label className="chk" title="対象">
+                  <select
+                    value={c.scope}
+                    style={{ background: 'var(--bg)' }}
+                    onChange={(e) => updateCounter(c.id, { scope: e.target.value as CounterDef['scope'] })}
+                  >
+                    <option value="character">キャラ別</option>
+                    <option value="global">全体</option>
+                  </select>
+                </label>
+                <label className="chk" title="本編プロンプトに現在値を渡す">
+                  <input
+                    type="checkbox"
+                    checked={c.inject}
+                    onChange={(e) => updateCounter(c.id, { inject: e.target.checked })}
+                  />
+                  注入
+                </label>
+                <button className="icon-btn small" onClick={() => removeCounter(c.id)} title="削除">
+                  ✕
+                </button>
+              </div>
+            </div>
+          ))}
+          <button className="btn" style={{ marginTop: 8 }} onClick={addCounter}>
+            ＋ カウンターを追加
           </button>
         </div>
         <div className="modal-foot">

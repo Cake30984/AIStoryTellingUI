@@ -257,14 +257,22 @@ export function choicesUserNudge(mode: 'always' | 'auto'): string {
  * 原則「事実は数、判断は言葉」：関係の機微は relationUpdates（prose）、数値の増減は statChanges。
  * @param aspectNames ワールド固定の関係次元名。空でなければその次元のみ使うよう拘束。
  * @param statNames   ワールド定義のステータス名。空なら statChanges は空配列。
+ * @param counterNames ワールド定義の行動カウンター名。空なら counterEvents は空配列。
  */
-export function reviewSystem(aspectNames: string[], statNames: string[]): string {
+export function reviewSystem(
+  aspectNames: string[],
+  statNames: string[],
+  counterNames: string[] = [],
+): string {
   const aspectLine = aspectNames.length
     ? `relationUpdates.aspects の name は既存の【${aspectNames.join('・')}】のみを使う（新しい次元を作らない）。該当する変化が無い次元は省略してよい。`
     : `次元未定義のため relationUpdates.aspects は空配列にし、stance のみ更新する。`
   const statLine = statNames.length
     ? `statChanges.name は既存の【${statNames.join('・')}】のみを使う。該当が無ければ空配列。`
     : `ステータス未定義のため statChanges は空配列。`
+  const counterLine = counterNames.length
+    ? `counterEvents.name は既存の【${counterNames.join('・')}】のみを使う。今シーンで実際に起きた行動の回数だけ計上（amount は通常1）。無ければ空配列。`
+    : `カウンター未定義のため counterEvents は空配列。`
   return (
     `あなたは物語編集アシスタントです。直前のシーンの会話を分析し、次の JSON のみを出力してください（前後に文章・コードフェンスを付けない）。\n` +
     `{\n` +
@@ -274,7 +282,8 @@ export function reviewSystem(aspectNames: string[], statNames: string[]): string
     `  "worldGrowth": [ {"keys":["トリガー語"],"content":"新たに判明した世界設定"} ],\n` +
     `  "relationUpdates": [ {"character":"キャラ名","stance":"そのキャラの主人公への関係の現在地を1〜2文で","aspects":[{"name":"次元名","note":"その次元の現在の機微（肯定・否定の両面を具体的に）"}],"flagsAdd":["立った恒久的事実"],"reason":"変化の根拠（一文）"} ],\n` +
     `  "moods": [ {"character":"キャラ名","mood":"終了時点の気分（一語〜短句）"} ],\n` +
-    `  "statChanges": [ {"name":"ステータス名","character":"キャラ名（省略可＝主人公/全体）","delta":3,"reason":"変化の理由（一文）"} ]\n` +
+    `  "statChanges": [ {"name":"ステータス名","character":"キャラ名（省略可＝主人公/全体）","delta":3,"reason":"変化の理由（一文）"} ],\n` +
+    `  "counterEvents": [ {"name":"カウンター名","character":"キャラ名（省略可＝全体）","amount":1,"reason":"該当する行動（一文）"} ]\n` +
     `}\n` +
     `指針:\n` +
     `- summary は必ず JSON 文字列（string）で返す。配列や改行そのままは不可。\n` +
@@ -284,6 +293,7 @@ export function reviewSystem(aspectNames: string[], statNames: string[]): string
     `- flagsAdd は「約束した」「秘密を知った」「命を救われた」など後で取り消されない事実だけ。無ければ空配列。\n` +
     `- moods は各キャラの終了時点の気分。変化が無いキャラは省略可。\n` +
     `- **statChanges**：行動・出来事に対応する数値の増減のみ（delta は相対値。例: デートした→好感度+3）。感情の"査定"ではなく、起きた事実に対応する固定的な変化として出す。${statLine}\n` +
+    `- **counterEvents**：今シーンで実際に起きた行動の累計回数の計上（例: デートした→デート回数 amount:1）。起きていない行動は計上しない。${counterLine}\n` +
     `- 推測の捏造はせず、会話に根拠があるものだけ。`
   )
 }
