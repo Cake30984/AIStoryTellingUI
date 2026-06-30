@@ -19,7 +19,7 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist` で localStor
 
 ## ディレクトリ
 - `src/types.ts` — 全データ型（ここを最初に読む）
-- `src/store.ts` — zustand ストア。状態・全アクション・**永続化バージョンと移行**・ディレクター抽選など中核ロジック
+- `src/store.ts` — zustand ストア。状態・全アクション・**永続化（クリーンブレイク・移行なし）**・状態エンジン（関係性 prose／事実の数）・ディレクター抽選など中核ロジック
 - `src/lib/`
   - `providers.ts` — `Provider` 型・プリセット・`parseModelRef`/`makeModelRef`/`splitRef`/`modelRefLabel`
   - `openrouter.ts` — SSEストリーミング補完・モデル一覧取得（プロバイダ駆動。provider オブジェクトを受け取る）
@@ -35,7 +35,7 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist` で localStor
   - `SessionEditor.tsx` — セッション設定（参加キャラ/一括モデル設定/世界観/ペルソナ/固定メモ/文体/選択肢/裏方モデル/タイムライン/ディレクター/サンプリング）
   - `SettingsModal.tsx` — プロバイダ管理（追加/編集/削除/モデル読込）・データ入出力
   - `ModelPicker.tsx` — プロバイダ切替・モデル一覧・お気に入り。`onPick` は `"providerId::modelId"` を返す
-  - `SceneEditor.tsx` / `SceneReviewModal.tsx` / `StoryLogModal.tsx` / `CsvInput.tsx`
+  - `SceneEditor.tsx` / `SceneReviewModal.tsx` / `StoryLogModal.tsx` / `StatusPanel.tsx`（状態の閲覧・手動編集＝ChatPanel の 📊）/ `CsvInput.tsx`
   - `library/` — 各素材の一覧＋エディタ（Character/World/Persona/SceneType）と `AvatarField`
 - `docs/要件定義書.md` — 利用者視点の機能要件（実装非依存）
 - `docs/設計_ステータスエンジン.md` — 状態エンジン（関係性 prose ＋ 事実の数）の設計仕様。下記 ADR-1 の実装計画
@@ -44,12 +44,13 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist` で localStor
 すべて「再利用可能な素材ライブラリ」をセッションが参照する構造。
 - **Provider** — `{id,label,kind:'openrouter'|'openai',baseUrl,apiKey}`。localStorage のみ保存。エクスポートには含めない。
 - **Character** — name/persona/speechStyle/appearance/exampleDialogues/greeting/avatar/tags＋`developments: Development[]`＋`model?`（ModelRef。chat 群像で話者確定時のみ有効）
-- **World** — description（常時）＋`entries: LoreEntry[]`＋`scheduledEvents: ScheduledEvent[]`（`{day,name,note}`）
+- **World** — description（常時）＋`entries: LoreEntry[]`＋`scheduledEvents: ScheduledEvent[]`（`{day,name,note}`）＋**`relationAspects: RelationAspectDef[]`（関係性 prose の次元・ワールド固定）＋`stats: StatDef[]`（事実の数の定義）**。プリセット `WORLD_PRESETS`（恋愛/RPG/経営）で投入可
 - **Persona** — 利用者が演じる人物
 - **SceneType**（グローバル素材）— `{name,guidance,weight,minGap,color,builtin}`。既定6種を初回シード
 - **Session** — characterIds/worldId/personaId/authorNote/story/`scenes: Scene[]`/currentSceneId/timeline/choiceMode（off|always|auto）/narrativeStyle（novel|chat）/`reviewModel`/`choicesModel`/director（`{enabled,typeIds}`）/usedEventIds/`state: SessionState`/messages/model/temperature/maxTokens
-- **SessionState**（セッション固有・素材化しない）— `{relationships: Relationship[], moods: {characterId,mood}[]}`
-- **Relationship** — `{characterId,axis,value}`。キャラ→主人公の片方向、ユーザー定義自由軸、value 0〜100（中立50）
+- **SessionState**（セッション固有・素材化しない）— `{relations: Relation[], moods: {characterId,mood}[], stats: StatValue[]}`（「事実は数、判断は言葉」。ADR-1）
+- **Relation**（判断＝言葉）— `{fromId,toId,stance,aspects:{aspectId,note}[],flags:string[],updatedAt}`。キャラ→主人公（toId='hero'）の prose。stance＋ワールド固定 aspect ごとの記述＋恒久 flag。数値ティア（band）は持たない
+- **StatDef/StatValue**（事実＝数）— `StatDef{name,scope:'character'|'global',default,min?,max?,inject}` は World 定義、`StatValue{defId,characterId?,value}` は SessionState。実効値＝StatValue or `def.default`。好感度メーター/レベル/所持金等。`inject:true` のみ本編注入
 - **Scene** — `{title,activeCharacterIds,note,summary,timeLabel?,sceneTypeId?,endedAt?}`
 - **Message** — role/characterId?/sceneId?/content/choices?/truncated?/pending?
 
@@ -63,17 +64,15 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist` で localStor
 
 ヘルパ: `mainModelOf(session, character?)` / `reviewModelOf(session)` / `choicesModelOf(session)`（store.ts エクスポート）
 
-## 永続化と移行（重要）
-`store.ts` の persist `name: 'ai-storytelling-store'`、**現在 `version: 9`**。
+## 永続化（クリーンブレイク方針）
+`store.ts` の persist `name: 'ai-storytelling-store-v2'`。**後方互換は持たない（ADR-1）**：旧 migrate 連鎖・`version`/`migrate` は廃止し、スキーマ刷新時は persist キーを変えて旧データを破棄する。`exportBundle.version` は現行 `1`、`importBundle` は現行スキーマのみ id マージ（正規化連鎖なし。worlds は新フィールド欠落のみ最小補完）。
 
-移行チェーン: v0→v1（素材ライブラリ化）/ v1→v2（シーン導入）/ v2→v3（タイムライン・選択肢・developments）/ v3→v4（文体）/ v4→v5（developmentsオブジェクト化）/ v5→v6（シーンタイプ・特別イベント・director）/ v6→v7（providers・reviewModel・choicesModel）/ v7→v8（Character.model?）/ v8→v9（Session.state＝感情・関係値トラッカー）
-
-**スキーマ変更時は必ず: 型更新 → migrateVXtoVY 追加 → version++ → 初期state/factory更新 → exportBundle version++ → importBundle 連鎖に追加 → partialize に新フィールド。**
+**スキーマ変更時: 型更新 → 初期state/factory更新 → exportBundle/importBundle 反映 → partialize に新フィールド。**（破壊的変更なら persist キーも更新）
 
 ## 主要な振る舞い
 - **シーン進行**: `このシーンを終える` → `prepareSceneReview`（要約＋`directNextScene`＋成長案＋関係値差分生成）→ レビュー確認 → `confirmSceneReview`（成長/イベント反映・**関係値加算/気分更新**・タイムライン前進・新シーン作成）→ `beginScene()`（導入生成）→ 選択肢。物語開始は `startStory()`。
 - **ディレクター** `directNextScene`: ①特別イベント（`day<=nextDay`・未消化）最優先 → ②`director.typeIds` から重み＋クールダウン（`minGap`）で抽選。
-- **感情・関係値トラッカー** (`Session.state`): キャラ→主人公の片方向・セッション固有・ユーザー定義自由軸（0〜100、中立50）。`reviewSystem(axes)` がレビュー時に `relationshipDeltas`/`moods` を出力（自由軸の auto-discovery：初出はモデルが軸定義、以降は既存軸に拘束）。**数値の加算はコードが行う**（`confirmSceneReview` で `clampValue`、現在シーン確定時のみ反映＝過去シーン再レビューでは加算しない）。現在値は `buildRelationshipInfo`→`refs.relationshipInfo`→本編 system プロンプトの【主人公への感情】ブロックに注入（数値＋`valueLabel` の段階ラベル）。**Phase 2（サイドパネル可視化・SessionEditor 軸管理）・Phase 3（しきい値→Director連動）は未実装。**
+- **状態エンジン** (`Session.state`／ADR-1・P1実装済み): 関係性は **prose**（`Relation` の stance＋ワールド固定 aspect＋flag）、進捗は **事実の数**（`StatValue`）。`reviewSystem(aspectNames, statNames)` がレビュー時に `relationUpdates`（stance/aspects を全文書き直し・flagsAdd）／`statChanges`（delta）／`moods` を出力（ワールド定義名に拘束、未定義は除外）。**prose は全文置換・数値の加算はコードが行う**（`confirmSceneReview`：relations を upsert＝stance/aspects 置換・flags 和集合、stats は `clampStat`、現在シーン確定時のみ反映）。現在値は `buildStateInfo`→`refs.stateInfo`→本編 system の【状態（現在）】に注入（関係 prose＋`inject:true` のスタットのみ数値）。閲覧/手動編集は `ChatPanel` の 📊 `StatusPanel`。**P2 カウンター・P3 実績・P4 条件エンジン（自動発火）は未実装**（`docs/設計_ステータスエンジン.md`）。
 - **選択肢** `genChoices`: choiceMode≠off で各応答後に生成。`choicesModelOf` 使用、`extractJson`→`coerceChoices`（素の配列のほか `{"choices":[...]}` ラップや `[{"text":...}]` オブジェクト配列も吸収）。**末尾に `choicesUserNudge` の user 念押しを積み**（本編継続でなく JSON を出させる）、temperature 0.5、`always` は抽出失敗で最大2回試行。失敗時は `console.warn('[choices]…')` で可視化。手動再生成は `regenChoices()`（ChatPanel の「🔁 選択肢を生成」ボタン＝選択肢未付与時に表示）。
 - **次シーン候補の再生成** `regenerateSuggestions`: レビューで方向性（種類/イベント）を変えると次シーン候補を作り直す。`setReviewNextType`／`rerollReviewType` から呼ぶ。`nextSceneSystem()` で suggestions のみ生成（要約＋方向性＋次の時刻を文脈に）。`isRegenSuggestions` 中は要約編集を保持（モーダルの useEffect は `review.sceneId` 起点でのみリセット）。
 - **文体** novel=地の文＋「」混在（話者プレフィックスなし）/ chat=キャラ別吹き出し（「名前:」先頭をパースして characterId 判定）。

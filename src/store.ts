@@ -9,11 +9,13 @@ import type {
   OpenRouterModel,
   Persona,
   Provider,
+  RelationAspectDef,
   Scene,
   SceneReview,
   SceneType,
   Session,
   SessionMode,
+  StatDef,
   World,
 } from './types'
 import { fetchModels, streamChat } from './lib/openrouter'
@@ -50,18 +52,12 @@ function pickColor(): string {
   return COLORS[Math.floor(Math.random() * COLORS.length)]
 }
 
-/** 関係値 0〜100 を段階ラベルに変換（プロンプト注入用） */
-export function valueLabel(v: number): string {
-  if (v >= 80) return '非常に高'
-  if (v >= 60) return '高'
-  if (v >= 40) return '中'
-  if (v >= 20) return '低'
-  return '非常に低'
-}
-
-/** 関係値を 0〜100 に丸める */
-function clampValue(v: number): number {
-  return Math.max(0, Math.min(100, Math.round(v)))
+/** スタット値を def の min..max に丸める（未指定は無制限） */
+function clampStat(v: number, def?: { min?: number; max?: number }): number {
+  let x = Math.round(v)
+  if (def?.min != null) x = Math.max(def.min, x)
+  if (def?.max != null) x = Math.min(def.max, x)
+  return x
 }
 
 /**
@@ -155,10 +151,48 @@ export function newWorld(): World {
     description: '',
     entries: [],
     scheduledEvents: [],
+    relationAspects: [],
+    stats: [],
     createdAt: now,
     updatedAt: now,
   }
 }
+
+export function newRelationAspect(name = ''): RelationAspectDef {
+  return { id: uid(), name, guidance: '' }
+}
+
+export function newStatDef(name = ''): StatDef {
+  return { id: uid(), name, scope: 'character', default: 0, min: 0, max: 100, inject: false }
+}
+
+/** ワールドの状態定義プリセット（次元＋スタットをまとめて投入） */
+export const WORLD_PRESETS: { id: string; label: string; aspects: string[]; stats: Omit<StatDef, 'id'>[] }[] = [
+  {
+    id: 'romance',
+    label: '恋愛',
+    aspects: ['信頼', '恋愛'],
+    stats: [{ name: '好感度', scope: 'character', default: 0, min: 0, max: 100, inject: false }],
+  },
+  {
+    id: 'rpg',
+    label: 'RPG',
+    aspects: ['信頼', '警戒'],
+    stats: [
+      { name: 'レベル', scope: 'character', default: 1, min: 1, max: 99, inject: true },
+      { name: '所持金', scope: 'global', default: 0, min: 0, inject: true },
+    ],
+  },
+  {
+    id: 'business',
+    label: '経営',
+    aspects: ['信用'],
+    stats: [
+      { name: '資産', scope: 'global', default: 0, min: 0, inject: true },
+      { name: '名声', scope: 'global', default: 0, min: 0, max: 100, inject: true },
+    ],
+  },
+]
 
 export function newSceneType(): SceneType {
   return { id: uid(), name: '', guidance: '', weight: 1, minGap: 0, color: pickColor() }
@@ -215,7 +249,7 @@ function newSession(mode: SessionMode): Session {
     narrativeStyle: mode === 'story' ? 'novel' : 'chat',
     director: { enabled: false, typeIds: [] },
     usedEventIds: [],
-    state: { relationships: [], moods: [] },
+    state: { relations: [], moods: [], stats: [] },
     messages: [],
     temperature: 0.9,
     maxTokens: 1024,
@@ -288,7 +322,8 @@ interface AppState {
     suggestion?: NextSceneSuggestion
     characterGrowthIdx: number[]
     worldGrowthIdx: number[]
-    relationshipDeltaIdx: number[]
+    relationUpdateIdx: number[]
+    statChangeIdx: number[]
   }) => void
   setReviewNextType: (typeId: string | null) => void
   rerollReviewType: () => Promise<void>
@@ -318,28 +353,45 @@ interface AppState {
 
 let controller: AbortController | null = null
 
-/** キャラ→主人公の関係値・気分をプロンプト用テキストに整形（空なら ''） */
-function buildRelationshipInfo(session: Session, characters: Character[]): string {
-  const rels = session.state?.relationships ?? []
+/**
+ * 状態（関係性 prose ＋ 気分 ＋ 注入対象スタット）をプロンプト用テキストに整形（空なら ''）。
+ * 関係性は prose（LLM が読む）、スタットは inject:true のものだけ数値を併記。
+ */
+function buildStateInfo(session: Session, characters: Character[], world?: World): string {
+  const relations = session.state?.relations ?? []
   const moods = session.state?.moods ?? []
-  if (rels.length === 0 && moods.length === 0) return ''
+  const stats = session.state?.stats ?? []
   const nameOf = (id: string) => characters.find((c) => c.id === id)?.name ?? 'キャラ'
-  const axesByChar = new Map<string, string[]>()
-  for (const r of rels) {
-    const arr = axesByChar.get(r.characterId) ?? []
-    arr.push(`${r.axis} ${r.value}(${valueLabel(r.value)})`)
-    axesByChar.set(r.characterId, arr)
-  }
+  const aspectName = (id: string) => world?.relationAspects.find((a) => a.id === id)?.name ?? ''
   const moodOf = (id: string) => moods.find((m) => m.characterId === id)?.mood
+
   const lines: string[] = []
-  // 関係値を持つキャラ（気分も併記）
-  for (const [cid, axisList] of axesByChar) {
-    const mood = moodOf(cid)
-    lines.push(`- ${nameOf(cid)} → 主人公: ${axisList.join(' / ')}${mood ? ` ｜ 気分: ${mood}` : ''}`)
+  // 関係性 prose（キャラ→主人公）
+  for (const r of relations) {
+    if (!r.stance.trim() && r.aspects.every((a) => !a.note.trim())) continue
+    lines.push(`- ${nameOf(r.fromId)} → 主人公: ${r.stance.trim()}`)
+    for (const a of r.aspects) {
+      const an = aspectName(a.aspectId)
+      if (an && a.note.trim()) lines.push(`    ${an}: ${a.note.trim()}`)
+    }
+    const mood = moodOf(r.fromId)
+    if (mood) lines.push(`  気分: ${mood}`)
   }
-  // 気分のみのキャラ
+  // 関係性を持たないキャラの気分のみ
   for (const m of moods) {
-    if (!axesByChar.has(m.characterId)) lines.push(`- ${nameOf(m.characterId)}: 気分 ${m.mood}`)
+    if (!relations.some((r) => r.fromId === m.characterId)) {
+      lines.push(`- ${nameOf(m.characterId)}: 気分 ${m.mood}`)
+    }
+  }
+  // 注入対象スタット
+  const injected = stats.filter((s) => world?.stats.find((d) => d.id === s.defId)?.inject)
+  if (injected.length > 0) {
+    const parts = injected.map((s) => {
+      const def = world!.stats.find((d) => d.id === s.defId)!
+      const who = s.characterId ? `${nameOf(s.characterId)} ` : ''
+      return `${who}${def.name} ${s.value}`
+    })
+    lines.push(`【ステータス】 ${parts.join(' / ')}`)
   }
   return lines.join('\n')
 }
@@ -392,187 +444,6 @@ function directNextScene(
   return { typeId: cands[cands.length - 1].id }
 }
 
-/** v0（設定がセッション直書き）→ v1（素材ライブラリ参照） */
-function migrateV0toV1(persisted: any): any {
-  const characters: Character[] = []
-  const personas: Persona[] = []
-  const sessions: any[] = []
-
-  for (const old of persisted.sessions ?? []) {
-    const now = Date.now()
-    const newS: any = {
-      id: old.id ?? uid(),
-      title: old.title ?? '無題',
-      mode: old.mode === 'story' ? 'story' : 'roleplay',
-      model: old.model ?? DEFAULT_MODEL,
-      characterIds: [],
-      worldId: null,
-      personaId: null,
-      authorNote: '',
-      story: {
-        premise: old.story?.premise ?? '',
-        genre: old.story?.genre ?? '',
-        protagonist: old.story?.protagonist ?? '',
-      },
-      messages: (old.messages ?? []).map((m: any) => ({
-        id: m.id ?? uid(),
-        role: m.role,
-        content: m.content ?? '',
-        createdAt: m.createdAt ?? now,
-      })),
-      temperature: old.temperature ?? 0.9,
-      maxTokens: old.maxTokens ?? 1024,
-      createdAt: old.createdAt ?? now,
-      updatedAt: old.updatedAt ?? now,
-    }
-
-    const oc = old.character
-    if (oc && (oc.name || oc.persona || oc.greeting)) {
-      const c = newCharacter()
-      c.name = oc.name ?? ''
-      c.persona = oc.persona ?? ''
-      c.greeting = oc.greeting ?? ''
-      characters.push(c)
-      newS.characterIds = [c.id]
-      if (oc.scenario?.trim()) newS.authorNote = `舞台・状況: ${oc.scenario.trim()}`
-    }
-
-    if (old.userPersona?.trim()) {
-      const p = newPersona()
-      p.name = 'わたし'
-      p.description = old.userPersona.trim()
-      personas.push(p)
-      newS.personaId = p.id
-    }
-
-    sessions.push(newS)
-  }
-
-  return {
-    apiKey: persisted.apiKey ?? '',
-    favoriteModels: persisted.favoriteModels ?? [],
-    characters,
-    worlds: [],
-    personas,
-    sessions,
-    activeId: persisted.activeId ?? null,
-  }
-}
-
-/** v1 → v2（シーン概念を追加。既存会話を初期シーンに収める） */
-function migrateV1toV2(persisted: any): any {
-  const sessions = (persisted.sessions ?? []).map((s: any) => {
-    if (Array.isArray(s.scenes) && s.scenes.length > 0) return s
-    const scene = newScene('シーン 1', s.characterIds ?? [])
-    return {
-      ...s,
-      scenes: [scene],
-      currentSceneId: scene.id,
-      messages: (s.messages ?? []).map((m: any) => ({ ...m, sceneId: scene.id })),
-    }
-  })
-  return { ...persisted, sessions }
-}
-
-/** v2 → v3（タイムライン・選択肢・キャラ成長フィールドを追加） */
-function migrateV2toV3(persisted: any): any {
-  const characters = (persisted.characters ?? []).map((c: any) => ({
-    ...c,
-    developments: Array.isArray(c.developments) ? c.developments : [],
-  }))
-  const sessions = (persisted.sessions ?? []).map((s: any) => ({
-    ...s,
-    timeline: s.timeline ?? defaultTimeline(),
-    choiceMode: s.choiceMode ?? 'off',
-  }))
-  return { ...persisted, characters, sessions }
-}
-
-/** v3 → v4（文体スタイルを追加） */
-function migrateV3toV4(persisted: any): any {
-  const sessions = (persisted.sessions ?? []).map((s: any) => ({
-    ...s,
-    narrativeStyle: s.narrativeStyle ?? (s.mode === 'story' ? 'novel' : 'chat'),
-  }))
-  return { ...persisted, sessions }
-}
-
-/** v4 → v5（developments を ON/OFF 付きオブジェクト化・裏方モデル追加） */
-function migrateV4toV5(persisted: any): any {
-  const characters = (persisted.characters ?? []).map((c: any) => ({
-    ...c,
-    developments: Array.isArray(c.developments)
-      ? c.developments.map((d: any) =>
-          typeof d === 'string'
-            ? { id: uid(), text: d, enabled: true }
-            : { id: d.id ?? uid(), text: d.text ?? '', enabled: d.enabled ?? true },
-        )
-      : [],
-  }))
-  const sessions = (persisted.sessions ?? []).map((s: any) => ({
-    ...s,
-    utilityModel: s.utilityModel ?? '',
-  }))
-  return { ...persisted, characters, sessions }
-}
-
-/** v5 → v6（シーン演出エンジン：シーンタイプ・特別イベント・ディレクター） */
-function migrateV5toV6(persisted: any): any {
-  const worlds = (persisted.worlds ?? []).map((w: any) => ({
-    ...w,
-    scheduledEvents: Array.isArray(w.scheduledEvents) ? w.scheduledEvents : [],
-  }))
-  const sessions = (persisted.sessions ?? []).map((s: any) => ({
-    ...s,
-    director: s.director ?? { enabled: false, typeIds: [] },
-    usedEventIds: Array.isArray(s.usedEventIds) ? s.usedEventIds : [],
-  }))
-  const sceneTypes =
-    Array.isArray(persisted.sceneTypes) && persisted.sceneTypes.length > 0
-      ? persisted.sceneTypes
-      : defaultSceneTypes()
-  return { ...persisted, worlds, sessions, sceneTypes }
-}
-
-/** v6 → v7（プロバイダ概念導入・裏方モデルを役割別に分割） */
-/** v7→v8: Character に model フィールド追加（任意）。既存データはそのまま通過。 */
-function migrateV7toV8(persisted: any): any {
-  return persisted
-}
-
-/** v8→v9: セッションに感情・関係値の状態（state）を追加 */
-function migrateV8toV9(persisted: any): any {
-  const sessions = (persisted.sessions ?? []).map((s: any) => ({
-    ...s,
-    state:
-      s.state && Array.isArray(s.state.relationships)
-        ? {
-            relationships: s.state.relationships,
-            moods: Array.isArray(s.state.moods) ? s.state.moods : [],
-          }
-        : { relationships: [], moods: [] },
-  }))
-  return { ...persisted, sessions }
-}
-
-function migrateV6toV7(persisted: any): any {
-  // セッションの utilityModel → reviewModel / choicesModel
-  const sessions = (persisted.sessions ?? []).map((s: any) => {
-    const { utilityModel, ...rest } = s
-    return {
-      ...rest,
-      reviewModel: utilityModel ?? '',
-      choicesModel: utilityModel ?? '',
-    }
-  })
-  // providers: 既存データがあればそのまま、なければ旧 apiKey から生成
-  const providers =
-    Array.isArray(persisted.providers) && persisted.providers.length > 0
-      ? persisted.providers
-      : [defaultOpenRouterProvider(persisted.apiKey ?? '')]
-  return { ...persisted, sessions, providers }
-}
-
 export const useStore = create<AppState>()(
   persist(
     (set, get) => {
@@ -610,7 +481,11 @@ export const useStore = create<AppState>()(
           sceneTypeGuidance: scene?.sceneTypeId
             ? (get().sceneTypes.find((t) => t.id === scene.sceneTypeId)?.guidance ?? '')
             : '',
-          relationshipInfo: buildRelationshipInfo(session, characters),
+          stateInfo: buildStateInfo(
+            session,
+            characters,
+            worlds.find((w) => w.id === session.worldId),
+          ),
         }
       }
 
@@ -1046,20 +921,36 @@ export const useStore = create<AppState>()(
             }
             const context = ctxParts.join('\n')
 
-            // 既存の関係軸（自由軸の auto-discovery：初出はモデルが定義、以降は拘束）
-            const existingAxes = Array.from(
-              new Set((s.state?.relationships ?? []).map((r) => r.axis)),
-            )
+            // ワールド固定の関係次元・ステータス名（レビューを拘束）
+            const world = refs.world
+            const aspectNames = (world?.relationAspects ?? []).map((a) => a.name).filter(Boolean)
+            const statNames = (world?.stats ?? []).map((d) => d.name).filter(Boolean)
+
+            // 現在の関係性 prose（レビューが書き直すための起点）
+            const relNow = (s.state?.relations ?? [])
+              .map((r) => {
+                const who = get().characters.find((c) => c.id === r.fromId)?.name ?? 'キャラ'
+                const asp = r.aspects
+                  .map((a) => {
+                    const an = world?.relationAspects.find((x) => x.id === a.aspectId)?.name
+                    return an && a.note.trim() ? `${an}: ${a.note.trim()}` : ''
+                  })
+                  .filter(Boolean)
+                  .join(' / ')
+                return `- ${who}→主人公: ${r.stance}${asp ? `（${asp}）` : ''}`
+              })
+              .join('\n')
+            const relBlock = relNow ? `\n\n【現在の関係性】\n${relNow}` : ''
 
             const raw = await streamChat(
               {
                 provider,
                 model,
                 messages: [
-                  { role: 'system', content: reviewSystem(existingAxes) },
+                  { role: 'system', content: reviewSystem(aspectNames, statNames) },
                   {
                     role: 'user',
-                    content: `${context}\n\n【シーン「${scene.title}」の会話】\n${transcript}`,
+                    content: `${context}${relBlock}\n\n【シーン「${scene.title}」の会話】\n${transcript}`,
                   },
                 ],
                 temperature: 0.4,
@@ -1107,16 +998,65 @@ export const useStore = create<AppState>()(
                     }))
                     .filter((g: any) => g.content.trim())
                 : [],
-              relationshipDeltas: Array.isArray(parsed?.relationshipDeltas)
-                ? parsed.relationshipDeltas
-                    .map((x: any) => ({
-                      characterId: findId(String(x?.character ?? x?.name ?? '')) ?? '',
-                      name: String(x?.character ?? x?.name ?? ''),
-                      axis: String(x?.axis ?? '').trim(),
-                      delta: Math.max(-50, Math.min(50, Math.round(Number(x?.delta) || 0))),
-                      reason: String(x?.reason ?? ''),
-                    }))
-                    .filter((d: any) => d.characterId && d.axis && d.delta !== 0)
+              relationUpdates: Array.isArray(parsed?.relationUpdates)
+                ? parsed.relationUpdates
+                    .map((x: any) => {
+                      const fromName = String(x?.character ?? x?.name ?? '')
+                      const aspects = Array.isArray(x?.aspects)
+                        ? x.aspects
+                            .map((a: any) => {
+                              const def = (world?.relationAspects ?? []).find(
+                                (d) => d.name === String(a?.name ?? '').trim(),
+                              )
+                              return def
+                                ? {
+                                    aspectId: def.id,
+                                    name: def.name,
+                                    note: String(a?.note ?? '').trim(),
+                                  }
+                                : null
+                            })
+                            .filter(
+                              (a: any): a is { aspectId: string; name: string; note: string } =>
+                                !!a && !!a.note,
+                            )
+                        : []
+                      return {
+                        fromId: findId(fromName) ?? '',
+                        fromName,
+                        toId: 'hero',
+                        toName: refs.persona?.name?.trim() || '主人公',
+                        stance: String(x?.stance ?? '').trim(),
+                        aspects,
+                        flagsAdd: Array.isArray(x?.flagsAdd)
+                          ? x.flagsAdd.map((f: any) => String(f).trim()).filter(Boolean)
+                          : [],
+                        reason: String(x?.reason ?? ''),
+                      }
+                    })
+                    .filter((u: any) => u.fromId && (u.stance || u.aspects.length > 0))
+                : [],
+              statChanges: Array.isArray(parsed?.statChanges)
+                ? parsed.statChanges
+                    .map((x: any) => {
+                      const def = (world?.stats ?? []).find(
+                        (d) => d.name === String(x?.name ?? '').trim(),
+                      )
+                      if (!def) return null
+                      const charName = x?.character ? String(x.character) : undefined
+                      const characterId =
+                        def.scope === 'character' && charName ? findId(charName) : undefined
+                      if (def.scope === 'character' && !characterId) return null
+                      return {
+                        defId: def.id,
+                        name: def.name,
+                        characterId,
+                        charName: def.scope === 'character' ? charName : undefined,
+                        delta: Math.max(-1_000_000, Math.min(1_000_000, Math.round(Number(x?.delta) || 0))),
+                        reason: String(x?.reason ?? ''),
+                      }
+                    })
+                    .filter((c: any): c is NonNullable<typeof c> => !!c && c.delta !== 0)
                 : [],
               moodChanges: Array.isArray(parsed?.moods)
                 ? parsed.moods
@@ -1154,36 +1094,62 @@ export const useStore = create<AppState>()(
           const selectedWorld = opts.worldGrowthIdx
             .map((i) => review.worldGrowth[i])
             .filter(Boolean)
-          const selectedDeltas = opts.relationshipDeltaIdx
-            .map((i) => review.relationshipDeltas[i])
+          const selectedRelUpdates = opts.relationUpdateIdx
+            .map((i) => review.relationUpdates[i])
             .filter(Boolean)
+          const selectedStats = opts.statChangeIdx
+            .map((i) => review.statChanges[i])
+            .filter(Boolean)
+          const stateWorld = get().worlds.find((w) => w.id === s.worldId)
 
-          // 関係値の差分を加算し、気分を上書きした新しい state を返す
+          // 関係性 prose を全文書き直し・気分上書き・スタットを clamp 加算した新 state を返す
           const applyState = (prev: Session['state']): Session['state'] => {
-            const base = prev ?? { relationships: [], moods: [] }
-            const relationships = base.relationships.map((r) => ({ ...r }))
-            for (const d of selectedDeltas) {
-              const idx = relationships.findIndex(
-                (r) => r.characterId === d.characterId && r.axis === d.axis,
-              )
+            const base = prev ?? { relations: [], moods: [], stats: [] }
+            // 関係性（fromId,toId で upsert。stance/aspects は全文置換、flags は和集合）
+            const relations = base.relations.map((r) => ({ ...r }))
+            for (const u of selectedRelUpdates) {
+              const idx = relations.findIndex((r) => r.fromId === u.fromId && r.toId === u.toId)
+              const aspects = u.aspects.map((a) => ({ aspectId: a.aspectId, note: a.note }))
               if (idx >= 0) {
-                relationships[idx].value = clampValue(relationships[idx].value + d.delta)
+                const flags = Array.from(new Set([...relations[idx].flags, ...u.flagsAdd]))
+                relations[idx] = {
+                  ...relations[idx],
+                  stance: u.stance || relations[idx].stance,
+                  aspects: aspects.length ? aspects : relations[idx].aspects,
+                  flags,
+                  updatedAt: Date.now(),
+                }
               } else {
-                // 初出の軸は中立 50 を起点に加算
-                relationships.push({
-                  characterId: d.characterId,
-                  axis: d.axis,
-                  value: clampValue(50 + d.delta),
+                relations.push({
+                  fromId: u.fromId,
+                  toId: u.toId,
+                  stance: u.stance,
+                  aspects,
+                  flags: u.flagsAdd,
+                  updatedAt: Date.now(),
                 })
               }
             }
+            // 気分
             const moods = base.moods.map((m) => ({ ...m }))
             for (const m of review.moodChanges) {
               const idx = moods.findIndex((x) => x.characterId === m.characterId)
               if (idx >= 0) moods[idx].mood = m.mood
               else moods.push({ characterId: m.characterId, mood: m.mood })
             }
-            return { relationships, moods }
+            // スタット（defId,characterId で clamp 加算。未存在は default を起点）
+            const stats = base.stats.map((sv) => ({ ...sv }))
+            for (const c of selectedStats) {
+              const def = stateWorld?.stats.find((d) => d.id === c.defId)
+              const idx = stats.findIndex(
+                (sv) => sv.defId === c.defId && sv.characterId === c.characterId,
+              )
+              const cur = idx >= 0 ? stats[idx].value : (def?.default ?? 0)
+              const val = clampStat(cur + c.delta, def)
+              if (idx >= 0) stats[idx].value = val
+              else stats.push({ defId: c.defId, characterId: c.characterId, value: val })
+            }
+            return { relations, moods, stats }
           }
 
           const applyGrowth = (st: AppState) => ({
@@ -1596,7 +1562,7 @@ export const useStore = create<AppState>()(
           const { providers, characters, worlds, personas, sceneTypes, sessions } = get()
           return {
             type: 'ai-storytelling-studio',
-            version: 9,
+            version: 1,
             exportedAt: Date.now(),
             providers,
             characters,
@@ -1609,31 +1575,15 @@ export const useStore = create<AppState>()(
 
         importBundle: (bundle) => {
           let added = 0
-          // 古いバンドルも取り込めるよう補正（シーン・タイムライン・成長欄・演出・プロバイダ）
-          const normalized = migrateV8toV9(
-            migrateV7toV8(
-              migrateV6toV7(
-                migrateV5toV6(
-                  migrateV4toV5(
-                    migrateV3toV4(
-                      migrateV2toV3(
-                        migrateV1toV2({
-                          characters: bundle.characters,
-                          worlds: bundle.worlds,
-                          sessions: bundle.sessions,
-                          sceneTypes: bundle.sceneTypes,
-                          providers: bundle.providers,
-                        }),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          )
-          const incomingSessions = normalized.sessions
-          const incomingCharacters = normalized.characters
-          const incomingWorlds = normalized.worlds
+          // クリーンブレイク：移行連鎖は廃止。現行スキーマのバンドルのみを id マージする。
+          // ワールドは新フィールド欠落に備え最小限だけ補完する。
+          const incomingCharacters = bundle.characters ?? []
+          const incomingWorlds = (bundle.worlds ?? []).map((w: any) => ({
+            ...w,
+            relationAspects: Array.isArray(w.relationAspects) ? w.relationAspects : [],
+            stats: Array.isArray(w.stats) ? w.stats : [],
+          }))
+          const incomingSessions = bundle.sessions ?? []
           set((st) => {
             const mergeById = <T extends { id: string }>(cur: T[], inc: T[]): T[] => {
               const ids = new Set(cur.map((x) => x.id))
@@ -1655,8 +1605,9 @@ export const useStore = create<AppState>()(
       }
     },
     {
-      name: 'ai-storytelling-store',
-      version: 9,
+      // クリーンブレイク：新スキーマ用に persist キーを刷新（旧 'ai-storytelling-store' は破棄）。
+      // 後方互換は不要なため migrate 連鎖は持たない。
+      name: 'ai-storytelling-store-v2',
       partialize: (st) => ({
         providers: st.providers,
         favoriteModels: st.favoriteModels,
@@ -1667,20 +1618,6 @@ export const useStore = create<AppState>()(
         sessions: st.sessions,
         activeId: st.activeId,
       }),
-      migrate: (persisted: any, version: number) => {
-        if (!persisted) return persisted
-        let state = persisted
-        if (version < 1) state = migrateV0toV1(state)
-        if (version < 2) state = migrateV1toV2(state)
-        if (version < 3) state = migrateV2toV3(state)
-        if (version < 4) state = migrateV3toV4(state)
-        if (version < 5) state = migrateV4toV5(state)
-        if (version < 6) state = migrateV5toV6(state)
-        if (version < 7) state = migrateV6toV7(state)
-        if (version < 8) state = migrateV7toV8(state)
-        if (version < 9) state = migrateV8toV9(state)
-        return state
-      },
     },
   ),
 )

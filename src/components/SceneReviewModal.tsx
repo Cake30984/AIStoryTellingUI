@@ -36,8 +36,11 @@ export default function SceneReviewModal() {
   const [worldSel, setWorldSel] = useState<Set<number>>(
     new Set(review.worldGrowth.map((_, i) => i)),
   )
-  const [relSel, setRelSel] = useState<Set<number>>(
-    new Set(review.relationshipDeltas.map((_, i) => i)),
+  const [relUpdSel, setRelUpdSel] = useState<Set<number>>(
+    new Set(review.relationUpdates.map((_, i) => i)),
+  )
+  const [statSel, setStatSel] = useState<Set<number>>(
+    new Set(review.statChanges.map((_, i) => i)),
   )
 
   // 別のレビュー（別シーン）に切り替わったときだけ全体をリセット。
@@ -46,7 +49,8 @@ export default function SceneReviewModal() {
     setSummary(review.summary)
     setCharSel(new Set(review.characterGrowth.map((_, i) => i)))
     setWorldSel(new Set(review.worldGrowth.map((_, i) => i)))
-    setRelSel(new Set(review.relationshipDeltas.map((_, i) => i)))
+    setRelUpdSel(new Set(review.relationUpdates.map((_, i) => i)))
+    setStatSel(new Set(review.statChanges.map((_, i) => i)))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [review.sceneId])
 
@@ -67,7 +71,8 @@ export default function SceneReviewModal() {
       suggestion: pick >= 0 ? review.suggestions[pick] : undefined,
       characterGrowthIdx: [...charSel],
       worldGrowthIdx: [...worldSel],
-      relationshipDeltaIdx: [...relSel],
+      relationUpdateIdx: [...relUpdSel],
+      statChangeIdx: [...statSel],
     })
   }
 
@@ -214,24 +219,54 @@ export default function SceneReviewModal() {
                 </div>
               )}
 
-              {/* 関係値の変化（現在シーン確定時のみ反映） */}
-              {!isPastScene && review.relationshipDeltas.length > 0 && (
+              {/* 関係性の更新（現在シーン確定時のみ反映。prose を書き直す） */}
+              {!isPastScene && review.relationUpdates.length > 0 && (
                 <div className="field">
-                  <label>💗 主人公への感情の変化（チェックした項目を関係値に加算）</label>
+                  <label>💗 関係性の更新（チェックした関係を書き直し）</label>
                   <div className="growth-list">
-                    {review.relationshipDeltas.map((d, i) => (
+                    {review.relationUpdates.map((u, i) => (
                       <label key={i} className="growth-item">
                         <input
                           type="checkbox"
-                          checked={relSel.has(i)}
-                          onChange={() => toggle(relSel, setRelSel, i)}
+                          checked={relUpdSel.has(i)}
+                          onChange={() => toggle(relUpdSel, setRelUpdSel, i)}
                         />
                         <span>
-                          <strong>{d.name}</strong> の <strong>{d.axis}</strong>{' '}
-                          <span className={d.delta >= 0 ? 'delta-up' : 'delta-down'}>
-                            {d.delta >= 0 ? `+${d.delta}` : d.delta}
+                          <strong>{u.fromName} → {u.toName}</strong>：{u.stance}
+                          {u.aspects.map((a) => (
+                            <span key={a.aspectId} className="rel-aspect">
+                              <em>{a.name}</em> {a.note}
+                            </span>
+                          ))}
+                          {u.flagsAdd.length > 0 && (
+                            <span className="growth-keys">＋{u.flagsAdd.join('・')}</span>
+                          )}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 事実の数の変化（現在シーン確定時のみ反映） */}
+              {!isPastScene && review.statChanges.length > 0 && (
+                <div className="field">
+                  <label>📊 ステータスの変化（チェックした項目を加算）</label>
+                  <div className="growth-list">
+                    {review.statChanges.map((c, i) => (
+                      <label key={i} className="growth-item">
+                        <input
+                          type="checkbox"
+                          checked={statSel.has(i)}
+                          onChange={() => toggle(statSel, setStatSel, i)}
+                        />
+                        <span>
+                          {c.charName && <strong>{c.charName} の </strong>}
+                          <strong>{c.name}</strong>{' '}
+                          <span className={c.delta >= 0 ? 'delta-up' : 'delta-down'}>
+                            {c.delta >= 0 ? `+${c.delta}` : c.delta}
                           </span>
-                          {d.reason && <span className="growth-keys">（{d.reason}）</span>}
+                          {c.reason && <span className="growth-keys">（{c.reason}）</span>}
                         </span>
                       </label>
                     ))}
