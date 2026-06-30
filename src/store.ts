@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type {
   Character,
+  CounterDef,
   Development,
   ExportBundle,
   LoreEntry,
@@ -153,6 +154,7 @@ export function newWorld(): World {
     scheduledEvents: [],
     relationAspects: [],
     stats: [],
+    counters: [],
     createdAt: now,
     updatedAt: now,
   }
@@ -166,13 +168,24 @@ export function newStatDef(name = ''): StatDef {
   return { id: uid(), name, scope: 'character', default: 0, min: 0, max: 100, inject: false }
 }
 
-/** ワールドの状態定義プリセット（次元＋スタットをまとめて投入） */
-export const WORLD_PRESETS: { id: string; label: string; aspects: string[]; stats: Omit<StatDef, 'id'>[] }[] = [
+export function newCounterDef(name = ''): CounterDef {
+  return { id: uid(), name, scope: 'character', inject: false }
+}
+
+/** ワールドの状態定義プリセット（次元＋スタット＋カウンターをまとめて投入） */
+export const WORLD_PRESETS: {
+  id: string
+  label: string
+  aspects: string[]
+  stats: Omit<StatDef, 'id'>[]
+  counters: Omit<CounterDef, 'id'>[]
+}[] = [
   {
     id: 'romance',
     label: '恋愛',
     aspects: ['信頼', '恋愛'],
     stats: [{ name: '好感度', scope: 'character', default: 0, min: 0, max: 100, inject: false }],
+    counters: [{ name: 'デート回数', scope: 'character', inject: true }],
   },
   {
     id: 'rpg',
@@ -182,6 +195,7 @@ export const WORLD_PRESETS: { id: string; label: string; aspects: string[]; stat
       { name: 'レベル', scope: 'character', default: 1, min: 1, max: 99, inject: true },
       { name: '所持金', scope: 'global', default: 0, min: 0, inject: true },
     ],
+    counters: [{ name: '戦闘回数', scope: 'global', inject: false }],
   },
   {
     id: 'business',
@@ -191,6 +205,7 @@ export const WORLD_PRESETS: { id: string; label: string; aspects: string[]; stat
       { name: '資産', scope: 'global', default: 0, min: 0, inject: true },
       { name: '名声', scope: 'global', default: 0, min: 0, max: 100, inject: true },
     ],
+    counters: [{ name: '来店回数', scope: 'global', inject: true }],
   },
 ]
 
@@ -249,7 +264,7 @@ function newSession(mode: SessionMode): Session {
     narrativeStyle: mode === 'story' ? 'novel' : 'chat',
     director: { enabled: false, typeIds: [] },
     usedEventIds: [],
-    state: { relations: [], moods: [], stats: [] },
+    state: { relations: [], moods: [], stats: [], counters: [] },
     messages: [],
     temperature: 0.9,
     maxTokens: 1024,
@@ -324,6 +339,7 @@ interface AppState {
     worldGrowthIdx: number[]
     relationUpdateIdx: number[]
     statChangeIdx: number[]
+    counterEventIdx: number[]
   }) => void
   setReviewNextType: (typeId: string | null) => void
   rerollReviewType: () => Promise<void>
@@ -361,6 +377,7 @@ function buildStateInfo(session: Session, characters: Character[], world?: World
   const relations = session.state?.relations ?? []
   const moods = session.state?.moods ?? []
   const stats = session.state?.stats ?? []
+  const counters = session.state?.counters ?? []
   const nameOf = (id: string) => characters.find((c) => c.id === id)?.name ?? 'キャラ'
   const aspectName = (id: string) => world?.relationAspects.find((a) => a.id === id)?.name ?? ''
   const moodOf = (id: string) => moods.find((m) => m.characterId === id)?.mood
@@ -392,6 +409,16 @@ function buildStateInfo(session: Session, characters: Character[], world?: World
       return `${who}${def.name} ${s.value}`
     })
     lines.push(`【ステータス】 ${parts.join(' / ')}`)
+  }
+  // 注入対象カウンター
+  const injCounters = counters.filter((c) => world?.counters.find((d) => d.id === c.defId)?.inject)
+  if (injCounters.length > 0) {
+    const parts = injCounters.map((c) => {
+      const def = world!.counters.find((d) => d.id === c.defId)!
+      const who = c.characterId ? `${nameOf(c.characterId)} ` : ''
+      return `${who}${def.name} ${c.value}`
+    })
+    lines.push(`【カウンター】 ${parts.join(' / ')}`)
   }
   return lines.join('\n')
 }
@@ -925,6 +952,7 @@ export const useStore = create<AppState>()(
             const world = refs.world
             const aspectNames = (world?.relationAspects ?? []).map((a) => a.name).filter(Boolean)
             const statNames = (world?.stats ?? []).map((d) => d.name).filter(Boolean)
+            const counterNames = (world?.counters ?? []).map((d) => d.name).filter(Boolean)
 
             // 現在の関係性 prose（レビューが書き直すための起点）
             const relNow = (s.state?.relations ?? [])
@@ -947,7 +975,7 @@ export const useStore = create<AppState>()(
                 provider,
                 model,
                 messages: [
-                  { role: 'system', content: reviewSystem(aspectNames, statNames) },
+                  { role: 'system', content: reviewSystem(aspectNames, statNames, counterNames) },
                   {
                     role: 'user',
                     content: `${context}${relBlock}\n\n【シーン「${scene.title}」の会話】\n${transcript}`,
@@ -1058,6 +1086,28 @@ export const useStore = create<AppState>()(
                     })
                     .filter((c: any): c is NonNullable<typeof c> => !!c && c.delta !== 0)
                 : [],
+              counterEvents: Array.isArray(parsed?.counterEvents)
+                ? parsed.counterEvents
+                    .map((x: any) => {
+                      const def = (world?.counters ?? []).find(
+                        (d) => d.name === String(x?.name ?? '').trim(),
+                      )
+                      if (!def) return null
+                      const charName = x?.character ? String(x.character) : undefined
+                      const characterId =
+                        def.scope === 'character' && charName ? findId(charName) : undefined
+                      if (def.scope === 'character' && !characterId) return null
+                      return {
+                        defId: def.id,
+                        name: def.name,
+                        characterId,
+                        charName: def.scope === 'character' ? charName : undefined,
+                        amount: Math.max(1, Math.min(1000, Math.round(Number(x?.amount) || 1))),
+                        reason: String(x?.reason ?? ''),
+                      }
+                    })
+                    .filter((c: any): c is NonNullable<typeof c> => !!c)
+                : [],
               moodChanges: Array.isArray(parsed?.moods)
                 ? parsed.moods
                     .map((x: any) => ({
@@ -1100,11 +1150,14 @@ export const useStore = create<AppState>()(
           const selectedStats = opts.statChangeIdx
             .map((i) => review.statChanges[i])
             .filter(Boolean)
+          const selectedCounters = opts.counterEventIdx
+            .map((i) => review.counterEvents[i])
+            .filter(Boolean)
           const stateWorld = get().worlds.find((w) => w.id === s.worldId)
 
           // 関係性 prose を全文書き直し・気分上書き・スタットを clamp 加算した新 state を返す
           const applyState = (prev: Session['state']): Session['state'] => {
-            const base = prev ?? { relations: [], moods: [], stats: [] }
+            const base = prev ?? { relations: [], moods: [], stats: [], counters: [] }
             // 関係性（fromId,toId で upsert。stance/aspects は全文置換、flags は和集合）
             const relations = base.relations.map((r) => ({ ...r }))
             for (const u of selectedRelUpdates) {
@@ -1149,7 +1202,16 @@ export const useStore = create<AppState>()(
               if (idx >= 0) stats[idx].value = val
               else stats.push({ defId: c.defId, characterId: c.characterId, value: val })
             }
-            return { relations, moods, stats }
+            // カウンター（defId,characterId で累計加算）
+            const counters = (base.counters ?? []).map((cv) => ({ ...cv }))
+            for (const c of selectedCounters) {
+              const idx = counters.findIndex(
+                (cv) => cv.defId === c.defId && cv.characterId === c.characterId,
+              )
+              if (idx >= 0) counters[idx].value += c.amount
+              else counters.push({ defId: c.defId, characterId: c.characterId, value: c.amount })
+            }
+            return { relations, moods, stats, counters }
           }
 
           const applyGrowth = (st: AppState) => ({
@@ -1582,6 +1644,7 @@ export const useStore = create<AppState>()(
             ...w,
             relationAspects: Array.isArray(w.relationAspects) ? w.relationAspects : [],
             stats: Array.isArray(w.stats) ? w.stats : [],
+            counters: Array.isArray(w.counters) ? w.counters : [],
           }))
           const incomingSessions = bundle.sessions ?? []
           set((st) => {

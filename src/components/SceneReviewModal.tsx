@@ -42,6 +42,9 @@ export default function SceneReviewModal() {
   const [statSel, setStatSel] = useState<Set<number>>(
     new Set(review.statChanges.map((_, i) => i)),
   )
+  const [counterSel, setCounterSel] = useState<Set<number>>(
+    new Set(review.counterEvents.map((_, i) => i)),
+  )
 
   // 別のレビュー（別シーン）に切り替わったときだけ全体をリセット。
   // 候補だけ再生成した場合は編集中の要約を保持する。
@@ -51,6 +54,7 @@ export default function SceneReviewModal() {
     setWorldSel(new Set(review.worldGrowth.map((_, i) => i)))
     setRelUpdSel(new Set(review.relationUpdates.map((_, i) => i)))
     setStatSel(new Set(review.statChanges.map((_, i) => i)))
+    setCounterSel(new Set(review.counterEvents.map((_, i) => i)))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [review.sceneId])
 
@@ -73,6 +77,7 @@ export default function SceneReviewModal() {
       worldGrowthIdx: [...worldSel],
       relationUpdateIdx: [...relUpdSel],
       statChangeIdx: [...statSel],
+      counterEventIdx: [...counterSel],
     })
   }
 
@@ -266,6 +271,30 @@ export default function SceneReviewModal() {
                           <span className={c.delta >= 0 ? 'delta-up' : 'delta-down'}>
                             {c.delta >= 0 ? `+${c.delta}` : c.delta}
                           </span>
+                          {c.reason && <span className="growth-keys">（{c.reason}）</span>}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 行動カウンター（現在シーン確定時のみ反映） */}
+              {!isPastScene && review.counterEvents.length > 0 && (
+                <div className="field">
+                  <label>🔢 行動カウンター（チェックした回数を累計）</label>
+                  <div className="growth-list">
+                    {review.counterEvents.map((c, i) => (
+                      <label key={i} className="growth-item">
+                        <input
+                          type="checkbox"
+                          checked={counterSel.has(i)}
+                          onChange={() => toggle(counterSel, setCounterSel, i)}
+                        />
+                        <span>
+                          {c.charName && <strong>{c.charName} の </strong>}
+                          <strong>{c.name}</strong>{' '}
+                          <span className="delta-up">+{c.amount}</span>
                           {c.reason && <span className="growth-keys">（{c.reason}）</span>}
                         </span>
                       </label>

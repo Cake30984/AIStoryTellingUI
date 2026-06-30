@@ -25,6 +25,7 @@ export default function StatusPanel({ session, onClose }: Props) {
     })),
     moods: session.state.moods.map((m) => ({ ...m })),
     stats: session.state.stats.map((s) => ({ ...s })),
+    counters: (session.state.counters ?? []).map((c) => ({ ...c })),
   }))
 
   const statValue = (defId: string, characterId?: string): number => {
@@ -56,8 +57,21 @@ export default function StatusPanel({ session, onClose }: Props) {
       return { ...prev, relations }
     })
 
+  const counterValue = (defId: string, characterId?: string): number =>
+    st.counters.find((c) => c.defId === defId && c.characterId === characterId)?.value ?? 0
+  const setCounter = (defId: string, characterId: string | undefined, value: number) =>
+    setSt((prev) => {
+      const counters = (prev.counters ?? []).slice()
+      const idx = counters.findIndex((c) => c.defId === defId && c.characterId === characterId)
+      if (idx >= 0) counters[idx] = { ...counters[idx], value }
+      else counters.push({ defId, characterId, value })
+      return { ...prev, counters }
+    })
+
   const globalStats = world?.stats.filter((d) => d.scope === 'global') ?? []
   const charStats = world?.stats.filter((d) => d.scope === 'character') ?? []
+  const globalCounters = world?.counters.filter((d) => d.scope === 'global') ?? []
+  const charCounters = world?.counters.filter((d) => d.scope === 'character') ?? []
 
   const save = () => {
     updateSession(session.id, { state: st })
@@ -81,7 +95,7 @@ export default function StatusPanel({ session, onClose }: Props) {
           )}
 
           {/* 主人公・世界の数値 */}
-          {globalStats.length > 0 && (
+          {(globalStats.length > 0 || globalCounters.length > 0) && (
             <div className="field">
               <label>主人公・世界の状態</label>
               <div className="row2">
@@ -93,6 +107,17 @@ export default function StatusPanel({ session, onClose }: Props) {
                       value={statValue(d.id)}
                       style={{ width: 90, background: 'var(--bg)' }}
                       onChange={(e) => setStat(d.id, undefined, Number(e.target.value))}
+                    />
+                  </label>
+                ))}
+                {globalCounters.map((d) => (
+                  <label key={d.id} className="chk">
+                    {d.name}
+                    <input
+                      type="number"
+                      value={counterValue(d.id)}
+                      style={{ width: 90, background: 'var(--bg)' }}
+                      onChange={(e) => setCounter(d.id, undefined, Number(e.target.value))}
                     />
                   </label>
                 ))}
@@ -113,7 +138,7 @@ export default function StatusPanel({ session, onClose }: Props) {
                   </span>{' '}
                   {c.name || '無名'} → {heroName}
                 </label>
-                {charStats.length > 0 && (
+                {(charStats.length > 0 || charCounters.length > 0) && (
                   <div className="row2" style={{ marginBottom: 6 }}>
                     {charStats.map((d) => (
                       <label key={d.id} className="chk">
@@ -123,6 +148,17 @@ export default function StatusPanel({ session, onClose }: Props) {
                           value={statValue(d.id, c.id)}
                           style={{ width: 80, background: 'var(--bg)' }}
                           onChange={(e) => setStat(d.id, c.id, Number(e.target.value))}
+                        />
+                      </label>
+                    ))}
+                    {charCounters.map((d) => (
+                      <label key={d.id} className="chk">
+                        {d.name}
+                        <input
+                          type="number"
+                          value={counterValue(d.id, c.id)}
+                          style={{ width: 80, background: 'var(--bg)' }}
+                          onChange={(e) => setCounter(d.id, c.id, Number(e.target.value))}
                         />
                       </label>
                     ))}
