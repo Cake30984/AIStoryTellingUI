@@ -27,6 +27,7 @@ export default function ChatPanel({ session }: Props) {
     startStory,
     continueLast,
     regenChoices,
+    applyChoiceEffects,
     editMessage,
     deleteMessage,
     regenerateFrom,
@@ -446,11 +447,24 @@ export default function ChatPanel({ session }: Props) {
                 <button
                   key={i}
                   className="choice-btn"
-                  onClick={() => send(c, effectiveSpeaker)}
+                  onClick={() => {
+                    if (c.effects?.length) applyChoiceEffects(c.effects)
+                    send(c.text, effectiveSpeaker)
+                  }}
                   disabled={isStreaming}
                 >
                   <span className="choice-num">{i + 1}</span>
-                  {c}
+                  {c.text}
+                  {!!c.effects?.length && (
+                    <span className="choice-effects">
+                      {c.effects.map((e, j) => (
+                        <span key={j} className="choice-effect-badge">
+                          {e.delta > 0 ? '+' : ''}
+                          {e.delta} {e.name}
+                        </span>
+                      ))}
+                    </span>
+                  )}
                 </button>
               ))}
             </div>

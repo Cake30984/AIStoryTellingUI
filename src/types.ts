@@ -180,6 +180,22 @@ export interface SceneType {
   builtin?: boolean
 }
 
+/** 選択肢に紐づく小刻み加点（P5）。選んだ瞬間にコードが加算する事実（LLM は delta を提案するだけ） */
+export interface ChoiceEffect {
+  defId: string
+  name: string
+  /** scope=character のとき対象キャラ。global は undefined */
+  characterId?: string
+  charName?: string
+  delta: number
+}
+
+/** 物語モードの選択肢（P5から effects を持てる） */
+export interface Choice {
+  text: string
+  effects?: ChoiceEffect[]
+}
+
 export interface Message {
   id: string
   role: Role
@@ -189,7 +205,7 @@ export interface Message {
   sceneId?: string
   content: string
   /** 物語モードの選択肢（assistant 応答に付随） */
-  choices?: string[]
+  choices?: Choice[]
   /** 上限到達などで途中で切れた可能性（続き生成の案内に使う） */
   truncated?: boolean
   createdAt: number
