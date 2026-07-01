@@ -279,6 +279,18 @@ export interface Relation {
   updatedAt: number
 }
 
+/**
+ * セッション内で発見・深化した設定の上乗せ（オーバーレイ）。
+ * 元 Character/World は不変に保ち、レビュー承認による追記はここへ積む（素材を汚さないため）。
+ * 本編プロンプトへは「素材＋オーバーレイ」を合成した実効ビューで注入する。
+ */
+export interface SessionOverlay {
+  /** 発見追加されたロア（元 World.entries とは別に積む。addedInStory は true 固定） */
+  lore: LoreEntry[]
+  /** キャラごとの発見成長設定（元 Character.developments とは別に積む） */
+  characterDevelopments: { characterId: string; developments: Development[] }[]
+}
+
 /** 事実の数の現在値（好感度メーター・レベル・所持金 等）。characterId 無し = global */
 export interface StatValue {
   defId: string
@@ -342,6 +354,8 @@ export interface Session {
   usedEventIds: string[]
   /** 感情・関係値の状態（セッション固有） */
   state: SessionState
+  /** 発見・深化した設定の上乗せ（セッション固有・素材は不変） */
+  overlay: SessionOverlay
   messages: Message[]
   temperature: number
   maxTokens: number
