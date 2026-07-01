@@ -430,6 +430,7 @@ function newSession(mode: SessionMode): Session {
     director: { enabled: false, typeIds: [] },
     usedEventIds: [],
     state: { relations: [], moods: [], stats: [], counters: [], achievements: [] },
+    overlay: { lore: [], characterDevelopments: [] },
     messages: [],
     temperature: 0.9,
     maxTokens: 1024,
@@ -1405,27 +1406,33 @@ export const useStore = create<AppState>()(
             return withAchievements
           }
 
-          const applyGrowth = (st: AppState) => ({
-            characters: st.characters.map((c) => {
-              const adds: Development[] = selectedGrowth
-                .filter((g) => g.characterId === c.id)
-                .map((g) => newDevelopment(g.addition))
-              return adds.length
-                ? { ...c, developments: [...c.developments, ...adds], updatedAt: Date.now() }
-                : c
-            }),
-            worlds: st.worlds.map((w) => {
-              if (w.id !== s.worldId || selectedWorld.length === 0) return w
-              const base = w.entries.length
-              const entries: LoreEntry[] = selectedWorld.map((g, i) => ({
-                ...newLoreEntry(base + i),
-                keys: g.keys,
-                content: g.content,
-                addedInStory: true,
-              }))
-              return { ...w, entries: [...w.entries, ...entries], updatedAt: Date.now() }
-            }),
-          })
+          // 発見ロア・キャラ成長はセッションのオーバーレイへ積む（元 Character/World は不変に保つ）
+          const nextOverlay = (prev: Session['overlay'] | undefined): Session['overlay'] => {
+            const src = prev ?? { lore: [], characterDevelopments: [] }
+            const lore = src.lore.slice()
+            if (selectedWorld.length) {
+              const loreBase = lore.length
+              selectedWorld.forEach((g, i) => {
+                lore.push({
+                  ...newLoreEntry(loreBase + i),
+                  keys: g.keys,
+                  content: g.content,
+                  addedInStory: true,
+                })
+              })
+            }
+            const characterDevelopments = src.characterDevelopments.map((x) => ({
+              ...x,
+              developments: x.developments.slice(),
+            }))
+            for (const g of selectedGrowth) {
+              const dev = newDevelopment(g.addition)
+              const idx = characterDevelopments.findIndex((x) => x.characterId === g.characterId)
+              if (idx >= 0) characterDevelopments[idx].developments.push(dev)
+              else characterDevelopments.push({ characterId: g.characterId, developments: [dev] })
+            }
+            return { lore, characterDevelopments }
+          }
 
           const isPastScene = scene.id !== s.currentSceneId
 
@@ -1439,7 +1446,6 @@ export const useStore = create<AppState>()(
                   ?.scheduledEvents.find((e) => e.id === review.scheduledEventId)
               : undefined
             set((st) => ({
-              ...applyGrowth(st),
               sessions: st.sessions.map((sess) =>
                 sess.id === s.id
                   ? {
@@ -1458,6 +1464,7 @@ export const useStore = create<AppState>()(
                         }
                         return sc
                       }),
+                      overlay: nextOverlay(sess.overlay),
                       updatedAt: Date.now(),
                     }
                   : sess,
@@ -1489,7 +1496,6 @@ export const useStore = create<AppState>()(
             : s.usedEventIds
 
           set((st) => ({
-            ...applyGrowth(st),
             sessions: st.sessions.map((sess) =>
               sess.id === s.id
                 ? {
@@ -1505,6 +1511,7 @@ export const useStore = create<AppState>()(
                     timeline: tl,
                     usedEventIds,
                     state: applyState(sess.state),
+                    overlay: nextOverlay(sess.overlay),
                     updatedAt: Date.now(),
                   }
                 : sess,
@@ -1859,7 +1866,13 @@ export const useStore = create<AppState>()(
             counters: Array.isArray(w.counters) ? w.counters : [],
             achievements: Array.isArray(w.achievements) ? w.achievements : [],
           }))
-          const incomingSessions = bundle.sessions ?? []
+          const incomingSessions = (bundle.sessions ?? []).map((sess: any) => ({
+            ...sess,
+            overlay:
+              sess.overlay && Array.isArray(sess.overlay.lore) && Array.isArray(sess.overlay.characterDevelopments)
+                ? sess.overlay
+                : { lore: [], characterDevelopments: [] },
+          }))
           set((st) => {
             const mergeById = <T extends { id: string }>(cur: T[], inc: T[]): T[] => {
               const ids = new Set(cur.map((x) => x.id))
