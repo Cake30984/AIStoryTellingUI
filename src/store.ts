@@ -662,6 +662,19 @@ export const useStore = create<AppState>()(
         if (s) get().updateSession(s.id, patch)
       }
 
+      /** 素材（World/Character）にセッションのオーバーレイ（発見ロア・キャラ成長）を合成した実効ビューを返す */
+      function effectiveWorld(world: World | undefined, overlay: Session['overlay']): World | undefined {
+        if (!world) return undefined
+        const extra = overlay?.lore ?? []
+        return extra.length ? { ...world, entries: [...world.entries, ...extra] } : world
+      }
+      function effectiveCharacter(c: Character, overlay: Session['overlay']): Character {
+        const ov = overlay?.characterDevelopments.find((x) => x.characterId === c.id)
+        return ov && ov.developments.length
+          ? { ...c, developments: [...c.developments, ...ov.developments] }
+          : c
+      }
+
       function resolveRefs(session: Session): ResolvedRefs {
         const { characters, worlds, personas } = get()
         const scene = currentScene(session)
@@ -670,11 +683,16 @@ export const useStore = create<AppState>()(
           scene && scene.activeCharacterIds.length > 0
             ? scene.activeCharacterIds
             : session.characterIds
+        const effWorld = effectiveWorld(
+          worlds.find((w) => w.id === session.worldId),
+          session.overlay,
+        )
         return {
           characters: castIds
             .map((id) => characters.find((c) => c.id === id))
-            .filter((c): c is Character => !!c),
-          world: worlds.find((w) => w.id === session.worldId) ?? undefined,
+            .filter((c): c is Character => !!c)
+            .map((c) => effectiveCharacter(c, session.overlay)),
+          world: effWorld,
           persona: personas.find((p) => p.id === session.personaId) ?? undefined,
           priorSummaries: session.scenes
             .filter((sc) => sc.id !== scene?.id && sc.summary.trim().length > 0)
@@ -686,11 +704,7 @@ export const useStore = create<AppState>()(
           sceneTypeGuidance: scene?.sceneTypeId
             ? (get().sceneTypes.find((t) => t.id === scene.sceneTypeId)?.guidance ?? '')
             : '',
-          stateInfo: buildStateInfo(
-            session,
-            characters,
-            worlds.find((w) => w.id === session.worldId),
-          ),
+          stateInfo: buildStateInfo(session, characters, effWorld),
         }
       }
 
