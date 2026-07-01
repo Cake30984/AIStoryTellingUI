@@ -497,6 +497,10 @@ interface AppState {
   setActive: (id: string) => void
   updateSession: (id: string, patch: Partial<Session>) => void
   resolveRefs: (session: Session) => ResolvedRefs
+  /** 発見ロアをセッションのオーバーレイから元ワールドへ昇格（move）。元素材は明示操作でのみ更新される */
+  promoteOverlayLore: (sessionId: string, loreId: string) => void
+  /** 発見キャラ成長をセッションのオーバーレイから元キャラへ昇格（move） */
+  promoteOverlayDev: (sessionId: string, characterId: string, devId: string) => void
 
   // シーン
   updateScene: (sceneId: string, patch: Partial<Scene>) => void
@@ -1057,6 +1061,55 @@ export const useStore = create<AppState>()(
           })),
 
         resolveRefs,
+
+        promoteOverlayLore: (sessionId, loreId) =>
+          set((st) => {
+            const sess = st.sessions.find((s) => s.id === sessionId)
+            const entry = sess?.overlay.lore.find((e) => e.id === loreId)
+            if (!sess || !entry || !sess.worldId) return {}
+            return {
+              worlds: st.worlds.map((w) =>
+                w.id === sess.worldId
+                  ? { ...w, entries: [...w.entries, { ...entry, order: w.entries.length }], updatedAt: Date.now() }
+                  : w,
+              ),
+              sessions: st.sessions.map((s) =>
+                s.id === sessionId
+                  ? { ...s, overlay: { ...s.overlay, lore: s.overlay.lore.filter((e) => e.id !== loreId) } }
+                  : s,
+              ),
+            }
+          }),
+
+        promoteOverlayDev: (sessionId, characterId, devId) =>
+          set((st) => {
+            const sess = st.sessions.find((s) => s.id === sessionId)
+            const group = sess?.overlay.characterDevelopments.find((x) => x.characterId === characterId)
+            const dev = group?.developments.find((d) => d.id === devId)
+            if (!sess || !dev) return {}
+            return {
+              characters: st.characters.map((c) =>
+                c.id === characterId
+                  ? { ...c, developments: [...c.developments, dev], updatedAt: Date.now() }
+                  : c,
+              ),
+              sessions: st.sessions.map((s) =>
+                s.id === sessionId
+                  ? {
+                      ...s,
+                      overlay: {
+                        ...s.overlay,
+                        characterDevelopments: s.overlay.characterDevelopments.map((x) =>
+                          x.characterId === characterId
+                            ? { ...x, developments: x.developments.filter((d) => d.id !== devId) }
+                            : x,
+                        ),
+                      },
+                    }
+                  : s,
+              ),
+            }
+          }),
 
         updateScene: (sceneId, patch) => {
           const s = active()

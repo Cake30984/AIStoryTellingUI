@@ -10,8 +10,9 @@ interface Props {
 
 /** セッションで発見・深化した設定（オーバーレイ）の閲覧・手動編集パネル。元 World/Character は不変。 */
 export default function DiscoveryPanel({ session, onClose }: Props) {
-  const { characters, updateSession } = useStore()
+  const { characters, worlds, updateSession, promoteOverlayLore, promoteOverlayDev } = useStore()
   const charName = (id: string) => characters.find((c) => c.id === id)?.name || '無名'
+  const worldName = worlds.find((w) => w.id === session.worldId)?.name
 
   const [ov, setOv] = useState<SessionOverlay>(() => ({
     lore: session.overlay.lore.map((e) => ({ ...e, keys: [...e.keys] })),
@@ -50,6 +51,34 @@ export default function DiscoveryPanel({ session, onClose }: Props) {
           : x,
       ),
     }))
+
+  const promoteLore = (id: string) => {
+    if (!session.worldId) return
+    if (
+      !confirm(
+        `このロアを元のワールド${worldName ? `「${worldName}」` : ''}へ反映しますか？\n以後は発見ログから消え、ワールド編集に表示されます。`,
+      )
+    )
+      return
+    updateSession(session.id, { overlay: ov })
+    promoteOverlayLore(session.id, id)
+    setOv((prev) => ({ ...prev, lore: prev.lore.filter((e) => e.id !== id) }))
+  }
+
+  const promoteDev = (characterId: string, devId: string) => {
+    if (!confirm(`この設定を「${charName(characterId)}」の正式なプロフィールへ反映しますか？\n以後は発見ログから消え、キャラ編集に表示されます。`))
+      return
+    updateSession(session.id, { overlay: ov })
+    promoteOverlayDev(session.id, characterId, devId)
+    setOv((prev) => ({
+      ...prev,
+      characterDevelopments: prev.characterDevelopments.map((x) =>
+        x.characterId === characterId
+          ? { ...x, developments: x.developments.filter((d) => d.id !== devId) }
+          : x,
+      ),
+    }))
+  }
 
   const devGroups = ov.characterDevelopments.filter((x) => x.developments.length > 0)
   const isEmpty = ov.lore.length === 0 && devGroups.length === 0
@@ -106,6 +135,14 @@ export default function DiscoveryPanel({ session, onClose }: Props) {
                       />
                       有効
                     </label>
+                    <button
+                      className="icon-btn small"
+                      onClick={() => promoteLore(e.id)}
+                      disabled={!session.worldId}
+                      title={session.worldId ? 'ワールドへ昇格' : 'ワールド未設定のため昇格できません'}
+                    >
+                      ⬆
+                    </button>
                     <button className="icon-btn small" onClick={() => removeLore(e.id)} title="削除">
                       ✕
                     </button>
@@ -142,6 +179,13 @@ export default function DiscoveryPanel({ session, onClose }: Props) {
                       className={dev.enabled ? '' : 'dimmed'}
                       onChange={(e) => updateDev(x.characterId, dev.id, { text: e.target.value })}
                     />
+                    <button
+                      className="icon-btn small"
+                      onClick={() => promoteDev(x.characterId, dev.id)}
+                      title="キャラへ昇格"
+                    >
+                      ⬆
+                    </button>
                     <button
                       className="icon-btn small"
                       onClick={() => removeDev(x.characterId, dev.id)}
