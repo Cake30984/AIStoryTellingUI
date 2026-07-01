@@ -533,7 +533,8 @@ function buildStateInfo(session: Session, characters: Character[], world?: World
 
 /**
  * ディレクター：次シーンの方向を決める。
- * ①日付指定の特別イベントを最優先 → ②重み＋クールダウンで抽選。
+ * ①特別イベント（未消化かつ day 到来かつ条件成立）を最優先 → ②重み＋クールダウンで抽選。
+ * イベントは人の承認なしでコードが自動判定して発火する（ADR-1）。
  */
 function directNextScene(
   session: Session,
@@ -541,11 +542,17 @@ function directNextScene(
   sceneTypes: SceneType[],
   nextDay: number | null,
 ): { typeId?: string; eventId?: string; eventName?: string } {
-  // ① 特別イベント（消化済みでなく、到来済み）
-  if (world && nextDay != null) {
+  // ① 特別イベント（day 未指定は日付条件なし。条件式は数・フラグ・実績のみで判定）
+  if (world) {
     const ev = (world.scheduledEvents ?? [])
-      .filter((e) => !session.usedEventIds.includes(e.id) && e.day <= nextDay)
-      .sort((a, b) => a.day - b.day)[0]
+      .filter((e) => {
+        if (session.usedEventIds.includes(e.id)) return false
+        if (e.day != null && (nextDay == null || e.day > nextDay)) return false
+        if (e.condition && !evalCondition(e.condition, session.state, world, session.characterIds))
+          return false
+        return true
+      })
+      .sort((a, b) => (a.day ?? Infinity) - (b.day ?? Infinity))[0]
     if (ev) return { eventId: ev.id, eventName: ev.name }
   }
 
