@@ -68,14 +68,16 @@ export interface LoreEntry {
   addedInStory?: boolean
 }
 
-/** タイムラインの特定日に発生する特別イベント（世界設定で日付指定） */
+/** 特別イベント（世界設定で日付指定・条件指定。コードが自動判定して発火する） */
 export interface ScheduledEvent {
   id: string
-  /** タイムラインの何日目に発生するか */
-  day: number
+  /** タイムラインの何日目に発生するか（未指定＝日付条件なし。condition と併用可） */
+  day?: number
   name: string
   /** シーンの状況・方向性 */
   note: string
+  /** 発火条件（数・フラグ・実績のしきい値。未指定なら day のみで判定） */
+  condition?: Condition
 }
 
 /** prose 関係性の次元（ワールド固定。レビューはこの次元名でのみ記述を返す） */

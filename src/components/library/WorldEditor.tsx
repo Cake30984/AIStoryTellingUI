@@ -26,7 +26,11 @@ import CsvInput from '../CsvInput'
 
 const OPS: Op[] = ['>=', '>', '<=', '<', '==', '!=']
 
-/** 条件節（Clause）1件の編集行 */
+/** Condition から節配列・モードを取り出す（all/any の判別） */
+const clausesOf = (cond: Condition): Clause[] => ('all' in cond ? cond.all : cond.any)
+const modeOf = (cond: Condition): 'all' | 'any' => ('all' in cond ? 'all' : 'any')
+
+/** 条件節（Clause）1件の編集行。achievementId は実績の自己参照を除外するため（イベントでは未指定） */
 function ClauseRow({
   clause,
   world,
@@ -36,7 +40,7 @@ function ClauseRow({
 }: {
   clause: Clause
   world: World
-  achievementId: string
+  achievementId?: string
   onChange: (c: Clause) => void
   onRemove: () => void
 }) {
@@ -165,6 +169,31 @@ export default function WorldEditor({ world, onClose }: Props) {
   const removeEvent = (id: string) =>
     patch({ scheduledEvents: events.filter((e) => e.id !== id) })
 
+  // イベントの発火条件（未指定＝ day のみで判定）
+  const addEventClause = (e: ScheduledEvent) => {
+    const mode = e.condition ? modeOf(e.condition) : 'all'
+    const clauses = [...(e.condition ? clausesOf(e.condition) : []), newClause('stat', d)]
+    updateEvent(e.id, { condition: mode === 'all' ? { all: clauses } : { any: clauses } })
+  }
+  const updateEventClause = (e: ScheduledEvent, idx: number, clause: Clause) => {
+    if (!e.condition) return
+    const mode = modeOf(e.condition)
+    const clauses = clausesOf(e.condition).map((c, i) => (i === idx ? clause : c))
+    updateEvent(e.id, { condition: mode === 'all' ? { all: clauses } : { any: clauses } })
+  }
+  const removeEventClause = (e: ScheduledEvent, idx: number) => {
+    if (!e.condition) return
+    const mode = modeOf(e.condition)
+    const clauses = clausesOf(e.condition).filter((_, i) => i !== idx)
+    // 条件が空になったら条件そのものを外す（day のみの判定に戻る）
+    const condition = clauses.length ? (mode === 'all' ? { all: clauses } : { any: clauses }) : undefined
+    updateEvent(e.id, { condition })
+  }
+  const setEventMode = (e: ScheduledEvent, mode: 'all' | 'any') => {
+    if (!e.condition) return
+    updateEvent(e.id, { condition: mode === 'all' ? { all: clausesOf(e.condition) } : { any: clausesOf(e.condition) } })
+  }
+
   // 関係性の次元（aspect）
   const aspects = d.relationAspects ?? []
   const updateAspect = (id: string, p: Partial<RelationAspectDef>) =>
@@ -194,8 +223,6 @@ export default function WorldEditor({ world, onClose }: Props) {
   const addAchievement = () => patch({ achievements: [...achievements, newAchievementDef()] })
   const removeAchievement = (id: string) =>
     patch({ achievements: achievements.filter((a) => a.id !== id) })
-  const clausesOf = (cond: Condition): Clause[] => ('all' in cond ? cond.all : cond.any)
-  const modeOf = (cond: Condition): 'all' | 'any' => ('all' in cond ? 'all' : 'any')
   const setCondition = (id: string, mode: 'all' | 'any', clauses: Clause[]) =>
     updateAchievement(id, { condition: mode === 'all' ? { all: clauses } : { any: clauses } })
   const addClause = (a: AchievementDef) =>
@@ -340,38 +367,77 @@ export default function WorldEditor({ world, onClose }: Props) {
             </div>
           </div>
 
-          {events.map((e) => (
-            <div key={e.id} className="lore-entry">
-              <div className="lore-entry-top">
-                <label className="chk" title="発生する日">
-                  Day
+          {events.map((e) => {
+            const mode = e.condition ? modeOf(e.condition) : 'all'
+            const clauses = e.condition ? clausesOf(e.condition) : []
+            return (
+              <div key={e.id} className="lore-entry">
+                <div className="lore-entry-top">
+                  <label className="chk" title="発生する日（空欄＝日付条件なし）">
+                    Day
+                    <input
+                      type="number"
+                      min={1}
+                      value={e.day ?? ''}
+                      placeholder="任意"
+                      style={{ width: 64, background: 'var(--bg)' }}
+                      onChange={(ev) =>
+                        updateEvent(e.id, {
+                          day: ev.target.value === '' ? undefined : Math.max(1, Number(ev.target.value)),
+                        })
+                      }
+                    />
+                  </label>
                   <input
-                    type="number"
-                    min={1}
-                    value={e.day}
-                    style={{ width: 64, background: 'var(--bg)' }}
-                    onChange={(ev) => updateEvent(e.id, { day: Math.max(1, Number(ev.target.value)) })}
+                    className="lore-keys"
+                    value={e.name}
+                    placeholder="イベント名（例: 体育祭）"
+                    onChange={(ev) => updateEvent(e.id, { name: ev.target.value })}
                   />
-                </label>
-                <input
-                  className="lore-keys"
-                  value={e.name}
-                  placeholder="イベント名（例: 体育祭）"
-                  onChange={(ev) => updateEvent(e.id, { name: ev.target.value })}
+                  <button className="icon-btn small" onClick={() => removeEvent(e.id)} title="削除">
+                    ✕
+                  </button>
+                </div>
+                <textarea
+                  rows={2}
+                  className="lore-content"
+                  value={e.note}
+                  placeholder="状況・方向性（例: 全校で盛り上がる体育祭。応援や勝負を通じて関係が動く。）"
+                  onChange={(ev) => updateEvent(e.id, { note: ev.target.value })}
                 />
-                <button className="icon-btn small" onClick={() => removeEvent(e.id)} title="削除">
-                  ✕
+                {clauses.length > 0 && (
+                  <div className="row2" style={{ marginTop: 6, alignItems: 'center' }}>
+                    <span className="sub-label">発火条件</span>
+                    <select
+                      value={mode}
+                      style={{ background: 'var(--bg)' }}
+                      onChange={(ev) => setEventMode(e, ev.target.value as 'all' | 'any')}
+                    >
+                      <option value="all">すべて満たす</option>
+                      <option value="any">いずれか満たす</option>
+                    </select>
+                  </div>
+                )}
+                {clauses.map((c, i) => (
+                  <ClauseRow
+                    key={i}
+                    clause={c}
+                    world={d}
+                    onChange={(nc) => updateEventClause(e, i, nc)}
+                    onRemove={() => removeEventClause(e, i)}
+                  />
+                ))}
+                <button className="btn" style={{ marginTop: 6 }} onClick={() => addEventClause(e)}>
+                  ＋ 発火条件を追加
                 </button>
+                <div className="desc" style={{ marginTop: 4 }}>
+                  {clauses.length > 0
+                    ? '条件を満たし、day も到来していれば自動的に発火します（承認不要）。'
+                    : 'Day のみで判定します（空欄なら常に候補）。'}
+                </div>
               </div>
-              <textarea
-                rows={2}
-                className="lore-content"
-                value={e.note}
-                placeholder="状況・方向性（例: 全校で盛り上がる体育祭。応援や勝負を通じて関係が動く。）"
-                onChange={(ev) => updateEvent(e.id, { note: ev.target.value })}
-              />
-            </div>
-          ))}
+            )
+          })}
 
           <button className="btn" style={{ marginTop: 8 }} onClick={addEvent}>
             ＋ 特別イベントを追加
