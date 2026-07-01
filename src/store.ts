@@ -1153,24 +1153,37 @@ export const useStore = create<AppState>()(
               .join('\n')
             const relBlock = relNow ? `\n\n【現在の関係性】\n${relNow}` : ''
 
-            const raw = await streamChat(
+            const reviewMessages = [
+              { role: 'system' as const, content: reviewSystem(aspectNames, statNames, counterNames) },
               {
-                provider,
-                model,
-                messages: [
-                  { role: 'system', content: reviewSystem(aspectNames, statNames, counterNames) },
-                  {
-                    role: 'user',
-                    content: `${context}${relBlock}\n\n【シーン「${scene.title}」の会話】\n${transcript}`,
-                  },
-                ],
-                temperature: 0.4,
-                maxTokens: 2000,
+                role: 'user' as const,
+                content: `${context}${relBlock}\n\n【シーン「${scene.title}」の会話】\n${transcript}`,
               },
-              () => {},
-            )
-
-            const parsed = extractJson<any>(raw.text)
+            ]
+            // max_tokens は打ち切り上限であり、モデルは書き終われば自然に停止するため
+            // 十分大きく取っても無駄な出力やコスト増にはならない（長大な JSON でも途中で切れないように余裕を持たせる）。
+            const REVIEW_MAX_TOKENS = 8000
+            const maxAttempts = 2
+            let raw: Awaited<ReturnType<typeof streamChat>> | null = null
+            let parsed: any = null
+            for (let attempt = 0; attempt < maxAttempts; attempt++) {
+              raw = await streamChat(
+                { provider, model, messages: reviewMessages, temperature: 0.4, maxTokens: REVIEW_MAX_TOKENS },
+                () => {},
+              )
+              parsed = extractJson<any>(raw.text)
+              const truncated = raw.finishReason === 'length'
+              if (parsed && !truncated) break
+              if (truncated) {
+                console.warn(`[review] 出力が途中で切れました（試行${attempt + 1}/${maxAttempts}）。再試行します。`)
+              } else if (!parsed) {
+                console.warn(`[review] JSON を抽出できませんでした（試行${attempt + 1}/${maxAttempts}）。モデル出力:`, raw.text || '<empty>')
+              }
+            }
+            if (!parsed) {
+              set({ error: 'シーンの整理に失敗しました（モデル出力の解釈に失敗）。もう一度お試しください。' })
+              return
+            }
             const sessionChars = get().characters
             const findId = (name: string) =>
               s.characterIds
@@ -1184,7 +1197,7 @@ export const useStore = create<AppState>()(
                   return parsed.summary.trim()
                 if (Array.isArray(parsed?.summary) && parsed.summary.length > 0)
                   return (parsed.summary as unknown[]).map(String).join('\n')
-                return raw.text.trim()
+                return ''
               })(),
               suggestions: Array.isArray(parsed?.suggestions)
                 ? parsed.suggestions
