@@ -700,6 +700,9 @@ select {
   border-radius: 6px;
   padding: 2px 8px;
 }
+.toast.achievement {
+  background: linear-gradient(135deg, #e0b341, #d77ad8);
+}
 
 .seg {
   display: inline-flex;

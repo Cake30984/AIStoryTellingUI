@@ -1,12 +1,16 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type {
+  AchievementDef,
   Character,
+  Clause,
+  Condition,
   CounterDef,
   Development,
   ExportBundle,
   LoreEntry,
   NextSceneSuggestion,
+  Op,
   OpenRouterModel,
   Persona,
   Provider,
@@ -16,6 +20,7 @@ import type {
   SceneType,
   Session,
   SessionMode,
+  SessionState,
   StatDef,
   World,
 } from './types'
@@ -59,6 +64,87 @@ function clampStat(v: number, def?: { min?: number; max?: number }): number {
   if (def?.min != null) x = Math.max(def.min, x)
   if (def?.max != null) x = Math.min(def.max, x)
   return x
+}
+
+function compareOp(a: number, op: Op, b: number): boolean {
+  switch (op) {
+    case '>=':
+      return a >= b
+    case '>':
+      return a > b
+    case '<=':
+      return a <= b
+    case '<':
+      return a < b
+    case '==':
+      return a === b
+    case '!=':
+      return a !== b
+    default:
+      return false
+  }
+}
+
+/**
+ * 条件節（Clause）を評価する。prose は読まない＝数・フラグ・実績のみ判定（再現性のため）。
+ * World はセッション横断の再利用素材のため characterId/fromId 省略時は
+ * 「セッション参加キャラのいずれかが満たせば真」で判定する。
+ */
+function evalClause(
+  clause: Clause,
+  state: SessionState,
+  world: World | undefined,
+  characterIds: string[],
+): boolean {
+  switch (clause.kind) {
+    case 'stat': {
+      const def = world?.stats.find((d) => d.id === clause.defId)
+      if (!def) return false
+      const valueOf = (cid?: string) =>
+        state.stats.find((s) => s.defId === clause.defId && s.characterId === cid)?.value ??
+        def.default
+      if (def.scope === 'global') return compareOp(valueOf(undefined), clause.op, clause.value)
+      if (clause.characterId) return compareOp(valueOf(clause.characterId), clause.op, clause.value)
+      return characterIds.some((cid) => compareOp(valueOf(cid), clause.op, clause.value))
+    }
+    case 'counter': {
+      const def = world?.counters.find((d) => d.id === clause.defId)
+      if (!def) return false
+      const valueOf = (cid?: string) =>
+        state.counters.find((c) => c.defId === clause.defId && c.characterId === cid)?.value ?? 0
+      if (def.scope === 'global') return compareOp(valueOf(undefined), clause.op, clause.value)
+      if (clause.characterId) return compareOp(valueOf(clause.characterId), clause.op, clause.value)
+      return characterIds.some((cid) => compareOp(valueOf(cid), clause.op, clause.value))
+    }
+    case 'relationFlag': {
+      const toId = clause.toId ?? 'hero'
+      const hasFlag = (fromId: string) =>
+        !!state.relations
+          .find((r) => r.fromId === fromId && r.toId === toId)
+          ?.flags.includes(clause.flag)
+      const has = clause.fromId ? hasFlag(clause.fromId) : characterIds.some(hasFlag)
+      return has === clause.have
+    }
+    case 'achievement': {
+      const has = state.achievements.some((a) => a.defId === clause.defId)
+      return has === clause.have
+    }
+    default:
+      return false
+  }
+}
+
+/** 条件式を評価する（all=すべて満たす／any=いずれか満たす）。節が空なら不成立扱い。 */
+export function evalCondition(
+  cond: Condition | undefined,
+  state: SessionState,
+  world: World | undefined,
+  characterIds: string[],
+): boolean {
+  if (!cond) return false
+  if ('all' in cond)
+    return cond.all.length > 0 && cond.all.every((c) => evalClause(c, state, world, characterIds))
+  return cond.any.length > 0 && cond.any.some((c) => evalClause(c, state, world, characterIds))
 }
 
 /**
@@ -155,6 +241,7 @@ export function newWorld(): World {
     relationAspects: [],
     stats: [],
     counters: [],
+    achievements: [],
     createdAt: now,
     updatedAt: now,
   }
@@ -170,6 +257,24 @@ export function newStatDef(name = ''): StatDef {
 
 export function newCounterDef(name = ''): CounterDef {
   return { id: uid(), name, scope: 'character', inject: false }
+}
+
+export function newAchievementDef(name = ''): AchievementDef {
+  return { id: uid(), name, description: '', condition: { all: [] }, hidden: false }
+}
+
+/** 条件節の既定値（kind 選択時の初期形） */
+export function newClause(kind: Clause['kind'], world: World): Clause {
+  switch (kind) {
+    case 'stat':
+      return { kind: 'stat', defId: world.stats[0]?.id ?? '', op: '>=', value: 0 }
+    case 'counter':
+      return { kind: 'counter', defId: world.counters[0]?.id ?? '', op: '>=', value: 1 }
+    case 'relationFlag':
+      return { kind: 'relationFlag', flag: '', have: true }
+    case 'achievement':
+      return { kind: 'achievement', defId: '', have: true }
+  }
 }
 
 /** ワールドの状態定義プリセット（次元＋スタット＋カウンターをまとめて投入） */
@@ -264,7 +369,7 @@ function newSession(mode: SessionMode): Session {
     narrativeStyle: mode === 'story' ? 'novel' : 'chat',
     director: { enabled: false, typeIds: [] },
     usedEventIds: [],
-    state: { relations: [], moods: [], stats: [], counters: [] },
+    state: { relations: [], moods: [], stats: [], counters: [], achievements: [] },
     messages: [],
     temperature: 0.9,
     maxTokens: 1024,
@@ -300,10 +405,13 @@ interface AppState {
   isRegenSuggestions: boolean
   sceneReview: SceneReview | null
   error: string | null
+  /** 直近のシーン確定で新規解除された実績（通知用・非永続） */
+  newlyUnlockedAchievements: AchievementDef[]
 
   // 共通
   setView: (v: View) => void
   clearError: () => void
+  dismissNewAchievements: () => void
 
   // 接続先（プロバイダ）
   upsertProvider: (p: Provider) => void
@@ -713,9 +821,11 @@ export const useStore = create<AppState>()(
         isRegenSuggestions: false,
         sceneReview: null,
         error: null,
+        newlyUnlockedAchievements: [],
 
         setView: (view) => set({ view }),
         clearError: () => set({ error: null }),
+        dismissNewAchievements: () => set({ newlyUnlockedAchievements: [] }),
 
         upsertProvider: (p) =>
           set((st) => ({
@@ -1154,10 +1264,12 @@ export const useStore = create<AppState>()(
             .map((i) => review.counterEvents[i])
             .filter(Boolean)
           const stateWorld = get().worlds.find((w) => w.id === s.worldId)
+          // このレビュー適用で新規解除された実績（通知用）
+          const newlyUnlocked: AchievementDef[] = []
 
           // 関係性 prose を全文書き直し・気分上書き・スタットを clamp 加算した新 state を返す
           const applyState = (prev: Session['state']): Session['state'] => {
-            const base = prev ?? { relations: [], moods: [], stats: [], counters: [] }
+            const base = prev ?? { relations: [], moods: [], stats: [], counters: [], achievements: [] }
             // 関係性（fromId,toId で upsert。stance/aspects は全文置換、flags は和集合）
             const relations = base.relations.map((r) => ({ ...r }))
             for (const u of selectedRelUpdates) {
@@ -1211,7 +1323,22 @@ export const useStore = create<AppState>()(
               if (idx >= 0) counters[idx].value += c.amount
               else counters.push({ defId: c.defId, characterId: c.characterId, value: c.amount })
             }
-            return { relations, moods, stats, counters }
+            // 実績（数・フラグ・実績のしきい値をコードが自動判定。連鎖依存も解決するまで反復）
+            const achievements = (base.achievements ?? []).map((a) => ({ ...a }))
+            const candidate: Session['state'] = { relations, moods, stats, counters, achievements }
+            let progressed = true
+            while (progressed) {
+              progressed = false
+              for (const def of stateWorld?.achievements ?? []) {
+                if (achievements.some((a) => a.defId === def.id)) continue
+                if (evalCondition(def.condition, candidate, stateWorld, s.characterIds)) {
+                  achievements.push({ defId: def.id, unlockedAt: Date.now() })
+                  newlyUnlocked.push(def)
+                  progressed = true
+                }
+              }
+            }
+            return { relations, moods, stats, counters, achievements }
           }
 
           const applyGrowth = (st: AppState) => ({
@@ -1319,6 +1446,7 @@ export const useStore = create<AppState>()(
                 : sess,
             ),
             sceneReview: null,
+            newlyUnlockedAchievements: newlyUnlocked,
           }))
 
           // 新シーンの導入を自動生成（→ 続けて選択肢が提示される）
@@ -1645,6 +1773,7 @@ export const useStore = create<AppState>()(
             relationAspects: Array.isArray(w.relationAspects) ? w.relationAspects : [],
             stats: Array.isArray(w.stats) ? w.stats : [],
             counters: Array.isArray(w.counters) ? w.counters : [],
+            achievements: Array.isArray(w.achievements) ? w.achievements : [],
           }))
           const incomingSessions = bundle.sessions ?? []
           set((st) => {

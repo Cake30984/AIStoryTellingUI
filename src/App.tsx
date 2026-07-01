@@ -10,8 +10,18 @@ import SceneTypeLibrary from './components/library/SceneTypeLibrary'
 import SceneReviewModal from './components/SceneReviewModal'
 
 export default function App() {
-  const { sessions, activeId, view, providers, error, clearError, createSession, sceneReview } =
-    useStore()
+  const {
+    sessions,
+    activeId,
+    view,
+    providers,
+    error,
+    clearError,
+    createSession,
+    sceneReview,
+    newlyUnlockedAchievements,
+    dismissNewAchievements,
+  } = useStore()
   const [showSettings, setShowSettings] = useState(false)
 
   // いずれかのプロバイダに API キーが設定されているか
@@ -71,6 +81,15 @@ export default function App() {
         <div className="toast">
           <span>{error}</span>
           <button onClick={clearError}>閉じる</button>
+        </div>
+      )}
+
+      {newlyUnlockedAchievements.length > 0 && (
+        <div className="toast achievement">
+          <span>
+            🏆 実績解除: {newlyUnlockedAchievements.map((a) => a.name || '無名').join(' / ')}
+          </span>
+          <button onClick={dismissNewAchievements}>閉じる</button>
         </div>
       )}
     </div>
