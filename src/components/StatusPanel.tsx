@@ -26,6 +26,7 @@ export default function StatusPanel({ session, onClose }: Props) {
     moods: session.state.moods.map((m) => ({ ...m })),
     stats: session.state.stats.map((s) => ({ ...s })),
     counters: (session.state.counters ?? []).map((c) => ({ ...c })),
+    achievements: (session.state.achievements ?? []).map((a) => ({ ...a })),
   }))
 
   const statValue = (defId: string, characterId?: string): number => {
@@ -66,6 +67,16 @@ export default function StatusPanel({ session, onClose }: Props) {
       if (idx >= 0) counters[idx] = { ...counters[idx], value }
       else counters.push({ defId, characterId, value })
       return { ...prev, counters }
+    })
+
+  const isUnlocked = (defId: string) => st.achievements.some((a) => a.defId === defId)
+  const toggleAchievement = (defId: string) =>
+    setSt((prev) => {
+      const has = prev.achievements.some((a) => a.defId === defId)
+      const achievements = has
+        ? prev.achievements.filter((a) => a.defId !== defId)
+        : [...prev.achievements, { defId, unlockedAt: Date.now() }]
+      return { ...prev, achievements }
     })
 
   const globalStats = world?.stats.filter((d) => d.scope === 'global') ?? []
@@ -195,6 +206,36 @@ export default function StatusPanel({ session, onClose }: Props) {
               </div>
             )
           })}
+
+          {/* 実績 */}
+          {(world?.achievements ?? []).length > 0 && (
+            <div className="field">
+              <label>🏆 実績</label>
+              {world!.achievements.map((a) => {
+                const unlocked = isUnlocked(a.id)
+                const conceal = a.hidden && !unlocked
+                return (
+                  <label
+                    key={a.id}
+                    className="chk"
+                    style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={unlocked}
+                      onChange={() => toggleAchievement(a.id)}
+                    />
+                    <span>{conceal ? '？？？' : a.name || '無名'}</span>
+                    {!conceal && a.description && (
+                      <span className="desc" style={{ marginLeft: 4 }}>
+                        {a.description}
+                      </span>
+                    )}
+                  </label>
+                )
+              })}
+            </div>
+          )}
         </div>
         <div className="modal-foot">
           <button className="btn" onClick={onClose}>

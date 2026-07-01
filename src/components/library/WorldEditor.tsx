@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import {
+  newAchievementDef,
+  newClause,
   newCounterDef,
   newLoreEntry,
   newRelationAspect,
@@ -9,14 +11,134 @@ import {
   WORLD_PRESETS,
 } from '../../store'
 import type {
+  AchievementDef,
+  Clause,
+  Condition,
   CounterDef,
   LoreEntry,
+  Op,
   RelationAspectDef,
   ScheduledEvent,
   StatDef,
   World,
 } from '../../types'
 import CsvInput from '../CsvInput'
+
+const OPS: Op[] = ['>=', '>', '<=', '<', '==', '!=']
+
+/** 条件節（Clause）1件の編集行 */
+function ClauseRow({
+  clause,
+  world,
+  achievementId,
+  onChange,
+  onRemove,
+}: {
+  clause: Clause
+  world: World
+  achievementId: string
+  onChange: (c: Clause) => void
+  onRemove: () => void
+}) {
+  return (
+    <div className="lore-entry-top" style={{ marginTop: 6 }}>
+      <select
+        value={clause.kind}
+        style={{ background: 'var(--bg)' }}
+        onChange={(e) => onChange(newClause(e.target.value as Clause['kind'], world))}
+      >
+        <option value="stat">スタット</option>
+        <option value="counter">カウンター</option>
+        <option value="relationFlag">関係フラグ</option>
+        <option value="achievement">実績</option>
+      </select>
+
+      {(clause.kind === 'stat' || clause.kind === 'counter') && (
+        <>
+          <select
+            value={clause.defId}
+            style={{ background: 'var(--bg)' }}
+            onChange={(e) => onChange({ ...clause, defId: e.target.value })}
+          >
+            <option value="">（未選択）</option>
+            {(clause.kind === 'stat' ? world.stats : world.counters).map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name || '無名'}
+              </option>
+            ))}
+          </select>
+          <select
+            value={clause.op}
+            style={{ background: 'var(--bg)' }}
+            onChange={(e) => onChange({ ...clause, op: e.target.value as Op })}
+          >
+            {OPS.map((op) => (
+              <option key={op} value={op}>
+                {op}
+              </option>
+            ))}
+          </select>
+          <input
+            type="number"
+            value={clause.value}
+            style={{ width: 80, background: 'var(--bg)' }}
+            onChange={(e) => onChange({ ...clause, value: Number(e.target.value) })}
+          />
+        </>
+      )}
+
+      {clause.kind === 'relationFlag' && (
+        <>
+          <input
+            value={clause.flag}
+            placeholder="フラグ名（例: 命を救われた）"
+            className="lore-keys"
+            onChange={(e) => onChange({ ...clause, flag: e.target.value })}
+          />
+          <select
+            value={clause.have ? 'have' : 'not'}
+            style={{ background: 'var(--bg)' }}
+            onChange={(e) => onChange({ ...clause, have: e.target.value === 'have' })}
+          >
+            <option value="have">持っている</option>
+            <option value="not">持っていない</option>
+          </select>
+        </>
+      )}
+
+      {clause.kind === 'achievement' && (
+        <>
+          <select
+            value={clause.defId}
+            style={{ background: 'var(--bg)' }}
+            onChange={(e) => onChange({ ...clause, defId: e.target.value })}
+          >
+            <option value="">（未選択）</option>
+            {world.achievements
+              .filter((a) => a.id !== achievementId)
+              .map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name || '無名'}
+                </option>
+              ))}
+          </select>
+          <select
+            value={clause.have ? 'have' : 'not'}
+            style={{ background: 'var(--bg)' }}
+            onChange={(e) => onChange({ ...clause, have: e.target.value === 'have' })}
+          >
+            <option value="have">達成済み</option>
+            <option value="not">未達成</option>
+          </select>
+        </>
+      )}
+
+      <button className="icon-btn small" onClick={onRemove} title="条件を削除">
+        ✕
+      </button>
+    </div>
+  )
+}
 
 interface Props {
   world: World
@@ -64,6 +186,32 @@ export default function WorldEditor({ world, onClose }: Props) {
     patch({ counters: counters.map((c) => (c.id === id ? { ...c, ...p } : c)) })
   const addCounter = () => patch({ counters: [...counters, newCounterDef()] })
   const removeCounter = (id: string) => patch({ counters: counters.filter((c) => c.id !== id) })
+
+  // 実績定義（達成条件はコードが自動判定）
+  const achievements = d.achievements ?? []
+  const updateAchievement = (id: string, p: Partial<AchievementDef>) =>
+    patch({ achievements: achievements.map((a) => (a.id === id ? { ...a, ...p } : a)) })
+  const addAchievement = () => patch({ achievements: [...achievements, newAchievementDef()] })
+  const removeAchievement = (id: string) =>
+    patch({ achievements: achievements.filter((a) => a.id !== id) })
+  const clausesOf = (cond: Condition): Clause[] => ('all' in cond ? cond.all : cond.any)
+  const modeOf = (cond: Condition): 'all' | 'any' => ('all' in cond ? 'all' : 'any')
+  const setCondition = (id: string, mode: 'all' | 'any', clauses: Clause[]) =>
+    updateAchievement(id, { condition: mode === 'all' ? { all: clauses } : { any: clauses } })
+  const addClause = (a: AchievementDef) =>
+    setCondition(a.id, modeOf(a.condition), [...clausesOf(a.condition), newClause('stat', d)])
+  const updateClause = (a: AchievementDef, idx: number, clause: Clause) =>
+    setCondition(
+      a.id,
+      modeOf(a.condition),
+      clausesOf(a.condition).map((c, i) => (i === idx ? clause : c)),
+    )
+  const removeClause = (a: AchievementDef, idx: number) =>
+    setCondition(
+      a.id,
+      modeOf(a.condition),
+      clausesOf(a.condition).filter((_, i) => i !== idx),
+    )
 
   // プリセット：既存と重複しない次元・スタット・カウンターを追記
   const applyPreset = (presetId: string) => {
@@ -401,6 +549,74 @@ export default function WorldEditor({ world, onClose }: Props) {
           ))}
           <button className="btn" style={{ marginTop: 8 }} onClick={addCounter}>
             ＋ カウンターを追加
+          </button>
+
+          <div className="lore-head" style={{ marginTop: 12 }}>
+            <label>実績</label>
+            <div className="desc">
+              スタット・カウンター・関係フラグ・他の実績のしきい値を満たすと、承認なしで自動的に解除されます。
+            </div>
+          </div>
+          {achievements.map((a) => {
+            const mode = modeOf(a.condition)
+            const clauses = clausesOf(a.condition)
+            return (
+              <div key={a.id} className="lore-entry">
+                <div className="lore-entry-top">
+                  <input
+                    className="lore-keys"
+                    value={a.name}
+                    placeholder="実績名（例: 初めてのデート）"
+                    onChange={(e) => updateAchievement(a.id, { name: e.target.value })}
+                  />
+                  <label className="chk" title="未達成時は名前・内容を隠す">
+                    <input
+                      type="checkbox"
+                      checked={!!a.hidden}
+                      onChange={(e) => updateAchievement(a.id, { hidden: e.target.checked })}
+                    />
+                    未達成時は隠す
+                  </label>
+                  <button className="icon-btn small" onClick={() => removeAchievement(a.id)} title="削除">
+                    ✕
+                  </button>
+                </div>
+                <textarea
+                  rows={2}
+                  className="lore-content"
+                  value={a.description}
+                  placeholder="内容（例: 主人公と2人きりで出かけた）"
+                  onChange={(e) => updateAchievement(a.id, { description: e.target.value })}
+                />
+                <div className="row2" style={{ marginTop: 6, alignItems: 'center' }}>
+                  <span className="sub-label">達成条件</span>
+                  <select
+                    value={mode}
+                    style={{ background: 'var(--bg)' }}
+                    onChange={(e) => setCondition(a.id, e.target.value as 'all' | 'any', clauses)}
+                  >
+                    <option value="all">すべて満たす</option>
+                    <option value="any">いずれか満たす</option>
+                  </select>
+                </div>
+                {clauses.map((c, i) => (
+                  <ClauseRow
+                    key={i}
+                    clause={c}
+                    world={d}
+                    achievementId={a.id}
+                    onChange={(nc) => updateClause(a, i, nc)}
+                    onRemove={() => removeClause(a, i)}
+                  />
+                ))}
+                <button className="btn" style={{ marginTop: 6 }} onClick={() => addClause(a)}>
+                  ＋ 条件を追加
+                </button>
+              </div>
+            )
+          })}
+          <button className="btn" style={{ marginTop: 8 }} onClick={addAchievement}>
+            ＋ 実績を追加
           </button>
         </div>
         <div className="modal-foot">

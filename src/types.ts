@@ -114,6 +114,34 @@ export interface CounterDef {
   inject: boolean
 }
 
+/** 条件式の比較演算子 */
+export type Op = '>=' | '>' | '<=' | '<' | '==' | '!='
+
+/**
+ * 条件の最小単位（節）。prose は読まない＝数・フラグ・実績のみで判定（再現性のため）。
+ * World はセッション横断の再利用素材で特定キャラを固定できないため、
+ * characterId/fromId 省略時は「セッション参加キャラのいずれかが満たす」で判定する。
+ */
+export type Clause =
+  | { kind: 'stat'; defId: string; characterId?: string; op: Op; value: number }
+  | { kind: 'counter'; defId: string; characterId?: string; op: Op; value: number }
+  | { kind: 'relationFlag'; fromId?: string; toId?: string; flag: string; have: boolean }
+  | { kind: 'achievement'; defId: string; have: boolean }
+
+/** 条件式（all=すべて満たす / any=いずれか満たす）。節が空なら不成立扱い。 */
+export type Condition = { all: Clause[] } | { any: Clause[] }
+
+/** 実績の定義（ワールド固定）。condition を満たすとコードが自動で達成記録する。 */
+export interface AchievementDef {
+  id: string
+  name: string
+  description: string
+  /** 達成条件（数・フラグ・実績のしきい値。コードが自動判定） */
+  condition: Condition
+  /** 未達成時に名前・内容を隠す */
+  hidden?: boolean
+}
+
 /** 世界観（ロアブック＋ゲームシステム定義） */
 export interface World {
   id: string
@@ -129,6 +157,8 @@ export interface World {
   stats: StatDef[]
   /** 行動カウンターの定義 */
   counters: CounterDef[]
+  /** 実績の定義（達成条件はコードが自動判定） */
+  achievements: AchievementDef[]
   createdAt: number
   updatedAt: number
 }
@@ -258,6 +288,8 @@ export interface SessionState {
   stats: StatValue[]
   /** 行動カウンターの累計 */
   counters: CounterValue[]
+  /** 達成済みの実績 */
+  achievements: { defId: string; unlockedAt: number }[]
 }
 
 export interface Session {
