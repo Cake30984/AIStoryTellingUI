@@ -9,6 +9,7 @@ import SessionEditor from './SessionEditor'
 import SceneEditor from './SceneEditor'
 import StoryLogModal from './StoryLogModal'
 import StatusPanel from './StatusPanel'
+import DiscoveryPanel from './DiscoveryPanel'
 
 interface Props {
   session: Session
@@ -45,6 +46,7 @@ export default function ChatPanel({ session }: Props) {
   const [showSceneEditor, setShowSceneEditor] = useState(false)
   const [showLog, setShowLog] = useState(false)
   const [showStatus, setShowStatus] = useState(false)
+  const [showDiscovery, setShowDiscovery] = useState(false)
   const [speaker, setSpeaker] = useState<string | undefined>(undefined)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -266,6 +268,9 @@ export default function ChatPanel({ session }: Props) {
         </button>
         <button className="icon-btn" onClick={() => setShowStatus(true)} title="状態（関係性・ステータス）">
           📊
+        </button>
+        <button className="icon-btn" onClick={() => setShowDiscovery(true)} title="発見ログ（このセッションで見つかった設定）">
+          📖
         </button>
         <button className="icon-btn" onClick={() => setShowEditor(true)} title="セッション設定">
           ⚙
@@ -532,6 +537,9 @@ export default function ChatPanel({ session }: Props) {
       )}
       {showLog && <StoryLogModal session={session} onClose={() => setShowLog(false)} />}
       {showStatus && <StatusPanel session={session} onClose={() => setShowStatus(false)} />}
+      {showDiscovery && (
+        <DiscoveryPanel session={session} onClose={() => setShowDiscovery(false)} />
+      )}
     </div>
   )
 }
