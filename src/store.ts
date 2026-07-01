@@ -3,6 +3,8 @@ import { persist } from 'zustand/middleware'
 import type {
   AchievementDef,
   Character,
+  Choice,
+  ChoiceEffect,
   Clause,
   Condition,
   CounterDef,
@@ -148,11 +150,39 @@ export function evalCondition(
 }
 
 /**
- * モデルが返した JSON から選択肢の文字列配列を取り出す。
- * 素直な ["a","b"] のほか、`{"choices":[...]}` のラップや
- * `[{"text":"a"}]` のオブジェクト配列にも対応する（モデル差吸収）。
+ * World 定義の実績を state へ反復評価し、新規解除分を記録して返す（連鎖依存も1パスで解決）。
+ * シーン確定時・選択肢の加点時など、state が変わり得るあらゆる場所から共通で呼ぶ。
  */
-function coerceChoices(parsed: unknown): string[] {
+function unlockAchievements(
+  state: SessionState,
+  world: World | undefined,
+  characterIds: string[],
+): { state: SessionState; unlocked: AchievementDef[] } {
+  const achievements = state.achievements.map((a) => ({ ...a }))
+  const candidate: SessionState = { ...state, achievements }
+  const unlocked: AchievementDef[] = []
+  let progressed = true
+  while (progressed) {
+    progressed = false
+    for (const def of world?.achievements ?? []) {
+      if (achievements.some((a) => a.defId === def.id)) continue
+      if (evalCondition(def.condition, candidate, world, characterIds)) {
+        achievements.push({ defId: def.id, unlockedAt: Date.now() })
+        unlocked.push(def)
+        progressed = true
+      }
+    }
+  }
+  return { state: candidate, unlocked }
+}
+
+/**
+ * モデルが返した JSON から選択肢を取り出す。
+ * 素直な ["a","b"] のほか、`{"choices":[...]}` のラップや
+ * `[{"text":"a","effects":[...]}]` のオブジェクト配列にも対応する（モデル差吸収）。
+ * effects（P5・小刻み加点）はワールド定義のスタット名で解決し、未定義は無視する。
+ */
+function coerceChoices(parsed: unknown, world: World | undefined, characters: Character[]): Choice[] {
   const arr: unknown[] = Array.isArray(parsed)
     ? parsed
     : parsed && typeof parsed === 'object'
@@ -161,16 +191,46 @@ function coerceChoices(parsed: unknown): string[] {
           | undefined) ?? [])
       : []
   return arr
-    .map((x) => {
-      if (typeof x === 'string') return x
-      if (x && typeof x === 'object') {
-        const v = Object.values(x as Record<string, unknown>).find((y) => typeof y === 'string')
-        return typeof v === 'string' ? v : ''
+    .map((x): Choice | null => {
+      if (typeof x === 'string') {
+        const text = x.trim()
+        return text ? { text } : null
       }
-      return ''
+      if (!x || typeof x !== 'object') return null
+      const obj = x as Record<string, unknown>
+      const textRaw =
+        typeof obj.text === 'string'
+          ? obj.text
+          : (Object.values(obj).find((v) => typeof v === 'string') as string | undefined)
+      const text = textRaw?.trim()
+      if (!text) return null
+      const rawEffects = Array.isArray(obj.effects) ? obj.effects : []
+      const effects: ChoiceEffect[] = rawEffects
+        .map((e: any) => {
+          const def = (world?.stats ?? []).find(
+            (d) => d.name === String(e?.stat ?? e?.name ?? '').trim(),
+          )
+          if (!def) return null
+          const charName = e?.character ? String(e.character) : undefined
+          const characterId =
+            def.scope === 'character' && charName
+              ? characters.find((c) => c.name === charName)?.id
+              : undefined
+          if (def.scope === 'character' && !characterId) return null
+          const delta = Math.round(Number(e?.delta) || 0)
+          if (!delta) return null
+          return {
+            defId: def.id,
+            name: def.name,
+            characterId,
+            charName: def.scope === 'character' ? charName : undefined,
+            delta,
+          }
+        })
+        .filter((e: any): e is NonNullable<typeof e> => !!e)
+      return { text, effects: effects.length ? effects : undefined }
     })
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0)
+    .filter((c): c is Choice => !!c)
     .slice(0, 4)
 }
 
@@ -456,6 +516,8 @@ interface AppState {
   cancelReview: () => void
   /** 直近のアシスタント応答に対して選択肢を手動で生成し直す */
   regenChoices: () => Promise<void>
+  /** 選択肢に付いた小刻み加点（P5）を適用する（clamp加算＋実績再評価・通知） */
+  applyChoiceEffects: (effects: ChoiceEffect[]) => void
 
   // 生成
   startSession: () => void
@@ -767,22 +829,25 @@ export const useStore = create<AppState>()(
         set({ isGeneratingChoices: true })
         try {
           const refs = resolveRefs(session)
+          const world = refs.world
+          // 本編に注入しないスタットも含め、ワールド定義の名前で effects を拘束する
+          const statNames = (world?.stats ?? []).map((d) => d.name).filter(Boolean)
           const base = buildMessages(session, refs)
           // 末尾に user の念押しを積み、本編の続き（地の文）ではなく JSON を出させる
           const msgs = [
-            { role: 'system' as const, content: choicesSystem(mode) },
+            { role: 'system' as const, content: choicesSystem(mode, statNames) },
             ...base.slice(1),
             { role: 'user' as const, content: choicesUserNudge(mode) },
           ]
           // always はモデルが本編を続けてしまうことがあるため最大2回試行（auto の空配列は正当なので1回）
           const maxAttempts = mode === 'always' ? 2 : 1
-          let choices: string[] = []
+          let choices: Choice[] = []
           for (let attempt = 1; attempt <= maxAttempts; attempt++) {
             const raw = await streamChat(
               { provider, model, messages: msgs, temperature: 0.5, maxTokens: 400 },
               () => {},
             )
-            choices = coerceChoices(extractJson<unknown>(raw.text))
+            choices = coerceChoices(extractJson<unknown>(raw.text), world, refs.characters)
             if (choices.length > 0) break
             if (mode === 'always') {
               console.warn(
@@ -1331,21 +1396,13 @@ export const useStore = create<AppState>()(
               else counters.push({ defId: c.defId, characterId: c.characterId, value: c.amount })
             }
             // 実績（数・フラグ・実績のしきい値をコードが自動判定。連鎖依存も解決するまで反復）
-            const achievements = (base.achievements ?? []).map((a) => ({ ...a }))
-            const candidate: Session['state'] = { relations, moods, stats, counters, achievements }
-            let progressed = true
-            while (progressed) {
-              progressed = false
-              for (const def of stateWorld?.achievements ?? []) {
-                if (achievements.some((a) => a.defId === def.id)) continue
-                if (evalCondition(def.condition, candidate, stateWorld, s.characterIds)) {
-                  achievements.push({ defId: def.id, unlockedAt: Date.now() })
-                  newlyUnlocked.push(def)
-                  progressed = true
-                }
-              }
-            }
-            return { relations, moods, stats, counters, achievements }
+            const { state: withAchievements, unlocked } = unlockAchievements(
+              { relations, moods, stats, counters, achievements: base.achievements ?? [] },
+              stateWorld,
+              s.characterIds,
+            )
+            newlyUnlocked.push(...unlocked)
+            return withAchievements
           }
 
           const applyGrowth = (st: AppState) => ({
@@ -1577,6 +1634,26 @@ export const useStore = create<AppState>()(
             .find((m) => m.role === 'assistant' && m.content.trim().length > 0)
           if (!last) return
           await genChoices(s, last.id)
+        },
+
+        applyChoiceEffects: (effects) => {
+          const s = active()
+          if (!s || effects.length === 0) return
+          const world = get().worlds.find((w) => w.id === s.worldId)
+          const stats = s.state.stats.map((sv) => ({ ...sv }))
+          for (const eff of effects) {
+            const def = world?.stats.find((d) => d.id === eff.defId)
+            const idx = stats.findIndex(
+              (sv) => sv.defId === eff.defId && sv.characterId === eff.characterId,
+            )
+            const cur = idx >= 0 ? stats[idx].value : (def?.default ?? 0)
+            const val = clampStat(cur + eff.delta, def)
+            if (idx >= 0) stats[idx].value = val
+            else stats.push({ defId: eff.defId, characterId: eff.characterId, value: val })
+          }
+          const { state, unlocked } = unlockAchievements({ ...s.state, stats }, world, s.characterIds)
+          get().updateSession(s.id, { state })
+          if (unlocked.length) set({ newlyUnlockedAchievements: unlocked })
         },
 
         startSession: () => {

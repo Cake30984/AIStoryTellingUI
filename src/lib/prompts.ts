@@ -224,18 +224,25 @@ export const CONTINUE_PROMPT = '（続けて。物語をさらに展開させて
 /** 新しいシーンの導入を書かせるための擬似ユーザー入力 */
 export const SCENE_START_PROMPT = '（新しい場面が始まります。情景の導入から自然に書き始めてください。）'
 
-/** 選択肢生成用の system プロンプト */
-export function choicesSystem(mode: 'always' | 'auto'): string {
-  const base =
-    `あなたは物語の選択肢デザイナーです。直前の場面を踏まえ、主人公（ユーザー）が次に取りうる行動・展開の選択肢を考えます。\n` +
-    `出力は JSON 配列のみ（前後に文章を付けない）。各要素は10〜30字程度の短い行動・選択。例: ["剣を抜いて立ち向かう","そっと後ずさる","話しかけてみる"]\n`
+/**
+ * 選択肢生成用の system プロンプト。
+ * @param statNames ワールド定義のスタット名。空でなければ、選択肢に小刻みな加点候補（P5）を持たせられる。
+ */
+export function choicesSystem(mode: 'always' | 'auto', statNames: string[] = []): string {
+  const base = `あなたは物語の選択肢デザイナーです。直前の場面を踏まえ、主人公（ユーザー）が次に取りうる行動・展開の選択肢を考えます。\n`
+  const format = statNames.length
+    ? `出力は JSON 配列のみ（前後に文章を付けない）。各要素は {"text":"10〜30字程度の短い行動・選択","effects":[{"stat":"名称","character":"キャラ名（省略可＝主人公/全体）","delta":数値}]} の形式。\n` +
+      `effects は既存の【${statNames.join('・')}】のみを使い、その選択が明確にその値を動かすと言える場合だけ小さめの値（1〜3程度）を付ける。関係が無ければ effects は省略するか空配列にする。\n` +
+      `例: [{"text":"贈り物を渡す","effects":[{"stat":"好感度","delta":2}]},{"text":"そっと見守る"}]\n`
+    : `出力は JSON 配列のみ（前後に文章を付けない）。各要素は10〜30字程度の短い行動・選択の文字列。例: ["剣を抜いて立ち向かう","そっと後ずさる","話しかけてみる"]\n`
   if (mode === 'auto') {
     return (
       base +
+      format +
       `ただし、選択を挟むのが不自然な場面（描写の途中など）では空配列 [] を返してください。挟むべき局面でのみ2〜4個。`
     )
   }
-  return base + `2〜4個の選択肢を返してください。`
+  return base + format + `2〜4個の選択肢を返してください。`
 }
 
 /**
@@ -249,7 +256,7 @@ export function choicesUserNudge(mode: 'always' | 'auto'): string {
     `指示どおりの JSON 配列だけで出力してください。物語の続き・地の文・説明は書かないこと。`
   return mode === 'auto'
     ? `${head}（選択を挟むのが不自然なら [] を返す）`
-    : `${head} 例: ["剣を抜いて立ち向かう","そっと後ずさる","話しかけてみる"]`
+    : `${head} 上で指定した形式・個数を厳守すること。`
 }
 
 /**
