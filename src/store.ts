@@ -497,10 +497,14 @@ interface AppState {
   setActive: (id: string) => void
   updateSession: (id: string, patch: Partial<Session>) => void
   resolveRefs: (session: Session) => ResolvedRefs
-  /** 発見ロアをセッションのオーバーレイから元ワールドへ昇格（move）。元素材は明示操作でのみ更新される */
-  promoteOverlayLore: (sessionId: string, loreId: string) => void
-  /** 発見キャラ成長をセッションのオーバーレイから元キャラへ昇格（move） */
-  promoteOverlayDev: (sessionId: string, characterId: string, devId: string) => void
+  /**
+   * 発見ロアをセッションのオーバーレイから元ワールドへ昇格（move）。元素材は明示操作でのみ更新される。
+   * entry は呼び出し側（DiscoveryPanel）でローカル編集済みの内容をそのまま渡す
+   * （store 側の overlay を経由しないため、他の未保存編集に触れない）。
+   */
+  promoteOverlayLore: (sessionId: string, entry: LoreEntry) => void
+  /** 発見キャラ成長をセッションのオーバーレイから元キャラへ昇格（move）。dev はローカル編集済みの内容をそのまま渡す */
+  promoteOverlayDev: (sessionId: string, characterId: string, dev: Development) => void
 
   // シーン
   updateScene: (sceneId: string, patch: Partial<Scene>) => void
@@ -1062,11 +1066,11 @@ export const useStore = create<AppState>()(
 
         resolveRefs,
 
-        promoteOverlayLore: (sessionId, loreId) =>
+        promoteOverlayLore: (sessionId, entry) =>
           set((st) => {
             const sess = st.sessions.find((s) => s.id === sessionId)
-            const entry = sess?.overlay.lore.find((e) => e.id === loreId)
-            if (!sess || !entry || !sess.worldId) return {}
+            // overlay に該当項目が実在する場合のみ昇格（渡された entry はローカル編集済みの内容を優先して使う）
+            if (!sess || !sess.worldId || !sess.overlay.lore.some((e) => e.id === entry.id)) return {}
             return {
               worlds: st.worlds.map((w) =>
                 w.id === sess.worldId
@@ -1075,18 +1079,17 @@ export const useStore = create<AppState>()(
               ),
               sessions: st.sessions.map((s) =>
                 s.id === sessionId
-                  ? { ...s, overlay: { ...s.overlay, lore: s.overlay.lore.filter((e) => e.id !== loreId) } }
+                  ? { ...s, overlay: { ...s.overlay, lore: s.overlay.lore.filter((e) => e.id !== entry.id) } }
                   : s,
               ),
             }
           }),
 
-        promoteOverlayDev: (sessionId, characterId, devId) =>
+        promoteOverlayDev: (sessionId, characterId, dev) =>
           set((st) => {
             const sess = st.sessions.find((s) => s.id === sessionId)
             const group = sess?.overlay.characterDevelopments.find((x) => x.characterId === characterId)
-            const dev = group?.developments.find((d) => d.id === devId)
-            if (!sess || !dev) return {}
+            if (!sess || !group?.developments.some((d) => d.id === dev.id)) return {}
             return {
               characters: st.characters.map((c) =>
                 c.id === characterId
@@ -1101,7 +1104,7 @@ export const useStore = create<AppState>()(
                         ...s.overlay,
                         characterDevelopments: s.overlay.characterDevelopments.map((x) =>
                           x.characterId === characterId
-                            ? { ...x, developments: x.developments.filter((d) => d.id !== devId) }
+                            ? { ...x, developments: x.developments.filter((d) => d.id !== dev.id) }
                             : x,
                         ),
                       },
@@ -1233,6 +1236,9 @@ export const useStore = create<AppState>()(
             const maxAttempts = 2
             let raw: Awaited<ReturnType<typeof streamChat>> | null = null
             let parsed: any = null
+            const hasSummary = (p: any) =>
+              (typeof p?.summary === 'string' && p.summary.trim().length > 0) ||
+              (Array.isArray(p?.summary) && p.summary.length > 0)
             for (let attempt = 0; attempt < maxAttempts; attempt++) {
               raw = await streamChat(
                 { provider, model, messages: reviewMessages, temperature: 0.4, maxTokens: REVIEW_MAX_TOKENS },
@@ -1240,16 +1246,21 @@ export const useStore = create<AppState>()(
               )
               parsed = extractJson<any>(raw.text)
               const truncated = raw.finishReason === 'length'
-              if (parsed && !truncated) break
+              if (parsed && !truncated && hasSummary(parsed)) break
               if (truncated) {
                 console.warn(`[review] 出力が途中で切れました（試行${attempt + 1}/${maxAttempts}）。再試行します。`)
               } else if (!parsed) {
                 console.warn(`[review] JSON を抽出できませんでした（試行${attempt + 1}/${maxAttempts}）。モデル出力:`, raw.text || '<empty>')
+              } else if (!hasSummary(parsed)) {
+                console.warn(`[review] summary フィールドが空でした（試行${attempt + 1}/${maxAttempts}）。再試行します。`)
               }
             }
             if (!parsed) {
               set({ error: 'シーンの整理に失敗しました（モデル出力の解釈に失敗）。もう一度お試しください。' })
               return
+            }
+            if (!hasSummary(parsed)) {
+              console.warn('[review] リトライしても summary が空のため、要約は空欄になります。手動で編集してください。')
             }
             const sessionChars = get().characters
             const findId = (name: string) =>

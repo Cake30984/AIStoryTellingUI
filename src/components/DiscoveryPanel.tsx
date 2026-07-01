@@ -52,7 +52,9 @@ export default function DiscoveryPanel({ session, onClose }: Props) {
       ),
     }))
 
-  const promoteLore = (id: string) => {
+  // 昇格はローカル編集済みの内容（entry/dev）をそのまま store へ渡す。
+  // overlay 全体を書き戻さないため、他の未保存編集や2連続クリックの競合に影響されない。
+  const promoteLore = (entry: LoreEntry) => {
     if (!session.worldId) return
     if (
       !confirm(
@@ -60,21 +62,19 @@ export default function DiscoveryPanel({ session, onClose }: Props) {
       )
     )
       return
-    updateSession(session.id, { overlay: ov })
-    promoteOverlayLore(session.id, id)
-    setOv((prev) => ({ ...prev, lore: prev.lore.filter((e) => e.id !== id) }))
+    promoteOverlayLore(session.id, entry)
+    setOv((prev) => ({ ...prev, lore: prev.lore.filter((e) => e.id !== entry.id) }))
   }
 
-  const promoteDev = (characterId: string, devId: string) => {
+  const promoteDev = (characterId: string, dev: Development) => {
     if (!confirm(`この設定を「${charName(characterId)}」の正式なプロフィールへ反映しますか？\n以後は発見ログから消え、キャラ編集に表示されます。`))
       return
-    updateSession(session.id, { overlay: ov })
-    promoteOverlayDev(session.id, characterId, devId)
+    promoteOverlayDev(session.id, characterId, dev)
     setOv((prev) => ({
       ...prev,
       characterDevelopments: prev.characterDevelopments.map((x) =>
         x.characterId === characterId
-          ? { ...x, developments: x.developments.filter((d) => d.id !== devId) }
+          ? { ...x, developments: x.developments.filter((d) => d.id !== dev.id) }
           : x,
       ),
     }))
@@ -137,7 +137,7 @@ export default function DiscoveryPanel({ session, onClose }: Props) {
                     </label>
                     <button
                       className="icon-btn small"
-                      onClick={() => promoteLore(e.id)}
+                      onClick={() => promoteLore(e)}
                       disabled={!session.worldId}
                       title={session.worldId ? 'ワールドへ昇格' : 'ワールド未設定のため昇格できません'}
                     >
@@ -181,7 +181,7 @@ export default function DiscoveryPanel({ session, onClose }: Props) {
                     />
                     <button
                       className="icon-btn small"
-                      onClick={() => promoteDev(x.characterId, dev.id)}
+                      onClick={() => promoteDev(x.characterId, dev)}
                       title="キャラへ昇格"
                     >
                       ⬆
