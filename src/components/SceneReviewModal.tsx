@@ -14,6 +14,7 @@ export default function SceneReviewModal() {
     sceneTypes,
     sessions,
     activeId,
+    stop,
   } = useStore()
   const review = sceneReview!
   const session = sessions.find((s) => s.id === activeId)
@@ -158,7 +159,12 @@ export default function SceneReviewModal() {
                   )}
                 </div>
                 {isRegenSuggestions && (
-                  <div className="choices-loading">次シーンの候補を生成中…</div>
+                  <div className="choices-loading">
+                    次シーンの候補を生成中…
+                    <button className="link" style={{ marginLeft: 8 }} onClick={stop}>
+                      中止
+                    </button>
+                  </div>
                 )}
                 <div className="review-cards" style={isRegenSuggestions ? { opacity: 0.5 } : undefined}>
                   {review.suggestions.map((s, i) => (

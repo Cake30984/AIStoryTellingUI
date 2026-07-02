@@ -865,22 +865,32 @@ export const useStore = create<AppState>()(
             { role: 'user' as const, content: choicesUserNudge(mode) },
           ]
           // always はモデルが本編を続けてしまうことがあるため最大2回試行（auto の空配列は正当なので1回）
+          // truncated（途中切れ）の場合も抽出漏れの原因になるため再試行対象に含める。
+          // ただし再試行で結果が悪化しても、それまでの最良の結果（最も多く抽出できたもの）を採用する。
           const maxAttempts = mode === 'always' ? 2 : 1
           let choices: Choice[] = []
+          let bestChoices: Choice[] = []
+          controller = new AbortController()
           for (let attempt = 1; attempt <= maxAttempts; attempt++) {
             const raw = await streamChat(
-              { provider, model, messages: msgs, temperature: 0.5, maxTokens: 400 },
+              { provider, model, messages: msgs, temperature: 0.5, maxTokens: 600, signal: controller.signal },
               () => {},
             )
-            choices = coerceChoices(extractJson<unknown>(raw.text), world, refs.characters)
-            if (choices.length > 0) break
-            if (mode === 'always') {
+            const parsedChoices = coerceChoices(extractJson<unknown>(raw.text), world, refs.characters)
+            if (parsedChoices.length > bestChoices.length) bestChoices = parsedChoices
+            const truncated = raw.finishReason === 'length'
+            if (parsedChoices.length > 0 && !truncated) {
+              choices = parsedChoices
+              break
+            }
+            if (mode === 'always' || truncated) {
               console.warn(
-                `[choices] 選択肢を抽出できませんでした（試行${attempt}/${maxAttempts}）。モデル出力:`,
+                `[choices] ${truncated ? '出力が途中で切れました' : '選択肢を抽出できませんでした'}（試行${attempt}/${maxAttempts}）。モデル出力:`,
                 raw.text || '<empty>',
               )
             }
           }
+          if (choices.length === 0) choices = bestChoices
           if (choices.length > 0) {
             // 生成中に別セッションへ切り替えていても、対象セッションのメッセージへ付与する
             const cur = get().sessions.find((x) => x.id === session.id)
@@ -896,6 +906,7 @@ export const useStore = create<AppState>()(
           // 選択肢は失敗しても本編には影響させない（診断用にのみ記録）
           console.warn('[choices] 生成に失敗:', (e as Error)?.message)
         } finally {
+          controller = null
           set({ isGeneratingChoices: false })
         }
       }
