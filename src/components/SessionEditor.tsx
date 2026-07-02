@@ -108,7 +108,7 @@ export default function SessionEditor({ session, onClose }: Props) {
                       onClick={() => toggleCharacter(c.id)}
                     >
                       <span className="dot-avatar" style={{ background: c.avatar.color }}>
-                        {c.avatar.emoji}
+                        {Array.from(c.name || '無名')[0]}
                       </span>
                       {c.name || '無名'}
                     </button>

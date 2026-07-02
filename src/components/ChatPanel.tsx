@@ -143,8 +143,8 @@ export default function ChatPanel({ session }: Props) {
   const avatarFor = (characterId?: string) => {
     const c = characters.find((x) => x.id === characterId) ?? participants[0]
     return c
-      ? { emoji: c.avatar.emoji, color: c.avatar.color, name: c.name || 'AI' }
-      : { emoji: '✦', color: '#7c5cff', name: session.mode === 'story' ? '物語' : 'AI' }
+      ? { avatar: c.avatar, name: c.name || 'AI' }
+      : { avatar: { color: '#7c5cff' }, name: session.mode === 'story' ? '物語' : 'AI' }
   }
 
   // 小説形式: 地の文と「」セリフを分けて軽く装飾
@@ -233,12 +233,12 @@ export default function ChatPanel({ session }: Props) {
     return (
       <div className="msg" key={m.id}>
         {m.role === 'assistant' ? (
-          <div className="avatar" style={{ background: av!.color }}>
-            {av!.emoji}
+          <div className="avatar" style={{ background: av!.avatar.color }}>
+            {Array.from(av!.name)[0] ?? '?'}
           </div>
         ) : (
           <div className="avatar" style={{ background: persona?.avatar.color ?? 'var(--bg-elev2)' }}>
-            {persona?.avatar.emoji ?? '🙂'}
+            {Array.from(persona?.name || 'あなた')[0] ?? '?'}
           </div>
         )}
         <div className={'bubble' + (marker ? ' continue' : '')}>
@@ -404,7 +404,7 @@ export default function ChatPanel({ session }: Props) {
                   onClick={() => setSpeaker(c.id)}
                 >
                   <span className="dot-avatar" style={{ background: c.avatar.color }}>
-                    {c.avatar.emoji}
+                    {Array.from(c.name || '無名')[0]}
                   </span>
                   {c.name || '無名'}
                 </button>

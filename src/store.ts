@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type {
   AchievementDef,
+  Avatar,
   Character,
   Choice,
   ChoiceEffect,
@@ -249,7 +250,7 @@ export function newCharacter(): Character {
     exampleDialogues: '',
     greeting: '',
     developments: [],
-    avatar: { emoji: '✦', color: pickColor() },
+    avatar: { color: pickColor() },
     tags: [],
     createdAt: now,
     updatedAt: now,
@@ -262,7 +263,7 @@ export function newPersona(): Persona {
     id: uid(),
     name: '',
     description: '',
-    avatar: { emoji: '🙂', color: '#5b8def' },
+    avatar: { color: '#5b8def' },
     createdAt: now,
     updatedAt: now,
   }
@@ -2065,7 +2066,18 @@ export const useStore = create<AppState>()(
           let added = 0
           // クリーンブレイク：移行連鎖は廃止。現行スキーマのバンドルのみを id マージする。
           // ワールドは新フィールド欠落に備え最小限だけ補完する。
-          const incomingCharacters = bundle.characters ?? []
+          const normalizeAvatar = (a: any): Avatar => ({
+            color: typeof a?.color === 'string' ? a.color : pickColor(),
+            ...(typeof a?.imageId === 'string' ? { imageId: a.imageId } : {}),
+          })
+          const incomingCharacters = (bundle.characters ?? []).map((c: any) => ({
+            ...c,
+            avatar: normalizeAvatar(c.avatar),
+          }))
+          const incomingPersonas = (bundle.personas ?? []).map((p: any) => ({
+            ...p,
+            avatar: normalizeAvatar(p.avatar),
+          }))
           const incomingWorlds = (bundle.worlds ?? []).map((w: any) => ({
             ...w,
             relationAspects: Array.isArray(w.relationAspects) ? w.relationAspects : [],
@@ -2090,7 +2102,7 @@ export const useStore = create<AppState>()(
             return {
               characters: mergeById(st.characters, incomingCharacters),
               worlds: mergeById(st.worlds, incomingWorlds),
-              personas: mergeById(st.personas, bundle.personas),
+              personas: mergeById(st.personas, incomingPersonas),
               sceneTypes: mergeById(st.sceneTypes, bundle.sceneTypes ?? []),
               sessions: mergeById(st.sessions, incomingSessions),
               // providers はユーザー固有の設定のためインポート対象外
@@ -2101,9 +2113,9 @@ export const useStore = create<AppState>()(
       }
     },
     {
-      // クリーンブレイク：新スキーマ用に persist キーを刷新（旧 'ai-storytelling-store' は破棄）。
+      // クリーンブレイク：Avatar 型刷新（絵文字廃止→画像参照）に伴い persist キーを再度刷新（旧 v2 は破棄）。
       // 後方互換は不要なため migrate 連鎖は持たない。
-      name: 'ai-storytelling-store-v2',
+      name: 'ai-storytelling-store-v3',
       partialize: (st) => ({
         providers: st.providers,
         favoriteModels: st.favoriteModels,

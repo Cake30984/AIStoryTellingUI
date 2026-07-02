@@ -60,7 +60,7 @@ export default function SceneEditor({ session, scene, onClose }: Props) {
                     onClick={() => toggle(c.id)}
                   >
                     <span className="dot-avatar" style={{ background: c.avatar.color }}>
-                      {c.avatar.emoji}
+                      {Array.from(c.name || '無名')[0]}
                     </span>
                     {c.name || '無名'}
                   </button>

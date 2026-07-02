@@ -31,6 +31,8 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist` で localStor
   - `json.ts` — `extractJson`（モデル出力から堅牢な JSON 抽出）
   - `tokens.ts` — `estimateTokens`/`tokenLevel`
   - `io.ts` — `downloadBundle`（JSON DL）/`parseBundle`（取り込みファイルの検証・整形）。※エクスポートバンドルの組み立て本体は `store.exportBundle`
+  - `imageStore.ts`（P1）— アバター・カード画像の IndexedDB ストア（`putImage`/`getImage`/`deleteImage`/`listImageIds`/`gcImages`）＋表示用 `useImageUrl` フック。localStorage には画像を入れない
+  - `avatarGen.ts`（P1）— `generateDefaultAvatar`（名前イニシャル＋色から canvas でデフォルト画像生成）/ `normalizeImage`（アップロード画像の縮小・PNG化）
 - `src/components/`
   - `Sidebar.tsx` — 左ナビ＋セッション一覧
   - `ChatPanel.tsx` — 会話画面（トップバー・シーン仕切り・話者/選択肢・コンポーザー・メッセージ操作）
@@ -47,6 +49,7 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist` で localStor
 ## データモデル（要点）
 すべて「再利用可能な素材ライブラリ」をセッションが参照する構造。
 - **Provider** — `{id,label,kind:'openrouter'|'openai',baseUrl,apiKey}`。localStorage のみ保存。エクスポートには含めない。
+- **Avatar**（P1で刷新・絵文字廃止）— `{imageId?, color}`。`imageId` は `imageStore.ts` の IndexedDB 画像 id（未設定なら色＋名前イニシャルで表示。表示コンポーネントは P2 で `EntityAvatar` に統一予定、現状は各所で暫定インライン表示）。
 - **Character** — name/persona/speechStyle/appearance/exampleDialogues/greeting/avatar/tags＋`developments: Development[]`＋`model?`（ModelRef。chat 群像で話者確定時のみ有効）
 - **World** — description（常時）＋`entries: LoreEntry[]`＋`scheduledEvents: ScheduledEvent[]`（`{day,name,note}`）＋**`relationAspects: RelationAspectDef[]`（関係性 prose の次元・ワールド固定）＋`stats: StatDef[]`（事実の数の定義）＋`counters: CounterDef[]`（行動カウンター定義）**。プリセット `WORLD_PRESETS`（恋愛/RPG/経営）で投入可
 - **Persona** — 利用者が演じる人物
@@ -71,7 +74,7 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist` で localStor
 ヘルパ: `mainModelOf(session, character?)` / `reviewModelOf(session)` / `choicesModelOf(session)`（store.ts エクスポート）
 
 ## 永続化（クリーンブレイク方針）
-`store.ts` の persist `name: 'ai-storytelling-store-v2'`。**後方互換は持たない（ADR-1）**：旧 migrate 連鎖・`version`/`migrate` は廃止し、スキーマ刷新時は persist キーを変えて旧データを破棄する。`exportBundle.version` は現行 `1`、`importBundle` は現行スキーマのみ id マージ（正規化連鎖なし。worlds は新フィールド欠落のみ最小補完）。
+`store.ts` の persist `name: 'ai-storytelling-store-v3'`（P1で Avatar 型刷新のため v2 から刷新）。**後方互換は持たない（ADR-1）**：旧 migrate 連鎖・`version`/`migrate` は廃止し、スキーマ刷新時は persist キーを変えて旧データを破棄する。`exportBundle.version` は現行 `1`、`importBundle` は現行スキーマのみ id マージ（正規化連鎖なし。worlds は新フィールド欠落のみ最小補完）。
 
 **スキーマ変更時: 型更新 → 初期state/factory更新 → exportBundle/importBundle 反映 → partialize に新フィールド。**（破壊的変更なら persist キーも更新）
 
@@ -102,7 +105,7 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist` で localStor
 **画像/ComfyUI 以外はほぼ実装済み**。実装済み: セッション(RP/物語)・キャラ/世界観/ペルソナ/シーンタイプの素材ライブラリ・ロアブック・グループ会話・シーン管理・タイムライン・選択肢進行・統合レビュー・シーン演出エンジン・文体切替・**マルチプロバイダ（プロバイダ管理・キャラ別モデル・役割別裏方モデル）**・あらすじ閲覧・会話編集/削除/作り直し・エクスポート/インポート・トークン目安・出力停止対策・状態エンジン（関係性prose＋事実の数＋条件エンジン＋実績＋選択肢連動加点。ADR-1 P1〜P5）・**セッション・オーバーレイ（発見ロア／キャラ成長を素材から分離しセッションへ隔離＋実効ビュー注入＋発見ログUI＋素材への昇格。B1〜B4）**。
 
 ## 次にやること（ロードマップ）
-1. **画像カード＆アバター画像化（P1〜P4）**: `docs/設計_画像カードとアバター.md` に従い、IndexedDB 画像ストア → 絵文字全廃の画像アバター → PNG カード（ST互換キャラ／独自世界・ペルソナ）入出力の順に実装。Avatar 型変更に伴い persist キーを `-v3` へ（クリーンブレイク）。
+1. **画像カード＆アバター画像化（P1完了・P2〜P4未着手）**: `docs/設計_画像カードとアバター.md` に従う。**P1完了**（IndexedDB画像ストア・avatarGen・Avatar型刷新・persist v3化。UI表示は絵文字撤去のみの暫定対応＝イニシャル文字固定表示で、画像アップロードや `EntityAvatar` 共通化はまだ）。次は **P2**（`EntityAvatar` 共通コンポーネント化・`AvatarField` の画像アップロード対応・全画面の画像表示統一）→ P3（PNGキャラカード入出力）→ P4（世界・ペルソナカード）。
 2. **画像生成 & ComfyUI 連携（P5・要追加設計）**: アバター生成＋挿絵生成＋セッションの挿絵埋め込みエクスポート。ComfyUI(localhost:8188) は CORS 許可起動が前提、workflow テンプレ定義が必要。
 
 ## 設計上の根本分岐（ADR）

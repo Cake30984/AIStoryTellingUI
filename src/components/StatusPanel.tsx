@@ -146,7 +146,7 @@ export default function StatusPanel({ session, onClose }: Props) {
               <div key={c.id} className="field">
                 <label>
                   <span className="dot-avatar" style={{ background: c.avatar.color }}>
-                    {c.avatar.emoji}
+                    {Array.from(c.name || '無名')[0]}
                   </span>{' '}
                   {c.name || '無名'} → {heroName}
                 </label>
