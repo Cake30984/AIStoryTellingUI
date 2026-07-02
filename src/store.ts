@@ -523,6 +523,8 @@ interface AppState {
   regenChoices: () => Promise<void>
   /** 選択肢に付いた小刻み加点（P5）を適用する（clamp加算＋実績再評価・通知） */
   applyChoiceEffects: (effects: ChoiceEffect[]) => void
+  /** 状態パネルの手動編集を保存する（スタットを clamp・実績を再評価して通知） */
+  applyStatusEdit: (state: SessionState) => void
 
   // 生成
   startSession: () => void
@@ -1817,6 +1819,24 @@ export const useStore = create<AppState>()(
             else stats.push({ defId: eff.defId, characterId: eff.characterId, value: val })
           }
           const { state, unlocked } = unlockAchievements({ ...s.state, stats }, world, s.characterIds)
+          get().updateSession(s.id, { state })
+          if (unlocked.length) set({ newlyUnlockedAchievements: unlocked })
+        },
+
+        applyStatusEdit: (edited) => {
+          const s = active()
+          if (!s) return
+          const world = get().worlds.find((w) => w.id === s.worldId)
+          // 手動編集された絶対値も、レビュー適用・選択肢加点と同じく def の min..max に丸める
+          const stats = edited.stats.map((sv) => ({
+            ...sv,
+            value: clampStat(sv.value, world?.stats.find((d) => d.id === sv.defId)),
+          }))
+          const { state, unlocked } = unlockAchievements(
+            { ...edited, stats },
+            world,
+            s.characterIds,
+          )
           get().updateSession(s.id, { state })
           if (unlocked.length) set({ newlyUnlockedAchievements: unlocked })
         },
