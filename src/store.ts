@@ -2002,6 +2002,22 @@ export const useStore = create<AppState>()(
         sessions: st.sessions,
         activeId: st.activeId,
       }),
+      // 生成中にタブを閉じた/リロードした際の残骸を起動時に掃除する：
+      // 空の pending メッセージは削除、内容があるものは途中で切れた可能性が高いため
+      // truncated を立てて「⤵ 続きを生成」で復帰できるようにする。
+      merge: (persisted, current) => {
+        const merged = { ...current, ...((persisted as Partial<AppState>) ?? {}) }
+        merged.sessions = (merged.sessions ?? []).map((s) => {
+          if (!s.messages.some((m) => m.pending)) return s
+          return {
+            ...s,
+            messages: s.messages
+              .filter((m) => !(m.pending && !m.content.trim()))
+              .map((m) => (m.pending ? { ...m, pending: false, truncated: true } : m)),
+          }
+        })
+        return merged
+      },
     },
   ),
 )
