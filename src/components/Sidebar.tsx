@@ -1,4 +1,7 @@
+import { useState } from 'react'
 import { useStore, type View } from '../store'
+import { parseCardPng } from '../lib/cards'
+import { useCardDrop } from '../lib/useCardDrop'
 
 interface Props {
   onOpenSettings: () => void
@@ -13,10 +16,28 @@ const NAV: { key: View; label: string; icon: string }[] = [
 ]
 
 export default function Sidebar({ onOpenSettings }: Props) {
-  const { sessions, activeId, view, setView, setActive, createSession, characters } = useStore()
+  const { sessions, activeId, view, setView, setActive, createSession, characters, importSessionCard } = useStore()
+  const [notice, setNotice] = useState('')
+
+  // セッションカード（PNG）のドロップ受付
+  const handleFiles = async (files: FileList) => {
+    for (const file of Array.from(files)) {
+      if (!file.type.includes('png') && !file.name.toLowerCase().endsWith('.png')) continue
+      try {
+        const bytes = new Uint8Array(await file.arrayBuffer())
+        const parsed = parseCardPng(bytes)
+        if (!parsed || parsed.kind !== 'session') throw new Error('セッションカードではありません。')
+        await importSessionCard(parsed.bundle)
+        setNotice(`セッション「${parsed.bundle.session.title || '無題'}」を復元しました。`)
+      } catch (e) {
+        setNotice(`読み込み失敗：${(e as Error).message}`)
+      }
+    }
+  }
+  const { dragOver, dropProps } = useCardDrop(handleFiles)
 
   return (
-    <aside className="sidebar">
+    <aside className="sidebar" {...dropProps} style={dragOver ? { outline: '2px dashed var(--accent)', outlineOffset: -4 } : undefined}>
       <div className="sidebar-head">
         <div className="brand">
           <span className="dot" />
@@ -42,6 +63,9 @@ export default function Sidebar({ onOpenSettings }: Props) {
       </div>
 
       <div className="session-list">
+        {notice && (
+          <p style={{ color: 'var(--accent)', fontSize: 12, padding: '4px 12px' }}>{notice}</p>
+        )}
         {sessions.length === 0 && (
           <p style={{ color: 'var(--text-faint)', fontSize: 13, padding: '8px 12px' }}>
             まだセッションがありません。

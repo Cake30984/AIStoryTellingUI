@@ -35,9 +35,13 @@ function latin1Encode(s: string): Uint8Array {
   return out
 }
 
+// チャンク分割で変換する（1バイトずつの文字列連結は数MB級ペイロードで極端に遅くなる）
 function latin1Decode(bytes: Uint8Array): string {
+  const CHUNK = 0x8000
   let s = ''
-  for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i])
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    s += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK) as unknown as number[])
+  }
   return s
 }
 
@@ -45,8 +49,19 @@ function readU32(bytes: Uint8Array, offset: number): number {
   return ((bytes[offset] << 24) | (bytes[offset + 1] << 16) | (bytes[offset + 2] << 8) | bytes[offset + 3]) >>> 0
 }
 
-function writeU32(value: number, out: number[]): void {
-  out.push((value >>> 24) & 0xff, (value >>> 16) & 0xff, (value >>> 8) & 0xff, value & 0xff)
+function u32Bytes(value: number): Uint8Array {
+  return new Uint8Array([(value >>> 24) & 0xff, (value >>> 16) & 0xff, (value >>> 8) & 0xff, value & 0xff])
+}
+
+function concat(segments: Uint8Array[]): Uint8Array {
+  const total = segments.reduce((n, s) => n + s.length, 0)
+  const out = new Uint8Array(total)
+  let pos = 0
+  for (const s of segments) {
+    out.set(s, pos)
+    pos += s.length
+  }
+  return out
 }
 
 /** PNG バイト列から tEXt チャンクを列挙する */
@@ -75,12 +90,15 @@ export function readTextChunks(bytes: Uint8Array): { keyword: string; text: stri
   return chunks
 }
 
-/** 同 keyword の既存 tEXt を除去し、IEND 直前に新しい tEXt を挿入した新バイト列を返す */
+/**
+ * 同 keyword の既存 tEXt を除去し、IEND 直前に新しい tEXt を挿入した新バイト列を返す。
+ * ※ セグメント連結方式で組み立てる（push(...spread) は数MB級チャンクでスタックオーバーフローするため禁止）
+ */
 export function writeTextChunk(bytes: Uint8Array, keyword: string, text: string): Uint8Array {
   checkSignature(bytes)
-  const out: number[] = [...SIGNATURE]
+  const segments: Uint8Array[] = [new Uint8Array(SIGNATURE)]
   let offset = 8
-  let iendChunk: number[] | null = null
+  let iendChunk: Uint8Array | null = null
 
   while (offset + 8 <= bytes.length) {
     const length = readU32(bytes, offset)
@@ -99,9 +117,9 @@ export function writeTextChunk(bytes: Uint8Array, keyword: string, text: string)
       })()
 
     if (type === 'IEND') {
-      iendChunk = Array.from(bytes.subarray(offset, chunkEnd))
+      iendChunk = bytes.subarray(offset, chunkEnd)
     } else if (!isTargetTExt) {
-      out.push(...bytes.subarray(offset, chunkEnd))
+      segments.push(bytes.subarray(offset, chunkEnd))
     }
     offset = chunkEnd
   }
@@ -119,11 +137,8 @@ export function writeTextChunk(bytes: Uint8Array, keyword: string, text: string)
   typeAndData.set(data, 4)
   const crc = crc32(typeAndData)
 
-  writeU32(data.length, out)
-  out.push(...typeAndData)
-  writeU32(crc, out)
+  segments.push(u32Bytes(data.length), typeAndData, u32Bytes(crc))
+  if (iendChunk) segments.push(iendChunk)
 
-  if (iendChunk) out.push(...iendChunk)
-
-  return new Uint8Array(out)
+  return concat(segments)
 }

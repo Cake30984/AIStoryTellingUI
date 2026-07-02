@@ -22,6 +22,7 @@ export default function SettingsModal({ onClose }: Props) {
     importCharacterCard,
     importWorldCard,
     importPersonaCard,
+    importSessionCard,
     gcUnusedImages,
   } = useStore()
 
@@ -92,6 +93,9 @@ export default function SettingsModal({ onClose }: Props) {
           const withImage = await attachCardImage(parsed.persona, bytes)
           importPersonaCard(withImage)
           setNotice(`カードから「${withImage.name || '無名'}」を追加しました。`)
+        } else if (parsed.kind === 'session') {
+          await importSessionCard(parsed.bundle)
+          setNotice(`セッション「${parsed.bundle.session.title || '無題'}」を復元しました。`)
         } else {
           importWorldCard(parsed.world)
           setNotice(`カードから「${parsed.world.name || '無名の世界'}」を追加しました。`)
