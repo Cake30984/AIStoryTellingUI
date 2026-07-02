@@ -2,9 +2,11 @@ export type Role = 'system' | 'user' | 'assistant'
 
 export type SessionMode = 'roleplay' | 'story'
 
-/** アバター表現（絵文字＋背景色のシンプル方式） */
+/** アバター表現（画像参照＋テーマ色）。絵文字は廃止 */
 export interface Avatar {
-  emoji: string
+  /** IndexedDB 画像ストアの id。未設定なら色＋名前イニシャルで表示 */
+  imageId?: string
+  /** テーマ色（フォールバック背景・話者ドット・カード枠に使用） */
   color: string
 }
 

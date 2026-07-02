@@ -25,7 +25,7 @@ export default function PersonaLibrary() {
           {personas.map((p) => (
             <div key={p.id} className="entity-card" onClick={() => setEditing(p)}>
               <div className="entity-avatar" style={{ background: p.avatar.color }}>
-                {p.avatar.emoji || '🙂'}
+                {Array.from(p.name || '')[0] ?? '🙂'}
               </div>
               <div className="entity-body">
                 <div className="entity-name">{p.name || '無名'}</div>

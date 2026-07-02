@@ -25,7 +25,7 @@ export default function CharacterLibrary() {
           {characters.map((c) => (
             <div key={c.id} className="entity-card" onClick={() => setEditing(c)}>
               <div className="entity-avatar" style={{ background: c.avatar.color }}>
-                {c.avatar.emoji || '✦'}
+                {Array.from(c.name || '')[0] ?? '✦'}
               </div>
               <div className="entity-body">
                 <div className="entity-name">{c.name || '無名'}</div>

@@ -25,7 +25,7 @@ export default function PersonaEditor({ persona, onClose }: Props) {
         <div className="modal-body">
           <div className="field">
             <label>アバター</label>
-            <AvatarField avatar={d.avatar} onChange={(avatar) => patch({ avatar })} />
+            <AvatarField avatar={d.avatar} name={d.name} onChange={(avatar) => patch({ avatar })} />
           </div>
           <div className="field">
             <label>名前</label>
