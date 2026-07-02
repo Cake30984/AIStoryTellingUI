@@ -53,6 +53,8 @@ export default function ChatPanel({ session }: Props) {
   const [editText, setEditText] = useState('')
   const taRef = useRef<HTMLTextAreaElement>(null)
   const anchorRef = useRef<HTMLDivElement>(null)
+  // 選択肢の連打による二重加点を防ぐ（適用済みメッセージ id を同期的に記録）
+  const choiceLockRef = useRef<string | null>(null)
 
   const scene = currentScene(session)
   const castIds = scene && scene.activeCharacterIds.length > 0 ? scene.activeCharacterIds : session.characterIds
@@ -85,6 +87,11 @@ export default function ChatPanel({ session }: Props) {
   useEffect(() => {
     anchorRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [session.messages, isStreaming])
+
+  // メッセージ列が変わって再レンダーされたらロック解除（削除して選び直す等の正当な再選択を許す）
+  useEffect(() => {
+    choiceLockRef.current = null
+  }, [session.messages])
 
   useEffect(() => {
     startSession()
@@ -373,11 +380,11 @@ export default function ChatPanel({ session }: Props) {
             </button>
             <button
               className="scene-btn end"
-              onClick={() => prepareSceneReview()}
-              disabled={isStreaming || isReviewing}
-              title="このシーンを振り返って次のシーンへ"
+              onClick={() => (isReviewing ? stop() : prepareSceneReview())}
+              disabled={isStreaming}
+              title={isReviewing ? 'レビュー生成を中止' : 'このシーンを振り返って次のシーンへ'}
             >
-              {isReviewing ? 'レビュー作成中…' : '✓ このシーンを終える'}
+              {isReviewing ? '◼ レビュー作成中…（中止）' : '✓ このシーンを終える'}
             </button>
           </div>
 
@@ -445,7 +452,14 @@ export default function ChatPanel({ session }: Props) {
             </div>
           )}
 
-          {isGeneratingChoices && <div className="choices-loading">選択肢を考え中…</div>}
+          {isGeneratingChoices && (
+            <div className="choices-loading">
+              選択肢を考え中…
+              <button className="link" style={{ marginLeft: 8 }} onClick={stop}>
+                中止
+              </button>
+            </div>
+          )}
           {showChoices && (
             <div className="choices">
               {lastMsg.choices!.map((c, i) => (
@@ -453,6 +467,8 @@ export default function ChatPanel({ session }: Props) {
                   key={i}
                   className="choice-btn"
                   onClick={() => {
+                    if (choiceLockRef.current === lastMsg.id) return
+                    choiceLockRef.current = lastMsg.id
                     if (c.effects?.length) applyChoiceEffects(c.effects)
                     send(c.text, effectiveSpeaker)
                   }}

@@ -31,6 +31,7 @@ import {
   buildMessages,
   choicesSystem,
   choicesUserNudge,
+  CONTINUATION_NUDGE,
   CONTINUE_PROMPT,
   nextSceneSystem,
   reviewSystem,
@@ -52,6 +53,9 @@ export const DEFAULT_MODEL = 'openrouter/auto'
 export type View = 'sessions' | 'characters' | 'worlds' | 'personas' | 'sceneTypes'
 
 export function uid(): string {
+  // セキュアコンテキスト（HTTPS/localhost）では衝突耐性の高い crypto.randomUUID を使う。
+  // 非対応環境（HTTP配信等）向けにフォールバックを残す。
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
   return Math.random().toString(36).slice(2) + Date.now().toString(36)
 }
 
@@ -517,6 +521,7 @@ interface AppState {
     relationUpdateIdx: number[]
     statChangeIdx: number[]
     counterEventIdx: number[]
+    moodChangeIdx: number[]
   }) => void
   setReviewNextType: (typeId: string | null) => void
   rerollReviewType: () => Promise<void>
@@ -527,6 +532,8 @@ interface AppState {
   regenChoices: () => Promise<void>
   /** 選択肢に付いた小刻み加点（P5）を適用する（clamp加算＋実績再評価・通知） */
   applyChoiceEffects: (effects: ChoiceEffect[]) => void
+  /** 状態パネルの手動編集を保存する（スタットを clamp・実績を再評価して通知） */
+  applyStatusEdit: (state: SessionState) => void
 
   // 生成
   startSession: () => void
@@ -612,9 +619,11 @@ function directNextScene(
   world: World | undefined,
   sceneTypes: SceneType[],
   nextDay: number | null,
+  skipEvents = false,
 ): { typeId?: string; eventId?: string; eventName?: string } {
   // ① 特別イベント（day 未指定は日付条件なし。条件式は数・フラグ・実績のみで判定）
-  if (world) {
+  //    skipEvents=true は「種類のみ抽選」（引き直し用。イベント判定を行わない）
+  if (world && !skipEvents) {
     const ev = (world.scheduledEvents ?? [])
       .filter((e) => {
         if (session.usedEventIds.includes(e.id)) return false
@@ -716,9 +725,17 @@ export const useStore = create<AppState>()(
         }
       }
 
-      async function runCompletion(speakerId?: string, appendToId?: string): Promise<void> {
+      async function runCompletion(
+        speakerId?: string,
+        appendToId?: string,
+        extraUserNudge?: string,
+      ): Promise<void> {
         const s = active()
         if (!s) return
+        // 生成中にユーザーが別セッションへ切り替えても書き込み先がぶれないよう、対象セッションを固定する
+        const sessionId = s.id
+        const target = () => get().sessions.find((x) => x.id === sessionId)
+        const patchTarget = (patch: Partial<Session>) => get().updateSession(sessionId, patch)
 
         // 話者を先に確定（キャラ別モデル解決のため）
         const novel = s.narrativeStyle === 'novel'
@@ -738,13 +755,13 @@ export const useStore = create<AppState>()(
         // 既存メッセージへ追記する場合はそれを対象に、そうでなければ空メッセージを新規追加
         const assistantId = appendToId ?? uid()
         if (appendToId) {
-          patchActive({
+          patchTarget({
             messages: s.messages.map((m) =>
               m.id === appendToId ? { ...m, pending: true, truncated: false } : m,
             ),
           })
         } else {
-          patchActive({
+          patchTarget({
             messages: [
               ...s.messages,
               {
@@ -761,13 +778,19 @@ export const useStore = create<AppState>()(
         }
 
         const writeDelta = (chunk: string) => {
-          const cur = active()
+          const cur = target()
           if (!cur) return
-          patchActive({
+          patchTarget({
             messages: cur.messages.map((m) =>
               m.id === assistantId ? { ...m, content: m.content + chunk } : m,
             ),
           })
+        }
+
+        // 「続きを生成」の念押しは履歴には積まず、API 送信時だけ末尾に付加する
+        const buildRequestMessages = () => {
+          const base = buildMessages(target()!, refs, speaker)
+          return extraUserNudge ? [...base, { role: 'user' as const, content: extraUserNudge }] : base
         }
 
         let finishReason: string | null = null
@@ -779,7 +802,7 @@ export const useStore = create<AppState>()(
               {
                 provider,
                 model: mainModel,
-                messages: buildMessages(active()!, refs, speaker),
+                messages: buildRequestMessages(),
                 temperature: s.temperature,
                 maxTokens: s.maxTokens,
                 signal: controller.signal,
@@ -804,7 +827,7 @@ export const useStore = create<AppState>()(
           }
         }
 
-        const cur = active()
+        const cur = target()
         if (cur) {
           const msgs = cur.messages
             .map((m) => {
@@ -826,13 +849,13 @@ export const useStore = create<AppState>()(
               return { ...m, content, characterId, pending: false, truncated: finishReason === 'length' }
             })
             .filter((m) => !(m.id === assistantId && m.content.trim() === ''))
-          patchActive({ messages: msgs })
+          patchTarget({ messages: msgs })
         }
         controller = null
         set({ isStreaming: false })
 
         // 選択肢の生成（off 以外、かつ応答が生成された場合）
-        const after = active()
+        const after = target()
         const finalMsg = after?.messages.find((m) => m.id === assistantId)
         if (after && finalMsg && finalMsg.content.trim() && after.choiceMode !== 'off') {
           await genChoices(after, assistantId)
@@ -863,25 +886,36 @@ export const useStore = create<AppState>()(
             { role: 'user' as const, content: choicesUserNudge(mode) },
           ]
           // always はモデルが本編を続けてしまうことがあるため最大2回試行（auto の空配列は正当なので1回）
+          // truncated（途中切れ）の場合も抽出漏れの原因になるため再試行対象に含める。
+          // ただし再試行で結果が悪化しても、それまでの最良の結果（最も多く抽出できたもの）を採用する。
           const maxAttempts = mode === 'always' ? 2 : 1
           let choices: Choice[] = []
+          let bestChoices: Choice[] = []
+          controller = new AbortController()
           for (let attempt = 1; attempt <= maxAttempts; attempt++) {
             const raw = await streamChat(
-              { provider, model, messages: msgs, temperature: 0.5, maxTokens: 400 },
+              { provider, model, messages: msgs, temperature: 0.5, maxTokens: 600, signal: controller.signal },
               () => {},
             )
-            choices = coerceChoices(extractJson<unknown>(raw.text), world, refs.characters)
-            if (choices.length > 0) break
-            if (mode === 'always') {
+            const parsedChoices = coerceChoices(extractJson<unknown>(raw.text), world, refs.characters)
+            if (parsedChoices.length > bestChoices.length) bestChoices = parsedChoices
+            const truncated = raw.finishReason === 'length'
+            if (parsedChoices.length > 0 && !truncated) {
+              choices = parsedChoices
+              break
+            }
+            if (mode === 'always' || truncated) {
               console.warn(
-                `[choices] 選択肢を抽出できませんでした（試行${attempt}/${maxAttempts}）。モデル出力:`,
+                `[choices] ${truncated ? '出力が途中で切れました' : '選択肢を抽出できませんでした'}（試行${attempt}/${maxAttempts}）。モデル出力:`,
                 raw.text || '<empty>',
               )
             }
           }
+          if (choices.length === 0) choices = bestChoices
           if (choices.length > 0) {
-            const cur = active()
-            if (cur && cur.id === session.id) {
+            // 生成中に別セッションへ切り替えていても、対象セッションのメッセージへ付与する
+            const cur = get().sessions.find((x) => x.id === session.id)
+            if (cur) {
               get().updateSession(cur.id, {
                 messages: cur.messages.map((m) =>
                   m.id === messageId ? { ...m, choices } : m,
@@ -893,6 +927,7 @@ export const useStore = create<AppState>()(
           // 選択肢は失敗しても本編には影響させない（診断用にのみ記録）
           console.warn('[choices] 生成に失敗:', (e as Error)?.message)
         } finally {
+          controller = null
           set({ isGeneratingChoices: false })
         }
       }
@@ -971,9 +1006,28 @@ export const useStore = create<AppState>()(
         deleteCharacter: (id) =>
           set((st) => ({
             characters: st.characters.filter((c) => c.id !== id),
+            // 参照の残骸を全セッションから掃除する（残すと buildStateInfo が
+            // 削除済みキャラの関係を「キャラ」名義で本編プロンプトに注入し続ける）
             sessions: st.sessions.map((s) => ({
               ...s,
               characterIds: s.characterIds.filter((cid) => cid !== id),
+              scenes: s.scenes.map((sc) => ({
+                ...sc,
+                activeCharacterIds: sc.activeCharacterIds.filter((cid) => cid !== id),
+              })),
+              state: {
+                ...s.state,
+                relations: s.state.relations.filter((r) => r.fromId !== id && r.toId !== id),
+                moods: s.state.moods.filter((m) => m.characterId !== id),
+                stats: s.state.stats.filter((v) => v.characterId !== id),
+                counters: s.state.counters.filter((v) => v.characterId !== id),
+              },
+              overlay: {
+                ...s.overlay,
+                characterDevelopments: s.overlay.characterDevelopments.filter(
+                  (x) => x.characterId !== id,
+                ),
+              },
             })),
           })),
 
@@ -1144,9 +1198,14 @@ export const useStore = create<AppState>()(
             return
           }
 
+          // 過去シーンの再レビューかどうか（登場キャラ・時刻の文脈組み立てを分岐させる）
+          const isPastScene = scene.id !== s.currentSceneId
           set({ isReviewing: true, error: null })
           try {
-            const refs = resolveRefs(s)
+            // resolveRefs はセッションの currentSceneId を見て登場キャラ・状況メモを決めるため、
+            // 過去シーンの再レビューでは対象シーンを一時的に current 扱いにして正しい文脈を得る
+            // （そうしないと「今アクティブなシーン」の登場キャラ・状況メモが誤って使われる）。
+            const refs = isPastScene ? resolveRefs({ ...s, currentSceneId: scene.id }) : resolveRefs(s)
             const nameOf = (id?: string) =>
               get().characters.find((c) => c.id === id)?.name ?? 'キャラ'
             const transcript = sceneMsgs
@@ -1171,19 +1230,28 @@ export const useStore = create<AppState>()(
             if (refs.world) ctxParts.push(`【世界観】${refs.world.name}: ${refs.world.description}`)
             if (refs.timelineInfo) ctxParts.push(`【時間】${refs.timelineInfo}`)
 
-            // 次シーンの時刻（タイムラインが有効なら一区切り進む）を明示
-            const nextTimeline = s.timeline.enabled ? advanceTimeline(s.timeline) : null
-            if (nextTimeline) {
+            // 次シーンの時刻を明示。過去シーンの再レビューでは、ライブの現在タイムラインを
+            // 進めるのではなく、既に存在する次シーンの時刻ラベルをそのまま使う
+            // （ライブの現在日はそのシーンの時点よりずっと先に進んでいる可能性があるため）。
+            const sceneIdxForCtx = s.scenes.findIndex((sc) => sc.id === scene.id)
+            const existingNextScene = isPastScene ? s.scenes[sceneIdxForCtx + 1] : undefined
+            const nextTimeline = !isPastScene && s.timeline.enabled ? advanceTimeline(s.timeline) : null
+            const nextTimeLabel = isPastScene
+              ? existingNextScene?.timeLabel
+              : nextTimeline
+                ? timeLabelOf(nextTimeline)
+                : undefined
+            if (nextTimeLabel) {
               ctxParts.push(
-                `【次シーンの時間】このシーンが終わると時間帯が一区切り進み、次シーンは「${timeLabelOf(
-                  nextTimeline,
-                )}」になります。suggestions は時間が経過した後の場面として、その時刻にふさわしい状況で書いてください（直前の場面の続きをそのまま続けない）。`,
+                `【次シーンの時間】このシーンが終わると時間帯が一区切り進み、次シーンは「${nextTimeLabel}」になります。suggestions は時間が経過した後の場面として、その時刻にふさわしい状況で書いてください（直前の場面の続きをそのまま続けない）。`,
               )
             }
 
-            // ディレクター：次シーンの方向を決定（イベント優先→抽選）
-            const nextDay = nextTimeline ? nextTimeline.currentDay : null
-            const pick = directNextScene(s, refs.world, get().sceneTypes, nextDay)
+            // ディレクター：次シーンの方向を決定（イベント優先→抽選）。
+            // 過去シーンの再レビューでは実際の履歴上の日付・状態が分からないため、
+            // ライブの現在日での日付/条件付きイベント判定は行わず種類のみ抽選する。
+            const nextDay = !isPastScene && nextTimeline ? nextTimeline.currentDay : null
+            const pick = directNextScene(s, refs.world, get().sceneTypes, nextDay, isPastScene)
             const pickedType = pick.typeId
               ? get().sceneTypes.find((t) => t.id === pick.typeId)
               : undefined
@@ -1239,9 +1307,17 @@ export const useStore = create<AppState>()(
             const hasSummary = (p: any) =>
               (typeof p?.summary === 'string' && p.summary.trim().length > 0) ||
               (Array.isArray(p?.summary) && p.summary.length > 0)
+            controller = new AbortController()
             for (let attempt = 0; attempt < maxAttempts; attempt++) {
               raw = await streamChat(
-                { provider, model, messages: reviewMessages, temperature: 0.4, maxTokens: REVIEW_MAX_TOKENS },
+                {
+                  provider,
+                  model,
+                  messages: reviewMessages,
+                  temperature: 0.4,
+                  maxTokens: REVIEW_MAX_TOKENS,
+                  signal: controller.signal,
+                },
                 () => {},
               )
               parsed = extractJson<any>(raw.text)
@@ -1400,6 +1476,7 @@ export const useStore = create<AppState>()(
           } catch (e) {
             if ((e as Error).name !== 'AbortError') set({ error: (e as Error).message })
           } finally {
+            controller = null
             set({ isReviewing: false })
           }
         },
@@ -1427,6 +1504,9 @@ export const useStore = create<AppState>()(
           const selectedCounters = opts.counterEventIdx
             .map((i) => review.counterEvents[i])
             .filter(Boolean)
+          const selectedMoods = opts.moodChangeIdx
+            .map((i) => review.moodChanges[i])
+            .filter(Boolean)
           const stateWorld = get().worlds.find((w) => w.id === s.worldId)
           // このレビュー適用で新規解除された実績（通知用）
           const newlyUnlocked: AchievementDef[] = []
@@ -1434,17 +1514,24 @@ export const useStore = create<AppState>()(
           // 関係性 prose を全文書き直し・気分上書き・スタットを clamp 加算した新 state を返す
           const applyState = (prev: Session['state']): Session['state'] => {
             const base = prev ?? { relations: [], moods: [], stats: [], counters: [], achievements: [] }
-            // 関係性（fromId,toId で upsert。stance/aspects は全文置換、flags は和集合）
+            // 関係性（fromId,toId で upsert。stance は全文置換、flags は和集合）
             const relations = base.relations.map((r) => ({ ...r }))
             for (const u of selectedRelUpdates) {
               const idx = relations.findIndex((r) => r.fromId === u.fromId && r.toId === u.toId)
               const aspects = u.aspects.map((a) => ({ aspectId: a.aspectId, note: a.note }))
               if (idx >= 0) {
                 const flags = Array.from(new Set([...relations[idx].flags, ...u.flagsAdd]))
+                // aspects は aspectId 単位でマージ：レビューは「変化の無い次元は省略してよい」ため、
+                // 配列ごと置換すると省略された次元の記述が失われる。返ってきた次元のみ全文置換する。
+                const prev = relations[idx].aspects
+                const merged = [
+                  ...prev.map((a) => aspects.find((n) => n.aspectId === a.aspectId) ?? a),
+                  ...aspects.filter((n) => !prev.some((a) => a.aspectId === n.aspectId)),
+                ]
                 relations[idx] = {
                   ...relations[idx],
                   stance: u.stance || relations[idx].stance,
-                  aspects: aspects.length ? aspects : relations[idx].aspects,
+                  aspects: merged,
                   flags,
                   updatedAt: Date.now(),
                 }
@@ -1461,7 +1548,7 @@ export const useStore = create<AppState>()(
             }
             // 気分
             const moods = base.moods.map((m) => ({ ...m }))
-            for (const m of review.moodChanges) {
+            for (const m of selectedMoods) {
               const idx = moods.findIndex((x) => x.characterId === m.characterId)
               if (idx >= 0) moods[idx].mood = m.mood
               else moods.push({ characterId: m.characterId, mood: m.mood })
@@ -1638,10 +1725,11 @@ export const useStore = create<AppState>()(
           const s = active()
           if (!review || !s) return
           const pick = directNextScene(
-            { ...s, usedEventIds: [...s.usedEventIds, review.scheduledEventId ?? ''] },
+            s,
             get().worlds.find((w) => w.id === s.worldId),
             get().sceneTypes,
-            null, // イベントを除外して種類のみ抽選
+            null,
+            true, // イベント判定をスキップして種類のみ抽選（day 無し条件イベントに横取りされないように）
           )
           const t = pick.typeId ? get().sceneTypes.find((x) => x.id === pick.typeId) : undefined
           set({
@@ -1668,6 +1756,8 @@ export const useStore = create<AppState>()(
             set({ error: `接続先「${provider?.label ?? ''}」の API キーが未設定です。` })
             return
           }
+          // 過去シーンの再レビューでは、ライブの現在タイムラインではなく既存の次シーンの時刻を使う
+          const isPastScene = scene.id !== s.currentSceneId
           set({ isRegenSuggestions: true, error: null })
           try {
             const refs = resolveRefs(s)
@@ -1680,17 +1770,23 @@ export const useStore = create<AppState>()(
               : review.nextTypeName
                 ? `次シーンの種類は「${review.nextTypeName}」。${guidance}`
                 : '特に指定なし（自由に提案）。'
-            const nextTimeline = s.timeline.enabled ? advanceTimeline(s.timeline) : null
+            const sceneIdxForCtx = s.scenes.findIndex((sc) => sc.id === scene.id)
+            const existingNextScene = isPastScene ? s.scenes[sceneIdxForCtx + 1] : undefined
+            const nextTimeline = !isPastScene && s.timeline.enabled ? advanceTimeline(s.timeline) : null
+            const nextTimeLabel = isPastScene
+              ? existingNextScene?.timeLabel
+              : nextTimeline
+                ? timeLabelOf(nextTimeline)
+                : undefined
             const ctxParts = [`【これまでのあらすじ】\n${review.summary}`]
             if (refs.world) ctxParts.push(`【世界観】${refs.world.name}: ${refs.world.description}`)
             ctxParts.push(`【次シーンの方向性】${dirText}`)
-            if (nextTimeline) {
+            if (nextTimeLabel) {
               ctxParts.push(
-                `【次シーンの時間】次シーンは「${timeLabelOf(
-                  nextTimeline,
-                )}」。時間が経過した後の場面として書いてください。`,
+                `【次シーンの時間】次シーンは「${nextTimeLabel}」。時間が経過した後の場面として書いてください。`,
               )
             }
+            controller = new AbortController()
             const raw = await streamChat(
               {
                 provider,
@@ -1701,6 +1797,7 @@ export const useStore = create<AppState>()(
                 ],
                 temperature: 0.7,
                 maxTokens: 800,
+                signal: controller.signal,
               },
               () => {},
             )
@@ -1718,6 +1815,7 @@ export const useStore = create<AppState>()(
           } catch (e) {
             if ((e as Error).name !== 'AbortError') set({ error: (e as Error).message })
           } finally {
+            controller = null
             set({ isRegenSuggestions: false })
           }
         },
@@ -1750,6 +1848,24 @@ export const useStore = create<AppState>()(
             else stats.push({ defId: eff.defId, characterId: eff.characterId, value: val })
           }
           const { state, unlocked } = unlockAchievements({ ...s.state, stats }, world, s.characterIds)
+          get().updateSession(s.id, { state })
+          if (unlocked.length) set({ newlyUnlockedAchievements: unlocked })
+        },
+
+        applyStatusEdit: (edited) => {
+          const s = active()
+          if (!s) return
+          const world = get().worlds.find((w) => w.id === s.worldId)
+          // 手動編集された絶対値も、レビュー適用・選択肢加点と同じく def の min..max に丸める
+          const stats = edited.stats.map((sv) => ({
+            ...sv,
+            value: clampStat(sv.value, world?.stats.find((d) => d.id === sv.defId)),
+          }))
+          const { state, unlocked } = unlockAchievements(
+            { ...edited, stats },
+            world,
+            s.characterIds,
+          )
           get().updateSession(s.id, { state })
           if (unlocked.length) set({ newlyUnlockedAchievements: unlocked })
         },
@@ -1891,7 +2007,7 @@ export const useStore = create<AppState>()(
           if (!s || get().isStreaming) return
           const last = [...s.messages].reverse().find((m) => m.role === 'assistant')
           if (!last) return
-          await runCompletion(last.characterId, last.id)
+          await runCompletion(last.characterId, last.id, CONTINUATION_NUDGE)
         },
 
         editMessage: (messageId, content) => {
@@ -1931,12 +2047,12 @@ export const useStore = create<AppState>()(
         },
 
         exportBundle: () => {
-          const { providers, characters, worlds, personas, sceneTypes, sessions } = get()
+          const { characters, worlds, personas, sceneTypes, sessions } = get()
+          // providers（API キー）は localStorage のみに保持し、エクスポートには含めない（共有時の漏洩防止）
           return {
             type: 'ai-storytelling-studio',
             version: 1,
             exportedAt: Date.now(),
-            providers,
             characters,
             worlds,
             personas,
@@ -1998,6 +2114,22 @@ export const useStore = create<AppState>()(
         sessions: st.sessions,
         activeId: st.activeId,
       }),
+      // 生成中にタブを閉じた/リロードした際の残骸を起動時に掃除する：
+      // 空の pending メッセージは削除、内容があるものは途中で切れた可能性が高いため
+      // truncated を立てて「⤵ 続きを生成」で復帰できるようにする。
+      merge: (persisted, current) => {
+        const merged = { ...current, ...((persisted as Partial<AppState>) ?? {}) }
+        merged.sessions = (merged.sessions ?? []).map((s) => {
+          if (!s.messages.some((m) => m.pending)) return s
+          return {
+            ...s,
+            messages: s.messages
+              .filter((m) => !(m.pending && !m.content.trim()))
+              .map((m) => (m.pending ? { ...m, pending: false, truncated: true } : m)),
+          }
+        })
+        return merged
+      },
     },
   ),
 )

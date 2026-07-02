@@ -36,16 +36,21 @@ export default function SessionEditor({ session, onClose }: Props) {
     })
 
   const save = () => {
+    // モーダルを開いている間にバックグラウンドでシーンが進行している場合に備え、
+    // scenes は編集開始時のスナップショット(d.scenes)ではなく最新のライブ状態を起点にする
+    // （そうしないと保存時に新しく出来たシーンや他の変更が巻き戻ってしまう）。
+    const live = useStore.getState().sessions.find((x) => x.id === session.id)
+    const liveScenes = live?.scenes ?? d.scenes
     // 選んだキャラを現在シーンの登場キャラにも反映（顔ぶれ＝初期の登場メンバー）
-    const cur = currentScene(d)
+    const cur = live ? currentScene(live) : currentScene(d)
     const label = d.timeline.enabled ? timeLabelOf(d.timeline) : undefined
     const scenes = cur
-      ? d.scenes.map((sc) =>
+      ? liveScenes.map((sc) =>
           sc.id === cur.id
             ? { ...sc, activeCharacterIds: d.characterIds, timeLabel: label ?? sc.timeLabel }
             : sc,
         )
-      : d.scenes
+      : liveScenes
     updateSession(session.id, {
       title: d.title,
       characterIds: d.characterIds,

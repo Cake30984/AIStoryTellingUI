@@ -9,7 +9,7 @@ interface Props {
 
 /** セッションの状態（関係性 prose ＋ 事実の数）の閲覧・手動編集パネル */
 export default function StatusPanel({ session, onClose }: Props) {
-  const { worlds, characters, personas, updateSession } = useStore()
+  const { worlds, characters, personas, applyStatusEdit } = useStore()
   const world = worlds.find((w) => w.id === session.worldId)
   const heroName = personas.find((p) => p.id === session.personaId)?.name || '主人公'
   const cast = session.characterIds
@@ -85,7 +85,8 @@ export default function StatusPanel({ session, onClose }: Props) {
   const charCounters = world?.counters.filter((d) => d.scope === 'character') ?? []
 
   const save = () => {
-    updateSession(session.id, { state: st })
+    // clamp・実績の再評価はストア側（applyStatusEdit）で行う
+    applyStatusEdit(st)
     onClose()
   }
 
