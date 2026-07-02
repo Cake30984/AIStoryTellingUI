@@ -48,7 +48,8 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist` で localStor
 - `docs/要件定義書.md` — 利用者視点の機能要件（実装非依存）
 - `docs/設計_ステータスエンジン.md` — 状態エンジン（関係性 prose ＋ 事実の数）の設計仕様。下記 ADR-1 の実装計画
 - `docs/設計_ワールド再利用とオーバーレイ.md` — セッション・オーバーレイ（発見ロア／キャラ成長の置き場を素材からセッションへ分離）の設計仕様。フェーズB1〜B4の実装計画
-- `docs/設計_画像カードとアバター.md` — PNG カード入出力（SillyTavern 互換キャラカード＋独自世界/ペルソナカード）・絵文字全廃のアバター画像化（IndexedDB 画像ストア）・画像生成連携の設計仕様。フェーズP1〜P5の実装計画（未着手）
+- `docs/設計_画像カードとアバター.md` — PNG カード入出力（SillyTavern 互換キャラカード＋独自世界/ペルソナカード）・絵文字全廃のアバター画像化（IndexedDB 画像ストア）の設計仕様。フェーズP1〜P4は実装済み
+- `docs/設計_画像生成連携.md` — P5 の詳細設計。ImageProvider（comfyui/openai-image）抽象層・ImageGenModal（裏方LLMプロンプト起案）・アバター生成・`imagePrompt` 固定タグ・挿絵（`Scene.illustrations`）・セッションカード（`aist_session`・画像base64同梱）。フェーズG1〜G4の実装計画（未着手）
 
 ## データモデル（要点）
 すべて「再利用可能な素材ライブラリ」をセッションが参照する構造。
@@ -110,7 +111,7 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist` で localStor
 
 ## 次にやること（ロードマップ）
 1. **画像カード＆アバター画像化（P1〜P4完了・P5未着手）**: `docs/設計_画像カードとアバター.md` に従う。**P1完了**（IndexedDB画像ストア・avatarGen・Avatar型刷新・persist v3化）。**P2完了**（`EntityAvatar` 共通コンポーネントで全画面の画像表示を統一・`AvatarField` に画像アップロード/削除・SettingsModalに未使用画像GC）。**P3完了**（`png.ts`/`cards.ts` でSillyTavern互換PNGキャラカードの入出力。`CharacterEditor`から書き出し、`SettingsModal`のインポートとCharacterLibraryへのD&Dで読み込み。id衝突時は新規id採番、`model`/`avatar.imageId`は環境固有のためカードから除外）。**P4完了**（世界カード`aist_world`・ペルソナカード`aist_persona`の独自形式で同様に入出力。WorldEditor/PersonaEditorに書き出しボタン、WorldLibrary/PersonaLibraryにD&D、`useCardDrop`フックで3ライブラリ共通化、SettingsModalインポートもchunk種別で自動判定）。画像/ComfyUI 連携が残作業。
-2. **画像生成 & ComfyUI 連携（P5・要追加設計）**: アバター生成＋挿絵生成＋セッションの挿絵埋め込みエクスポート。ComfyUI(localhost:8188) は CORS 許可起動が前提、workflow テンプレ定義が必要。
+2. **画像生成 & ComfyUI 連携（P5・詳細設計済み）**: `docs/設計_画像生成連携.md` の G1〜G4 に従う。G1（ImageProvider管理＋generateImage）→ G2（ImageGenModal＋アバター生成＋imagePrompt）→ G3（挿絵）→ G4（セッションカード aist_session）。ComfyUI は CORS 許可起動（`--enable-cors-header '*'`）が前提。追加フィールドはすべて optional のため persist キーは v3 のまま。
 
 ## 設計上の根本分岐（ADR）
 後から別パターンを試せるよう、根本決定と**却下案**を残す。詳細実装計画は `docs/設計_ステータスエンジン.md`。
