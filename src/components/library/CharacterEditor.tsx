@@ -45,7 +45,12 @@ export default function CharacterEditor({ character, onClose }: Props) {
         <div className="modal-body">
           <div className="field">
             <label>アバター</label>
-            <AvatarField avatar={d.avatar} name={d.name} onChange={(avatar) => patch({ avatar })} />
+            <AvatarField
+              avatar={d.avatar}
+              name={d.name}
+              genContext={{ name: d.name, appearance: d.appearance, imagePrompt: d.imagePrompt }}
+              onChange={(avatar) => patch({ avatar })}
+            />
           </div>
           <div className="field">
             <label>名前</label>
@@ -152,6 +157,18 @@ export default function CharacterEditor({ character, onClose }: Props) {
               value={d.tags}
               placeholder="例: 学園, クール, ヒロイン"
               onChange={(tags) => patch({ tags })}
+            />
+          </div>
+
+          <div className="field">
+            <label>画像生成タグ（英語・任意）</label>
+            <div className="desc">
+              LoRA トリガーや髪色などの固定タグ。挿絵・アバター生成時に自動で使われ、カードにも含まれます。
+            </div>
+            <input
+              value={d.imagePrompt ?? ''}
+              placeholder="例: <lora:mychar:0.8>, 1girl, long black hair, glasses"
+              onChange={(e) => patch({ imagePrompt: e.target.value || undefined })}
             />
           </div>
 
