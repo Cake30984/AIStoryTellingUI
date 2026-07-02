@@ -30,7 +30,8 @@ import type {
   World,
 } from './types'
 import { fetchModels, streamChat } from './lib/openrouter'
-import { gcImages } from './lib/imageStore'
+import { gcImages, putImage } from './lib/imageStore'
+import { sessionCardImageBlob, type SessionCardBundle } from './lib/cards'
 import {
   buildMessages,
   choicesSystem,
@@ -571,6 +572,8 @@ interface AppState {
   // データ入出力
   exportBundle: () => ExportBundle
   importBundle: (bundle: ExportBundle) => { added: number }
+  /** セッションカード（aist_session）の取り込み。同梱画像を putImage し直して参照を remap する */
+  importSessionCard: (bundle: SessionCardBundle) => Promise<void>
   /** 未使用のアバター・挿絵画像（IndexedDB）を削除し、削除件数を返す */
   gcUnusedImages: () => Promise<number>
 }
@@ -2165,6 +2168,66 @@ export const useStore = create<AppState>()(
             }
           })
           return { added }
+        },
+
+        importSessionCard: async (bundle) => {
+          // 1) 同梱画像を IndexedDB へ登録し直し、旧 id → 新 id の対応表を作る（直列＝IndexedDB を並列で叩かない）
+          const idMap = new Map<string, string>()
+          for (const entry of bundle.images) {
+            const newId = await putImage(sessionCardImageBlob(entry))
+            idMap.set(entry.id, newId)
+          }
+          const remapAvatar = <T extends { avatar: Avatar }>(x: T): T => ({
+            ...x,
+            avatar: {
+              ...x.avatar,
+              imageId: x.avatar.imageId ? idMap.get(x.avatar.imageId) : undefined,
+            },
+          })
+
+          // 2) 素材は importBundle と同じ id マージ（既存 id はスキップ＝既存優先）
+          //    セッション本体は常に追加（id 衝突時は新 id 採番）
+          set((st) => {
+            const now = Date.now()
+            const charIds = new Set(st.characters.map((c) => c.id))
+            const freshChars = bundle.characters.filter((c) => !charIds.has(c.id)).map(remapAvatar)
+
+            const worldExists = bundle.world && st.worlds.some((w) => w.id === bundle.world!.id)
+            const freshWorlds = bundle.world && !worldExists ? [bundle.world] : []
+
+            const personaExists = bundle.persona && st.personas.some((p) => p.id === bundle.persona!.id)
+            const freshPersonas = bundle.persona && !personaExists ? [remapAvatar(bundle.persona)] : []
+
+            const sessionIdTaken = st.sessions.some((s) => s.id === bundle.session.id)
+            const session: Session = {
+              ...bundle.session,
+              id: sessionIdTaken ? uid() : bundle.session.id,
+              // 挿絵の imageId を remap（対応が無いものは表示フォールバックに任せてそのまま）
+              scenes: bundle.session.scenes.map((sc) => ({
+                ...sc,
+                illustrations: (sc.illustrations ?? []).map((ill) => ({
+                  ...ill,
+                  imageId: idMap.get(ill.imageId) ?? ill.imageId,
+                })),
+              })),
+              overlay:
+                bundle.session.overlay &&
+                Array.isArray(bundle.session.overlay.lore) &&
+                Array.isArray(bundle.session.overlay.characterDevelopments)
+                  ? bundle.session.overlay
+                  : { lore: [], characterDevelopments: [] },
+              updatedAt: now,
+            }
+
+            return {
+              characters: [...freshChars, ...st.characters],
+              worlds: [...freshWorlds, ...st.worlds],
+              personas: [...freshPersonas, ...st.personas],
+              sessions: [session, ...st.sessions],
+              activeId: session.id,
+              view: 'sessions' as View,
+            }
+          })
         },
 
         addIllustration: (sessionId, sceneId, ill) =>

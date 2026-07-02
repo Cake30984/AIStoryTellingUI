@@ -1,4 +1,4 @@
-import type { Character, Persona, World } from '../types'
+import type { Character, Persona, Session, World } from '../types'
 import { readTextChunks, writeTextChunk } from './png'
 import { getImage, putImage } from './imageStore'
 import { generateDefaultAvatar, normalizeImage } from './avatarGen'
@@ -9,12 +9,19 @@ function uid(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36)
 }
 
-// UTF-8 文字列を base64 に変換する（btoa は Latin-1 のみのため、直接渡すと日本語で InvalidCharacterError になる）
-function b64encode(s: string): string {
-  const bytes = new TextEncoder().encode(s)
+// バイト列 → Latin-1 文字列（チャンク分割。1バイトずつの連結は数MB級で極端に遅い）
+function bytesToBinaryString(bytes: Uint8Array): string {
+  const CHUNK = 0x8000
   let bin = ''
-  for (const b of bytes) bin += String.fromCharCode(b)
-  return btoa(bin)
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK) as unknown as number[])
+  }
+  return bin
+}
+
+// UTF-8 文字列 → base64（btoa は Latin-1 のみのため、直接渡すと日本語で InvalidCharacterError になる）
+function b64encode(s: string): string {
+  return btoa(bytesToBinaryString(new TextEncoder().encode(s)))
 }
 
 function b64decode(s: string): string {
@@ -23,10 +30,32 @@ function b64decode(s: string): string {
   return new TextDecoder().decode(bytes)
 }
 
+/** 画像バイナリ blob → base64（テキスト用の b64encode/b64decode とは別物。UTF-8 変換を通してはいけない） */
+async function blobToB64(blob: Blob): Promise<string> {
+  return btoa(bytesToBinaryString(new Uint8Array(await blob.arrayBuffer())))
+}
+
+function b64ToBlob(b64: string): Blob {
+  const bin = atob(b64)
+  const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0))
+  return new Blob([bytes as BlobPart], { type: 'image/png' })
+}
+
+/** セッションカードの中身（参照素材＋参照画像を base64 で同梱した自己完結バンドル） */
+export interface SessionCardBundle {
+  session: Session
+  characters: Character[]
+  world?: World
+  persona?: Persona
+  /** 参照アバター＋挿絵。id は書き出し元環境の imageId（インポート側で putImage し直して remap する） */
+  images: { id: string; b64: string }[]
+}
+
 export type ParsedCard =
   | { kind: 'character'; character: Character }
   | { kind: 'world'; world: World }
   | { kind: 'persona'; persona: Persona }
+  | { kind: 'session'; bundle: SessionCardBundle }
 
 /** キャラクターの extensions に格納する独自拡張（model・avatar.imageId は環境固有のため除外） */
 interface CharacterExtension {
@@ -229,9 +258,95 @@ function normalizePersonaFromData(raw: any): Persona {
   }
 }
 
+// ---------- セッションカード（独自形式。aist_session チャンク。G4） ----------
+
+/**
+ * セッションを PNG カードとして書き出す。参照素材（キャラ/世界/ペルソナ）と
+ * 参照画像（アバター＋挿絵）を base64 で同梱し、1ファイルで完全共有できる。
+ * cardImageBlob がカードの見た目（挿絵から選択 or 自動生成）。
+ */
+export async function exportSessionCard(
+  session: Session,
+  refs: { characters: Character[]; world?: World; persona?: Persona },
+  cardImageBlob: Blob,
+): Promise<void> {
+  // 参照している画像 id を収集（アバター＋挿絵）
+  const imageIds = new Set<string>()
+  for (const c of refs.characters) if (c.avatar.imageId) imageIds.add(c.avatar.imageId)
+  if (refs.persona?.avatar.imageId) imageIds.add(refs.persona.avatar.imageId)
+  for (const sc of session.scenes) for (const ill of sc.illustrations ?? []) imageIds.add(ill.imageId)
+
+  const images: { id: string; b64: string }[] = []
+  let totalBytes = 0
+  for (const id of imageIds) {
+    const blob = await getImage(id)
+    if (!blob) continue // 消失画像はスキップ（インポート側でフォールバック表示）
+    totalBytes += blob.size
+    images.push({ id, b64: await blobToB64(blob) })
+  }
+
+  if (totalBytes > 30 * 1024 * 1024) {
+    const mb = Math.round(totalBytes / 1024 / 1024)
+    if (!confirm(`同梱画像の合計が約 ${mb}MB あり、カードファイルが大きくなります。続行しますか？`)) return
+  }
+
+  // キャラの model（ModelRef）は環境固有のため除外。session 側の ModelRef は
+  // 文字列として無害（解決不能なら providers[0] にフォールバック）なので残す
+  const bundle: SessionCardBundle = {
+    session,
+    characters: refs.characters.map((c) => {
+      const { model, ...rest } = c
+      return rest as Character
+    }),
+    world: refs.world,
+    persona: refs.persona,
+    images,
+  }
+
+  const normalized = await normalizeImage(cardImageBlob, 1024)
+  const pngBytes = new Uint8Array(await normalized.arrayBuffer())
+  const card = { spec: 'aist_session', spec_version: '1.0', data: bundle }
+  const withChunk = writeTextChunk(pngBytes, 'aist_session', b64encode(JSON.stringify(card)))
+  const outBlob = new Blob([withChunk as BlobPart], { type: 'image/png' })
+  downloadBlob(outBlob, `session_${session.title || 'story'}.png`)
+}
+
+/** セッションカードの images 内 blob を取り出す（インポート側で putImage する用） */
+export function sessionCardImageBlob(entry: { id: string; b64: string }): Blob {
+  return b64ToBlob(entry.b64)
+}
+
+function normalizeSessionBundle(raw: any): SessionCardBundle | null {
+  if (!raw?.session?.id) return null
+  // 通常カードと違い、avatar.imageId は同梱 images への参照なので保持する（インポート側で remap）
+  const keepImageId = <T extends { avatar: { color: string; imageId?: string } }>(norm: T, src: any): T =>
+    typeof src?.avatar?.imageId === 'string'
+      ? { ...norm, avatar: { ...norm.avatar, imageId: src.avatar.imageId } }
+      : norm
+  return {
+    session: raw.session,
+    characters: Array.isArray(raw.characters)
+      ? raw.characters.map((c: any) => keepImageId(normalizeCharacterFromExtension(c), c))
+      : [],
+    world: raw.world ? normalizeWorldFromData(raw.world) : undefined,
+    persona: raw.persona ? keepImageId(normalizePersonaFromData(raw.persona), raw.persona) : undefined,
+    images: Array.isArray(raw.images)
+      ? raw.images.filter((i: any) => typeof i?.id === 'string' && typeof i?.b64 === 'string')
+      : [],
+  }
+}
+
 /** PNG バイト列からカード情報を解釈する。カードチャンクが無ければ null */
 export function parseCardPng(bytes: Uint8Array): ParsedCard | null {
   const chunks = readTextChunks(bytes)
+
+  const sessionChunk = chunks.find((c) => c.keyword === 'aist_session')
+  if (sessionChunk) {
+    const json = JSON.parse(b64decode(sessionChunk.text))
+    const bundle = normalizeSessionBundle(json.data ?? json)
+    if (bundle) return { kind: 'session', bundle }
+    return null
+  }
 
   const worldChunk = chunks.find((c) => c.keyword === 'aist_world')
   if (worldChunk) {

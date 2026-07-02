@@ -33,14 +33,15 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist` で localStor
   - `io.ts` — `downloadBundle`（JSON DL）/`downloadBlob`（任意 blob のDL。カード画像もこれで保存）/`parseBundle`（取り込みファイルの検証・整形）。※エクスポートバンドルの組み立て本体は `store.exportBundle`
   - `imageStore.ts`（P1）— アバター・カード画像の IndexedDB ストア（`putImage`/`getImage`/`deleteImage`/`listImageIds`/`gcImages`）＋表示用 `useImageUrl` フック。localStorage には画像を入れない
   - `avatarGen.ts`（P1）— `generateDefaultAvatar`（名前イニシャル＋色から canvas でデフォルト画像生成）/ `normalizeImage`（アップロード画像の縮小・PNG化）
-  - `png.ts`（P3）— PNG の tEXt チャンク読み書き（自前実装。`readTextChunks`/`writeTextChunk`。CRC32はtype+dataのみ対象、textは必ずbase64経由でLatin-1化）
+  - `png.ts`（P3）— PNG の tEXt チャンク読み書き（自前実装。`readTextChunks`/`writeTextChunk`。CRC32はtype+dataのみ対象、textは必ずbase64経由でLatin-1化。**組み立てはセグメント連結方式＝`push(...spread)`は数MB級でスタックオーバーフローするため禁止**）
   - `imageGen.ts`（G1）— 画像生成の抽象層。`generateImage`（comfyui: /prompt→/historyポーリング→/view、openai-image: /images/generations の b64_json）/`testImageProvider`/`fillWorkflow`（プレースホルダ置換。%PROMPT%/%NEGATIVE% はJSONエスケープ、"%SEED%"/"%WIDTH%"/"%HEIGHT%" は引用符ごと数値化）/`DEFAULT_COMFY_WORKFLOW`
-  - `cards.ts`（P3〜P4）— キャラカード（`chara_card_v2` 互換＋`extensions.aistorytelling` に独自データ）／世界カード（独自形式`aist_world`）／ペルソナカード（独自形式`aist_persona`）の組み立て・解釈。`exportCharacterCard`/`exportWorldCard`/`exportPersonaCard`（画像未設定なら`generateDefaultAvatar`でカード画像を自動生成→`normalizeImage`→tEXt埋め込み→DL）/`parseCardPng`（chunk種別で判定。キャラは拡張優先、無ければSTネイティブ項目からマッピング）/`attachCardImage`（カードPNG自体を512pxに正規化してputImage→avatar.imageIdへ。キャラ/ペルソナ共用のジェネリック関数）。`model`と`avatar.imageId`は環境固有のためextensionsから除外。Worldはアバター概念を持たないため画像は自動生成のみ
+  - `cards.ts`（P3〜P4・G4）— キャラカード（`chara_card_v2` 互換＋`extensions.aistorytelling` に独自データ）／世界カード（独自形式`aist_world`）／ペルソナカード（独自形式`aist_persona`）／**セッションカード（独自形式`aist_session`。G4。session＋参照素材＋参照画像（アバター・挿絵）を base64 同梱した完全自己完結バンドル。`exportSessionCard`（合計30MB超で警告）/`sessionCardImageBlob`。キャラの`model`は除外・`avatar.imageId`は同梱画像への参照として保持）**の組み立て・解釈。`exportCharacterCard`/`exportWorldCard`/`exportPersonaCard`（画像未設定なら`generateDefaultAvatar`でカード画像を自動生成→`normalizeImage`→tEXt埋め込み→DL）/`parseCardPng`（chunk種別で判定。キャラは拡張優先、無ければSTネイティブ項目からマッピング）/`attachCardImage`（カードPNG自体を512pxに正規化してputImage→avatar.imageIdへ。キャラ/ペルソナ共用のジェネリック関数）。`model`と`avatar.imageId`は環境固有のためextensionsから除外。Worldはアバター概念を持たないため画像は自動生成のみ
   - `useCardDrop.ts`（P4）— PNGカードのドラッグ&ドロップ受付フック（`dragOver`状態＋`dropProps`）。Character/World/Personaの各Libraryで共用
 - `src/components/`
-  - `Sidebar.tsx` — 左ナビ＋セッション一覧
+  - `Sidebar.tsx` — 左ナビ＋セッション一覧。セッションカード（PNG）の D&D 受付（G4）
   - `ChatPanel.tsx` — 会話画面（トップバー・シーン仕切り・話者/選択肢・コンポーザー・メッセージ操作）。🎨=挿絵生成（G3。`ImageGenModal`→`putImage`→`addIllustration`。最後のメッセージにアンカーしインライン表示・⬇保存/🗑削除/クリック拡大）
-  - `SessionEditor.tsx` — セッション設定（参加キャラ/一括モデル設定/世界観/ペルソナ/固定メモ/文体/選択肢/裏方モデル/タイムライン/ディレクター/サンプリング）
+  - `SessionEditor.tsx` — セッション設定（参加キャラ/一括モデル設定/世界観/ペルソナ/固定メモ/文体/選択肢/裏方モデル/タイムライン/ディレクター/サンプリング）。フッターに「🖼 セッションをカード化」（G4→`SessionCardModal`）
+  - `SessionCardModal.tsx`（G4）— セッションカード書き出し（カード画像を挿絵から選択 or タイトルから自動生成→`exportSessionCard`）。読み込みは Sidebar への D&D と SettingsModal のファイル入力（`importSessionCard`＝store。同梱画像を putImage し直して imageId を remap、素材は id マージ・セッションは id 衝突時に新id採番で常に追加、取り込み後にアクティブ化）
   - `SettingsModal.tsx` — プロバイダ管理（追加/編集/削除/モデル読込）・データ入出力・未使用アバター画像のGC（`gcUnusedImages`）
   - `ImageProviderSettings.tsx`（G1）— 画像生成の接続先管理（ComfyUI/画像API の追加・編集・削除・接続テスト）。SettingsModal に組み込み
   - `ImageGenModal.tsx`（G2）— 画像生成モーダル（アバター/挿絵で共用）。接続先・サイズ選択、「✨ プロンプトを起案」（`streamChat`＋`extractJson`。JSON失敗時は全文をprompt扱い）、起案モデルは `ModelPicker` で選択、negative は comfyui のみ表示、生成キャンセル（AbortController）、プレビュー→`onAccept(blob, prompt)` で呼び出し元が保存先を決定
@@ -116,7 +117,7 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist` で localStor
 
 ## 次にやること（ロードマップ）
 1. **画像カード＆アバター画像化（P1〜P4完了・P5未着手）**: `docs/設計_画像カードとアバター.md` に従う。**P1完了**（IndexedDB画像ストア・avatarGen・Avatar型刷新・persist v3化）。**P2完了**（`EntityAvatar` 共通コンポーネントで全画面の画像表示を統一・`AvatarField` に画像アップロード/削除・SettingsModalに未使用画像GC）。**P3完了**（`png.ts`/`cards.ts` でSillyTavern互換PNGキャラカードの入出力。`CharacterEditor`から書き出し、`SettingsModal`のインポートとCharacterLibraryへのD&Dで読み込み。id衝突時は新規id採番、`model`/`avatar.imageId`は環境固有のためカードから除外）。**P4完了**（世界カード`aist_world`・ペルソナカード`aist_persona`の独自形式で同様に入出力。WorldEditor/PersonaEditorに書き出しボタン、WorldLibrary/PersonaLibraryにD&D、`useCardDrop`フックで3ライブラリ共通化、SettingsModalインポートもchunk種別で自動判定）。画像/ComfyUI 連携が残作業。
-2. **画像生成 & ComfyUI 連携（P5・G1〜G3完了）**: `docs/設計_画像生成連携.md` の G1〜G4 に従う。**G1完了**（ImageProvider管理＋imageGen.ts＋SettingsModal設定UI）。**G2完了**（ImageGenModal・AvatarField「✨ 生成」・Character/Persona の `imagePrompt` フィールド＋エディタ入力＋カード同梱）。**G3完了**（`Scene.illustrations`・ChatPanel 🎨・インライン表示・GC対象に挿絵を追加）。次は G4（セッションカード aist_session）。ComfyUI は CORS 許可起動（`--enable-cors-header '*'`）が前提。追加フィールドはすべて optional のため persist キーは v3 のまま。
+2. **画像生成 & ComfyUI 連携（P5・G1〜G4完了）**: `docs/設計_画像生成連携.md` に従い実装済み。**G1**（ImageProvider管理＋imageGen.ts＋設定UI）・**G2**（ImageGenModal・アバター生成・`imagePrompt`）・**G3**（挿絵）・**G4**（セッションカード aist_session・画像base64同梱・remap復元）。ComfyUI 実機での動作確認とワークフローテンプレの拡充が残タスク。ComfyUI は CORS 許可起動（`--enable-cors-header '*'`）が前提。追加フィールドはすべて optional のため persist キーは v3 のまま。
 
 ## 設計上の根本分岐（ADR）
 後から別パターンを試せるよう、根本決定と**却下案**を残す。詳細実装計画は `docs/設計_ステータスエンジン.md`。
