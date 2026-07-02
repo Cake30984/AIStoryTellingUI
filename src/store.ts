@@ -974,9 +974,28 @@ export const useStore = create<AppState>()(
         deleteCharacter: (id) =>
           set((st) => ({
             characters: st.characters.filter((c) => c.id !== id),
+            // 参照の残骸を全セッションから掃除する（残すと buildStateInfo が
+            // 削除済みキャラの関係を「キャラ」名義で本編プロンプトに注入し続ける）
             sessions: st.sessions.map((s) => ({
               ...s,
               characterIds: s.characterIds.filter((cid) => cid !== id),
+              scenes: s.scenes.map((sc) => ({
+                ...sc,
+                activeCharacterIds: sc.activeCharacterIds.filter((cid) => cid !== id),
+              })),
+              state: {
+                ...s.state,
+                relations: s.state.relations.filter((r) => r.fromId !== id && r.toId !== id),
+                moods: s.state.moods.filter((m) => m.characterId !== id),
+                stats: s.state.stats.filter((v) => v.characterId !== id),
+                counters: s.state.counters.filter((v) => v.characterId !== id),
+              },
+              overlay: {
+                ...s.overlay,
+                characterDevelopments: s.overlay.characterDevelopments.filter(
+                  (x) => x.characterId !== id,
+                ),
+              },
             })),
           })),
 
