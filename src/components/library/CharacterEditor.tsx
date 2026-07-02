@@ -5,6 +5,7 @@ import { modelRefLabel } from '../../lib/providers'
 import AvatarField from './AvatarField'
 import CsvInput from '../CsvInput'
 import ModelPicker from '../ModelPicker'
+import { exportCharacterCard } from '../../lib/cards'
 
 interface Props {
   character: Character
@@ -15,7 +16,17 @@ export default function CharacterEditor({ character, onClose }: Props) {
   const { upsertCharacter, deleteCharacter, providers } = useStore()
   const [d, setD] = useState<Character>(character)
   const [showModelPicker, setShowModelPicker] = useState(false)
+  const [exporting, setExporting] = useState(false)
   const patch = (p: Partial<Character>) => setD((c) => ({ ...c, ...p }))
+
+  const exportCard = async () => {
+    setExporting(true)
+    try {
+      await exportCharacterCard(d)
+    } finally {
+      setExporting(false)
+    }
+  }
 
   const save = () => {
     upsertCharacter(d)
@@ -172,6 +183,9 @@ export default function CharacterEditor({ character, onClose }: Props) {
             }}
           >
             削除
+          </button>
+          <button className="btn" onClick={exportCard} disabled={exporting}>
+            {exporting ? '書き出し中…' : '🖼 カードとして保存'}
           </button>
           <div style={{ flex: 1 }} />
           <button className="btn" onClick={onClose}>
