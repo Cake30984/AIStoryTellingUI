@@ -1423,17 +1423,24 @@ export const useStore = create<AppState>()(
           // 関係性 prose を全文書き直し・気分上書き・スタットを clamp 加算した新 state を返す
           const applyState = (prev: Session['state']): Session['state'] => {
             const base = prev ?? { relations: [], moods: [], stats: [], counters: [], achievements: [] }
-            // 関係性（fromId,toId で upsert。stance/aspects は全文置換、flags は和集合）
+            // 関係性（fromId,toId で upsert。stance は全文置換、flags は和集合）
             const relations = base.relations.map((r) => ({ ...r }))
             for (const u of selectedRelUpdates) {
               const idx = relations.findIndex((r) => r.fromId === u.fromId && r.toId === u.toId)
               const aspects = u.aspects.map((a) => ({ aspectId: a.aspectId, note: a.note }))
               if (idx >= 0) {
                 const flags = Array.from(new Set([...relations[idx].flags, ...u.flagsAdd]))
+                // aspects は aspectId 単位でマージ：レビューは「変化の無い次元は省略してよい」ため、
+                // 配列ごと置換すると省略された次元の記述が失われる。返ってきた次元のみ全文置換する。
+                const prev = relations[idx].aspects
+                const merged = [
+                  ...prev.map((a) => aspects.find((n) => n.aspectId === a.aspectId) ?? a),
+                  ...aspects.filter((n) => !prev.some((a) => a.aspectId === n.aspectId)),
+                ]
                 relations[idx] = {
                   ...relations[idx],
                   stance: u.stance || relations[idx].stance,
-                  aspects: aspects.length ? aspects : relations[idx].aspects,
+                  aspects: merged,
                   flags,
                   updatedAt: Date.now(),
                 }
