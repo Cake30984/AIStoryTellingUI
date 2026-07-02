@@ -34,6 +34,7 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist` で localStor
   - `imageStore.ts`（P1）— アバター・カード画像の IndexedDB ストア（`putImage`/`getImage`/`deleteImage`/`listImageIds`/`gcImages`）＋表示用 `useImageUrl` フック。localStorage には画像を入れない
   - `avatarGen.ts`（P1）— `generateDefaultAvatar`（名前イニシャル＋色から canvas でデフォルト画像生成）/ `normalizeImage`（アップロード画像の縮小・PNG化）
   - `png.ts`（P3）— PNG の tEXt チャンク読み書き（自前実装。`readTextChunks`/`writeTextChunk`。CRC32はtype+dataのみ対象、textは必ずbase64経由でLatin-1化）
+  - `imageGen.ts`（G1）— 画像生成の抽象層。`generateImage`（comfyui: /prompt→/historyポーリング→/view、openai-image: /images/generations の b64_json）/`testImageProvider`/`fillWorkflow`（プレースホルダ置換。%PROMPT%/%NEGATIVE% はJSONエスケープ、"%SEED%"/"%WIDTH%"/"%HEIGHT%" は引用符ごと数値化）/`DEFAULT_COMFY_WORKFLOW`
   - `cards.ts`（P3〜P4）— キャラカード（`chara_card_v2` 互換＋`extensions.aistorytelling` に独自データ）／世界カード（独自形式`aist_world`）／ペルソナカード（独自形式`aist_persona`）の組み立て・解釈。`exportCharacterCard`/`exportWorldCard`/`exportPersonaCard`（画像未設定なら`generateDefaultAvatar`でカード画像を自動生成→`normalizeImage`→tEXt埋め込み→DL）/`parseCardPng`（chunk種別で判定。キャラは拡張優先、無ければSTネイティブ項目からマッピング）/`attachCardImage`（カードPNG自体を512pxに正規化してputImage→avatar.imageIdへ。キャラ/ペルソナ共用のジェネリック関数）。`model`と`avatar.imageId`は環境固有のためextensionsから除外。Worldはアバター概念を持たないため画像は自動生成のみ
   - `useCardDrop.ts`（P4）— PNGカードのドラッグ&ドロップ受付フック（`dragOver`状態＋`dropProps`）。Character/World/Personaの各Libraryで共用
 - `src/components/`
@@ -41,6 +42,7 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist` で localStor
   - `ChatPanel.tsx` — 会話画面（トップバー・シーン仕切り・話者/選択肢・コンポーザー・メッセージ操作）
   - `SessionEditor.tsx` — セッション設定（参加キャラ/一括モデル設定/世界観/ペルソナ/固定メモ/文体/選択肢/裏方モデル/タイムライン/ディレクター/サンプリング）
   - `SettingsModal.tsx` — プロバイダ管理（追加/編集/削除/モデル読込）・データ入出力・未使用アバター画像のGC（`gcUnusedImages`）
+  - `ImageProviderSettings.tsx`（G1）— 画像生成の接続先管理（ComfyUI/画像API の追加・編集・削除・接続テスト）。SettingsModal に組み込み
   - `ModelPicker.tsx` — プロバイダ切替・モデル一覧・お気に入り。`onPick` は `"providerId::modelId"` を返す
   - `SceneEditor.tsx` / `SceneReviewModal.tsx` / `StoryLogModal.tsx` / `StatusPanel.tsx`（状態の閲覧・手動編集＝ChatPanel の 📊）/ `DiscoveryPanel.tsx`（発見ログの閲覧・手動編集・昇格＝ChatPanel の 📖）/ `CsvInput.tsx`
   - `EntityAvatar.tsx`（P2）— 画像があれば表示、なければ色＋名前イニシャルを表示する共通アバター。既存の `.avatar`/`.entity-avatar`/`.dot-avatar` クラスを流用し全画面で表示統一
@@ -54,6 +56,7 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist` で localStor
 ## データモデル（要点）
 すべて「再利用可能な素材ライブラリ」をセッションが参照する構造。
 - **Provider** — `{id,label,kind:'openrouter'|'openai',baseUrl,apiKey}`。localStorage のみ保存。エクスポートには含めない。
+- **ImageProvider**（G1）— `{id,label,kind:'comfyui'|'openai-image',baseUrl,apiKey,model,workflowJson}`。画像生成の接続先（LLM の Provider とは別リスト `imageProviders`）。localStorage のみ保存・エクスポート除外。
 - **Avatar**（P1で刷新・絵文字廃止）— `{imageId?, color}`。`imageId` は `imageStore.ts` の IndexedDB 画像 id（未設定なら色＋名前イニシャルで表示。表示は `EntityAvatar` コンポーネントに統一済み＝P2）。
 - **Character** — name/persona/speechStyle/appearance/exampleDialogues/greeting/avatar/tags＋`developments: Development[]`＋`model?`（ModelRef。chat 群像で話者確定時のみ有効）
 - **World** — description（常時）＋`entries: LoreEntry[]`＋`scheduledEvents: ScheduledEvent[]`（`{day,name,note}`）＋**`relationAspects: RelationAspectDef[]`（関係性 prose の次元・ワールド固定）＋`stats: StatDef[]`（事実の数の定義）＋`counters: CounterDef[]`（行動カウンター定義）**。プリセット `WORLD_PRESETS`（恋愛/RPG/経営）で投入可
@@ -111,7 +114,7 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist` で localStor
 
 ## 次にやること（ロードマップ）
 1. **画像カード＆アバター画像化（P1〜P4完了・P5未着手）**: `docs/設計_画像カードとアバター.md` に従う。**P1完了**（IndexedDB画像ストア・avatarGen・Avatar型刷新・persist v3化）。**P2完了**（`EntityAvatar` 共通コンポーネントで全画面の画像表示を統一・`AvatarField` に画像アップロード/削除・SettingsModalに未使用画像GC）。**P3完了**（`png.ts`/`cards.ts` でSillyTavern互換PNGキャラカードの入出力。`CharacterEditor`から書き出し、`SettingsModal`のインポートとCharacterLibraryへのD&Dで読み込み。id衝突時は新規id採番、`model`/`avatar.imageId`は環境固有のためカードから除外）。**P4完了**（世界カード`aist_world`・ペルソナカード`aist_persona`の独自形式で同様に入出力。WorldEditor/PersonaEditorに書き出しボタン、WorldLibrary/PersonaLibraryにD&D、`useCardDrop`フックで3ライブラリ共通化、SettingsModalインポートもchunk種別で自動判定）。画像/ComfyUI 連携が残作業。
-2. **画像生成 & ComfyUI 連携（P5・詳細設計済み）**: `docs/設計_画像生成連携.md` の G1〜G4 に従う。G1（ImageProvider管理＋generateImage）→ G2（ImageGenModal＋アバター生成＋imagePrompt）→ G3（挿絵）→ G4（セッションカード aist_session）。ComfyUI は CORS 許可起動（`--enable-cors-header '*'`）が前提。追加フィールドはすべて optional のため persist キーは v3 のまま。
+2. **画像生成 & ComfyUI 連携（P5・G1完了）**: `docs/設計_画像生成連携.md` の G1〜G4 に従う。**G1完了**（ImageProvider管理＋imageGen.ts＋SettingsModal設定UI）。次は G2（ImageGenModal＋アバター生成＋imagePrompt）→ G3（挿絵）→ G4（セッションカード aist_session）。ComfyUI は CORS 許可起動（`--enable-cors-header '*'`）が前提。追加フィールドはすべて optional のため persist キーは v3 のまま。
 
 ## 設計上の根本分岐（ADR）
 後から別パターンを試せるよう、根本決定と**却下案**を残す。詳細実装計画は `docs/設計_ステータスエンジン.md`。

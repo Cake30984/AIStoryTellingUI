@@ -388,6 +388,24 @@ export interface Provider {
   apiKey: string
 }
 
+/** 画像生成の接続先種別 */
+export type ImageProviderKind = 'comfyui' | 'openai-image'
+
+/** 画像生成の接続先（LLM の Provider とは別系統）。localStorage のみ保存・エクスポート除外 */
+export interface ImageProvider {
+  id: string
+  label: string
+  kind: ImageProviderKind
+  /** ComfyUI: http://127.0.0.1:8188 / OpenAI互換: https://api.openai.com/v1 等 */
+  baseUrl: string
+  /** openai-image のみ使用（comfyui は通常不要） */
+  apiKey: string
+  /** openai-image のみ: モデル名（dall-e-3 / grok-2-image 等） */
+  model: string
+  /** comfyui のみ: API Format の workflow JSON（%PROMPT% 等のプレースホルダ入り文字列） */
+  workflowJson: string
+}
+
 /** 次シーンの提案 */
 export interface NextSceneSuggestion {
   title: string

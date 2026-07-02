@@ -11,6 +11,7 @@ import type {
   CounterDef,
   Development,
   ExportBundle,
+  ImageProvider,
   LoreEntry,
   NextSceneSuggestion,
   Op,
@@ -453,6 +454,8 @@ export function currentScene(s: Session): Scene | undefined {
 interface AppState {
   // 永続化
   providers: Provider[]
+  /** 画像生成の接続先（LLM とは別系統）。localStorage のみ・エクスポート除外 */
+  imageProviders: ImageProvider[]
   favoriteModels: string[]
   characters: Character[]
   worlds: World[]
@@ -485,6 +488,10 @@ interface AppState {
   deleteProvider: (id: string) => void
   loadModels: (providerId: string) => Promise<void>
   toggleFavorite: (modelId: string) => void
+
+  // 画像生成の接続先
+  upsertImageProvider: (p: ImageProvider) => void
+  deleteImageProvider: (id: string) => void
 
   // ライブラリ CRUD
   upsertCharacter: (c: Character) => void
@@ -944,6 +951,7 @@ export const useStore = create<AppState>()(
 
       return {
         providers: [defaultOpenRouterProvider('')],
+        imageProviders: [],
         favoriteModels: [],
         characters: [],
         worlds: [],
@@ -978,6 +986,16 @@ export const useStore = create<AppState>()(
           set((st) => ({
             providers: st.providers.length > 1 ? st.providers.filter((p) => p.id !== id) : st.providers,
           })),
+
+        upsertImageProvider: (p) =>
+          set((st) => ({
+            imageProviders: st.imageProviders.some((x) => x.id === p.id)
+              ? st.imageProviders.map((x) => (x.id === p.id ? p : x))
+              : [...st.imageProviders, p],
+          })),
+
+        deleteImageProvider: (id) =>
+          set((st) => ({ imageProviders: st.imageProviders.filter((p) => p.id !== id) })),
 
         loadModels: async (providerId) => {
           const provider = get().providers.find((p) => p.id === providerId)
@@ -2159,6 +2177,8 @@ export const useStore = create<AppState>()(
       name: 'ai-storytelling-store-v3',
       partialize: (st) => ({
         providers: st.providers,
+        // 画像生成の接続先も API キーを含むため localStorage のみ（exportBundle には含めない）
+        imageProviders: st.imageProviders,
         favoriteModels: st.favoriteModels,
         characters: st.characters,
         worlds: st.worlds,
