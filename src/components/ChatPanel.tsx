@@ -380,11 +380,11 @@ export default function ChatPanel({ session }: Props) {
             </button>
             <button
               className="scene-btn end"
-              onClick={() => prepareSceneReview()}
-              disabled={isStreaming || isReviewing}
-              title="このシーンを振り返って次のシーンへ"
+              onClick={() => (isReviewing ? stop() : prepareSceneReview())}
+              disabled={isStreaming}
+              title={isReviewing ? 'レビュー生成を中止' : 'このシーンを振り返って次のシーンへ'}
             >
-              {isReviewing ? 'レビュー作成中…' : '✓ このシーンを終える'}
+              {isReviewing ? '◼ レビュー作成中…（中止）' : '✓ このシーンを終える'}
             </button>
           </div>
 
@@ -452,7 +452,14 @@ export default function ChatPanel({ session }: Props) {
             </div>
           )}
 
-          {isGeneratingChoices && <div className="choices-loading">選択肢を考え中…</div>}
+          {isGeneratingChoices && (
+            <div className="choices-loading">
+              選択肢を考え中…
+              <button className="link" style={{ marginLeft: 8 }} onClick={stop}>
+                中止
+              </button>
+            </div>
+          )}
           {showChoices && (
             <div className="choices">
               {lastMsg.choices!.map((c, i) => (
