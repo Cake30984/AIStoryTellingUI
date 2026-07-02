@@ -1,9 +1,17 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
-import { currentScene, useStore } from '../store'
-import { CONTINUE_PROMPT, SCENE_START_PROMPT } from '../lib/prompts'
+import { currentScene, reviewModelOf, useStore } from '../store'
+import {
+  CONTINUE_PROMPT,
+  SCENE_START_PROMPT,
+  illustrationContextUser,
+  illustrationPromptSystem,
+} from '../lib/prompts'
 import { estimateTokens, tokenLevel } from '../lib/tokens'
 import { modelRefLabel } from '../lib/providers'
-import type { Message, Session } from '../types'
+import { getImage, putImage, useImageUrl } from '../lib/imageStore'
+import { downloadBlob } from '../lib/io'
+import ImageGenModal from './ImageGenModal'
+import type { Message, Scene, SceneIllustration, Session } from '../types'
 import ModelPicker from './ModelPicker'
 import SessionEditor from './SessionEditor'
 import SceneEditor from './SceneEditor'
@@ -14,6 +22,44 @@ import EntityAvatar from './EntityAvatar'
 
 interface Props {
   session: Session
+}
+
+/** 挿絵1枚の表示（保存・削除・クリック拡大） */
+function IllustrationView({ ill, onRemove }: { ill: SceneIllustration; onRemove: () => void }) {
+  const url = useImageUrl(ill.imageId)
+  const [zoom, setZoom] = useState(false)
+  if (!url) return null
+  return (
+    <figure className="illustration">
+      <img src={url} alt={ill.prompt} title={ill.prompt} onClick={() => setZoom(true)} />
+      <div className="illustration-actions">
+        <button
+          className="icon-btn small"
+          title="画像を保存"
+          onClick={async () => {
+            const blob = await getImage(ill.imageId)
+            if (blob) downloadBlob(blob, `illustration_${ill.id}.png`)
+          }}
+        >
+          ⬇
+        </button>
+        <button
+          className="icon-btn small"
+          title="挿絵を削除"
+          onClick={() => {
+            if (confirm('この挿絵を削除しますか？')) onRemove()
+          }}
+        >
+          🗑
+        </button>
+      </div>
+      {zoom && (
+        <div className="overlay" onClick={() => setZoom(false)}>
+          <img src={url} alt="" style={{ maxWidth: '92vw', maxHeight: '92vh', borderRadius: 'var(--radius)' }} />
+        </div>
+      )}
+    </figure>
+  )
 }
 
 export default function ChatPanel({ session }: Props) {
@@ -36,6 +82,8 @@ export default function ChatPanel({ session }: Props) {
     updateSession,
     deleteSession,
     startSession,
+    addIllustration,
+    removeIllustration,
     characters,
     personas,
     providers,
@@ -48,6 +96,7 @@ export default function ChatPanel({ session }: Props) {
   const [showLog, setShowLog] = useState(false)
   const [showStatus, setShowStatus] = useState(false)
   const [showDiscovery, setShowDiscovery] = useState(false)
+  const [showImageGen, setShowImageGen] = useState(false)
   const [speaker, setSpeaker] = useState<string | undefined>(undefined)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -256,6 +305,37 @@ export default function ChatPanel({ session }: Props) {
     )
   }
 
+  /** メッセージ＋挿絵をアンカー順に描画（アンカー消失分はシーン末尾に集約） */
+  const renderSceneContent = (sc: Scene, msgs: Message[]) => {
+    const ills = sc.illustrations ?? []
+    const msgIds = new Set(msgs.map((m) => m.id))
+    const byMessage = new Map<string, SceneIllustration[]>()
+    const orphans: SceneIllustration[] = []
+    for (const ill of ills) {
+      if (ill.messageId && msgIds.has(ill.messageId)) {
+        const list = byMessage.get(ill.messageId) ?? []
+        list.push(ill)
+        byMessage.set(ill.messageId, list)
+      } else {
+        orphans.push(ill)
+      }
+    }
+    const illView = (ill: SceneIllustration) => (
+      <IllustrationView key={ill.id} ill={ill} onRemove={() => removeIllustration(session.id, sc.id, ill.id)} />
+    )
+    return (
+      <>
+        {msgs.map((m) => (
+          <Fragment key={m.id}>
+            {renderMessage(m)}
+            {(byMessage.get(m.id) ?? []).map(illView)}
+          </Fragment>
+        ))}
+        {orphans.map(illView)}
+      </>
+    )
+  }
+
   return (
     <div className="main">
       <div className="topbar">
@@ -275,6 +355,14 @@ export default function ChatPanel({ session }: Props) {
         </button>
         <button className="icon-btn" onClick={() => setShowDiscovery(true)} title="発見ログ（このセッションで見つかった設定）">
           📖
+        </button>
+        <button
+          className="icon-btn"
+          onClick={() => setShowImageGen(true)}
+          disabled={!scene}
+          title={scene ? 'この場面の挿絵を生成' : '物語を開始すると挿絵を生成できます'}
+        >
+          🎨
         </button>
         <button className="icon-btn" onClick={() => setShowEditor(true)} title="セッション設定">
           ⚙
@@ -350,7 +438,7 @@ export default function ChatPanel({ session }: Props) {
                     <div className="scene-summary-body">{sc.summary}</div>
                   </div>
                 )}
-                {open && msgs.map(renderMessage)}
+                {open && renderSceneContent(sc, msgs)}
               </Fragment>
             )
           })}
@@ -550,6 +638,43 @@ export default function ChatPanel({ session }: Props) {
       {showStatus && <StatusPanel session={session} onClose={() => setShowStatus(false)} />}
       {showDiscovery && (
         <DiscoveryPanel session={session} onClose={() => setShowDiscovery(false)} />
+      )}
+      {showImageGen && scene && (
+        <ImageGenModal
+          title="この場面の挿絵を生成"
+          draftContext={{
+            system: illustrationPromptSystem(),
+            user: illustrationContextUser({
+              sceneTitle: scene.title,
+              sceneNote: scene.note,
+              timeLabel: scene.timeLabel,
+              characters: participants.map((c) => ({
+                name: c.name,
+                appearance: c.appearance,
+                imagePrompt: c.imagePrompt,
+              })),
+              recentMessages: session.messages
+                .filter((m) => !isMarker(m) && m.content.trim())
+                .slice(-6)
+                .map((m) => m.content),
+            }),
+            modelRef: reviewModelOf(session),
+          }}
+          initialPrompt={participants.map((c) => c.imagePrompt).filter(Boolean).join(', ')}
+          onAccept={async (blob, prompt) => {
+            const imageId = await putImage(blob)
+            const sceneMsgs = session.messages.filter((m) => m.sceneId === scene.id || !m.sceneId)
+            const lastMsg = sceneMsgs[sceneMsgs.length - 1]
+            addIllustration(session.id, scene.id, {
+              id: crypto.randomUUID(),
+              imageId,
+              prompt,
+              messageId: lastMsg?.id,
+              createdAt: Date.now(),
+            })
+          }}
+          onClose={() => setShowImageGen(false)}
+        />
       )}
     </div>
   )

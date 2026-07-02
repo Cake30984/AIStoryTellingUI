@@ -20,6 +20,7 @@ import type {
   Provider,
   RelationAspectDef,
   Scene,
+  SceneIllustration,
   SceneReview,
   SceneType,
   Session,
@@ -563,10 +564,14 @@ interface AppState {
   regenerateFrom: (messageId: string) => Promise<void>
   stop: () => void
 
+  // 挿絵
+  addIllustration: (sessionId: string, sceneId: string, ill: SceneIllustration) => void
+  removeIllustration: (sessionId: string, sceneId: string, illId: string) => void
+
   // データ入出力
   exportBundle: () => ExportBundle
   importBundle: (bundle: ExportBundle) => { added: number }
-  /** 未使用のアバター画像（IndexedDB）を削除し、削除件数を返す */
+  /** 未使用のアバター・挿絵画像（IndexedDB）を削除し、削除件数を返す */
   gcUnusedImages: () => Promise<number>
 }
 
@@ -2162,11 +2167,44 @@ export const useStore = create<AppState>()(
           return { added }
         },
 
+        addIllustration: (sessionId, sceneId, ill) =>
+          set((st) => ({
+            sessions: st.sessions.map((s) =>
+              s.id !== sessionId
+                ? s
+                : {
+                    ...s,
+                    scenes: s.scenes.map((sc) =>
+                      sc.id !== sceneId ? sc : { ...sc, illustrations: [...(sc.illustrations ?? []), ill] },
+                    ),
+                  },
+            ),
+          })),
+
+        removeIllustration: (sessionId, sceneId, illId) =>
+          set((st) => ({
+            sessions: st.sessions.map((s) =>
+              s.id !== sessionId
+                ? s
+                : {
+                    ...s,
+                    scenes: s.scenes.map((sc) =>
+                      sc.id !== sceneId
+                        ? sc
+                        : { ...sc, illustrations: (sc.illustrations ?? []).filter((i) => i.id !== illId) },
+                    ),
+                  },
+            ),
+          })),
+
         gcUnusedImages: async () => {
-          const { characters, personas } = get()
+          const { characters, personas, sessions } = get()
           const used = new Set<string>()
           for (const c of characters) if (c.avatar.imageId) used.add(c.avatar.imageId)
           for (const p of personas) if (p.avatar.imageId) used.add(p.avatar.imageId)
+          // 挿絵も使用中扱いにする（入れ忘れると GC が挿絵を削除してしまう）
+          for (const s of sessions)
+            for (const sc of s.scenes) for (const ill of sc.illustrations ?? []) used.add(ill.imageId)
           return gcImages(used)
         },
       }
