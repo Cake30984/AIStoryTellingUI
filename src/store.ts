@@ -1920,12 +1920,12 @@ export const useStore = create<AppState>()(
         },
 
         exportBundle: () => {
-          const { providers, characters, worlds, personas, sceneTypes, sessions } = get()
+          const { characters, worlds, personas, sceneTypes, sessions } = get()
+          // providers（API キー）は localStorage のみに保持し、エクスポートには含めない（共有時の漏洩防止）
           return {
             type: 'ai-storytelling-studio',
             version: 1,
             exportedAt: Date.now(),
-            providers,
             characters,
             worlds,
             personas,
