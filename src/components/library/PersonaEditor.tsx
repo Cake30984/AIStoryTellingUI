@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useStore } from '../../store'
 import type { Persona } from '../../types'
 import AvatarField from './AvatarField'
+import { exportPersonaCard } from '../../lib/cards'
 
 interface Props {
   persona: Persona
@@ -11,7 +12,17 @@ interface Props {
 export default function PersonaEditor({ persona, onClose }: Props) {
   const { upsertPersona, deletePersona } = useStore()
   const [d, setD] = useState<Persona>(persona)
+  const [exporting, setExporting] = useState(false)
   const patch = (p: Partial<Persona>) => setD((x) => ({ ...x, ...p }))
+
+  const exportCard = async () => {
+    setExporting(true)
+    try {
+      await exportPersonaCard(d)
+    } finally {
+      setExporting(false)
+    }
+  }
 
   return (
     <div className="overlay" onClick={onClose}>
@@ -52,6 +63,9 @@ export default function PersonaEditor({ persona, onClose }: Props) {
             }}
           >
             削除
+          </button>
+          <button className="btn" onClick={exportCard} disabled={exporting}>
+            {exporting ? '書き出し中…' : '🖼 カードとして保存'}
           </button>
           <div style={{ flex: 1 }} />
           <button className="btn" onClick={onClose}>
