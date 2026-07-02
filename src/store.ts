@@ -52,6 +52,9 @@ export const DEFAULT_MODEL = 'openrouter/auto'
 export type View = 'sessions' | 'characters' | 'worlds' | 'personas' | 'sceneTypes'
 
 export function uid(): string {
+  // セキュアコンテキスト（HTTPS/localhost）では衝突耐性の高い crypto.randomUUID を使う。
+  // 非対応環境（HTTP配信等）向けにフォールバックを残す。
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
   return Math.random().toString(36).slice(2) + Date.now().toString(36)
 }
 
