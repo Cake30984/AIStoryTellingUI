@@ -488,6 +488,8 @@ interface AppState {
 
   // ライブラリ CRUD
   upsertCharacter: (c: Character) => void
+  /** カードからのインポート専用。id が既存と衝突する場合は振り直して常に新規追加する */
+  importCharacterCard: (c: Character) => void
   deleteCharacter: (id: string) => void
   bulkSetCharacterModel: (characterIds: string[], modelRef: string) => void
   upsertWorld: (w: World) => void
@@ -1005,6 +1007,14 @@ export const useStore = create<AppState>()(
                 ? st.characters.map((x) => (x.id === c.id ? updated : x))
                 : [updated, ...st.characters],
             }
+          }),
+
+        importCharacterCard: (c) =>
+          set((st) => {
+            const idTaken = st.characters.some((x) => x.id === c.id)
+            const now = Date.now()
+            const fresh = idTaken ? { ...c, id: uid(), createdAt: now, updatedAt: now } : c
+            return { characters: [fresh, ...st.characters] }
           }),
 
         deleteCharacter: (id) =>

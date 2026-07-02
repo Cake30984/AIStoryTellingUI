@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { useStore } from '../store'
 import { downloadBundle, parseBundle } from '../lib/io'
+import { parseCardPng, attachCardImage } from '../lib/cards'
 import { PROVIDER_PRESETS, newProvider } from '../lib/providers'
 import type { Provider } from '../types'
 
@@ -17,6 +18,7 @@ export default function SettingsModal({ onClose }: Props) {
     modelsLoadingFor,
     exportBundle,
     importBundle,
+    importCharacterCard,
     gcUnusedImages,
   } = useStore()
 
@@ -73,10 +75,20 @@ export default function SettingsModal({ onClose }: Props) {
   }
 
   const onImportFile = async (file: File) => {
+    const isPng = file.type === 'image/png' || file.name.toLowerCase().endsWith('.png')
     try {
-      const bundle = parseBundle(await file.text())
-      const { added } = importBundle(bundle)
-      setNotice(`インポート完了：${added} 件を追加しました（既存は保持）。`)
+      if (isPng) {
+        const bytes = new Uint8Array(await file.arrayBuffer())
+        const parsed = parseCardPng(bytes)
+        if (!parsed) throw new Error('カード情報が見つかりません。')
+        const withImage = await attachCardImage(parsed.character, bytes)
+        importCharacterCard(withImage)
+        setNotice(`カードから「${withImage.name || '無名'}」を追加しました。`)
+      } else {
+        const bundle = parseBundle(await file.text())
+        const { added } = importBundle(bundle)
+        setNotice(`インポート完了：${added} 件を追加しました（既存は保持）。`)
+      }
     } catch (e) {
       setNotice(`インポート失敗：${(e as Error).message}`)
     }
@@ -259,6 +271,7 @@ export default function SettingsModal({ onClose }: Props) {
             <div className="desc">
               キャラ・世界観・ペルソナ・セッションをまとめて JSON で保存／復元します。
               localStorage はブラウザ消去で失われるため、定期的なエクスポートを推奨します。
+              キャラクター単体は PNG カード（画像1枚に情報を埋め込み）でも入出力できます（SillyTavern 互換）。
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <button className="btn" onClick={onExport}>
@@ -270,7 +283,7 @@ export default function SettingsModal({ onClose }: Props) {
               <input
                 ref={fileRef}
                 type="file"
-                accept="application/json,.json"
+                accept="application/json,.json,image/png,.png"
                 style={{ display: 'none' }}
                 onChange={(e) => {
                   const f = e.target.files?.[0]
