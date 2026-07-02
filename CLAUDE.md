@@ -13,6 +13,8 @@
 - **1つの変更（機能追加・バグ修正・リファクタ等）ごとに必ず `git commit` を行う。**
 - コミット後は `git push origin main` でリモートに反映する。
 - コミットメッセージは日本語可。変更内容を端的に記述する。
+- **ファイル編集を伴う変更をコミットする際は、影響する記述（ディレクトリ構成・データモデル・主要な振る舞い・実装状況・ロードマップ等）があれば `CLAUDE.md` も同じコミットで更新する。**
+- 変更が一区切りついた適切なタイミングで、都度 `git commit` → `git push origin main` まで行う（作業を溜め込んでまとめてコミットしない）。
 
 ## 技術スタック
 React 18 + TypeScript + Vite / 状態管理は zustand（`persist` で localStorage 永続化）/ 追加ライブラリは最小限。バックエンドなし・完全クライアント。
@@ -35,10 +37,11 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist` で localStor
   - `SessionEditor.tsx` — セッション設定（参加キャラ/一括モデル設定/世界観/ペルソナ/固定メモ/文体/選択肢/裏方モデル/タイムライン/ディレクター/サンプリング）
   - `SettingsModal.tsx` — プロバイダ管理（追加/編集/削除/モデル読込）・データ入出力
   - `ModelPicker.tsx` — プロバイダ切替・モデル一覧・お気に入り。`onPick` は `"providerId::modelId"` を返す
-  - `SceneEditor.tsx` / `SceneReviewModal.tsx` / `StoryLogModal.tsx` / `StatusPanel.tsx`（状態の閲覧・手動編集＝ChatPanel の 📊）/ `CsvInput.tsx`
+  - `SceneEditor.tsx` / `SceneReviewModal.tsx` / `StoryLogModal.tsx` / `StatusPanel.tsx`（状態の閲覧・手動編集＝ChatPanel の 📊）/ `DiscoveryPanel.tsx`（発見ログの閲覧・手動編集・昇格＝ChatPanel の 📖）/ `CsvInput.tsx`
   - `library/` — 各素材の一覧＋エディタ（Character/World/Persona/SceneType）と `AvatarField`
 - `docs/要件定義書.md` — 利用者視点の機能要件（実装非依存）
 - `docs/設計_ステータスエンジン.md` — 状態エンジン（関係性 prose ＋ 事実の数）の設計仕様。下記 ADR-1 の実装計画
+- `docs/設計_ワールド再利用とオーバーレイ.md` — セッション・オーバーレイ（発見ロア／キャラ成長の置き場を素材からセッションへ分離）の設計仕様。フェーズB1〜B4の実装計画
 
 ## データモデル（要点）
 すべて「再利用可能な素材ライブラリ」をセッションが参照する構造。
@@ -47,8 +50,9 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist` で localStor
 - **World** — description（常時）＋`entries: LoreEntry[]`＋`scheduledEvents: ScheduledEvent[]`（`{day,name,note}`）＋**`relationAspects: RelationAspectDef[]`（関係性 prose の次元・ワールド固定）＋`stats: StatDef[]`（事実の数の定義）＋`counters: CounterDef[]`（行動カウンター定義）**。プリセット `WORLD_PRESETS`（恋愛/RPG/経営）で投入可
 - **Persona** — 利用者が演じる人物
 - **SceneType**（グローバル素材）— `{name,guidance,weight,minGap,color,builtin}`。既定6種を初回シード
-- **Session** — characterIds/worldId/personaId/authorNote/story/`scenes: Scene[]`/currentSceneId/timeline/choiceMode（off|always|auto）/narrativeStyle（novel|chat）/`reviewModel`/`choicesModel`/director（`{enabled,typeIds}`）/usedEventIds/`state: SessionState`/messages/model/temperature/maxTokens
+- **Session** — characterIds/worldId/personaId/authorNote/story/`scenes: Scene[]`/currentSceneId/timeline/choiceMode（off|always|auto）/narrativeStyle（novel|chat）/`reviewModel`/`choicesModel`/director（`{enabled,typeIds}`）/usedEventIds/`state: SessionState`/`overlay: SessionOverlay`/messages/model/temperature/maxTokens
 - **SessionState**（セッション固有・素材化しない）— `{relations: Relation[], moods: {characterId,mood}[], stats: StatValue[], counters: CounterValue[]}`（「事実は数、判断は言葉」。ADR-1）
+- **SessionOverlay**（セッション固有・素材化しない）— `{lore: LoreEntry[], characterDevelopments: {characterId,developments:Development[]}[]}`。物語中に発見・深化した設定の上乗せ。**元 Character/World は不変**、レビュー承認の追記先はここ。本編プロンプトへは素材＋オーバーレイを合成した実効ビュー（`resolveRefs` の `effectiveWorld`/`effectiveCharacter`）で注入。気に入った発見は `promoteOverlayLore`/`promoteOverlayDev`（`store.ts`）で元素材へ move 昇格可能
 - **Relation**（判断＝言葉）— `{fromId,toId,stance,aspects:{aspectId,note}[],flags:string[],updatedAt}`。キャラ→主人公（toId='hero'）の prose。stance＋ワールド固定 aspect ごとの記述＋恒久 flag。数値ティア（band）は持たない
 - **StatDef/StatValue**（事実＝数）— `StatDef{name,scope:'character'|'global',default,min?,max?,inject}` は World 定義、`StatValue{defId,characterId?,value}` は SessionState。実効値＝StatValue or `def.default`。好感度メーター/レベル/所持金等。`inject:true` のみ本編注入
 - **CounterDef/CounterValue**（事実＝数・累計）— `CounterDef{name,scope,inject}` は World 定義、`CounterValue{defId,characterId?,value}` は SessionState。デート回数/戦闘回数等、レビューの `counterEvents` で加算（単調増加）
@@ -71,7 +75,8 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist` で localStor
 **スキーマ変更時: 型更新 → 初期state/factory更新 → exportBundle/importBundle 反映 → partialize に新フィールド。**（破壊的変更なら persist キーも更新）
 
 ## 主要な振る舞い
-- **シーン進行**: `このシーンを終える` → `prepareSceneReview`（要約＋`directNextScene`＋成長案＋関係値差分生成）→ レビュー確認 → `confirmSceneReview`（成長/イベント反映・**関係値加算/気分更新**・タイムライン前進・新シーン作成）→ `beginScene()`（導入生成）→ 選択肢。物語開始は `startStory()`。
+- **シーン進行**: `このシーンを終える` → `prepareSceneReview`（要約＋`directNextScene`＋成長案＋関係値差分生成。**max_tokens不足での途中切れ対策**＝maxTokensを拡大＋`finish_reason==='length'`時は最大2回まで再試行、失敗時は raw.text フォールバックせず明示エラー表示）→ レビュー確認 → `confirmSceneReview`（成長/イベント反映・**関係値加算/気分更新**・タイムライン前進・新シーン作成）→ `beginScene()`（導入生成）→ 選択肢。物語開始は `startStory()`。
+- **セッション・オーバーレイ**（`Session.overlay`／設計は `docs/設計_ワールド再利用とオーバーレイ.md`）: 素材（`Character`/`World`）は複数セッションから参照される再利用資産なので、**レビューはこれを書き換えない**。採用された成長案・発見ロアは `confirmSceneReview`（`applyDiscovery`）で対象セッションの `overlay.characterDevelopments`/`overlay.lore` に追記（現在シーン確定時のみ）。本編プロンプト・レビュー文脈は `resolveRefs` の `effectiveWorld`/`effectiveCharacter` が素材＋オーバーレイを合成した実効ビューを `refs.world`/`refs.characters` に格納して供給（developments を読む経路は必ず実効キャラを使うこと。片方だけ素材素を読むと発見が消えて見える）。閲覧/手動編集は `ChatPanel` の 📖 `DiscoveryPanel`（`updateOverlayLore`/`removeOverlayLore`/`toggleOverlayLore`/`updateOverlayDev`/`removeOverlayDev`/`toggleOverlayDev`）。気に入った発見は「⬆ 昇格」で `promoteOverlayLore`/`promoteOverlayDev` が元 World/Character へ **move**（copy にすると実効合成で二重注入されるため）。ワールド未設定セッションはロア昇格不可。関係性 prose は既存どおり 📊 `StatusPanel` に残る（オーバーレイとは別レイヤー）。
 - **ディレクター** `directNextScene`: ①特別イベント（未消化 かつ `day` 未指定または到来 かつ `condition` 未指定または成立）最優先 → ②`director.typeIds` から重み＋クールダウン（`minGap`）で抽選。イベントは人の承認なしでコードが自動判定して発火（ADR-1）。
 - **状態エンジン** (`Session.state`／ADR-1・P1実装済み): 関係性は **prose**（`Relation` の stance＋ワールド固定 aspect＋flag）、進捗は **事実の数**（`StatValue`）。`reviewSystem(aspectNames, statNames, counterNames)` がレビュー時に `relationUpdates`（stance/aspects を全文書き直し・flagsAdd）／`statChanges`（delta）／`counterEvents`（amount）／`moods` を出力（ワールド定義名に拘束、未定義は除外）。**prose は全文置換・数値の加算はコードが行う**（`confirmSceneReview`：relations を upsert＝stance/aspects 置換・flags 和集合、stats は `clampStat`、counters は累計加算、現在シーン確定時のみ反映）。現在値は `buildStateInfo`→`refs.stateInfo`→本編 system の【状態（現在）】に注入（関係 prose＋`inject:true` のスタット【ステータス】・カウンター【カウンター】の数値）。閲覧/手動編集は `ChatPanel` の 📊 `StatusPanel`。**条件エンジン(P4)まで実装済み**：`World.achievements`（`AchievementDef{condition:Condition}`）＋`SessionState.achievements`、`World.scheduledEvents[].condition?:Condition`（`day` は任意化）。`evalCondition`/`evalClause`（store.ts）が `Clause`（stat/counter/relationFlag/achievement、`characterId`/`fromId` 省略時は「セッション参加キャラのいずれかが満たす」＝ワールドは特定キャラに固定されない再利用素材のため）を判定し、①`confirmSceneReview` 適用後に World 定義を反復評価（実績の連鎖依存も1パスで解決）→新規解除を `SessionState.achievements` に記録・`newlyUnlockedAchievements`（ランタイム）でトースト通知、②`directNextScene` のイベント抽出でも同じ `evalCondition` を用い自動発火判定。定義/条件ビルダー UI（`ClauseRow` 共通コンポーネント）は `WorldEditor`（実績・特別イベント双方）、達成一覧は `StatusPanel`。実績の反復評価は `unlockAchievements()`（store.ts）に共通化し、`confirmSceneReview` と選択肢の加点（P5・下記）の両方から呼ぶ。
 - **選択肢** `genChoices`: choiceMode≠off で各応答後に生成。`choicesModelOf` 使用、`extractJson`→`coerceChoices`（素の配列のほか `{"choices":[...]}` ラップや `[{"text":...}]` オブジェクト配列も吸収。**P5実装済み**：ワールドにスタット定義があれば `{"text":...,"effects":[{"stat":名称,"character":省略可,"delta":数値}]}` 形式も受け取り、`stat` 名から `World.stats` の defId を解決した `Choice.effects: ChoiceEffect[]` にする）。**末尾に `choicesUserNudge` の user 念押しを積み**（本編継続でなく JSON を出させる）、temperature 0.5、`always` は抽出失敗で最大2回試行。失敗時は `console.warn('[choices]…')` で可視化。手動再生成は `regenChoices()`（ChatPanel の「🔁 選択肢を生成」ボタン＝選択肢未付与時に表示）。選択肢ボタンは `effects` があれば加点バッジ（例: 「+2 好感度」）を表示し、クリック時に `applyChoiceEffects()`（stats を `clampStat` で加算 → `unlockAchievements()` 再評価・通知）を `send()` の前に適用（"細かく上昇する" 手応え）。
@@ -93,7 +98,7 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist` で localStor
 4. 検証後は seed した localStorage を削除し `preview_stop`。ポート残留時は `npx kill-port 5173`。
 
 ## 実装状況
-**画像/ComfyUI 以外はほぼ実装済み**。実装済み: セッション(RP/物語)・キャラ/世界観/ペルソナ/シーンタイプの素材ライブラリ・ロアブック・グループ会話・シーン管理・タイムライン・選択肢進行・統合レビュー・シーン演出エンジン・文体切替・**マルチプロバイダ（プロバイダ管理・キャラ別モデル・役割別裏方モデル）**・あらすじ閲覧・会話編集/削除/作り直し・エクスポート/インポート・トークン目安・出力停止対策。
+**画像/ComfyUI 以外はほぼ実装済み**。実装済み: セッション(RP/物語)・キャラ/世界観/ペルソナ/シーンタイプの素材ライブラリ・ロアブック・グループ会話・シーン管理・タイムライン・選択肢進行・統合レビュー・シーン演出エンジン・文体切替・**マルチプロバイダ（プロバイダ管理・キャラ別モデル・役割別裏方モデル）**・あらすじ閲覧・会話編集/削除/作り直し・エクスポート/インポート・トークン目安・出力停止対策・状態エンジン（関係性prose＋事実の数＋条件エンジン＋実績＋選択肢連動加点。ADR-1 P1〜P5）・**セッション・オーバーレイ（発見ロア／キャラ成長を素材から分離しセッションへ隔離＋実効ビュー注入＋発見ログUI＋素材への昇格。B1〜B4）**。
 
 ## 次にやること（ロードマップ）
 1. **画像 & ComfyUI 連携（後回し）**: キャラ画像＋挿絵生成。画像は localStorage では容量不足のため IndexedDB 等への移行が必要。ComfyUI(localhost:8188) は CORS 許可起動が前提、workflow テンプレ定義が必要。
