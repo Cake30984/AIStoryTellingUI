@@ -67,12 +67,13 @@ export function makeModelRef(providerId: string, model: string): string {
 /**
  * モデル参照からプロバイダとモデルIDを解決する。
  * providerId が見つからない場合・plain 文字列の場合は providers[0]（既定プロバイダ）にフォールバック。
+ * providers が空のときは provider: undefined（呼び出し側は API キー有無のガードで弾く）。
  */
 export function parseModelRef(
   ref: string,
   providers: Provider[],
-): { provider: Provider; model: string } {
-  const fallback = providers[0]
+): { provider: Provider | undefined; model: string } {
+  const fallback: Provider | undefined = providers[0]
   if (!ref || providers.length === 0) return { provider: fallback, model: ref }
   const { providerId, model } = splitRef(ref)
   if (!providerId) return { provider: fallback, model }
