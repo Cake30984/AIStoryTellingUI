@@ -14,6 +14,7 @@ export default function SceneReviewModal() {
     sceneTypes,
     sessions,
     activeId,
+    stop,
   } = useStore()
   const review = sceneReview!
   const session = sessions.find((s) => s.id === activeId)
@@ -45,6 +46,9 @@ export default function SceneReviewModal() {
   const [counterSel, setCounterSel] = useState<Set<number>>(
     new Set(review.counterEvents.map((_, i) => i)),
   )
+  const [moodSel, setMoodSel] = useState<Set<number>>(
+    new Set(review.moodChanges.map((_, i) => i)),
+  )
 
   // 別のレビュー（別シーン）に切り替わったときだけ全体をリセット。
   // 候補だけ再生成した場合は編集中の要約を保持する。
@@ -55,6 +59,7 @@ export default function SceneReviewModal() {
     setRelUpdSel(new Set(review.relationUpdates.map((_, i) => i)))
     setStatSel(new Set(review.statChanges.map((_, i) => i)))
     setCounterSel(new Set(review.counterEvents.map((_, i) => i)))
+    setMoodSel(new Set(review.moodChanges.map((_, i) => i)))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [review.sceneId])
 
@@ -78,6 +83,7 @@ export default function SceneReviewModal() {
       relationUpdateIdx: [...relUpdSel],
       statChangeIdx: [...statSel],
       counterEventIdx: [...counterSel],
+      moodChangeIdx: [...moodSel],
     })
   }
 
@@ -158,7 +164,12 @@ export default function SceneReviewModal() {
                   )}
                 </div>
                 {isRegenSuggestions && (
-                  <div className="choices-loading">次シーンの候補を生成中…</div>
+                  <div className="choices-loading">
+                    次シーンの候補を生成中…
+                    <button className="link" style={{ marginLeft: 8 }} onClick={stop}>
+                      中止
+                    </button>
+                  </div>
                 )}
                 <div className="review-cards" style={isRegenSuggestions ? { opacity: 0.5 } : undefined}>
                   {review.suggestions.map((s, i) => (
@@ -303,12 +314,23 @@ export default function SceneReviewModal() {
                 </div>
               )}
 
-              {/* 気分の更新（確定時に上書き） */}
+              {/* 気分の更新（チェックした項目のみ確定時に上書き） */}
               {!isPastScene && review.moodChanges.length > 0 && (
                 <div className="field">
-                  <label>🎭 気分の更新</label>
-                  <div className="desc">
-                    {review.moodChanges.map((m) => `${m.name}: ${m.mood}`).join(' ／ ')}
+                  <label>🎭 気分の更新（チェックした項目を上書き）</label>
+                  <div className="growth-list">
+                    {review.moodChanges.map((m, i) => (
+                      <label key={i} className="growth-item">
+                        <input
+                          type="checkbox"
+                          checked={moodSel.has(i)}
+                          onChange={() => toggle(moodSel, setMoodSel, i)}
+                        />
+                        <span>
+                          <strong>{m.name}</strong>：{m.mood}
+                        </span>
+                      </label>
+                    ))}
                   </div>
                 </div>
               )}
