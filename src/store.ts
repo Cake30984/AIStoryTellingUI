@@ -1167,9 +1167,14 @@ export const useStore = create<AppState>()(
             return
           }
 
+          // 過去シーンの再レビューかどうか（登場キャラ・時刻の文脈組み立てを分岐させる）
+          const isPastScene = scene.id !== s.currentSceneId
           set({ isReviewing: true, error: null })
           try {
-            const refs = resolveRefs(s)
+            // resolveRefs はセッションの currentSceneId を見て登場キャラ・状況メモを決めるため、
+            // 過去シーンの再レビューでは対象シーンを一時的に current 扱いにして正しい文脈を得る
+            // （そうしないと「今アクティブなシーン」の登場キャラ・状況メモが誤って使われる）。
+            const refs = isPastScene ? resolveRefs({ ...s, currentSceneId: scene.id }) : resolveRefs(s)
             const nameOf = (id?: string) =>
               get().characters.find((c) => c.id === id)?.name ?? 'キャラ'
             const transcript = sceneMsgs
@@ -1194,19 +1199,28 @@ export const useStore = create<AppState>()(
             if (refs.world) ctxParts.push(`【世界観】${refs.world.name}: ${refs.world.description}`)
             if (refs.timelineInfo) ctxParts.push(`【時間】${refs.timelineInfo}`)
 
-            // 次シーンの時刻（タイムラインが有効なら一区切り進む）を明示
-            const nextTimeline = s.timeline.enabled ? advanceTimeline(s.timeline) : null
-            if (nextTimeline) {
+            // 次シーンの時刻を明示。過去シーンの再レビューでは、ライブの現在タイムラインを
+            // 進めるのではなく、既に存在する次シーンの時刻ラベルをそのまま使う
+            // （ライブの現在日はそのシーンの時点よりずっと先に進んでいる可能性があるため）。
+            const sceneIdxForCtx = s.scenes.findIndex((sc) => sc.id === scene.id)
+            const existingNextScene = isPastScene ? s.scenes[sceneIdxForCtx + 1] : undefined
+            const nextTimeline = !isPastScene && s.timeline.enabled ? advanceTimeline(s.timeline) : null
+            const nextTimeLabel = isPastScene
+              ? existingNextScene?.timeLabel
+              : nextTimeline
+                ? timeLabelOf(nextTimeline)
+                : undefined
+            if (nextTimeLabel) {
               ctxParts.push(
-                `【次シーンの時間】このシーンが終わると時間帯が一区切り進み、次シーンは「${timeLabelOf(
-                  nextTimeline,
-                )}」になります。suggestions は時間が経過した後の場面として、その時刻にふさわしい状況で書いてください（直前の場面の続きをそのまま続けない）。`,
+                `【次シーンの時間】このシーンが終わると時間帯が一区切り進み、次シーンは「${nextTimeLabel}」になります。suggestions は時間が経過した後の場面として、その時刻にふさわしい状況で書いてください（直前の場面の続きをそのまま続けない）。`,
               )
             }
 
-            // ディレクター：次シーンの方向を決定（イベント優先→抽選）
-            const nextDay = nextTimeline ? nextTimeline.currentDay : null
-            const pick = directNextScene(s, refs.world, get().sceneTypes, nextDay)
+            // ディレクター：次シーンの方向を決定（イベント優先→抽選）。
+            // 過去シーンの再レビューでは実際の履歴上の日付・状態が分からないため、
+            // ライブの現在日での日付/条件付きイベント判定は行わず種類のみ抽選する。
+            const nextDay = !isPastScene && nextTimeline ? nextTimeline.currentDay : null
+            const pick = directNextScene(s, refs.world, get().sceneTypes, nextDay, isPastScene)
             const pickedType = pick.typeId
               ? get().sceneTypes.find((t) => t.id === pick.typeId)
               : undefined
@@ -1259,9 +1273,17 @@ export const useStore = create<AppState>()(
             const maxAttempts = 2
             let raw: Awaited<ReturnType<typeof streamChat>> | null = null
             let parsed: any = null
+            controller = new AbortController()
             for (let attempt = 0; attempt < maxAttempts; attempt++) {
               raw = await streamChat(
-                { provider, model, messages: reviewMessages, temperature: 0.4, maxTokens: REVIEW_MAX_TOKENS },
+                {
+                  provider,
+                  model,
+                  messages: reviewMessages,
+                  temperature: 0.4,
+                  maxTokens: REVIEW_MAX_TOKENS,
+                  signal: controller.signal,
+                },
                 () => {},
               )
               parsed = extractJson<any>(raw.text)
@@ -1415,6 +1437,7 @@ export const useStore = create<AppState>()(
           } catch (e) {
             if ((e as Error).name !== 'AbortError') set({ error: (e as Error).message })
           } finally {
+            controller = null
             set({ isReviewing: false })
           }
         },
@@ -1691,6 +1714,8 @@ export const useStore = create<AppState>()(
             set({ error: `接続先「${provider?.label ?? ''}」の API キーが未設定です。` })
             return
           }
+          // 過去シーンの再レビューでは、ライブの現在タイムラインではなく既存の次シーンの時刻を使う
+          const isPastScene = scene.id !== s.currentSceneId
           set({ isRegenSuggestions: true, error: null })
           try {
             const refs = resolveRefs(s)
@@ -1703,17 +1728,23 @@ export const useStore = create<AppState>()(
               : review.nextTypeName
                 ? `次シーンの種類は「${review.nextTypeName}」。${guidance}`
                 : '特に指定なし（自由に提案）。'
-            const nextTimeline = s.timeline.enabled ? advanceTimeline(s.timeline) : null
+            const sceneIdxForCtx = s.scenes.findIndex((sc) => sc.id === scene.id)
+            const existingNextScene = isPastScene ? s.scenes[sceneIdxForCtx + 1] : undefined
+            const nextTimeline = !isPastScene && s.timeline.enabled ? advanceTimeline(s.timeline) : null
+            const nextTimeLabel = isPastScene
+              ? existingNextScene?.timeLabel
+              : nextTimeline
+                ? timeLabelOf(nextTimeline)
+                : undefined
             const ctxParts = [`【これまでのあらすじ】\n${review.summary}`]
             if (refs.world) ctxParts.push(`【世界観】${refs.world.name}: ${refs.world.description}`)
             ctxParts.push(`【次シーンの方向性】${dirText}`)
-            if (nextTimeline) {
+            if (nextTimeLabel) {
               ctxParts.push(
-                `【次シーンの時間】次シーンは「${timeLabelOf(
-                  nextTimeline,
-                )}」。時間が経過した後の場面として書いてください。`,
+                `【次シーンの時間】次シーンは「${nextTimeLabel}」。時間が経過した後の場面として書いてください。`,
               )
             }
+            controller = new AbortController()
             const raw = await streamChat(
               {
                 provider,
@@ -1724,6 +1755,7 @@ export const useStore = create<AppState>()(
                 ],
                 temperature: 0.7,
                 maxTokens: 800,
+                signal: controller.signal,
               },
               () => {},
             )
@@ -1741,6 +1773,7 @@ export const useStore = create<AppState>()(
           } catch (e) {
             if ((e as Error).name !== 'AbortError') set({ error: (e as Error).message })
           } finally {
+            controller = null
             set({ isRegenSuggestions: false })
           }
         },
