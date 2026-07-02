@@ -36,7 +36,12 @@ export default function PersonaEditor({ persona, onClose }: Props) {
         <div className="modal-body">
           <div className="field">
             <label>アバター</label>
-            <AvatarField avatar={d.avatar} name={d.name} onChange={(avatar) => patch({ avatar })} />
+            <AvatarField
+              avatar={d.avatar}
+              name={d.name}
+              genContext={{ name: d.name, appearance: d.description, imagePrompt: d.imagePrompt }}
+              onChange={(avatar) => patch({ avatar })}
+            />
           </div>
           <div className="field">
             <label>名前</label>
@@ -49,6 +54,15 @@ export default function PersonaEditor({ persona, onClose }: Props) {
               value={d.description}
               placeholder="例: 転校してきたばかりの高校生。好奇心旺盛で..."
               onChange={(e) => patch({ description: e.target.value })}
+            />
+          </div>
+          <div className="field">
+            <label>画像生成タグ（英語・任意）</label>
+            <div className="desc">髪色や画風などの固定タグ。挿絵・アバター生成時に自動で使われます。</div>
+            <input
+              value={d.imagePrompt ?? ''}
+              placeholder="例: 1boy, short brown hair, casual clothes"
+              onChange={(e) => patch({ imagePrompt: e.target.value || undefined })}
             />
           </div>
         </div>

@@ -34,6 +34,8 @@ export interface Character {
   /** 物語の展開で判明・深化した設定（成長ログ。承認で追記される） */
   developments: Development[]
   avatar: Avatar
+  /** 画像生成用の固定英語タグ（画風・髪色・LoRA トリガー等。挿絵/アバター生成時に自動結合） */
+  imagePrompt?: string
   tags: string[]
   /**
    * このキャラ専用の本編モデル参照（ModelRef 形式）。
@@ -51,6 +53,8 @@ export interface Persona {
   name: string
   description: string
   avatar: Avatar
+  /** 画像生成用の固定英語タグ（画風・髪色等） */
+  imagePrompt?: string
   createdAt: number
   updatedAt: number
 }

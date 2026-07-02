@@ -328,6 +328,51 @@ export function nextSceneSystem(): string {
   )
 }
 
+/** 画像プロンプト起案用の system プロンプト（挿絵・アバター共通） */
+export function illustrationPromptSystem(): string {
+  return (
+    `あなたはイラスト生成用プロンプトの起案アシスタントです。与えられた文脈から、その場面（または人物）を1枚の絵にするための英語プロンプトを作ってください。\n` +
+    `出力は次の JSON のみ（説明・前置き・コードフェンス禁止）:\n` +
+    `{"prompt": "英語のカンマ区切りタグまたは簡潔な英語描写", "negative": "避けたい要素の英語タグ"}\n` +
+    `指針:\n` +
+    `- キャラクターに【画像生成タグ】が与えられている場合は、その文字列を改変せずそのまま prompt に含める（LoRA トリガー等のため）。\n` +
+    `- 人数・外見・構図・背景・光・雰囲気を具体的なタグにする。\n` +
+    `- masterpiece 等の品質タグは入れない（利用者が固定タグ側で管理する）。`
+  )
+}
+
+/** 画像プロンプト起案の user 文脈（挿絵用）。呼び出し側が素材を集めて渡す */
+export function illustrationContextUser(args: {
+  sceneTitle?: string
+  sceneNote?: string
+  timeLabel?: string
+  characters: { name: string; appearance?: string; imagePrompt?: string }[]
+  recentMessages: string[]
+}): string {
+  const parts: string[] = ['この場面の挿絵プロンプトを作成してください。']
+  if (args.sceneTitle) parts.push(`【シーン】${args.sceneTitle}`)
+  if (args.sceneNote) parts.push(`【状況】${args.sceneNote}`)
+  if (args.timeLabel) parts.push(`【時間】${args.timeLabel}`)
+  for (const c of args.characters) {
+    const lines = [`【登場キャラ】${c.name}`]
+    if (c.appearance) lines.push(`外見: ${c.appearance}`)
+    if (c.imagePrompt) lines.push(`画像生成タグ: ${c.imagePrompt}`)
+    parts.push(lines.join('\n'))
+  }
+  if (args.recentMessages.length > 0) {
+    parts.push(`【直近の本文】\n${args.recentMessages.join('\n---\n')}`)
+  }
+  return parts.join('\n\n')
+}
+
+/** 画像プロンプト起案の user 文脈（アバター/立ち絵用） */
+export function avatarContextUser(args: { name: string; appearance?: string; imagePrompt?: string }): string {
+  const parts = [`このキャラクター1人のポートレート（バストアップ・正面）のプロンプトを作成してください。`, `【名前】${args.name}`]
+  if (args.appearance) parts.push(`【外見】${args.appearance}`)
+  if (args.imagePrompt) parts.push(`【画像生成タグ】${args.imagePrompt}`)
+  return parts.join('\n')
+}
+
 /** シーン要約（引き継ぎメモ）生成用の system プロンプト */
 export const SUMMARY_SYSTEM =
   `あなたは物語の記録係です。次のシーンの会話を、後で物語を再開するための「引き継ぎメモ」として要約してください。\n` +

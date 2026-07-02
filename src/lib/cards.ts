@@ -117,6 +117,7 @@ function normalizeCharacterFromExtension(raw: any): Character {
     greeting: typeof raw.greeting === 'string' ? raw.greeting : '',
     developments: Array.isArray(raw.developments) ? raw.developments : [],
     avatar: { color: typeof raw.avatar?.color === 'string' ? raw.avatar.color : '#5b8def' },
+    imagePrompt: typeof raw.imagePrompt === 'string' ? raw.imagePrompt : undefined,
     tags: Array.isArray(raw.tags) ? raw.tags : [],
     createdAt: typeof raw.createdAt === 'number' ? raw.createdAt : now,
     updatedAt: typeof raw.updatedAt === 'number' ? raw.updatedAt : now,
@@ -222,6 +223,7 @@ function normalizePersonaFromData(raw: any): Persona {
     name: typeof raw.name === 'string' ? raw.name : '',
     description: typeof raw.description === 'string' ? raw.description : '',
     avatar: { color: typeof raw.avatar?.color === 'string' ? raw.avatar.color : '#5b8def' },
+    imagePrompt: typeof raw.imagePrompt === 'string' ? raw.imagePrompt : undefined,
     createdAt: typeof raw.createdAt === 'number' ? raw.createdAt : now,
     updatedAt: typeof raw.updatedAt === 'number' ? raw.updatedAt : now,
   }
