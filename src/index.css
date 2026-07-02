@@ -295,15 +295,8 @@ select {
   place-items: center;
   font-size: 14px;
   font-weight: 700;
-}
-.avatar.assistant {
-  background: linear-gradient(135deg, var(--accent), #5b8def);
+  overflow: hidden;
   color: #fff;
-}
-.avatar.user {
-  background: var(--bg-elev2);
-  border: 1px solid var(--border);
-  color: var(--text-dim);
 }
 
 .bubble {
@@ -853,6 +846,8 @@ select {
   place-items: center;
   font-size: 20px;
   flex-shrink: 0;
+  overflow: hidden;
+  color: #fff;
 }
 .entity-body {
   min-width: 0;
@@ -899,13 +894,15 @@ select {
   place-items: center;
   font-size: 24px;
   flex-shrink: 0;
+  overflow: hidden;
+  color: #fff;
 }
 .avatar-controls {
   flex: 1;
 }
-.emoji-input {
-  width: 70px !important;
-  text-align: center;
+.avatar-upload-row {
+  display: flex;
+  gap: 8px;
   margin-bottom: 8px;
 }
 .color-row {
@@ -956,6 +953,8 @@ select {
   display: grid;
   place-items: center;
   font-size: 12px;
+  overflow: hidden;
+  color: #fff;
 }
 .inline-empty {
   font-size: 13px;

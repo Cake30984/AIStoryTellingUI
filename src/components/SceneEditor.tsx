@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useStore } from '../store'
 import type { Scene, Session } from '../types'
+import EntityAvatar from './EntityAvatar'
 
 interface Props {
   session: Session
@@ -59,9 +60,7 @@ export default function SceneEditor({ session, scene, onClose }: Props) {
                     className={'pick-chip' + (d.activeCharacterIds.includes(c.id) ? ' on' : '')}
                     onClick={() => toggle(c.id)}
                   >
-                    <span className="dot-avatar" style={{ background: c.avatar.color }}>
-                      {Array.from(c.name || '無名')[0]}
-                    </span>
+                    <EntityAvatar className="dot-avatar" avatar={c.avatar} name={c.name || '無名'} />
                     {c.name || '無名'}
                   </button>
                 ))}

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useStore } from '../store'
 import type { Session, SessionState } from '../types'
+import EntityAvatar from './EntityAvatar'
 
 interface Props {
   session: Session
@@ -145,9 +146,7 @@ export default function StatusPanel({ session, onClose }: Props) {
             return (
               <div key={c.id} className="field">
                 <label>
-                  <span className="dot-avatar" style={{ background: c.avatar.color }}>
-                    {Array.from(c.name || '無名')[0]}
-                  </span>{' '}
+                  <EntityAvatar className="dot-avatar" avatar={c.avatar} name={c.name || '無名'} />{' '}
                   {c.name || '無名'} → {heroName}
                 </label>
                 {(charStats.length > 0 || charCounters.length > 0) && (

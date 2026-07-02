@@ -4,6 +4,7 @@ import { timeLabelOf } from '../lib/timeline'
 import type { Session } from '../types'
 import CsvInput from './CsvInput'
 import ModelPicker from './ModelPicker'
+import EntityAvatar from './EntityAvatar'
 
 type PickerTarget = 'review' | 'choices' | 'bulk'
 
@@ -107,9 +108,7 @@ export default function SessionEditor({ session, onClose }: Props) {
                       className={'pick-chip' + (d.characterIds.includes(c.id) ? ' on' : '')}
                       onClick={() => toggleCharacter(c.id)}
                     >
-                      <span className="dot-avatar" style={{ background: c.avatar.color }}>
-                        {Array.from(c.name || '無名')[0]}
-                      </span>
+                      <EntityAvatar className="dot-avatar" avatar={c.avatar} name={c.name || '無名'} />
                       {c.name || '無名'}
                     </button>
                   ))}

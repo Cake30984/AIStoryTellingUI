@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { newCharacter, useStore } from '../../store'
 import type { Character } from '../../types'
 import CharacterEditor from './CharacterEditor'
+import EntityAvatar from '../EntityAvatar'
 
 export default function CharacterLibrary() {
   const characters = useStore((s) => s.characters)
@@ -24,9 +25,7 @@ export default function CharacterLibrary() {
         <div className="card-grid">
           {characters.map((c) => (
             <div key={c.id} className="entity-card" onClick={() => setEditing(c)}>
-              <div className="entity-avatar" style={{ background: c.avatar.color }}>
-                {Array.from(c.name || '')[0] ?? '✦'}
-              </div>
+              <EntityAvatar className="entity-avatar" avatar={c.avatar} name={c.name || '✦'} />
               <div className="entity-body">
                 <div className="entity-name">{c.name || '無名'}</div>
                 <div className="entity-desc">{c.persona || '設定なし'}</div>

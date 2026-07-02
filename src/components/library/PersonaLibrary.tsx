@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { newPersona, useStore } from '../../store'
 import type { Persona } from '../../types'
 import PersonaEditor from './PersonaEditor'
+import EntityAvatar from '../EntityAvatar'
 
 export default function PersonaLibrary() {
   const personas = useStore((s) => s.personas)
@@ -24,9 +25,7 @@ export default function PersonaLibrary() {
         <div className="card-grid">
           {personas.map((p) => (
             <div key={p.id} className="entity-card" onClick={() => setEditing(p)}>
-              <div className="entity-avatar" style={{ background: p.avatar.color }}>
-                {Array.from(p.name || '')[0] ?? '🙂'}
-              </div>
+              <EntityAvatar className="entity-avatar" avatar={p.avatar} name={p.name || '🙂'} />
               <div className="entity-body">
                 <div className="entity-name">{p.name || '無名'}</div>
                 <div className="entity-desc">{p.description || '設定なし'}</div>

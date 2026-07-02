@@ -10,6 +10,7 @@ import SceneEditor from './SceneEditor'
 import StoryLogModal from './StoryLogModal'
 import StatusPanel from './StatusPanel'
 import DiscoveryPanel from './DiscoveryPanel'
+import EntityAvatar from './EntityAvatar'
 
 interface Props {
   session: Session
@@ -233,13 +234,9 @@ export default function ChatPanel({ session }: Props) {
     return (
       <div className="msg" key={m.id}>
         {m.role === 'assistant' ? (
-          <div className="avatar" style={{ background: av!.avatar.color }}>
-            {Array.from(av!.name)[0] ?? '?'}
-          </div>
+          <EntityAvatar className="avatar" avatar={av!.avatar} name={av!.name} />
         ) : (
-          <div className="avatar" style={{ background: persona?.avatar.color ?? 'var(--bg-elev2)' }}>
-            {Array.from(persona?.name || 'あなた')[0] ?? '?'}
-          </div>
+          <EntityAvatar className="avatar" avatar={persona?.avatar} name={persona?.name || 'あなた'} />
         )}
         <div className={'bubble' + (marker ? ' continue' : '')}>
           <div className="name">{name}</div>
@@ -403,9 +400,7 @@ export default function ChatPanel({ session }: Props) {
                   className={'speaker-chip' + (speaker === c.id ? ' on' : '')}
                   onClick={() => setSpeaker(c.id)}
                 >
-                  <span className="dot-avatar" style={{ background: c.avatar.color }}>
-                    {Array.from(c.name || '無名')[0]}
-                  </span>
+                  <EntityAvatar className="dot-avatar" avatar={c.avatar} name={c.name || '無名'} />
                   {c.name || '無名'}
                 </button>
               ))}

@@ -17,6 +17,7 @@ export default function SettingsModal({ onClose }: Props) {
     modelsLoadingFor,
     exportBundle,
     importBundle,
+    gcUnusedImages,
   } = useStore()
 
   // API キーはローカルバッファに保持し「保存」ボタンで確定
@@ -278,6 +279,25 @@ export default function SettingsModal({ onClose }: Props) {
                 }}
               />
             </div>
+          </div>
+
+          <hr className="divider" />
+
+          {/* 画像の整理 */}
+          <div className="field">
+            <label>アバター画像の整理</label>
+            <div className="desc">
+              キャラ・ペルソナのどこからも参照されなくなった画像をブラウザ内のストレージから削除します。
+            </div>
+            <button
+              className="btn"
+              onClick={async () => {
+                const removed = await gcUnusedImages()
+                setNotice(`未使用の画像を ${removed} 件削除しました。`)
+              }}
+            >
+              🧹 未使用画像を整理
+            </button>
           </div>
 
           {notice && <p className="notice">{notice}</p>}
