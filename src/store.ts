@@ -31,6 +31,7 @@ import {
   buildMessages,
   choicesSystem,
   choicesUserNudge,
+  CONTINUATION_NUDGE,
   CONTINUE_PROMPT,
   nextSceneSystem,
   reviewSystem,
@@ -720,7 +721,11 @@ export const useStore = create<AppState>()(
         }
       }
 
-      async function runCompletion(speakerId?: string, appendToId?: string): Promise<void> {
+      async function runCompletion(
+        speakerId?: string,
+        appendToId?: string,
+        extraUserNudge?: string,
+      ): Promise<void> {
         const s = active()
         if (!s) return
         // 生成中にユーザーが別セッションへ切り替えても書き込み先がぶれないよう、対象セッションを固定する
@@ -778,6 +783,12 @@ export const useStore = create<AppState>()(
           })
         }
 
+        // 「続きを生成」の念押しは履歴には積まず、API 送信時だけ末尾に付加する
+        const buildRequestMessages = () => {
+          const base = buildMessages(target()!, refs, speaker)
+          return extraUserNudge ? [...base, { role: 'user' as const, content: extraUserNudge }] : base
+        }
+
         let finishReason: string | null = null
         let gotContent = false
         const MAX_TRIES = 3
@@ -787,7 +798,7 @@ export const useStore = create<AppState>()(
               {
                 provider,
                 model: mainModel,
-                messages: buildMessages(target()!, refs, speaker),
+                messages: buildRequestMessages(),
                 temperature: s.temperature,
                 maxTokens: s.maxTokens,
                 signal: controller.signal,
@@ -1985,7 +1996,7 @@ export const useStore = create<AppState>()(
           if (!s || get().isStreaming) return
           const last = [...s.messages].reverse().find((m) => m.role === 'assistant')
           if (!last) return
-          await runCompletion(last.characterId, last.id)
+          await runCompletion(last.characterId, last.id, CONTINUATION_NUDGE)
         },
 
         editMessage: (messageId, content) => {
