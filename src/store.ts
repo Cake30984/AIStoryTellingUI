@@ -516,6 +516,7 @@ interface AppState {
     relationUpdateIdx: number[]
     statChangeIdx: number[]
     counterEventIdx: number[]
+    moodChangeIdx: number[]
   }) => void
   setReviewNextType: (typeId: string | null) => void
   rerollReviewType: () => Promise<void>
@@ -1481,6 +1482,9 @@ export const useStore = create<AppState>()(
           const selectedCounters = opts.counterEventIdx
             .map((i) => review.counterEvents[i])
             .filter(Boolean)
+          const selectedMoods = opts.moodChangeIdx
+            .map((i) => review.moodChanges[i])
+            .filter(Boolean)
           const stateWorld = get().worlds.find((w) => w.id === s.worldId)
           // このレビュー適用で新規解除された実績（通知用）
           const newlyUnlocked: AchievementDef[] = []
@@ -1522,7 +1526,7 @@ export const useStore = create<AppState>()(
             }
             // 気分
             const moods = base.moods.map((m) => ({ ...m }))
-            for (const m of review.moodChanges) {
+            for (const m of selectedMoods) {
               const idx = moods.findIndex((x) => x.characterId === m.characterId)
               if (idx >= 0) moods[idx].mood = m.mood
               else moods.push({ characterId: m.characterId, mood: m.mood })
