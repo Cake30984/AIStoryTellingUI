@@ -717,6 +717,10 @@ export const useStore = create<AppState>()(
       async function runCompletion(speakerId?: string, appendToId?: string): Promise<void> {
         const s = active()
         if (!s) return
+        // 生成中にユーザーが別セッションへ切り替えても書き込み先がぶれないよう、対象セッションを固定する
+        const sessionId = s.id
+        const target = () => get().sessions.find((x) => x.id === sessionId)
+        const patchTarget = (patch: Partial<Session>) => get().updateSession(sessionId, patch)
 
         // 話者を先に確定（キャラ別モデル解決のため）
         const novel = s.narrativeStyle === 'novel'
@@ -736,13 +740,13 @@ export const useStore = create<AppState>()(
         // 既存メッセージへ追記する場合はそれを対象に、そうでなければ空メッセージを新規追加
         const assistantId = appendToId ?? uid()
         if (appendToId) {
-          patchActive({
+          patchTarget({
             messages: s.messages.map((m) =>
               m.id === appendToId ? { ...m, pending: true, truncated: false } : m,
             ),
           })
         } else {
-          patchActive({
+          patchTarget({
             messages: [
               ...s.messages,
               {
@@ -759,9 +763,9 @@ export const useStore = create<AppState>()(
         }
 
         const writeDelta = (chunk: string) => {
-          const cur = active()
+          const cur = target()
           if (!cur) return
-          patchActive({
+          patchTarget({
             messages: cur.messages.map((m) =>
               m.id === assistantId ? { ...m, content: m.content + chunk } : m,
             ),
@@ -777,7 +781,7 @@ export const useStore = create<AppState>()(
               {
                 provider,
                 model: mainModel,
-                messages: buildMessages(active()!, refs, speaker),
+                messages: buildMessages(target()!, refs, speaker),
                 temperature: s.temperature,
                 maxTokens: s.maxTokens,
                 signal: controller.signal,
@@ -802,7 +806,7 @@ export const useStore = create<AppState>()(
           }
         }
 
-        const cur = active()
+        const cur = target()
         if (cur) {
           const msgs = cur.messages
             .map((m) => {
@@ -824,13 +828,13 @@ export const useStore = create<AppState>()(
               return { ...m, content, characterId, pending: false, truncated: finishReason === 'length' }
             })
             .filter((m) => !(m.id === assistantId && m.content.trim() === ''))
-          patchActive({ messages: msgs })
+          patchTarget({ messages: msgs })
         }
         controller = null
         set({ isStreaming: false })
 
         // 選択肢の生成（off 以外、かつ応答が生成された場合）
-        const after = active()
+        const after = target()
         const finalMsg = after?.messages.find((m) => m.id === assistantId)
         if (after && finalMsg && finalMsg.content.trim() && after.choiceMode !== 'off') {
           await genChoices(after, assistantId)
@@ -878,8 +882,9 @@ export const useStore = create<AppState>()(
             }
           }
           if (choices.length > 0) {
-            const cur = active()
-            if (cur && cur.id === session.id) {
+            // 生成中に別セッションへ切り替えていても、対象セッションのメッセージへ付与する
+            const cur = get().sessions.find((x) => x.id === session.id)
+            if (cur) {
               get().updateSession(cur.id, {
                 messages: cur.messages.map((m) =>
                   m.id === messageId ? { ...m, choices } : m,
