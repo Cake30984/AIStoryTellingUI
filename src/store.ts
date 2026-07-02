@@ -608,9 +608,11 @@ function directNextScene(
   world: World | undefined,
   sceneTypes: SceneType[],
   nextDay: number | null,
+  skipEvents = false,
 ): { typeId?: string; eventId?: string; eventName?: string } {
   // ① 特別イベント（day 未指定は日付条件なし。条件式は数・フラグ・実績のみで判定）
-  if (world) {
+  //    skipEvents=true は「種類のみ抽選」（引き直し用。イベント判定を行わない）
+  if (world && !skipEvents) {
     const ev = (world.scheduledEvents ?? [])
       .filter((e) => {
         if (session.usedEventIds.includes(e.id)) return false
@@ -1634,10 +1636,11 @@ export const useStore = create<AppState>()(
           const s = active()
           if (!review || !s) return
           const pick = directNextScene(
-            { ...s, usedEventIds: [...s.usedEventIds, review.scheduledEventId ?? ''] },
+            s,
             get().worlds.find((w) => w.id === s.worldId),
             get().sceneTypes,
-            null, // イベントを除外して種類のみ抽選
+            null,
+            true, // イベント判定をスキップして種類のみ抽選（day 無し条件イベントに横取りされないように）
           )
           const t = pick.typeId ? get().sceneTypes.find((x) => x.id === pick.typeId) : undefined
           set({
