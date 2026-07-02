@@ -28,6 +28,7 @@ import type {
   World,
 } from './types'
 import { fetchModels, streamChat } from './lib/openrouter'
+import { gcImages } from './lib/imageStore'
 import {
   buildMessages,
   choicesSystem,
@@ -552,6 +553,8 @@ interface AppState {
   // データ入出力
   exportBundle: () => ExportBundle
   importBundle: (bundle: ExportBundle) => { added: number }
+  /** 未使用のアバター画像（IndexedDB）を削除し、削除件数を返す */
+  gcUnusedImages: () => Promise<number>
 }
 
 let controller: AbortController | null = null
@@ -2109,6 +2112,14 @@ export const useStore = create<AppState>()(
             }
           })
           return { added }
+        },
+
+        gcUnusedImages: async () => {
+          const { characters, personas } = get()
+          const used = new Set<string>()
+          for (const c of characters) if (c.avatar.imageId) used.add(c.avatar.imageId)
+          for (const p of personas) if (p.avatar.imageId) used.add(p.avatar.imageId)
+          return gcImages(used)
         },
       }
     },

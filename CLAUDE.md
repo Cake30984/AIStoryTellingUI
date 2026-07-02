@@ -37,10 +37,11 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist` で localStor
   - `Sidebar.tsx` — 左ナビ＋セッション一覧
   - `ChatPanel.tsx` — 会話画面（トップバー・シーン仕切り・話者/選択肢・コンポーザー・メッセージ操作）
   - `SessionEditor.tsx` — セッション設定（参加キャラ/一括モデル設定/世界観/ペルソナ/固定メモ/文体/選択肢/裏方モデル/タイムライン/ディレクター/サンプリング）
-  - `SettingsModal.tsx` — プロバイダ管理（追加/編集/削除/モデル読込）・データ入出力
+  - `SettingsModal.tsx` — プロバイダ管理（追加/編集/削除/モデル読込）・データ入出力・未使用アバター画像のGC（`gcUnusedImages`）
   - `ModelPicker.tsx` — プロバイダ切替・モデル一覧・お気に入り。`onPick` は `"providerId::modelId"` を返す
   - `SceneEditor.tsx` / `SceneReviewModal.tsx` / `StoryLogModal.tsx` / `StatusPanel.tsx`（状態の閲覧・手動編集＝ChatPanel の 📊）/ `DiscoveryPanel.tsx`（発見ログの閲覧・手動編集・昇格＝ChatPanel の 📖）/ `CsvInput.tsx`
-  - `library/` — 各素材の一覧＋エディタ（Character/World/Persona/SceneType）と `AvatarField`
+  - `EntityAvatar.tsx`（P2）— 画像があれば表示、なければ色＋名前イニシャルを表示する共通アバター。既存の `.avatar`/`.entity-avatar`/`.dot-avatar` クラスを流用し全画面で表示統一
+  - `library/` — 各素材の一覧＋エディタ（Character/World/Persona/SceneType）と `AvatarField`（P2で画像アップロード対応。選択画像は `normalizeImage`→`putImage` で保存し `imageId` を反映。「画像を外す」あり）
 - `docs/要件定義書.md` — 利用者視点の機能要件（実装非依存）
 - `docs/設計_ステータスエンジン.md` — 状態エンジン（関係性 prose ＋ 事実の数）の設計仕様。下記 ADR-1 の実装計画
 - `docs/設計_ワールド再利用とオーバーレイ.md` — セッション・オーバーレイ（発見ロア／キャラ成長の置き場を素材からセッションへ分離）の設計仕様。フェーズB1〜B4の実装計画
@@ -49,7 +50,7 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist` で localStor
 ## データモデル（要点）
 すべて「再利用可能な素材ライブラリ」をセッションが参照する構造。
 - **Provider** — `{id,label,kind:'openrouter'|'openai',baseUrl,apiKey}`。localStorage のみ保存。エクスポートには含めない。
-- **Avatar**（P1で刷新・絵文字廃止）— `{imageId?, color}`。`imageId` は `imageStore.ts` の IndexedDB 画像 id（未設定なら色＋名前イニシャルで表示。表示コンポーネントは P2 で `EntityAvatar` に統一予定、現状は各所で暫定インライン表示）。
+- **Avatar**（P1で刷新・絵文字廃止）— `{imageId?, color}`。`imageId` は `imageStore.ts` の IndexedDB 画像 id（未設定なら色＋名前イニシャルで表示。表示は `EntityAvatar` コンポーネントに統一済み＝P2）。
 - **Character** — name/persona/speechStyle/appearance/exampleDialogues/greeting/avatar/tags＋`developments: Development[]`＋`model?`（ModelRef。chat 群像で話者確定時のみ有効）
 - **World** — description（常時）＋`entries: LoreEntry[]`＋`scheduledEvents: ScheduledEvent[]`（`{day,name,note}`）＋**`relationAspects: RelationAspectDef[]`（関係性 prose の次元・ワールド固定）＋`stats: StatDef[]`（事実の数の定義）＋`counters: CounterDef[]`（行動カウンター定義）**。プリセット `WORLD_PRESETS`（恋愛/RPG/経営）で投入可
 - **Persona** — 利用者が演じる人物
@@ -105,7 +106,7 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist` で localStor
 **画像/ComfyUI 以外はほぼ実装済み**。実装済み: セッション(RP/物語)・キャラ/世界観/ペルソナ/シーンタイプの素材ライブラリ・ロアブック・グループ会話・シーン管理・タイムライン・選択肢進行・統合レビュー・シーン演出エンジン・文体切替・**マルチプロバイダ（プロバイダ管理・キャラ別モデル・役割別裏方モデル）**・あらすじ閲覧・会話編集/削除/作り直し・エクスポート/インポート・トークン目安・出力停止対策・状態エンジン（関係性prose＋事実の数＋条件エンジン＋実績＋選択肢連動加点。ADR-1 P1〜P5）・**セッション・オーバーレイ（発見ロア／キャラ成長を素材から分離しセッションへ隔離＋実効ビュー注入＋発見ログUI＋素材への昇格。B1〜B4）**。
 
 ## 次にやること（ロードマップ）
-1. **画像カード＆アバター画像化（P1完了・P2〜P4未着手）**: `docs/設計_画像カードとアバター.md` に従う。**P1完了**（IndexedDB画像ストア・avatarGen・Avatar型刷新・persist v3化。UI表示は絵文字撤去のみの暫定対応＝イニシャル文字固定表示で、画像アップロードや `EntityAvatar` 共通化はまだ）。次は **P2**（`EntityAvatar` 共通コンポーネント化・`AvatarField` の画像アップロード対応・全画面の画像表示統一）→ P3（PNGキャラカード入出力）→ P4（世界・ペルソナカード）。
+1. **画像カード＆アバター画像化（P1〜P2完了・P3〜P4未着手）**: `docs/設計_画像カードとアバター.md` に従う。**P1完了**（IndexedDB画像ストア・avatarGen・Avatar型刷新・persist v3化）。**P2完了**（`EntityAvatar` 共通コンポーネントで全画面の画像表示を統一・`AvatarField` に画像アップロード/削除・SettingsModalに未使用画像GC）。次は P3（SillyTavern互換PNGキャラカード入出力）→ P4（世界・ペルソナカード）。
 2. **画像生成 & ComfyUI 連携（P5・要追加設計）**: アバター生成＋挿絵生成＋セッションの挿絵埋め込みエクスポート。ComfyUI(localhost:8188) は CORS 許可起動が前提、workflow テンプレ定義が必要。
 
 ## 設計上の根本分岐（ADR）
