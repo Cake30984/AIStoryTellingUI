@@ -19,6 +19,8 @@ export default function SettingsModal({ onClose }: Props) {
     exportBundle,
     importBundle,
     importCharacterCard,
+    importWorldCard,
+    importPersonaCard,
     gcUnusedImages,
   } = useStore()
 
@@ -81,9 +83,18 @@ export default function SettingsModal({ onClose }: Props) {
         const bytes = new Uint8Array(await file.arrayBuffer())
         const parsed = parseCardPng(bytes)
         if (!parsed) throw new Error('カード情報が見つかりません。')
-        const withImage = await attachCardImage(parsed.character, bytes)
-        importCharacterCard(withImage)
-        setNotice(`カードから「${withImage.name || '無名'}」を追加しました。`)
+        if (parsed.kind === 'character') {
+          const withImage = await attachCardImage(parsed.character, bytes)
+          importCharacterCard(withImage)
+          setNotice(`カードから「${withImage.name || '無名'}」を追加しました。`)
+        } else if (parsed.kind === 'persona') {
+          const withImage = await attachCardImage(parsed.persona, bytes)
+          importPersonaCard(withImage)
+          setNotice(`カードから「${withImage.name || '無名'}」を追加しました。`)
+        } else {
+          importWorldCard(parsed.world)
+          setNotice(`カードから「${parsed.world.name || '無名の世界'}」を追加しました。`)
+        }
       } else {
         const bundle = parseBundle(await file.text())
         const { added } = importBundle(bundle)
@@ -271,7 +282,8 @@ export default function SettingsModal({ onClose }: Props) {
             <div className="desc">
               キャラ・世界観・ペルソナ・セッションをまとめて JSON で保存／復元します。
               localStorage はブラウザ消去で失われるため、定期的なエクスポートを推奨します。
-              キャラクター単体は PNG カード（画像1枚に情報を埋め込み）でも入出力できます（SillyTavern 互換）。
+              キャラ・世界観・ペルソナは単体を PNG カード（画像1枚に情報を埋め込み）でも入出力できます
+              （キャラクターは SillyTavern 互換）。
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <button className="btn" onClick={onExport}>

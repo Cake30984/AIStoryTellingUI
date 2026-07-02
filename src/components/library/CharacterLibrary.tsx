@@ -4,11 +4,11 @@ import type { Character } from '../../types'
 import CharacterEditor from './CharacterEditor'
 import EntityAvatar from '../EntityAvatar'
 import { parseCardPng, attachCardImage } from '../../lib/cards'
+import { useCardDrop } from '../../lib/useCardDrop'
 
 export default function CharacterLibrary() {
   const { characters, importCharacterCard } = useStore()
   const [editing, setEditing] = useState<Character | null>(null)
-  const [dragOver, setDragOver] = useState(false)
   const [notice, setNotice] = useState('')
 
   const handleFiles = async (files: FileList) => {
@@ -17,7 +17,7 @@ export default function CharacterLibrary() {
       try {
         const bytes = new Uint8Array(await file.arrayBuffer())
         const parsed = parseCardPng(bytes)
-        if (!parsed) throw new Error('カード情報が見つかりません。')
+        if (!parsed || parsed.kind !== 'character') throw new Error('キャラカードが見つかりません。')
         const withImage = await attachCardImage(parsed.character, bytes)
         importCharacterCard(withImage)
         setNotice(`カードから「${withImage.name || '無名'}」を追加しました。`)
@@ -27,20 +27,10 @@ export default function CharacterLibrary() {
     }
   }
 
+  const { dragOver, dropProps } = useCardDrop(handleFiles)
+
   return (
-    <div
-      className="library"
-      onDragOver={(e) => {
-        e.preventDefault()
-        setDragOver(true)
-      }}
-      onDragLeave={() => setDragOver(false)}
-      onDrop={(e) => {
-        e.preventDefault()
-        setDragOver(false)
-        if (e.dataTransfer.files.length > 0) handleFiles(e.dataTransfer.files)
-      }}
-    >
+    <div className="library" {...dropProps}>
       <div className="library-head">
         <h2>🎭 キャラクター</h2>
         <button className="btn primary" onClick={() => setEditing(newCharacter())}>

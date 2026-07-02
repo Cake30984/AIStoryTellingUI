@@ -1,4 +1,4 @@
-import type { Character } from '../types'
+import type { Character, Persona, World } from '../types'
 import { readTextChunks, writeTextChunk } from './png'
 import { getImage, putImage } from './imageStore'
 import { generateDefaultAvatar, normalizeImage } from './avatarGen'
@@ -23,7 +23,10 @@ function b64decode(s: string): string {
   return new TextDecoder().decode(bytes)
 }
 
-export type ParsedCard = { kind: 'character'; character: Character }
+export type ParsedCard =
+  | { kind: 'character'; character: Character }
+  | { kind: 'world'; world: World }
+  | { kind: 'persona'; persona: Persona }
 
 /** キャラクターの extensions に格納する独自拡張（model・avatar.imageId は環境固有のため除外） */
 interface CharacterExtension {
@@ -138,25 +141,129 @@ function characterFromNativeCard(data: any): Character {
   }
 }
 
+// ---------- 世界観カード（独自形式。aist_world チャンク） ----------
+
+interface WorldCard {
+  spec: 'aist_world'
+  spec_version: '1.0'
+  data: Omit<World, never>
+}
+
+function buildWorldCard(world: World): WorldCard {
+  return { spec: 'aist_world', spec_version: '1.0', data: world }
+}
+
+/** 世界観を PNG カード（独自形式）として書き出しダウンロードさせる */
+export async function exportWorldCard(world: World): Promise<void> {
+  const sourceBlob = await generateDefaultAvatar(world.name || '?', '#4cc9a4')
+  const normalized = await normalizeImage(sourceBlob, 1024)
+  const pngBytes = new Uint8Array(await normalized.arrayBuffer())
+
+  const card = buildWorldCard(world)
+  const withChunk = writeTextChunk(pngBytes, 'aist_world', b64encode(JSON.stringify(card)))
+  const outBlob = new Blob([withChunk as BlobPart], { type: 'image/png' })
+
+  downloadBlob(outBlob, `card_${world.name || 'world'}.png`)
+}
+
+function normalizeWorldFromData(raw: any): World {
+  const now = Date.now()
+  return {
+    id: typeof raw.id === 'string' ? raw.id : uid(),
+    name: typeof raw.name === 'string' ? raw.name : '',
+    description: typeof raw.description === 'string' ? raw.description : '',
+    entries: Array.isArray(raw.entries) ? raw.entries : [],
+    scheduledEvents: Array.isArray(raw.scheduledEvents) ? raw.scheduledEvents : [],
+    relationAspects: Array.isArray(raw.relationAspects) ? raw.relationAspects : [],
+    stats: Array.isArray(raw.stats) ? raw.stats : [],
+    counters: Array.isArray(raw.counters) ? raw.counters : [],
+    achievements: Array.isArray(raw.achievements) ? raw.achievements : [],
+    createdAt: typeof raw.createdAt === 'number' ? raw.createdAt : now,
+    updatedAt: typeof raw.updatedAt === 'number' ? raw.updatedAt : now,
+  }
+}
+
+// ---------- ペルソナカード（独自形式。aist_persona チャンク） ----------
+
+interface PersonaCard {
+  spec: 'aist_persona'
+  spec_version: '1.0'
+  data: Omit<Persona, 'avatar'> & { avatar: { color: string } }
+}
+
+function buildPersonaCard(persona: Persona): PersonaCard {
+  return {
+    spec: 'aist_persona',
+    spec_version: '1.0',
+    data: { ...persona, avatar: { color: persona.avatar.color } },
+  }
+}
+
+/** ペルソナを PNG カード（独自形式）として書き出しダウンロードさせる */
+export async function exportPersonaCard(persona: Persona): Promise<void> {
+  const sourceBlob = persona.avatar.imageId
+    ? (await getImage(persona.avatar.imageId)) ?? (await generateDefaultAvatar(persona.name || '?', persona.avatar.color))
+    : await generateDefaultAvatar(persona.name || '?', persona.avatar.color)
+
+  const normalized = await normalizeImage(sourceBlob, 1024)
+  const pngBytes = new Uint8Array(await normalized.arrayBuffer())
+
+  const card = buildPersonaCard(persona)
+  const withChunk = writeTextChunk(pngBytes, 'aist_persona', b64encode(JSON.stringify(card)))
+  const outBlob = new Blob([withChunk as BlobPart], { type: 'image/png' })
+
+  downloadBlob(outBlob, `card_${persona.name || 'persona'}.png`)
+}
+
+function normalizePersonaFromData(raw: any): Persona {
+  const now = Date.now()
+  return {
+    id: typeof raw.id === 'string' ? raw.id : uid(),
+    name: typeof raw.name === 'string' ? raw.name : '',
+    description: typeof raw.description === 'string' ? raw.description : '',
+    avatar: { color: typeof raw.avatar?.color === 'string' ? raw.avatar.color : '#5b8def' },
+    createdAt: typeof raw.createdAt === 'number' ? raw.createdAt : now,
+    updatedAt: typeof raw.updatedAt === 'number' ? raw.updatedAt : now,
+  }
+}
+
 /** PNG バイト列からカード情報を解釈する。カードチャンクが無ければ null */
 export function parseCardPng(bytes: Uint8Array): ParsedCard | null {
   const chunks = readTextChunks(bytes)
-  const charaChunk = chunks.find((c) => c.keyword === 'chara')
-  if (!charaChunk) return null
 
-  const json = JSON.parse(b64decode(charaChunk.text))
-  // chara_card_v2（data ラッパあり）/ v1（トップレベル）どちらも許容
-  const data = json.data ?? json
-  const ext = data?.extensions?.aistorytelling
-  if (ext?.kind === 'character' && ext.character) {
-    return { kind: 'character', character: normalizeCharacterFromExtension(ext.character) }
+  const worldChunk = chunks.find((c) => c.keyword === 'aist_world')
+  if (worldChunk) {
+    const json = JSON.parse(b64decode(worldChunk.text))
+    return { kind: 'world', world: normalizeWorldFromData(json.data ?? json) }
   }
-  return { kind: 'character', character: characterFromNativeCard(data) }
+
+  const personaChunk = chunks.find((c) => c.keyword === 'aist_persona')
+  if (personaChunk) {
+    const json = JSON.parse(b64decode(personaChunk.text))
+    return { kind: 'persona', persona: normalizePersonaFromData(json.data ?? json) }
+  }
+
+  const charaChunk = chunks.find((c) => c.keyword === 'chara')
+  if (charaChunk) {
+    const json = JSON.parse(b64decode(charaChunk.text))
+    // chara_card_v2（data ラッパあり）/ v1（トップレベル）どちらも許容
+    const data = json.data ?? json
+    const ext = data?.extensions?.aistorytelling
+    if (ext?.kind === 'character' && ext.character) {
+      return { kind: 'character', character: normalizeCharacterFromExtension(ext.character) }
+    }
+    return { kind: 'character', character: characterFromNativeCard(data) }
+  }
+
+  return null
 }
 
-/** カード PNG 自体を正規化してアバター画像として登録し、キャラクターに設定する */
-export async function attachCardImage(character: Character, pngBytes: Uint8Array): Promise<Character> {
+/** カード PNG 自体を正規化してアバター画像として登録し、キャラクター/ペルソナに設定する */
+export async function attachCardImage<T extends { avatar: { color: string; imageId?: string } }>(
+  entity: T,
+  pngBytes: Uint8Array,
+): Promise<T> {
   const normalized = await normalizeImage(new Blob([pngBytes as BlobPart], { type: 'image/png' }), 512)
   const imageId = await putImage(normalized)
-  return { ...character, avatar: { ...character.avatar, imageId } }
+  return { ...entity, avatar: { ...entity.avatar, imageId } }
 }

@@ -23,6 +23,7 @@ import type {
   World,
 } from '../../types'
 import CsvInput from '../CsvInput'
+import { exportWorldCard } from '../../lib/cards'
 
 const OPS: Op[] = ['>=', '>', '<=', '<', '==', '!=']
 
@@ -152,7 +153,17 @@ interface Props {
 export default function WorldEditor({ world, onClose }: Props) {
   const { upsertWorld, deleteWorld } = useStore()
   const [d, setD] = useState<World>(world)
+  const [exporting, setExporting] = useState(false)
   const patch = (p: Partial<World>) => setD((w) => ({ ...w, ...p }))
+
+  const exportCard = async () => {
+    setExporting(true)
+    try {
+      await exportWorldCard(d)
+    } finally {
+      setExporting(false)
+    }
+  }
 
   const updateEntry = (id: string, p: Partial<LoreEntry>) =>
     patch({ entries: d.entries.map((e) => (e.id === id ? { ...e, ...p } : e)) })
@@ -696,6 +707,9 @@ export default function WorldEditor({ world, onClose }: Props) {
             }}
           >
             削除
+          </button>
+          <button className="btn" onClick={exportCard} disabled={exporting}>
+            {exporting ? '書き出し中…' : '🖼 カードとして保存'}
           </button>
           <div style={{ flex: 1 }} />
           <button className="btn" onClick={onClose}>

@@ -493,10 +493,14 @@ interface AppState {
   deleteCharacter: (id: string) => void
   bulkSetCharacterModel: (characterIds: string[], modelRef: string) => void
   upsertWorld: (w: World) => void
+  /** カードからのインポート専用。id が既存と衝突する場合は振り直して常に新規追加する */
+  importWorldCard: (w: World) => void
   deleteWorld: (id: string) => void
   upsertSceneType: (t: SceneType) => void
   deleteSceneType: (id: string) => void
   upsertPersona: (p: Persona) => void
+  /** カードからのインポート専用。id が既存と衝突する場合は振り直して常に新規追加する */
+  importPersonaCard: (p: Persona) => void
   deletePersona: (id: string) => void
 
   // セッション
@@ -1065,6 +1069,14 @@ export const useStore = create<AppState>()(
             }
           }),
 
+        importWorldCard: (w) =>
+          set((st) => {
+            const idTaken = st.worlds.some((x) => x.id === w.id)
+            const now = Date.now()
+            const fresh = idTaken ? { ...w, id: uid(), createdAt: now, updatedAt: now } : w
+            return { worlds: [fresh, ...st.worlds] }
+          }),
+
         deleteWorld: (id) =>
           set((st) => ({
             worlds: st.worlds.filter((w) => w.id !== id),
@@ -1101,6 +1113,14 @@ export const useStore = create<AppState>()(
                 ? st.personas.map((x) => (x.id === p.id ? updated : x))
                 : [updated, ...st.personas],
             }
+          }),
+
+        importPersonaCard: (p) =>
+          set((st) => {
+            const idTaken = st.personas.some((x) => x.id === p.id)
+            const now = Date.now()
+            const fresh = idTaken ? { ...p, id: uid(), createdAt: now, updatedAt: now } : p
+            return { personas: [fresh, ...st.personas] }
           }),
 
         deletePersona: (id) =>
