@@ -3,6 +3,7 @@ import { useStore } from '../store'
 import { downloadBundle, parseBundle } from '../lib/io'
 import { parseCardPng, attachCardImage } from '../lib/cards'
 import { PROVIDER_PRESETS, newProvider } from '../lib/providers'
+import ImageProviderSettings from './ImageProviderSettings'
 import type { Provider } from '../types'
 
 interface Props {
@@ -273,6 +274,11 @@ export default function SettingsModal({ onClose }: Props) {
               </button>
             )}
           </div>
+
+          <hr className="divider" />
+
+          {/* 画像生成の接続先 */}
+          <ImageProviderSettings />
 
           <hr className="divider" />
 
