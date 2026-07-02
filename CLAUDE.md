@@ -39,7 +39,7 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist` で localStor
   - `useCardDrop.ts`（P4）— PNGカードのドラッグ&ドロップ受付フック（`dragOver`状態＋`dropProps`）。Character/World/Personaの各Libraryで共用
 - `src/components/`
   - `Sidebar.tsx` — 左ナビ＋セッション一覧
-  - `ChatPanel.tsx` — 会話画面（トップバー・シーン仕切り・話者/選択肢・コンポーザー・メッセージ操作）
+  - `ChatPanel.tsx` — 会話画面（トップバー・シーン仕切り・話者/選択肢・コンポーザー・メッセージ操作）。🎨=挿絵生成（G3。`ImageGenModal`→`putImage`→`addIllustration`。最後のメッセージにアンカーしインライン表示・⬇保存/🗑削除/クリック拡大）
   - `SessionEditor.tsx` — セッション設定（参加キャラ/一括モデル設定/世界観/ペルソナ/固定メモ/文体/選択肢/裏方モデル/タイムライン/ディレクター/サンプリング）
   - `SettingsModal.tsx` — プロバイダ管理（追加/編集/削除/モデル読込）・データ入出力・未使用アバター画像のGC（`gcUnusedImages`）
   - `ImageProviderSettings.tsx`（G1）— 画像生成の接続先管理（ComfyUI/画像API の追加・編集・削除・接続テスト）。SettingsModal に組み込み
@@ -69,7 +69,8 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist` で localStor
 - **Relation**（判断＝言葉）— `{fromId,toId,stance,aspects:{aspectId,note}[],flags:string[],updatedAt}`。キャラ→主人公（toId='hero'）の prose。stance＋ワールド固定 aspect ごとの記述＋恒久 flag。数値ティア（band）は持たない
 - **StatDef/StatValue**（事実＝数）— `StatDef{name,scope:'character'|'global',default,min?,max?,inject}` は World 定義、`StatValue{defId,characterId?,value}` は SessionState。実効値＝StatValue or `def.default`。好感度メーター/レベル/所持金等。`inject:true` のみ本編注入
 - **CounterDef/CounterValue**（事実＝数・累計）— `CounterDef{name,scope,inject}` は World 定義、`CounterValue{defId,characterId?,value}` は SessionState。デート回数/戦闘回数等、レビューの `counterEvents` で加算（単調増加）
-- **Scene** — `{title,activeCharacterIds,note,summary,timeLabel?,sceneTypeId?,endedAt?}`
+- **Scene** — `{title,activeCharacterIds,note,summary,timeLabel?,sceneTypeId?,illustrations?,endedAt?}`。`illustrations?: SceneIllustration[]`（G3。任意＝旧データには無いので読む側は `?? []`）
+- **SceneIllustration**（G3）— `{id,imageId,prompt,messageId?,createdAt}`。挿絵1枚。`messageId` のメッセージ直後に表示（消失時はシーン末尾）。画像本体は IndexedDB
 - **Message** — role/characterId?/sceneId?/content/choices?/truncated?/pending?
 
 ## ModelRef 形式
@@ -115,7 +116,7 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist` で localStor
 
 ## 次にやること（ロードマップ）
 1. **画像カード＆アバター画像化（P1〜P4完了・P5未着手）**: `docs/設計_画像カードとアバター.md` に従う。**P1完了**（IndexedDB画像ストア・avatarGen・Avatar型刷新・persist v3化）。**P2完了**（`EntityAvatar` 共通コンポーネントで全画面の画像表示を統一・`AvatarField` に画像アップロード/削除・SettingsModalに未使用画像GC）。**P3完了**（`png.ts`/`cards.ts` でSillyTavern互換PNGキャラカードの入出力。`CharacterEditor`から書き出し、`SettingsModal`のインポートとCharacterLibraryへのD&Dで読み込み。id衝突時は新規id採番、`model`/`avatar.imageId`は環境固有のためカードから除外）。**P4完了**（世界カード`aist_world`・ペルソナカード`aist_persona`の独自形式で同様に入出力。WorldEditor/PersonaEditorに書き出しボタン、WorldLibrary/PersonaLibraryにD&D、`useCardDrop`フックで3ライブラリ共通化、SettingsModalインポートもchunk種別で自動判定）。画像/ComfyUI 連携が残作業。
-2. **画像生成 & ComfyUI 連携（P5・G1〜G2完了）**: `docs/設計_画像生成連携.md` の G1〜G4 に従う。**G1完了**（ImageProvider管理＋imageGen.ts＋SettingsModal設定UI）。**G2完了**（ImageGenModal・AvatarField「✨ 生成」・Character/Persona の `imagePrompt` フィールド＋エディタ入力＋カード同梱）。次は G3（挿絵）→ G4（セッションカード aist_session）。ComfyUI は CORS 許可起動（`--enable-cors-header '*'`）が前提。追加フィールドはすべて optional のため persist キーは v3 のまま。
+2. **画像生成 & ComfyUI 連携（P5・G1〜G3完了）**: `docs/設計_画像生成連携.md` の G1〜G4 に従う。**G1完了**（ImageProvider管理＋imageGen.ts＋SettingsModal設定UI）。**G2完了**（ImageGenModal・AvatarField「✨ 生成」・Character/Persona の `imagePrompt` フィールド＋エディタ入力＋カード同梱）。**G3完了**（`Scene.illustrations`・ChatPanel 🎨・インライン表示・GC対象に挿絵を追加）。次は G4（セッションカード aist_session）。ComfyUI は CORS 許可起動（`--enable-cors-header '*'`）が前提。追加フィールドはすべて optional のため persist キーは v3 のまま。
 
 ## 設計上の根本分岐（ADR）
 後から別パターンを試せるよう、根本決定と**却下案**を残す。詳細実装計画は `docs/設計_ステータスエンジン.md`。

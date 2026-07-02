@@ -219,6 +219,18 @@ export interface Message {
   pending?: boolean
 }
 
+/** シーンに紐づく挿絵1枚（手動生成。G3） */
+export interface SceneIllustration {
+  id: string
+  /** imageStore の画像 id */
+  imageId: string
+  /** 生成時のプロンプト（記録・再生成用） */
+  prompt: string
+  /** どのメッセージの直後に表示するか（メッセージ削除等で見つからない場合はシーン末尾） */
+  messageId?: string
+  createdAt: number
+}
+
 /** 物語の一区切り（その場の登場キャラ・状況・終了時の要約を持つ） */
 export interface Scene {
   id: string
@@ -233,6 +245,8 @@ export interface Scene {
   timeLabel?: string
   /** このシーンの種類（演出エンジンの抽選結果） */
   sceneTypeId?: string
+  /** 挿絵（手動生成のみ。任意＝旧データには無い） */
+  illustrations?: SceneIllustration[]
   /** 終了済みなら時刻 */
   endedAt?: number
   createdAt: number
