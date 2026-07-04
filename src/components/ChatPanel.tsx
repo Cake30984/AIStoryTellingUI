@@ -8,9 +8,10 @@ import {
 } from '../lib/prompts'
 import { estimateTokens, tokenLevel } from '../lib/tokens'
 import { modelRefLabel } from '../lib/providers'
-import { getImage, putImage, useImageUrl } from '../lib/imageStore'
+import { getImage, useImageUrl } from '../lib/imageStore'
 import { downloadBlob } from '../lib/io'
 import ImageGenModal from './ImageGenModal'
+import ImageJobsPanel from './ImageJobsPanel'
 import type { Message, Scene, SceneIllustration, Session } from '../types'
 import ModelPicker from './ModelPicker'
 import SessionEditor from './SessionEditor'
@@ -82,8 +83,8 @@ export default function ChatPanel({ session }: Props) {
     updateSession,
     deleteSession,
     startSession,
-    addIllustration,
     removeIllustration,
+    imageJobs,
     characters,
     personas,
     providers,
@@ -97,6 +98,7 @@ export default function ChatPanel({ session }: Props) {
   const [showStatus, setShowStatus] = useState(false)
   const [showDiscovery, setShowDiscovery] = useState(false)
   const [showImageGen, setShowImageGen] = useState(false)
+  const [showImageJobs, setShowImageJobs] = useState(false)
   const [speaker, setSpeaker] = useState<string | undefined>(undefined)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -364,6 +366,15 @@ export default function ChatPanel({ session }: Props) {
         >
           🎨
         </button>
+        {imageJobs.length > 0 && (
+          <button
+            className="icon-btn"
+            onClick={() => setShowImageJobs(true)}
+            title="画像生成ジョブ（進行中・選択待ち）"
+          >
+            ⏳ {imageJobs.length}
+          </button>
+        )}
         <button className="icon-btn" onClick={() => setShowEditor(true)} title="セッション設定">
           ⚙
         </button>
@@ -674,21 +685,20 @@ export default function ChatPanel({ session }: Props) {
             modelRef: reviewModelOf(session),
           }}
           initialPrompt={participants.map((c) => c.imagePrompt).filter(Boolean).join(', ')}
-          onAccept={async (blob, prompt) => {
-            const imageId = await putImage(blob)
-            const sceneMsgs = session.messages.filter((m) => m.sceneId === scene.id || !m.sceneId)
-            const lastMsg = sceneMsgs[sceneMsgs.length - 1]
-            addIllustration(session.id, scene.id, {
-              id: crypto.randomUUID(),
-              imageId,
-              prompt,
-              messageId: lastMsg?.id,
-              createdAt: Date.now(),
-            })
+          target={{
+            type: 'scene-illustration',
+            sessionId: session.id,
+            sceneId: scene.id,
+            messageId: (() => {
+              const sceneMsgs = session.messages.filter((m) => m.sceneId === scene.id || !m.sceneId)
+              return sceneMsgs[sceneMsgs.length - 1]?.id
+            })(),
           }}
+          label={`挿絵: ${scene.title || 'シーン'}`}
           onClose={() => setShowImageGen(false)}
         />
       )}
+      {showImageJobs && <ImageJobsPanel onClose={() => setShowImageJobs(false)} />}
     </div>
   )
 }

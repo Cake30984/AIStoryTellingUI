@@ -31,6 +31,15 @@ import type {
 } from './types'
 import { fetchModels, streamChat } from './lib/openrouter'
 import { gcImages, putImage } from './lib/imageStore'
+import { normalizeImage } from './lib/avatarGen'
+import { generateImage } from './lib/imageGen'
+import {
+  abortJobController,
+  clearJobAbort,
+  registerJobAbort,
+  type ImageJob,
+  type ImageJobTarget,
+} from './lib/imageJobs'
 import { sessionCardImageBlob, type SessionCardBundle } from './lib/cards'
 import {
   buildMessages,
@@ -481,6 +490,10 @@ interface AppState {
   error: string | null
   /** 直近のシーン確定で新規解除された実績（通知用・非永続） */
   newlyUnlockedAchievements: AchievementDef[]
+  /** バックグラウンド画像生成ジョブ（Blob を含むため非永続。partialize から除外） */
+  imageJobs: ImageJob[]
+  /** 選択待ちに変わったジョブの通知（非永続） */
+  imageJobToasts: { jobId: string; label: string }[]
 
   // 共通
   setView: (v: View) => void
@@ -571,6 +584,24 @@ interface AppState {
   // 挿絵
   addIllustration: (sessionId: string, sceneId: string, ill: SceneIllustration) => void
   removeIllustration: (sessionId: string, sceneId: string, illId: string) => void
+
+  // 画像生成ジョブ（V2・バックグラウンド生成）
+  /** ジョブを起動し fire-and-forget で直列生成を回す。jobId を返す */
+  startImageJob: (args: {
+    label: string
+    target: ImageJobTarget
+    providerId: string
+    prompt: string
+    negative?: string
+    width: number
+    height: number
+    count: number
+  }) => string
+  cancelImageJob: (jobId: string) => void
+  dismissImageJob: (jobId: string) => void
+  dismissImageJobToasts: () => void
+  /** 候補から採用。保存先は target で分岐（挿絵/キャラアバター/ペルソナアバター）し、完了後ジョブを自動 dismiss */
+  applyImageJobResult: (jobId: string, index: number) => Promise<void>
 
   // データ入出力
   exportBundle: () => ExportBundle
@@ -982,6 +1013,8 @@ export const useStore = create<AppState>()(
         sceneReview: null,
         error: null,
         newlyUnlockedAchievements: [],
+        imageJobs: [],
+        imageJobToasts: [],
 
         setView: (view) => set({ view }),
         clearError: () => set({ error: null }),
@@ -2265,6 +2298,129 @@ export const useStore = create<AppState>()(
                   },
             ),
           })),
+
+        startImageJob: (args) => {
+          const id = uid()
+          const job: ImageJob = {
+            id,
+            label: args.label,
+            target: args.target,
+            providerId: args.providerId,
+            prompt: args.prompt,
+            negative: args.negative,
+            width: args.width,
+            height: args.height,
+            count: args.count,
+            status: 'running',
+            results: [],
+            createdAt: Date.now(),
+          }
+          set((st) => ({ imageJobs: [...st.imageJobs, job] }))
+
+          ;(async () => {
+            const ctrl = new AbortController()
+            registerJobAbort(id, ctrl)
+            let lastError: string | undefined
+            for (let i = 0; i < args.count; i++) {
+              if (get().imageJobs.find((j) => j.id === id)?.status === 'canceled') break
+              const provider = get().imageProviders.find((p) => p.id === args.providerId)
+              if (!provider) {
+                lastError = '画像生成の接続先が見つかりません（削除された可能性があります）。'
+                break
+              }
+              try {
+                const blob = await generateImage(
+                  provider,
+                  { prompt: args.prompt, negative: args.negative, width: args.width, height: args.height },
+                  ctrl.signal,
+                )
+                set((st) => ({
+                  imageJobs: st.imageJobs.map((j) => (j.id === id ? { ...j, results: [...j.results, blob] } : j)),
+                }))
+              } catch (e) {
+                if ((e as Error).name === 'AbortError') {
+                  clearJobAbort(id)
+                  set((st) => ({
+                    imageJobs: st.imageJobs.map((j) => (j.id === id ? { ...j, status: 'canceled' as const } : j)),
+                  }))
+                  return
+                }
+                lastError = (e as Error).message
+                break
+              }
+            }
+            clearJobAbort(id)
+            const finished = get().imageJobs.find((j) => j.id === id)
+            if (!finished || finished.status === 'canceled') return
+            const status = finished.results.length > 0 ? ('selecting' as const) : ('error' as const)
+            set((st) => ({
+              imageJobs: st.imageJobs.map((j) => (j.id === id ? { ...j, status, error: lastError } : j)),
+            }))
+            if (status === 'selecting') {
+              set((st) => ({ imageJobToasts: [...st.imageJobToasts, { jobId: id, label: finished.label }] }))
+            }
+          })()
+
+          return id
+        },
+
+        cancelImageJob: (jobId) => {
+          abortJobController(jobId)
+          set((st) => ({
+            imageJobs: st.imageJobs.map((j) =>
+              j.id === jobId && j.status === 'running' ? { ...j, status: 'canceled' } : j,
+            ),
+          }))
+        },
+
+        dismissImageJob: (jobId) =>
+          set((st) => ({
+            imageJobs: st.imageJobs.filter((j) => j.id !== jobId),
+            imageJobToasts: st.imageJobToasts.filter((t) => t.jobId !== jobId),
+          })),
+
+        dismissImageJobToasts: () => set({ imageJobToasts: [] }),
+
+        applyImageJobResult: async (jobId, index) => {
+          const job = get().imageJobs.find((j) => j.id === jobId)
+          if (!job) return
+          const blob = job.results[index]
+          if (!blob) throw new Error('選択した画像が見つかりません。')
+          const target = job.target
+          if (target.type === 'scene-illustration') {
+            const imageId = await putImage(blob)
+            get().addIllustration(target.sessionId, target.sceneId, {
+              id: uid(),
+              imageId,
+              prompt: job.prompt,
+              messageId: target.messageId,
+              createdAt: Date.now(),
+            })
+          } else if (target.type === 'character-avatar') {
+            if (!get().characters.some((c) => c.id === target.characterId)) {
+              throw new Error('対象のキャラクターが見つかりません（削除された可能性があります）。')
+            }
+            const normalized = await normalizeImage(blob, 512)
+            const imageId = await putImage(normalized)
+            set((st) => ({
+              characters: st.characters.map((c) =>
+                c.id === target.characterId ? { ...c, avatar: { ...c.avatar, imageId }, updatedAt: Date.now() } : c,
+              ),
+            }))
+          } else {
+            if (!get().personas.some((p) => p.id === target.personaId)) {
+              throw new Error('対象のペルソナが見つかりません（削除された可能性があります）。')
+            }
+            const normalized = await normalizeImage(blob, 512)
+            const imageId = await putImage(normalized)
+            set((st) => ({
+              personas: st.personas.map((p) =>
+                p.id === target.personaId ? { ...p, avatar: { ...p.avatar, imageId }, updatedAt: Date.now() } : p,
+              ),
+            }))
+          }
+          get().dismissImageJob(jobId)
+        },
 
         gcUnusedImages: async () => {
           const { characters, personas, sessions } = get()

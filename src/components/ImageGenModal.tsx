@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import { useStore } from '../store'
-import { generateImage } from '../lib/imageGen'
 import { streamChat } from '../lib/openrouter'
 import { parseModelRef, modelRefLabel } from '../lib/providers'
 import { extractJson } from '../lib/json'
 import { STYLE_PRESETS, applyStylePreset } from '../lib/imagePresets'
+import { useBlobUrl, type ImageJobTarget } from '../lib/imageJobs'
 import ModelPicker from './ModelPicker'
 
 /** サイズプリセット（openai系は API 側の許容値に依存。エラーはそのまま表示する） */
@@ -14,6 +14,26 @@ const SIZE_PRESETS = [
   { label: '832 × 1216（縦長）', width: 832, height: 1216 },
 ]
 
+/** 生成候補1枚（クリックで拡大→採用） */
+function ResultThumb({ blob, busy, onUse }: { blob: Blob; busy: boolean; onUse: () => void }) {
+  const url = useBlobUrl(blob)
+  const [zoom, setZoom] = useState(false)
+  if (!url) return null
+  return (
+    <div className="job-thumb">
+      <img src={url} alt="生成候補" onClick={() => setZoom(true)} />
+      <button className="btn primary" style={{ fontSize: 12, padding: '4px 10px' }} onClick={onUse} disabled={busy}>
+        ✔ この画像を使う
+      </button>
+      {zoom && (
+        <div className="overlay" onClick={() => setZoom(false)}>
+          <img src={url} alt="" style={{ maxWidth: '92vw', maxHeight: '92vh', borderRadius: 'var(--radius)' }} />
+        </div>
+      )}
+    </div>
+  )
+}
+
 interface Props {
   /** モーダル見出し */
   title: string
@@ -21,15 +41,19 @@ interface Props {
   draftContext?: { system: string; user: string; modelRef: string }
   /** 初期プロンプト（キャラの imagePrompt 等） */
   initialPrompt?: string
-  /** 生成確定。呼び出し元が保存先を決める（アバター: normalize→avatar / 挿絵: 原寸のまま） */
-  onAccept: (blob: Blob, prompt: string) => Promise<void>
+  /** 生成ジョブの保存先。採用時に store の applyImageJobResult が保存先ごとに分岐する */
+  target: ImageJobTarget
+  /** ジョブ一覧・通知に出すラベル（例: '挿絵: 放課後の屋上'） */
+  label: string
   onClose: () => void
 }
 
-export default function ImageGenModal({ title, draftContext, initialPrompt, onAccept, onClose }: Props) {
-  const { imageProviders, providers, lastImageStyle, setLastImageStyle } = useStore()
+export default function ImageGenModal({ title, draftContext, initialPrompt, target, label, onClose }: Props) {
+  const { imageProviders, providers, lastImageStyle, setLastImageStyle, imageJobs, startImageJob, cancelImageJob, dismissImageJob, applyImageJobResult } =
+    useStore()
   const [providerId, setProviderId] = useState(imageProviders[0]?.id ?? '')
   const [sizeIdx, setSizeIdx] = useState(0)
+  const [count, setCount] = useState(1)
   const [styleId, setStyleId] = useState<'anime' | 'realistic' | ''>(lastImageStyle ?? '')
   const [prompt, setPrompt] = useState(() => {
     const init = initialPrompt ?? ''
@@ -39,29 +63,12 @@ export default function ImageGenModal({ title, draftContext, initialPrompt, onAc
   const [draftModel, setDraftModel] = useState(draftContext?.modelRef ?? '')
   const [showModelPicker, setShowModelPicker] = useState(false)
   const [drafting, setDrafting] = useState(false)
-  const [generating, setGenerating] = useState(false)
+  const [jobId, setJobId] = useState<string | null>(null)
   const [accepting, setAccepting] = useState(false)
   const [error, setError] = useState('')
-  const [resultBlob, setResultBlob] = useState<Blob | null>(null)
-  const [resultUrl, setResultUrl] = useState('')
-  const abortRef = useRef<AbortController | null>(null)
 
   const provider = imageProviders.find((p) => p.id === providerId)
-
-  // プレビュー objectURL の後始末
-  useEffect(() => {
-    return () => {
-      if (resultUrl) URL.revokeObjectURL(resultUrl)
-      abortRef.current?.abort()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  const setResult = (blob: Blob | null) => {
-    if (resultUrl) URL.revokeObjectURL(resultUrl)
-    setResultBlob(blob)
-    setResultUrl(blob ? URL.createObjectURL(blob) : '')
-  }
+  const job = imageJobs.find((j) => j.id === jobId)
 
   const changeStyle = (v: 'anime' | 'realistic' | '') => {
     setStyleId(v)
@@ -125,7 +132,7 @@ export default function ImageGenModal({ title, draftContext, initialPrompt, onAc
     }
   }
 
-  const generate = async () => {
+  const generate = () => {
     if (!provider) {
       setError('画像生成の接続先を設定してください（⚙ 設定・データ管理）。')
       return
@@ -134,30 +141,27 @@ export default function ImageGenModal({ title, draftContext, initialPrompt, onAc
       setError('プロンプトを入力してください。')
       return
     }
+    if (jobId) dismissImageJob(jobId)
     const size = SIZE_PRESETS[sizeIdx]
-    abortRef.current = new AbortController()
-    setGenerating(true)
     setError('')
-    try {
-      const blob = await generateImage(
-        provider,
-        { prompt: prompt.trim(), negative: negative.trim() || undefined, width: size.width, height: size.height },
-        abortRef.current.signal,
-      )
-      setResult(blob)
-    } catch (e) {
-      if ((e as Error).name !== 'AbortError') setError((e as Error).message)
-    } finally {
-      setGenerating(false)
-      abortRef.current = null
-    }
+    const id = startImageJob({
+      label,
+      target,
+      providerId: provider.id,
+      prompt: prompt.trim(),
+      negative: negative.trim() || undefined,
+      width: size.width,
+      height: size.height,
+      count,
+    })
+    setJobId(id)
   }
 
-  const accept = async () => {
-    if (!resultBlob) return
+  const accept = async (idx: number) => {
+    if (!job) return
     setAccepting(true)
     try {
-      await onAccept(resultBlob, prompt.trim())
+      await applyImageJobResult(job.id, idx)
       onClose()
     } catch (e) {
       setError(`保存に失敗しました: ${(e as Error).message}`)
@@ -182,7 +186,7 @@ export default function ImageGenModal({ title, draftContext, initialPrompt, onAc
           ) : (
             <>
               <div className="field">
-                <label>接続先・サイズ</label>
+                <label>接続先・サイズ・枚数</label>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <select value={providerId} onChange={(e) => setProviderId(e.target.value)} style={{ flex: 1 }}>
                     {imageProviders.map((p) => (
@@ -198,15 +202,18 @@ export default function ImageGenModal({ title, draftContext, initialPrompt, onAc
                       </option>
                     ))}
                   </select>
-                  <select
-                    value={styleId}
-                    onChange={(e) => changeStyle(e.target.value as 'anime' | 'realistic' | '')}
-                    style={{ flex: 1 }}
-                  >
+                  <select value={styleId} onChange={(e) => changeStyle(e.target.value as 'anime' | 'realistic' | '')} style={{ flex: 1 }}>
                     <option value="">スタイルなし</option>
                     {STYLE_PRESETS.map((p) => (
                       <option key={p.id} value={p.id}>
                         {p.label}
+                      </option>
+                    ))}
+                  </select>
+                  <select value={count} onChange={(e) => setCount(Number(e.target.value))} style={{ width: 90 }}>
+                    {[1, 2, 3, 4].map((n) => (
+                      <option key={n} value={n}>
+                        {n}枚
                       </option>
                     ))}
                   </select>
@@ -237,23 +244,34 @@ export default function ImageGenModal({ title, draftContext, initialPrompt, onAc
 
               <div className="field">
                 <div style={{ display: 'flex', gap: 8 }}>
-                  {generating ? (
-                    <button className="btn" onClick={() => abortRef.current?.abort()}>
+                  {job?.status === 'running' ? (
+                    <button className="btn" onClick={() => cancelImageJob(job.id)}>
                       ✕ キャンセル
                     </button>
                   ) : (
                     <button className="btn primary" onClick={generate} disabled={!provider}>
-                      🎨 {resultBlob ? 'もう一度生成' : '生成'}
+                      🎨 {job ? 'もう一度生成' : '生成'}
                     </button>
                   )}
-                  {generating && <span className="desc" style={{ alignSelf: 'center' }}>生成中…（ComfyUI は数十秒かかることがあります）</span>}
+                  {job?.status === 'running' && (
+                    <span className="desc" style={{ alignSelf: 'center' }}>
+                      生成中…（{job.results.length}/{job.count} 枚完了。ComfyUI は数十秒かかることがあります）
+                    </span>
+                  )}
                 </div>
               </div>
 
-              {resultUrl && (
+              {job?.status === 'error' && <p className="notice">生成に失敗しました: {job.error}</p>}
+
+              {job?.status === 'selecting' && (
                 <div className="field">
-                  <label>プレビュー</label>
-                  <img src={resultUrl} alt="生成結果" style={{ maxWidth: '100%', borderRadius: 'var(--radius)' }} />
+                  <label>候補（クリックで拡大・選んで採用）</label>
+                  <div className="job-thumbs">
+                    {job.results.map((blob, i) => (
+                      <ResultThumb key={i} blob={blob} busy={accepting} onUse={() => accept(i)} />
+                    ))}
+                  </div>
+                  {job.error && <div className="desc">一部の生成に失敗しました: {job.error}</div>}
                 </div>
               )}
             </>
@@ -264,10 +282,7 @@ export default function ImageGenModal({ title, draftContext, initialPrompt, onAc
         <div className="modal-foot">
           <div style={{ flex: 1 }} />
           <button className="btn" onClick={onClose}>
-            閉じる
-          </button>
-          <button className="btn primary" onClick={accept} disabled={!resultBlob || accepting}>
-            {accepting ? '保存中…' : '✔ この画像を使う'}
+            {job?.status === 'running' ? '閉じる（生成は継続します）' : '閉じる'}
           </button>
         </div>
       </div>
