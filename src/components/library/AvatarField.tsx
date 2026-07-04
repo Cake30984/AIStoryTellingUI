@@ -127,6 +127,7 @@ export default function AvatarField({ avatar, name, genContext, target, onChange
           title="アバター画像を生成"
           draftContext={{ system: illustrationPromptSystem(), user: avatarContextUser(genContext), modelRef: '' }}
           initialPrompt={genContext.imagePrompt}
+          pinTags={genContext.imagePrompt}
           target={target}
           label={`アバター: ${genContext.name}`}
           onClose={() => setShowGen(false)}

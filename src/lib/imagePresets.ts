@@ -62,3 +62,20 @@ export function applyStylePreset(
     negative: restNegative ? `${preset.negative}, ${restNegative}` : preset.negative,
   }
 }
+
+/**
+ * prompt に pins のタグ（カンマ区切り）が欠けていれば末尾に補う。
+ * 比較はトークン単位の完全一致（trim・小文字）。起案（LLM）がプロンプトを全文置換した際に、
+ * LoRA トリガー・表情タグ等の固定タグが消えるのを防ぐために使う。
+ */
+export function ensureTags(prompt: string, pins: string): string {
+  const have = new Set(
+    prompt.split(',').map((t) => t.trim().toLowerCase()).filter(Boolean),
+  )
+  const missing = pins
+    .split(',')
+    .map((t) => t.trim())
+    .filter((t) => t && !have.has(t.toLowerCase()))
+  if (missing.length === 0) return prompt
+  return prompt ? `${prompt}, ${missing.join(', ')}` : missing.join(', ')
+}

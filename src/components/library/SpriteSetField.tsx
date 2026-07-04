@@ -101,6 +101,7 @@ function SpriteSlot({ characterId, name, appearance, imagePrompt, emotion, image
             modelRef: '',
           }}
           initialPrompt={spritePrompt(imagePrompt, emotion)}
+          pinTags={spritePrompt(imagePrompt, emotion)}
           defaultSizeIdx={2}
           target={{ type: 'character-sprite', characterId, emotion }}
           label={`立ち絵: ${name}（${label}）`}
@@ -126,12 +127,19 @@ export default function SpriteSetField({ characterId, name, appearance, imagePro
   const sprites = useStore((s) => s.characters.find((c) => c.id === characterId)?.sprites ?? [])
   const imageProviders = useStore((s) => s.imageProviders)
   const lastImageStyle = useStore((s) => s.lastImageStyle)
+  const lastImageProviderId = useStore((s) => s.lastImageProviderId)
   const startSpriteBatch = useStore((s) => s.startSpriteBatch)
+  const batchRunning = useStore((s) =>
+    s.imageJobs.some(
+      (j) => j.status === 'running' && j.target.type === 'character-sprite' && j.target.characterId === characterId,
+    ),
+  )
 
   const spriteFor = (e: EmotionId) => sprites.find((s) => s.emotion === e)?.imageId
 
   const batchGenerate = () => {
-    if (!characterId || imageProviders.length === 0) return
+    if (!characterId || imageProviders.length === 0 || batchRunning) return
+    const providerId = imageProviders.some((p) => p.id === lastImageProviderId) ? lastImageProviderId! : imageProviders[0].id
     const style = lastImageStyle ?? ''
     const negative = applyStylePreset({ prompt: '', negative: '' }, style).negative
     const prompts = EMOTIONS.map((e) => ({
@@ -141,7 +149,7 @@ export default function SpriteSetField({ characterId, name, appearance, imagePro
     startSpriteBatch({
       characterId,
       characterName: name || '無名',
-      providerId: imageProviders[0].id,
+      providerId,
       prompts,
       negative: negative || undefined,
       width: 832,
@@ -173,10 +181,10 @@ export default function SpriteSetField({ characterId, name, appearance, imagePro
         className="btn"
         style={{ fontSize: 12, padding: '5px 12px', marginTop: 8 }}
         onClick={batchGenerate}
-        disabled={!characterId || imageProviders.length === 0}
+        disabled={!characterId || imageProviders.length === 0 || batchRunning}
         title={!characterId ? '先に保存してください' : undefined}
       >
-        ⚡ 全感情を一括生成
+        {batchRunning ? '⚡ 生成中…（ジョブパネル ⏳ で確認）' : '⚡ 全感情を一括生成'}
       </button>
     </div>
   )
