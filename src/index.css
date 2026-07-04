@@ -1626,6 +1626,15 @@ select {
   font-size: 11px;
   color: var(--text-faint);
 }
+.sprite-slot-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+}
+.sprite-slot-actions .btn {
+  width: 100%;
+}
 
 /* ---------- ステージ表示（立ち絵・背景。V4） ---------- */
 .stage {
