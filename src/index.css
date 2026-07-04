@@ -725,6 +725,31 @@ select {
 .toast.achievement {
   background: linear-gradient(135deg, #e0b341, #d77ad8);
 }
+.toast.image {
+  background: linear-gradient(135deg, #5b8def, #4cc9a4);
+}
+
+/* ---------- 画像生成ジョブ（候補グリッド） ---------- */
+.job-thumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 6px;
+}
+.job-thumb {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.job-thumb img {
+  width: 160px;
+  height: 160px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  cursor: zoom-in;
+}
 
 .seg {
   display: inline-flex;

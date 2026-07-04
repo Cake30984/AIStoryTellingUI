@@ -40,6 +40,7 @@ export default function PersonaEditor({ persona, onClose }: Props) {
               avatar={d.avatar}
               name={d.name}
               genContext={{ name: d.name, appearance: d.description, imagePrompt: d.imagePrompt }}
+              target={{ type: 'persona-avatar', personaId: d.id }}
               onChange={(avatar) => patch({ avatar })}
             />
           </div>

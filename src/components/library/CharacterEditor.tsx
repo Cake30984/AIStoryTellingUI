@@ -49,6 +49,7 @@ export default function CharacterEditor({ character, onClose }: Props) {
               avatar={d.avatar}
               name={d.name}
               genContext={{ name: d.name, appearance: d.appearance, imagePrompt: d.imagePrompt }}
+              target={{ type: 'character-avatar', characterId: d.id }}
               onChange={(avatar) => patch({ avatar })}
             />
           </div>

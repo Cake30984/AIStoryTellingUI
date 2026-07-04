@@ -21,6 +21,8 @@ export default function App() {
     sceneReview,
     newlyUnlockedAchievements,
     dismissNewAchievements,
+    imageJobToasts,
+    dismissImageJobToasts,
   } = useStore()
   const [showSettings, setShowSettings] = useState(false)
 
@@ -90,6 +92,13 @@ export default function App() {
             🏆 実績解除: {newlyUnlockedAchievements.map((a) => a.name || '無名').join(' / ')}
           </span>
           <button onClick={dismissNewAchievements}>閉じる</button>
+        </div>
+      )}
+
+      {imageJobToasts.length > 0 && (
+        <div className="toast image">
+          <span>🖼 生成完了: {imageJobToasts.map((t) => t.label).join(' / ')}</span>
+          <button onClick={dismissImageJobToasts}>閉じる</button>
         </div>
       )}
     </div>
