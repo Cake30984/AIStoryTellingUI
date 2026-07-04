@@ -337,7 +337,8 @@ export function illustrationPromptSystem(): string {
     `指針:\n` +
     `- キャラクターに【画像生成タグ】が与えられている場合は、その文字列を改変せずそのまま prompt に含める（LoRA トリガー等のため）。\n` +
     `- 人数・外見・構図・背景・光・雰囲気を具体的なタグにする。\n` +
-    `- masterpiece 等の品質タグは入れない（利用者が固定タグ側で管理する）。`
+    `- masterpiece 等の品質タグは入れない（利用者が固定タグ側で管理する）。\n` +
+    `- 本文が長い場合は最後の場面（本文の末尾）を描く。シーン全体のダイジェストにしない。`
   )
 }
 
@@ -360,7 +361,7 @@ export function illustrationContextUser(args: {
     parts.push(lines.join('\n'))
   }
   if (args.recentMessages.length > 0) {
-    parts.push(`【直近の本文】\n${args.recentMessages.join('\n---\n')}`)
+    parts.push(`【このシーンの本文】\n${args.recentMessages.join('\n---\n')}`)
   }
   return parts.join('\n\n')
 }

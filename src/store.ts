@@ -458,6 +458,8 @@ interface AppState {
   providers: Provider[]
   /** 画像生成の接続先（LLM とは別系統）。localStorage のみ・エクスポート除外 */
   imageProviders: ImageProvider[]
+  /** 直近選択した画像スタイルプリセット（ImageGenModal の初期値に使う） */
+  lastImageStyle?: 'anime' | 'realistic' | ''
   favoriteModels: string[]
   characters: Character[]
   worlds: World[]
@@ -494,6 +496,7 @@ interface AppState {
   // 画像生成の接続先
   upsertImageProvider: (p: ImageProvider) => void
   deleteImageProvider: (id: string) => void
+  setLastImageStyle: (v: 'anime' | 'realistic' | '') => void
 
   // ライブラリ CRUD
   upsertCharacter: (c: Character) => void
@@ -960,6 +963,7 @@ export const useStore = create<AppState>()(
       return {
         providers: [defaultOpenRouterProvider('')],
         imageProviders: [],
+        lastImageStyle: '',
         favoriteModels: [],
         characters: [],
         worlds: [],
@@ -1004,6 +1008,8 @@ export const useStore = create<AppState>()(
 
         deleteImageProvider: (id) =>
           set((st) => ({ imageProviders: st.imageProviders.filter((p) => p.id !== id) })),
+
+        setLastImageStyle: (v) => set({ lastImageStyle: v }),
 
         loadModels: async (providerId) => {
           const provider = get().providers.find((p) => p.id === providerId)
@@ -2280,6 +2286,7 @@ export const useStore = create<AppState>()(
         providers: st.providers,
         // 画像生成の接続先も API キーを含むため localStorage のみ（exportBundle には含めない）
         imageProviders: st.imageProviders,
+        lastImageStyle: st.lastImageStyle,
         favoriteModels: st.favoriteModels,
         characters: st.characters,
         worlds: st.worlds,
