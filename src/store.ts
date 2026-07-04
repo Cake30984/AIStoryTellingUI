@@ -612,6 +612,8 @@ interface AppState {
   // 挿絵
   addIllustration: (sessionId: string, sceneId: string, ill: SceneIllustration) => void
   removeIllustration: (sessionId: string, sceneId: string, illId: string) => void
+  /** シーン背景を外す（imageId は IndexedDB からも削除。V5b） */
+  removeSceneBackground: (sessionId: string, sceneId: string) => Promise<void>
 
   // 画像生成ジョブ（V2・バックグラウンド生成）
   /** ジョブを起動し fire-and-forget で直列生成を回す。jobId を返す */
@@ -2480,6 +2482,26 @@ export const useStore = create<AppState>()(
                   },
             ),
           })),
+
+        removeSceneBackground: async (sessionId, sceneId) => {
+          const oldImageId = get()
+            .sessions.find((s) => s.id === sessionId)
+            ?.scenes.find((sc) => sc.id === sceneId)?.backgroundImageId
+          if (!oldImageId) return
+          set((st) => ({
+            sessions: st.sessions.map((s) =>
+              s.id !== sessionId
+                ? s
+                : {
+                    ...s,
+                    scenes: s.scenes.map((sc) =>
+                      sc.id !== sceneId ? sc : { ...sc, backgroundImageId: undefined },
+                    ),
+                  },
+            ),
+          }))
+          await deleteImage(oldImageId)
+        },
 
         startImageJob: (args) => {
           const id = uid()

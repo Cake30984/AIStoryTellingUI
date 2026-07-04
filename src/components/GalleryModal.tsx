@@ -59,11 +59,66 @@ function GalleryThumb({
   )
 }
 
-/** シーンごとに挿絵をグリッド表示するギャラリー（V3） */
-export default function GalleryModal({ session, onClose }: Props) {
-  const { removeIllustration } = useStore()
+/** ギャラリー内の背景1枚（サムネイル→クリックで拡大・保存・削除。V5b） */
+function BackgroundThumb({ imageId, sceneId, onRemove }: { imageId: string; sceneId: string; onRemove: () => void }) {
+  const url = useImageUrl(imageId)
+  const [zoom, setZoom] = useState(false)
+  if (!url) return null
+  return (
+    <div className="job-thumb" style={{ position: 'relative' }}>
+      <span
+        style={{
+          position: 'absolute',
+          top: 4,
+          left: 4,
+          zIndex: 1,
+          fontSize: 11,
+          padding: '2px 6px',
+          borderRadius: 4,
+          background: 'rgba(0,0,0,0.6)',
+          color: '#fff',
+        }}
+      >
+        背景
+      </span>
+      <img src={url} alt="背景" onClick={() => setZoom(true)} />
+      <div className="illustration-actions" style={{ position: 'static', opacity: 1 }}>
+        <button
+          className="icon-btn small"
+          title="画像を保存"
+          onClick={async () => {
+            const blob = await getImage(imageId)
+            if (blob) downloadBlob(blob, `background_${sceneId}.png`)
+          }}
+        >
+          ⬇
+        </button>
+        <button
+          className="icon-btn small"
+          title="背景を外す"
+          onClick={() => {
+            if (confirm('この場面の背景を外しますか？')) onRemove()
+          }}
+        >
+          🗑
+        </button>
+      </div>
+      {zoom && (
+        <div className="overlay" onClick={() => setZoom(false)}>
+          <img src={url} alt="" style={{ maxWidth: '92vw', maxHeight: '92vh', borderRadius: 'var(--radius)' }} />
+        </div>
+      )}
+    </div>
+  )
+}
 
-  const scenesWithIllustrations = session.scenes.filter((sc) => (sc.illustrations ?? []).length > 0)
+/** シーンごとに挿絵・背景をグリッド表示するギャラリー（V3・V5b） */
+export default function GalleryModal({ session, onClose }: Props) {
+  const { removeIllustration, removeSceneBackground } = useStore()
+
+  const scenesWithImages = session.scenes.filter(
+    (sc) => (sc.illustrations ?? []).length > 0 || sc.backgroundImageId,
+  )
 
   const sceneHeading = (sc: Scene) => [sc.timeLabel, sc.title].filter(Boolean).join('｜') || 'シーン'
 
@@ -77,16 +132,23 @@ export default function GalleryModal({ session, onClose }: Props) {
           </button>
         </div>
         <div className="modal-body">
-          {scenesWithIllustrations.length === 0 ? (
-            <p className="desc">まだ挿絵がありません。</p>
+          {scenesWithImages.length === 0 ? (
+            <p className="desc">まだ画像がありません。</p>
           ) : (
             <div className="log-list">
-              {scenesWithIllustrations.map((sc) => (
+              {scenesWithImages.map((sc) => (
                 <div className="log-item" key={sc.id}>
                   <div className="log-head">
                     <span className="log-title">{sceneHeading(sc)}</span>
                   </div>
                   <div className="job-thumbs">
+                    {sc.backgroundImageId && (
+                      <BackgroundThumb
+                        imageId={sc.backgroundImageId}
+                        sceneId={sc.id}
+                        onRemove={() => removeSceneBackground(session.id, sc.id)}
+                      />
+                    )}
                     {(sc.illustrations ?? []).map((ill) => (
                       <GalleryThumb
                         key={ill.id}
