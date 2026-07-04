@@ -543,6 +543,8 @@ interface AppState {
   importCharacterCard: (c: Character) => void
   deleteCharacter: (id: string) => void
   bulkSetCharacterModel: (characterIds: string[], modelRef: string) => void
+  /** 立ち絵を手動で設定/解除する（アップロード・削除用。生成採用は applyImageJobResult 側） */
+  setCharacterSprite: (characterId: string, emotion: EmotionId, imageId: string | undefined) => Promise<void>
   upsertWorld: (w: World) => void
   /** カードからのインポート専用。id が既存と衝突する場合は振り直して常に新規追加する */
   importWorldCard: (w: World) => void
@@ -1216,6 +1218,26 @@ export const useStore = create<AppState>()(
                 : c,
             ),
           })),
+
+        setCharacterSprite: async (characterId, emotion, imageId) => {
+          const character = get().characters.find((c) => c.id === characterId)
+          if (!character) return
+          const oldImageId = character.sprites?.find((s) => s.emotion === emotion)?.imageId
+          set((st) => ({
+            characters: st.characters.map((c) =>
+              c.id !== characterId
+                ? c
+                : {
+                    ...c,
+                    sprites: imageId
+                      ? [...(c.sprites ?? []).filter((s) => s.emotion !== emotion), { emotion, imageId }]
+                      : (c.sprites ?? []).filter((s) => s.emotion !== emotion),
+                    updatedAt: Date.now(),
+                  },
+            ),
+          }))
+          if (oldImageId && oldImageId !== imageId) await deleteImage(oldImageId)
+        },
 
         upsertWorld: (w) =>
           set((st) => {

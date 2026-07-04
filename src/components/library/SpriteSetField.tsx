@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { EMOTIONS, type EmotionId } from '../../types'
 import { useStore } from '../../store'
-import { useImageUrl } from '../../lib/imageStore'
+import { putImage, useImageUrl } from '../../lib/imageStore'
+import { normalizeImage } from '../../lib/avatarGen'
 import { applyStylePreset } from '../../lib/imagePresets'
 import { avatarContextUser, illustrationPromptSystem } from '../../lib/prompts'
 import ImageGenModal from '../ImageGenModal'
@@ -22,11 +23,25 @@ interface SlotProps {
   imageId?: string
 }
 
-/** 立ち絵1枠（既存画像 or 空枠 → ✨生成） */
+/** 立ち絵1枠（既存画像 or 空枠 → ✨生成 / 📁 手動アップロード / ✕ 外す） */
 function SpriteSlot({ characterId, name, appearance, imagePrompt, emotion, imageId }: SlotProps) {
   const url = useImageUrl(imageId)
+  const setCharacterSprite = useStore((s) => s.setCharacterSprite)
   const [showGen, setShowGen] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
   const label = EMOTIONS.find((e) => e.id === emotion)!.label
+
+  const onPickFile = async (file: File) => {
+    setBusy(true)
+    try {
+      const normalized = await normalizeImage(file, 1024)
+      const newImageId = await putImage(normalized)
+      await setCharacterSprite(characterId, emotion, newImageId)
+    } finally {
+      setBusy(false)
+    }
+  }
 
   return (
     <div className="sprite-slot">
@@ -34,16 +49,49 @@ function SpriteSlot({ characterId, name, appearance, imagePrompt, emotion, image
         {url ? <img src={url} alt={label} /> : <div className="sprite-empty">未生成</div>}
       </div>
       <div className="sprite-label">{label}</div>
-      <button
-        type="button"
-        className="btn"
-        style={{ fontSize: 11, padding: '3px 8px' }}
-        onClick={() => setShowGen(true)}
-        disabled={!characterId}
-        title={characterId ? undefined : '先に保存してください'}
-      >
-        ✨ 生成
-      </button>
+      <div className="sprite-slot-actions">
+        <button
+          type="button"
+          className="btn"
+          style={{ fontSize: 11, padding: '3px 8px' }}
+          onClick={() => fileRef.current?.click()}
+          disabled={!characterId || busy}
+          title={characterId ? undefined : '先に保存してください'}
+        >
+          {busy ? '処理中…' : '📁 画像を選ぶ'}
+        </button>
+        <button
+          type="button"
+          className="btn"
+          style={{ fontSize: 11, padding: '3px 8px' }}
+          onClick={() => setShowGen(true)}
+          disabled={!characterId}
+          title={characterId ? undefined : '先に保存してください'}
+        >
+          ✨ 生成
+        </button>
+        {imageId && (
+          <button
+            type="button"
+            className="btn"
+            style={{ fontSize: 11, padding: '3px 8px' }}
+            onClick={() => setCharacterSprite(characterId, emotion, undefined)}
+          >
+            ✕ 外す
+          </button>
+        )}
+      </div>
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*"
+        style={{ display: 'none' }}
+        onChange={(e) => {
+          const f = e.target.files?.[0]
+          if (f) onPickFile(f)
+          e.target.value = ''
+        }}
+      />
       {showGen && (
         <ImageGenModal
           title={`立ち絵（${label}）を生成`}
