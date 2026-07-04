@@ -48,6 +48,7 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist` で localStor
   - `ImageProviderSettings.tsx`（G1）— 画像生成の接続先管理（ComfyUI/画像API の追加・編集・削除・接続テスト）。SettingsModal に組み込み
   - `ImageGenModal.tsx`（G2・V1・V2）— 画像生成モーダル（アバター/挿絵/ペルソナアバターで共用）。接続先・サイズ・**スタイル**（スタイルなし/アニメ系/実写系。`applyStylePreset`）・**枚数（1〜4。V2）**選択、「✨ プロンプトを起案」（`streamChat`＋`extractJson`。JSON失敗時は全文をprompt扱い。maxTokens 4000）、起案モデルは `ModelPicker` で選択、negative は欄の表示こそ comfyui のみだが state は kind に関わらず保持・適用。スタイル選択は起案完了後にも再適用（除去→先頭付加の冪等処理）、選択は `store.lastImageStyle` に永続化しモーダルの初期値・マウント時prefillに使う。**V2でジョブ化**：Props は `onAccept` ではなく `target: ImageJobTarget`＋`label`。「🎨 生成」→ `store.startImageJob` を呼びジョブIDだけ保持、モーダルは開いたまま `imageJobs` を購読してジョブの進捗（`running`は完了枚数、`selecting`は候補サムネイル→クリックで拡大・「✔ この画像を使う」で`applyImageJobResult`）を表示。モーダルを閉じてもジョブは store 側で継続（生成中の中断はしない。閉じるボタンは単に非表示にするだけ）
   - `ImageJobsPanel.tsx`（V2）— 進行中・選択待ちの画像生成ジョブ一覧（ChatPanel トップバーの「⏳ n」バッジから開く）。running=進捗＋キャンセル、selecting=候補サムネイル一覧＋「✔ 採用」（`applyImageJobResult`）／「🗑 破棄」（`dismissImageJob`）、error/canceled=メッセージ＋「🗑 閉じる」。ジョブが選択待ちに変わると `store.imageJobToasts` 経由で App.tsx に「🖼 生成完了」トースト（実績解除トーストと同じパターン）
+  - `GalleryModal.tsx`（V3）— セッション内の挿絵ギャラリー（ChatPanel トップバーの「🖼」から開く。📊・📖 の並び）。`session.scenes` を順に走査し `scene.illustrations ?? []` をシーン見出し（timeLabel・title）付きグリッドで表示（`.job-thumbs`/`.job-thumb` を流用）。挿絵が1枚も無ければ「まだ挿絵がありません」。クリックで拡大（プロンプト全文・作成日時つき）、⬇保存（`getImage`→`downloadBlob`）・🗑削除（`removeIllustration`。confirm あり）はインライン挿絵と同じ store アクションを使用
   - `ModelPicker.tsx` — プロバイダ切替・モデル一覧・お気に入り。`onPick` は `"providerId::modelId"` を返す
   - `SceneEditor.tsx` / `SceneReviewModal.tsx` / `StoryLogModal.tsx` / `StatusPanel.tsx`（状態の閲覧・手動編集＝ChatPanel の 📊）/ `DiscoveryPanel.tsx`（発見ログの閲覧・手動編集・昇格＝ChatPanel の 📖）/ `CsvInput.tsx`
   - `EntityAvatar.tsx`（P2）— 画像があれば表示、なければ色＋名前イニシャルを表示する共通アバター。既存の `.avatar`/`.entity-avatar`/`.dot-avatar` クラスを流用し全画面で表示統一
@@ -57,7 +58,7 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist` で localStor
 - `docs/設計_ワールド再利用とオーバーレイ.md` — セッション・オーバーレイ（発見ロア／キャラ成長の置き場を素材からセッションへ分離）の設計仕様。フェーズB1〜B4の実装計画
 - `docs/設計_画像カードとアバター.md` — PNG カード入出力（SillyTavern 互換キャラカード＋独自世界/ペルソナカード）・絵文字全廃のアバター画像化（IndexedDB 画像ストア）の設計仕様。フェーズP1〜P4は実装済み
 - `docs/設計_画像生成連携.md` — P5 の詳細設計。ImageProvider（comfyui/openai-image）抽象層・ImageGenModal（裏方LLMプロンプト起案）・アバター生成・`imagePrompt` 固定タグ・挿絵（`Scene.illustrations`）・セッションカード（`aist_session`・画像base64同梱）。フェーズG1〜G4は実装済み
-- `docs/設計_画像改善_立ち絵と生成ジョブ.md` — 画像改善 V1〜V4 の詳細設計（スタイルプリセット・バックグラウンド生成ジョブ・ギャラリー・立ち絵/表情差分/背景）。**V1〜V2実装済み・V3〜V4未実装**
+- `docs/設計_画像改善_立ち絵と生成ジョブ.md` — 画像改善 V1〜V4 の詳細設計（スタイルプリセット・バックグラウンド生成ジョブ・ギャラリー・立ち絵/表情差分/背景）。**V1〜V3実装済み・V4未実装**
 
 ## データモデル（要点）
 すべて「再利用可能な素材ライブラリ」をセッションが参照する構造。
@@ -119,11 +120,11 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist` で localStor
 4. 検証後は seed した localStorage を削除し `preview_stop`。ポート残留時は `npx kill-port 5173`。
 
 ## 実装状況
-**主要機能はすべて実装済み**。実装済み: セッション(RP/物語)・キャラ/世界観/ペルソナ/シーンタイプの素材ライブラリ・ロアブック・グループ会話・シーン管理・タイムライン・選択肢進行・統合レビュー・シーン演出エンジン・文体切替・**マルチプロバイダ（プロバイダ管理・キャラ別モデル・役割別裏方モデル）**・あらすじ閲覧・会話編集/削除/作り直し・エクスポート/インポート・トークン目安・出力停止対策・状態エンジン（関係性prose＋事実の数＋条件エンジン＋実績＋選択肢連動加点。ADR-1 P1〜P5）・**セッション・オーバーレイ（発見ロア／キャラ成長を素材から分離しセッションへ隔離＋実効ビュー注入＋発見ログUI＋素材への昇格。B1〜B4）**・**画像基盤とPNGカード入出力（IndexedDB画像ストア・EntityAvatar・ST互換キャラカード・世界/ペルソナカード。P1〜P4）**・**画像生成連携（ComfyUI/OpenAI互換の接続先管理・裏方LLMプロンプト起案・アバター生成・挿絵・セッションカード。G1〜G4）**・**画像生成のプロンプト品質改善（スタイルプリセットprefill・起案maxTokens拡大・挿絵起案のシーン全文文脈。V1）**・**画像生成のバックグラウンドジョブ化（複数枚シード違い生成・候補選択・ジョブパネル・完了トースト。V2）**。
+**主要機能はすべて実装済み**。実装済み: セッション(RP/物語)・キャラ/世界観/ペルソナ/シーンタイプの素材ライブラリ・ロアブック・グループ会話・シーン管理・タイムライン・選択肢進行・統合レビュー・シーン演出エンジン・文体切替・**マルチプロバイダ（プロバイダ管理・キャラ別モデル・役割別裏方モデル）**・あらすじ閲覧・会話編集/削除/作り直し・エクスポート/インポート・トークン目安・出力停止対策・状態エンジン（関係性prose＋事実の数＋条件エンジン＋実績＋選択肢連動加点。ADR-1 P1〜P5）・**セッション・オーバーレイ（発見ロア／キャラ成長を素材から分離しセッションへ隔離＋実効ビュー注入＋発見ログUI＋素材への昇格。B1〜B4）**・**画像基盤とPNGカード入出力（IndexedDB画像ストア・EntityAvatar・ST互換キャラカード・世界/ペルソナカード。P1〜P4）**・**画像生成連携（ComfyUI/OpenAI互換の接続先管理・裏方LLMプロンプト起案・アバター生成・挿絵・セッションカード。G1〜G4）**・**画像生成のプロンプト品質改善（スタイルプリセットprefill・起案maxTokens拡大・挿絵起案のシーン全文文脈。V1）**・**画像生成のバックグラウンドジョブ化（複数枚シード違い生成・候補選択・ジョブパネル・完了トースト。V2）**・**セッション内画像ギャラリー（GalleryModal。V3）**。
 
 ## 次にやること（ロードマップ）
-計画済みフェーズ（画像カード P1〜P4・画像生成連携 G1〜G4・画像改善 V1〜V2）は実装完了。残タスク:
-1. **画像改善 V3〜V4（設計済み・未実装）**: `docs/設計_画像改善_立ち絵と生成ジョブ.md` に詳細設計あり。V3=セッション内画像ギャラリー → V4=立ち絵・表情差分（裏方LLM毎応答判定）・シーン背景・ステージ表示。**必ずこの順で1フェーズずつ実装・検証・コミットする**。
+計画済みフェーズ（画像カード P1〜P4・画像生成連携 G1〜G4・画像改善 V1〜V3）は実装完了。残タスク:
+1. **画像改善 V4（設計済み・未実装）**: `docs/設計_画像改善_立ち絵と生成ジョブ.md` に詳細設計あり。立ち絵・表情差分（裏方LLM毎応答判定）・シーン背景・ステージ表示。
 2. **ComfyUI 実機での動作確認**: 生成経路はモック検証済みだが、実機（CORS許可起動）での通し確認とワークフローテンプレの拡充（SDXL以外・LoRAノード入りの例）は未実施。
 3. **openai-image 系の実プロバイダ確認**: `response_format: b64_json` 非対応 API（gpt-image-1 等）への追従が必要になったら `imageGen.ts` の openai 経路にバリエーションを足す。ComfyUI は CORS 許可起動（`--enable-cors-header '*'`）が前提。追加フィールドはすべて optional のため persist キーは v3 のまま。
 
