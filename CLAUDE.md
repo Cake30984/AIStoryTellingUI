@@ -54,6 +54,7 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist` で localStor
 - `docs/設計_ワールド再利用とオーバーレイ.md` — セッション・オーバーレイ（発見ロア／キャラ成長の置き場を素材からセッションへ分離）の設計仕様。フェーズB1〜B4の実装計画
 - `docs/設計_画像カードとアバター.md` — PNG カード入出力（SillyTavern 互換キャラカード＋独自世界/ペルソナカード）・絵文字全廃のアバター画像化（IndexedDB 画像ストア）の設計仕様。フェーズP1〜P4は実装済み
 - `docs/設計_画像生成連携.md` — P5 の詳細設計。ImageProvider（comfyui/openai-image）抽象層・ImageGenModal（裏方LLMプロンプト起案）・アバター生成・`imagePrompt` 固定タグ・挿絵（`Scene.illustrations`）・セッションカード（`aist_session`・画像base64同梱）。フェーズG1〜G4は実装済み
+- `docs/設計_画像改善_立ち絵と生成ジョブ.md` — 画像改善 V1〜V4 の詳細設計（スタイルプリセット・バックグラウンド生成ジョブ・ギャラリー・立ち絵/表情差分/背景）。**未実装**
 
 ## データモデル（要点）
 すべて「再利用可能な素材ライブラリ」をセッションが参照する構造。
@@ -117,8 +118,9 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist` で localStor
 
 ## 次にやること（ロードマップ）
 計画済みフェーズ（画像カード P1〜P4・画像生成連携 G1〜G4）はすべて実装完了。残タスク:
-1. **ComfyUI 実機での動作確認**: 生成経路はモック検証済みだが、実機（CORS許可起動）での通し確認とワークフローテンプレの拡充（SDXL以外・LoRAノード入りの例）は未実施。
-2. **openai-image 系の実プロバイダ確認**: `response_format: b64_json` 非対応 API（gpt-image-1 等）への追従が必要になったら `imageGen.ts` の openai 経路にバリエーションを足す。ComfyUI は CORS 許可起動（`--enable-cors-header '*'`）が前提。追加フィールドはすべて optional のため persist キーは v3 のまま。
+1. **画像改善 V1〜V4（設計済み・未実装）**: `docs/設計_画像改善_立ち絵と生成ジョブ.md` に詳細設計あり。V1=スタイルプリセット（アニメ/実写の品質タグ prefill）・起案maxTokens 4000・シーン全文起案 → V2=バックグラウンド生成ジョブ（複数枚シード違い・候補選択・ジョブパネル）→ V3=セッション内画像ギャラリー → V4=立ち絵・表情差分（裏方LLM毎応答判定）・シーン背景・ステージ表示。**必ずこの順で1フェーズずつ実装・検証・コミットする**。
+2. **ComfyUI 実機での動作確認**: 生成経路はモック検証済みだが、実機（CORS許可起動）での通し確認とワークフローテンプレの拡充（SDXL以外・LoRAノード入りの例）は未実施。
+3. **openai-image 系の実プロバイダ確認**: `response_format: b64_json` 非対応 API（gpt-image-1 等）への追従が必要になったら `imageGen.ts` の openai 経路にバリエーションを足す。ComfyUI は CORS 許可起動（`--enable-cors-header '*'`）が前提。追加フィールドはすべて optional のため persist キーは v3 のまま。
 
 ## 設計上の根本分岐（ADR）
 後から別パターンを試せるよう、根本決定と**却下案**を残す。詳細実装計画は `docs/設計_ステータスエンジン.md`。
