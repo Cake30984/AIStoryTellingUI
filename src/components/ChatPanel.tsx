@@ -19,6 +19,7 @@ import SceneEditor from './SceneEditor'
 import StoryLogModal from './StoryLogModal'
 import StatusPanel from './StatusPanel'
 import DiscoveryPanel from './DiscoveryPanel'
+import GalleryModal from './GalleryModal'
 import EntityAvatar from './EntityAvatar'
 
 interface Props {
@@ -97,6 +98,7 @@ export default function ChatPanel({ session }: Props) {
   const [showLog, setShowLog] = useState(false)
   const [showStatus, setShowStatus] = useState(false)
   const [showDiscovery, setShowDiscovery] = useState(false)
+  const [showGallery, setShowGallery] = useState(false)
   const [showImageGen, setShowImageGen] = useState(false)
   const [showImageJobs, setShowImageJobs] = useState(false)
   const [speaker, setSpeaker] = useState<string | undefined>(undefined)
@@ -357,6 +359,9 @@ export default function ChatPanel({ session }: Props) {
         </button>
         <button className="icon-btn" onClick={() => setShowDiscovery(true)} title="発見ログ（このセッションで見つかった設定）">
           📖
+        </button>
+        <button className="icon-btn" onClick={() => setShowGallery(true)} title="画像ギャラリー">
+          🖼
         </button>
         <button
           className="icon-btn"
@@ -650,6 +655,7 @@ export default function ChatPanel({ session }: Props) {
       {showDiscovery && (
         <DiscoveryPanel session={session} onClose={() => setShowDiscovery(false)} />
       )}
+      {showGallery && <GalleryModal session={session} onClose={() => setShowGallery(false)} />}
       {showImageGen && scene && (
         <ImageGenModal
           title="この場面の挿絵を生成"
