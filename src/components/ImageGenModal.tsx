@@ -45,14 +45,16 @@ interface Props {
   target: ImageJobTarget
   /** ジョブ一覧・通知に出すラベル（例: '挿絵: 放課後の屋上'） */
   label: string
+  /** サイズ選択の初期インデックス（SIZE_PRESETS）。立ち絵=縦長・背景=横長 等の既定値切替に使う */
+  defaultSizeIdx?: number
   onClose: () => void
 }
 
-export default function ImageGenModal({ title, draftContext, initialPrompt, target, label, onClose }: Props) {
+export default function ImageGenModal({ title, draftContext, initialPrompt, target, label, defaultSizeIdx, onClose }: Props) {
   const { imageProviders, providers, lastImageStyle, setLastImageStyle, imageJobs, startImageJob, cancelImageJob, dismissImageJob, applyImageJobResult } =
     useStore()
   const [providerId, setProviderId] = useState(imageProviders[0]?.id ?? '')
-  const [sizeIdx, setSizeIdx] = useState(0)
+  const [sizeIdx, setSizeIdx] = useState(defaultSizeIdx ?? 0)
   const [count, setCount] = useState(1)
   const [styleId, setStyleId] = useState<'anime' | 'realistic' | ''>(lastImageStyle ?? '')
   const [prompt, setPrompt] = useState(() => {

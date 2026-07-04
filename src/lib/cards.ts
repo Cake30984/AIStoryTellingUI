@@ -1,4 +1,4 @@
-import type { Character, Persona, Session, World } from '../types'
+import type { Character, EmotionId, Persona, Session, World } from '../types'
 import { readTextChunks, writeTextChunk } from './png'
 import { getImage, putImage } from './imageStore'
 import { generateDefaultAvatar, normalizeImage } from './avatarGen'
@@ -57,11 +57,11 @@ export type ParsedCard =
   | { kind: 'persona'; persona: Persona }
   | { kind: 'session'; bundle: SessionCardBundle }
 
-/** キャラクターの extensions に格納する独自拡張（model・avatar.imageId は環境固有のため除外） */
+/** キャラクターの extensions に格納する独自拡張（model・avatar.imageId・sprites は環境固有のため除外） */
 interface CharacterExtension {
   version: 1
   kind: 'character'
-  character: Omit<Character, 'avatar' | 'model'> & { avatar: { color: string } }
+  character: Omit<Character, 'avatar' | 'model' | 'sprites'> & { avatar: { color: string } }
 }
 
 interface CharaCardV2 {
@@ -89,7 +89,7 @@ function buildCharaCard(character: Character): CharaCardV2 {
   const description = character.appearance
     ? `${character.persona}\n\n【外見】\n${character.appearance}`
     : character.persona
-  const { avatar, model, ...rest } = character
+  const { avatar, model, sprites, ...rest } = character
   return {
     spec: 'chara_card_v2',
     spec_version: '2.0',
@@ -136,6 +136,13 @@ export async function exportCharacterCard(character: Character): Promise<void> {
 
 function normalizeCharacterFromExtension(raw: any): Character {
   const now = Date.now()
+  // sprites の imageId は同梱画像への参照（セッションカード経由のみ持つ。通常カードには無い）。
+  // インポート側（importSessionCard）で remap するためそのまま保持する。
+  const sprites: { emotion: EmotionId; imageId: string }[] | undefined = Array.isArray(raw.sprites)
+    ? raw.sprites.filter(
+        (s: any) => typeof s?.emotion === 'string' && typeof s?.imageId === 'string',
+      )
+    : undefined
   return {
     id: typeof raw.id === 'string' ? raw.id : uid(),
     name: typeof raw.name === 'string' ? raw.name : '',
@@ -147,6 +154,7 @@ function normalizeCharacterFromExtension(raw: any): Character {
     developments: Array.isArray(raw.developments) ? raw.developments : [],
     avatar: { color: typeof raw.avatar?.color === 'string' ? raw.avatar.color : '#5b8def' },
     imagePrompt: typeof raw.imagePrompt === 'string' ? raw.imagePrompt : undefined,
+    ...(sprites && sprites.length > 0 ? { sprites } : {}),
     tags: Array.isArray(raw.tags) ? raw.tags : [],
     createdAt: typeof raw.createdAt === 'number' ? raw.createdAt : now,
     updatedAt: typeof raw.updatedAt === 'number' ? raw.updatedAt : now,
@@ -270,11 +278,17 @@ export async function exportSessionCard(
   refs: { characters: Character[]; world?: World; persona?: Persona },
   cardImageBlob: Blob,
 ): Promise<void> {
-  // 参照している画像 id を収集（アバター＋挿絵）
+  // 参照している画像 id を収集（アバター＋立ち絵＋挿絵＋背景）
   const imageIds = new Set<string>()
-  for (const c of refs.characters) if (c.avatar.imageId) imageIds.add(c.avatar.imageId)
+  for (const c of refs.characters) {
+    if (c.avatar.imageId) imageIds.add(c.avatar.imageId)
+    for (const sp of c.sprites ?? []) imageIds.add(sp.imageId)
+  }
   if (refs.persona?.avatar.imageId) imageIds.add(refs.persona.avatar.imageId)
-  for (const sc of session.scenes) for (const ill of sc.illustrations ?? []) imageIds.add(ill.imageId)
+  for (const sc of session.scenes) {
+    for (const ill of sc.illustrations ?? []) imageIds.add(ill.imageId)
+    if (sc.backgroundImageId) imageIds.add(sc.backgroundImageId)
+  }
 
   const images: { id: string; b64: string }[] = []
   let totalBytes = 0
