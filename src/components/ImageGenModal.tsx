@@ -3,7 +3,7 @@ import { useStore } from '../store'
 import { streamChat } from '../lib/openrouter'
 import { parseModelRef, modelRefLabel } from '../lib/providers'
 import { extractJson } from '../lib/json'
-import { STYLE_PRESETS, applyStylePreset } from '../lib/imagePresets'
+import { STYLE_PRESETS, applyStylePreset, ensureTags } from '../lib/imagePresets'
 import { useBlobUrl, type ImageJobTarget } from '../lib/imageJobs'
 import ModelPicker from './ModelPicker'
 
@@ -47,13 +47,30 @@ interface Props {
   label: string
   /** サイズ選択の初期インデックス（SIZE_PRESETS）。立ち絵=縦長・背景=横長 等の既定値切替に使う */
   defaultSizeIdx?: number
+  /** 起案後も必ず維持するタグ（カンマ区切り）。LoRA トリガー・表情タグ等が起案の全文置換で消えるのを防ぐ（V5c） */
+  pinTags?: string
   onClose: () => void
 }
 
-export default function ImageGenModal({ title, draftContext, initialPrompt, target, label, defaultSizeIdx, onClose }: Props) {
-  const { imageProviders, providers, lastImageStyle, setLastImageStyle, imageJobs, startImageJob, cancelImageJob, dismissImageJob, applyImageJobResult } =
-    useStore()
-  const [providerId, setProviderId] = useState(imageProviders[0]?.id ?? '')
+export default function ImageGenModal({ title, draftContext, initialPrompt, target, label, defaultSizeIdx, pinTags, onClose }: Props) {
+  const {
+    imageProviders,
+    providers,
+    lastImageStyle,
+    setLastImageStyle,
+    lastImageProviderId,
+    setLastImageProviderId,
+    lastDraftModel,
+    setLastDraftModel,
+    imageJobs,
+    startImageJob,
+    cancelImageJob,
+    dismissImageJob,
+    applyImageJobResult,
+  } = useStore()
+  const [providerId, setProviderId] = useState(
+    imageProviders.some((p) => p.id === lastImageProviderId) ? lastImageProviderId! : imageProviders[0]?.id ?? '',
+  )
   const [sizeIdx, setSizeIdx] = useState(defaultSizeIdx ?? 0)
   const [count, setCount] = useState(1)
   const [styleId, setStyleId] = useState<'anime' | 'realistic' | ''>(lastImageStyle ?? '')
@@ -61,8 +78,10 @@ export default function ImageGenModal({ title, draftContext, initialPrompt, targ
     const init = initialPrompt ?? ''
     return (lastImageStyle ?? '') ? applyStylePreset({ prompt: init, negative: '' }, lastImageStyle ?? '').prompt : init
   })
-  const [negative, setNegative] = useState('')
-  const [draftModel, setDraftModel] = useState(draftContext?.modelRef ?? '')
+  const [negative, setNegative] = useState(() =>
+    (lastImageStyle ?? '') ? applyStylePreset({ prompt: '', negative: '' }, lastImageStyle ?? '').negative : '',
+  )
+  const [draftModel, setDraftModel] = useState(lastDraftModel || draftContext?.modelRef || '')
   const [showModelPicker, setShowModelPicker] = useState(false)
   const [drafting, setDrafting] = useState(false)
   const [jobId, setJobId] = useState<string | null>(null)
@@ -125,7 +144,8 @@ export default function ImageGenModal({ title, draftContext, initialPrompt, targ
       }
       // 起案結果にスタイルタグが混ざっていても、除去した上で選択中スタイルを先頭に付け直す
       const applied = applyStylePreset({ prompt: draftedPrompt, negative: draftedNegative }, styleId)
-      setPrompt(applied.prompt)
+      // 起案は全文置換のため、LoRA トリガー・表情タグ等の固定タグが欠けていれば末尾に補う（V5c）
+      setPrompt(pinTags ? ensureTags(applied.prompt, pinTags) : applied.prompt)
       setNegative(applied.negative)
     } catch (e) {
       setError(`起案に失敗しました: ${(e as Error).message}`)
@@ -146,6 +166,7 @@ export default function ImageGenModal({ title, draftContext, initialPrompt, targ
     if (jobId) dismissImageJob(jobId)
     const size = SIZE_PRESETS[sizeIdx]
     setError('')
+    setLastImageProviderId(provider.id)
     const id = startImageJob({
       label,
       target,
@@ -289,7 +310,14 @@ export default function ImageGenModal({ title, draftContext, initialPrompt, targ
         </div>
       </div>
       {showModelPicker && (
-        <ModelPicker current={draftModel} onPick={(ref) => setDraftModel(ref)} onClose={() => setShowModelPicker(false)} />
+        <ModelPicker
+          current={draftModel}
+          onPick={(ref) => {
+            setDraftModel(ref)
+            setLastDraftModel(ref)
+          }}
+          onClose={() => setShowModelPicker(false)}
+        />
       )}
     </div>
   )

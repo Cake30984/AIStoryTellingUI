@@ -495,6 +495,10 @@ interface AppState {
   imageProviders: ImageProvider[]
   /** 直近選択した画像スタイルプリセット（ImageGenModal の初期値に使う） */
   lastImageStyle?: 'anime' | 'realistic' | ''
+  /** 最後に画像生成で使った接続先（ImageGenModal・一括生成の初期値。V5c） */
+  lastImageProviderId?: string
+  /** 最後に起案（プロンプト起草）に使ったモデル（"providerId::modelId"。V5c） */
+  lastDraftModel?: string
   favoriteModels: string[]
   characters: Character[]
   worlds: World[]
@@ -536,6 +540,10 @@ interface AppState {
   upsertImageProvider: (p: ImageProvider) => void
   deleteImageProvider: (id: string) => void
   setLastImageStyle: (v: 'anime' | 'realistic' | '') => void
+  /** 最後に画像生成で使った接続先を記憶する（V5c） */
+  setLastImageProviderId: (id: string) => void
+  /** 最後に起案に使ったモデルを記憶する（V5c） */
+  setLastDraftModel: (ref: string) => void
 
   // ライブラリ CRUD
   upsertCharacter: (c: Character) => void
@@ -1094,6 +1102,8 @@ export const useStore = create<AppState>()(
         providers: [defaultOpenRouterProvider('')],
         imageProviders: [],
         lastImageStyle: '',
+        lastImageProviderId: undefined,
+        lastDraftModel: undefined,
         favoriteModels: [],
         characters: [],
         worlds: [],
@@ -1142,6 +1152,8 @@ export const useStore = create<AppState>()(
           set((st) => ({ imageProviders: st.imageProviders.filter((p) => p.id !== id) })),
 
         setLastImageStyle: (v) => set({ lastImageStyle: v }),
+        setLastImageProviderId: (id) => set({ lastImageProviderId: id }),
+        setLastDraftModel: (ref) => set({ lastDraftModel: ref }),
 
         loadModels: async (providerId) => {
           const provider = get().providers.find((p) => p.id === providerId)
@@ -2683,6 +2695,8 @@ export const useStore = create<AppState>()(
         // 画像生成の接続先も API キーを含むため localStorage のみ（exportBundle には含めない）
         imageProviders: st.imageProviders,
         lastImageStyle: st.lastImageStyle,
+        lastImageProviderId: st.lastImageProviderId,
+        lastDraftModel: st.lastDraftModel,
         favoriteModels: st.favoriteModels,
         characters: st.characters,
         worlds: st.worlds,
