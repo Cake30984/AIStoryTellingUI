@@ -653,10 +653,23 @@ export default function ChatPanel({ session }: Props) {
                 appearance: c.appearance,
                 imagePrompt: c.imagePrompt,
               })),
-              recentMessages: session.messages
-                .filter((m) => !isMarker(m) && m.content.trim())
-                .slice(-6)
-                .map((m) => m.content),
+              recentMessages: (() => {
+                // 現在シーンのメッセージのみ（旧データは sceneId 無しがあるため || !m.sceneId を維持）
+                const sceneMsgs = session.messages.filter(
+                  (m) => (m.sceneId === scene.id || !m.sceneId) && !isMarker(m) && m.content.trim(),
+                )
+                // 末尾から文字数予算でキャップ（推定 8,000 文字 ≒ 4,000〜5,000 トークン程度）
+                const budget = 8000
+                const recent: string[] = []
+                let used = 0
+                for (let i = sceneMsgs.length - 1; i >= 0; i--) {
+                  const c = sceneMsgs[i].content
+                  if (used + c.length > budget && recent.length > 0) break
+                  recent.unshift(c)
+                  used += c.length
+                }
+                return recent
+              })(),
             }),
             modelRef: reviewModelOf(session),
           }}

@@ -25,7 +25,7 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist` で localStor
 - `src/lib/`
   - `providers.ts` — `Provider` 型・プリセット・`parseModelRef`/`makeModelRef`/`splitRef`/`modelRefLabel`
   - `openrouter.ts` — SSEストリーミング補完・モデル一覧取得（プロバイダ駆動。provider オブジェクトを受け取る）
-  - `prompts.ts` — system プロンプト組み立て・選択肢/レビュー用プロンプト・定数（`CONTINUE_PROMPT`/`SCENE_START_PROMPT` 等）・画像プロンプト起案（`illustrationPromptSystem`/`illustrationContextUser`/`avatarContextUser`。G2）
+  - `prompts.ts` — system プロンプト組み立て・選択肢/レビュー用プロンプト・定数（`CONTINUE_PROMPT`/`SCENE_START_PROMPT` 等）・画像プロンプト起案（`illustrationPromptSystem`/`illustrationContextUser`/`avatarContextUser`。G2。V1で「本文が長い場合は末尾の場面を描く」指針を追加、`illustrationContextUser`の文脈見出しは「【このシーンの本文】」）
   - `lorebook.ts` — 世界観ロアのキーワード一致抽出
   - `timeline.ts` — `advanceTimeline`/`timeLabelOf`/`timelinePromptInfo`/`isNearEnd`
   - `json.ts` — `extractJson`（モデル出力から堅牢な JSON 抽出）
@@ -35,16 +35,17 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist` で localStor
   - `avatarGen.ts`（P1）— `generateDefaultAvatar`（名前イニシャル＋色から canvas でデフォルト画像生成）/ `normalizeImage`（アップロード画像の縮小・PNG化）
   - `png.ts`（P3）— PNG の tEXt チャンク読み書き（自前実装。`readTextChunks`/`writeTextChunk`。CRC32はtype+dataのみ対象、textは必ずbase64経由でLatin-1化。**組み立てはセグメント連結方式＝`push(...spread)`は数MB級でスタックオーバーフローするため禁止**）
   - `imageGen.ts`（G1）— 画像生成の抽象層。`generateImage`（comfyui: /prompt→/historyポーリング→/view、openai-image: /images/generations の b64_json）/`testImageProvider`/`fillWorkflow`（プレースホルダ置換。%PROMPT%/%NEGATIVE% はJSONエスケープ、"%SEED%"/"%WIDTH%"/"%HEIGHT%" は引用符ごと数値化）/`DEFAULT_COMFY_WORKFLOW`
+  - `imagePresets.ts`（V1）— スタイルプリセット（`STYLE_PRESETS`＝アニメ系/実写系の品質タグ）と`applyStylePreset`（prompt/negative 欄の先頭にプリセットタグを適用。トークン単位の完全一致除去→選択プリセットを先頭付加、で冪等）
   - `cards.ts`（P3〜P4・G4）— キャラカード（`chara_card_v2` 互換＋`extensions.aistorytelling` に独自データ）／世界カード（独自形式`aist_world`）／ペルソナカード（独自形式`aist_persona`）／**セッションカード（独自形式`aist_session`。G4。session＋参照素材＋参照画像（アバター・挿絵）を base64 同梱した完全自己完結バンドル。`exportSessionCard`（合計30MB超で警告）/`sessionCardImageBlob`。キャラの`model`は除外・`avatar.imageId`は同梱画像への参照として保持）**の組み立て・解釈。`exportCharacterCard`/`exportWorldCard`/`exportPersonaCard`（画像未設定なら`generateDefaultAvatar`でカード画像を自動生成→`normalizeImage`→tEXt埋め込み→DL）/`parseCardPng`（chunk種別で判定。キャラは拡張優先、無ければSTネイティブ項目からマッピング）/`attachCardImage`（カードPNG自体を512pxに正規化してputImage→avatar.imageIdへ。キャラ/ペルソナ共用のジェネリック関数）。`model`と`avatar.imageId`は環境固有のためextensionsから除外。Worldはアバター概念を持たないため画像は自動生成のみ
   - `useCardDrop.ts`（P4）— PNGカードのドラッグ&ドロップ受付フック（`dragOver`状態＋`dropProps`）。Character/World/Personaの各Libraryで共用
 - `src/components/`
   - `Sidebar.tsx` — 左ナビ＋セッション一覧。セッションカード（PNG）の D&D 受付（G4）
-  - `ChatPanel.tsx` — 会話画面（トップバー・シーン仕切り・話者/選択肢・コンポーザー・メッセージ操作）。🎨=挿絵生成（G3。`ImageGenModal`→`putImage`→`addIllustration`。最後のメッセージにアンカーしインライン表示・⬇保存/🗑削除/クリック拡大）
+  - `ChatPanel.tsx` — 会話画面（トップバー・シーン仕切り・話者/選択肢・コンポーザー・メッセージ操作）。🎨=挿絵生成（G3。`ImageGenModal`→`putImage`→`addIllustration`。最後のメッセージにアンカーしインライン表示・⬇保存/🗑削除/クリック拡大）。挿絵起案の文脈（V1）は現在シーンの本文全体（`sceneId`一致 or 旧データの`sceneId`無し）を末尾から文字数予算8,000でキャップして渡す
   - `SessionEditor.tsx` — セッション設定（参加キャラ/一括モデル設定/世界観/ペルソナ/固定メモ/文体/選択肢/裏方モデル/タイムライン/ディレクター/サンプリング）。フッターに「🖼 セッションをカード化」（G4→`SessionCardModal`）
   - `SessionCardModal.tsx`（G4）— セッションカード書き出し（カード画像を挿絵から選択 or タイトルから自動生成→`exportSessionCard`）。読み込みは Sidebar への D&D と SettingsModal のファイル入力（`importSessionCard`＝store。同梱画像を putImage し直して imageId を remap、素材は id マージ・セッションは id 衝突時に新id採番で常に追加、取り込み後にアクティブ化）
   - `SettingsModal.tsx` — プロバイダ管理（追加/編集/削除/モデル読込）・データ入出力・未使用アバター画像のGC（`gcUnusedImages`）
   - `ImageProviderSettings.tsx`（G1）— 画像生成の接続先管理（ComfyUI/画像API の追加・編集・削除・接続テスト）。SettingsModal に組み込み
-  - `ImageGenModal.tsx`（G2）— 画像生成モーダル（アバター/挿絵で共用）。接続先・サイズ選択、「✨ プロンプトを起案」（`streamChat`＋`extractJson`。JSON失敗時は全文をprompt扱い）、起案モデルは `ModelPicker` で選択、negative は comfyui のみ表示、生成キャンセル（AbortController）、プレビュー→`onAccept(blob, prompt)` で呼び出し元が保存先を決定
+  - `ImageGenModal.tsx`（G2・V1）— 画像生成モーダル（アバター/挿絵で共用）。接続先・サイズ・**スタイル**（スタイルなし/アニメ系/実写系。`applyStylePreset`）選択、「✨ プロンプトを起案」（`streamChat`＋`extractJson`。JSON失敗時は全文をprompt扱い。maxTokens 4000）、起案モデルは `ModelPicker` で選択、negative は欄の表示こそ comfyui のみだが state は kind に関わらず保持・適用、生成キャンセル（AbortController）、プレビュー→`onAccept(blob, prompt)` で呼び出し元が保存先を決定。スタイル選択は起案完了後にも再適用（除去→先頭付加の冪等処理）、選択は `store.lastImageStyle` に永続化しモーダルの初期値・マウント時prefillに使う
   - `ModelPicker.tsx` — プロバイダ切替・モデル一覧・お気に入り。`onPick` は `"providerId::modelId"` を返す
   - `SceneEditor.tsx` / `SceneReviewModal.tsx` / `StoryLogModal.tsx` / `StatusPanel.tsx`（状態の閲覧・手動編集＝ChatPanel の 📊）/ `DiscoveryPanel.tsx`（発見ログの閲覧・手動編集・昇格＝ChatPanel の 📖）/ `CsvInput.tsx`
   - `EntityAvatar.tsx`（P2）— 画像があれば表示、なければ色＋名前イニシャルを表示する共通アバター。既存の `.avatar`/`.entity-avatar`/`.dot-avatar` クラスを流用し全画面で表示統一
@@ -54,7 +55,7 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist` で localStor
 - `docs/設計_ワールド再利用とオーバーレイ.md` — セッション・オーバーレイ（発見ロア／キャラ成長の置き場を素材からセッションへ分離）の設計仕様。フェーズB1〜B4の実装計画
 - `docs/設計_画像カードとアバター.md` — PNG カード入出力（SillyTavern 互換キャラカード＋独自世界/ペルソナカード）・絵文字全廃のアバター画像化（IndexedDB 画像ストア）の設計仕様。フェーズP1〜P4は実装済み
 - `docs/設計_画像生成連携.md` — P5 の詳細設計。ImageProvider（comfyui/openai-image）抽象層・ImageGenModal（裏方LLMプロンプト起案）・アバター生成・`imagePrompt` 固定タグ・挿絵（`Scene.illustrations`）・セッションカード（`aist_session`・画像base64同梱）。フェーズG1〜G4は実装済み
-- `docs/設計_画像改善_立ち絵と生成ジョブ.md` — 画像改善 V1〜V4 の詳細設計（スタイルプリセット・バックグラウンド生成ジョブ・ギャラリー・立ち絵/表情差分/背景）。**未実装**
+- `docs/設計_画像改善_立ち絵と生成ジョブ.md` — 画像改善 V1〜V4 の詳細設計（スタイルプリセット・バックグラウンド生成ジョブ・ギャラリー・立ち絵/表情差分/背景）。**V1実装済み・V2〜V4未実装**
 
 ## データモデル（要点）
 すべて「再利用可能な素材ライブラリ」をセッションが参照する構造。
@@ -114,11 +115,11 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist` で localStor
 4. 検証後は seed した localStorage を削除し `preview_stop`。ポート残留時は `npx kill-port 5173`。
 
 ## 実装状況
-**主要機能はすべて実装済み**。実装済み: セッション(RP/物語)・キャラ/世界観/ペルソナ/シーンタイプの素材ライブラリ・ロアブック・グループ会話・シーン管理・タイムライン・選択肢進行・統合レビュー・シーン演出エンジン・文体切替・**マルチプロバイダ（プロバイダ管理・キャラ別モデル・役割別裏方モデル）**・あらすじ閲覧・会話編集/削除/作り直し・エクスポート/インポート・トークン目安・出力停止対策・状態エンジン（関係性prose＋事実の数＋条件エンジン＋実績＋選択肢連動加点。ADR-1 P1〜P5）・**セッション・オーバーレイ（発見ロア／キャラ成長を素材から分離しセッションへ隔離＋実効ビュー注入＋発見ログUI＋素材への昇格。B1〜B4）**・**画像基盤とPNGカード入出力（IndexedDB画像ストア・EntityAvatar・ST互換キャラカード・世界/ペルソナカード。P1〜P4）**・**画像生成連携（ComfyUI/OpenAI互換の接続先管理・裏方LLMプロンプト起案・アバター生成・挿絵・セッションカード。G1〜G4）**。
+**主要機能はすべて実装済み**。実装済み: セッション(RP/物語)・キャラ/世界観/ペルソナ/シーンタイプの素材ライブラリ・ロアブック・グループ会話・シーン管理・タイムライン・選択肢進行・統合レビュー・シーン演出エンジン・文体切替・**マルチプロバイダ（プロバイダ管理・キャラ別モデル・役割別裏方モデル）**・あらすじ閲覧・会話編集/削除/作り直し・エクスポート/インポート・トークン目安・出力停止対策・状態エンジン（関係性prose＋事実の数＋条件エンジン＋実績＋選択肢連動加点。ADR-1 P1〜P5）・**セッション・オーバーレイ（発見ロア／キャラ成長を素材から分離しセッションへ隔離＋実効ビュー注入＋発見ログUI＋素材への昇格。B1〜B4）**・**画像基盤とPNGカード入出力（IndexedDB画像ストア・EntityAvatar・ST互換キャラカード・世界/ペルソナカード。P1〜P4）**・**画像生成連携（ComfyUI/OpenAI互換の接続先管理・裏方LLMプロンプト起案・アバター生成・挿絵・セッションカード。G1〜G4）**・**画像生成のプロンプト品質改善（スタイルプリセットprefill・起案maxTokens拡大・挿絵起案のシーン全文文脈。V1）**。
 
 ## 次にやること（ロードマップ）
-計画済みフェーズ（画像カード P1〜P4・画像生成連携 G1〜G4）はすべて実装完了。残タスク:
-1. **画像改善 V1〜V4（設計済み・未実装）**: `docs/設計_画像改善_立ち絵と生成ジョブ.md` に詳細設計あり。V1=スタイルプリセット（アニメ/実写の品質タグ prefill）・起案maxTokens 4000・シーン全文起案 → V2=バックグラウンド生成ジョブ（複数枚シード違い・候補選択・ジョブパネル）→ V3=セッション内画像ギャラリー → V4=立ち絵・表情差分（裏方LLM毎応答判定）・シーン背景・ステージ表示。**必ずこの順で1フェーズずつ実装・検証・コミットする**。
+計画済みフェーズ（画像カード P1〜P4・画像生成連携 G1〜G4・画像改善 V1）は実装完了。残タスク:
+1. **画像改善 V2〜V4（設計済み・未実装）**: `docs/設計_画像改善_立ち絵と生成ジョブ.md` に詳細設計あり。V2=バックグラウンド生成ジョブ（複数枚シード違い・候補選択・ジョブパネル）→ V3=セッション内画像ギャラリー → V4=立ち絵・表情差分（裏方LLM毎応答判定）・シーン背景・ステージ表示。**必ずこの順で1フェーズずつ実装・検証・コミットする**。
 2. **ComfyUI 実機での動作確認**: 生成経路はモック検証済みだが、実機（CORS許可起動）での通し確認とワークフローテンプレの拡充（SDXL以外・LoRAノード入りの例）は未実施。
 3. **openai-image 系の実プロバイダ確認**: `response_format: b64_json` 非対応 API（gpt-image-1 等）への追従が必要になったら `imageGen.ts` の openai 経路にバリエーションを足す。ComfyUI は CORS 許可起動（`--enable-cors-header '*'`）が前提。追加フィールドはすべて optional のため persist キーは v3 のまま。
 

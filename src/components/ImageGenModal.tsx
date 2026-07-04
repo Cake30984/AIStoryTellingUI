@@ -4,6 +4,7 @@ import { generateImage } from '../lib/imageGen'
 import { streamChat } from '../lib/openrouter'
 import { parseModelRef, modelRefLabel } from '../lib/providers'
 import { extractJson } from '../lib/json'
+import { STYLE_PRESETS, applyStylePreset } from '../lib/imagePresets'
 import ModelPicker from './ModelPicker'
 
 /** サイズプリセット（openai系は API 側の許容値に依存。エラーはそのまま表示する） */
@@ -26,10 +27,14 @@ interface Props {
 }
 
 export default function ImageGenModal({ title, draftContext, initialPrompt, onAccept, onClose }: Props) {
-  const { imageProviders, providers } = useStore()
+  const { imageProviders, providers, lastImageStyle, setLastImageStyle } = useStore()
   const [providerId, setProviderId] = useState(imageProviders[0]?.id ?? '')
   const [sizeIdx, setSizeIdx] = useState(0)
-  const [prompt, setPrompt] = useState(initialPrompt ?? '')
+  const [styleId, setStyleId] = useState<'anime' | 'realistic' | ''>(lastImageStyle ?? '')
+  const [prompt, setPrompt] = useState(() => {
+    const init = initialPrompt ?? ''
+    return (lastImageStyle ?? '') ? applyStylePreset({ prompt: init, negative: '' }, lastImageStyle ?? '').prompt : init
+  })
   const [negative, setNegative] = useState('')
   const [draftModel, setDraftModel] = useState(draftContext?.modelRef ?? '')
   const [showModelPicker, setShowModelPicker] = useState(false)
@@ -58,6 +63,14 @@ export default function ImageGenModal({ title, draftContext, initialPrompt, onAc
     setResultUrl(blob ? URL.createObjectURL(blob) : '')
   }
 
+  const changeStyle = (v: 'anime' | 'realistic' | '') => {
+    setStyleId(v)
+    setLastImageStyle(v)
+    const applied = applyStylePreset({ prompt, negative }, v)
+    setPrompt(applied.prompt)
+    setNegative(applied.negative)
+  }
+
   const draft = async () => {
     if (!draftContext) return
     const { provider: llm, model } = parseModelRef(draftModel, providers)
@@ -77,18 +90,34 @@ export default function ImageGenModal({ title, draftContext, initialPrompt, onAc
             { role: 'user', content: draftContext.user },
           ],
           temperature: 0.7,
-          maxTokens: 600,
+          maxTokens: 4000,
         },
         () => {},
       )
+      if (!res.text.trim()) {
+        // thinking系モデル等で reasoning が max_tokens を食い潰し本文0文字で終了するケース
+        setError(
+          res.finishReason === 'length'
+            ? '起案が出力上限で本文0文字のまま終了しました。reasoning系モデルの場合は別モデルをお試しください。'
+            : '起案結果が空でした。もう一度お試しください。',
+        )
+        return
+      }
       const json = extractJson<{ prompt?: string; negative?: string }>(res.text)
+      let draftedPrompt = ''
+      let draftedNegative = ''
       if (json?.prompt) {
-        setPrompt(json.prompt)
-        if (typeof json.negative === 'string') setNegative(json.negative)
+        draftedPrompt = json.prompt
+        draftedNegative = typeof json.negative === 'string' ? json.negative : negative
       } else {
         // JSON でなければ全文をプロンプト扱い（フォールバック）
-        setPrompt(res.text.trim())
+        draftedPrompt = res.text.trim()
+        draftedNegative = negative
       }
+      // 起案結果にスタイルタグが混ざっていても、除去した上で選択中スタイルを先頭に付け直す
+      const applied = applyStylePreset({ prompt: draftedPrompt, negative: draftedNegative }, styleId)
+      setPrompt(applied.prompt)
+      setNegative(applied.negative)
     } catch (e) {
       setError(`起案に失敗しました: ${(e as Error).message}`)
     } finally {
@@ -166,6 +195,18 @@ export default function ImageGenModal({ title, draftContext, initialPrompt, onAc
                     {SIZE_PRESETS.map((s, i) => (
                       <option key={i} value={i}>
                         {s.label}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={styleId}
+                    onChange={(e) => changeStyle(e.target.value as 'anime' | 'realistic' | '')}
+                    style={{ flex: 1 }}
+                  >
+                    <option value="">スタイルなし</option>
+                    {STYLE_PRESETS.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.label}
                       </option>
                     ))}
                   </select>
