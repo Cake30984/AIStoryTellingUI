@@ -60,6 +60,7 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist` で localStor
 - `docs/設計_画像カードとアバター.md` — PNG カード入出力（SillyTavern 互換キャラカード＋独自世界/ペルソナカード）・絵文字全廃のアバター画像化（IndexedDB 画像ストア）の設計仕様。フェーズP1〜P4は実装済み
 - `docs/設計_画像生成連携.md` — P5 の詳細設計。ImageProvider（comfyui/openai-image）抽象層・ImageGenModal（裏方LLMプロンプト起案）・アバター生成・`imagePrompt` 固定タグ・挿絵（`Scene.illustrations`）・セッションカード（`aist_session`・画像base64同梱）。フェーズG1〜G4は実装済み
 - `docs/設計_画像改善_立ち絵と生成ジョブ.md` — 画像改善 V1〜V4 の詳細設計（スタイルプリセット・バックグラウンド生成ジョブ・ギャラリー・立ち絵/表情差分/背景）。**V1〜V4実装済み**
+- `docs/設計_画像改善_V5_不具合修正とステージ改善.md` — V4 実使用フィードバックの修正設計（V5a〜V5c。**未実装**）。①保存で立ち絵が消えるバグ（`upsertCharacter` が draft でキャラ全置換し store 直書きの sprites を巻き戻す）等の store 修正、②ステージ帯を廃止しチャット背面のバックドロップに背景・立ち絵を薄く常時表示（`spritesEnabled ?? true`・🏞 トップバー移設・ギャラリー背景タイル）、③起案の固定タグ維持（`pinTags`/`ensureTags`）・negative 初期適用・接続先/起案モデルの記憶・一括生成ガード
 
 ## データモデル（要点）
 すべて「再利用可能な素材ライブラリ」をセッションが参照する構造。
@@ -129,6 +130,7 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist` で localStor
 
 ## 次にやること（ロードマップ）
 計画済みフェーズ（画像カード P1〜P4・画像生成連携 G1〜G4・画像改善 V1〜V4）は実装完了。残タスク:
+0. **画像改善 V5（`docs/設計_画像改善_V5_不具合修正とステージ改善.md`）**: V4 の実使用で見つかった不具合修正（最優先＝保存で立ち絵が消える A-1）とステージのバックドロップ化。V5a → V5b → V5c の順に実装する。
 1. **ComfyUI 実機での動作確認**: 生成経路はモック検証済みだが、実機（CORS許可起動）での通し確認とワークフローテンプレの拡充（SDXL以外・LoRAノード入りの例）は未実施。
 2. **openai-image 系の実プロバイダ確認**: `response_format: b64_json` 非対応 API（gpt-image-1 等）への追従が必要になったら `imageGen.ts` の openai 経路にバリエーションを足す。ComfyUI は CORS 許可起動（`--enable-cors-header '*'`）が前提。追加フィールドはすべて optional のため persist キーは v3 のまま。
 
