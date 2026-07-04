@@ -1048,7 +1048,8 @@ export const useStore = create<AppState>()(
         registerJobAbort(id, ctrl)
         let lastError: string | undefined
         for (let i = 0; i < args.count; i++) {
-          if (get().imageJobs.find((j) => j.id === id)?.status === 'canceled') break
+          const cur = get().imageJobs.find((j) => j.id === id)
+          if (!cur || cur.status === 'canceled') break
           const provider = get().imageProviders.find((p) => p.id === args.providerId)
           if (!provider) {
             lastError = '画像生成の接続先が見つかりません（削除された可能性があります）。'
@@ -1165,10 +1166,14 @@ export const useStore = create<AppState>()(
 
         upsertCharacter: (c) =>
           set((st) => {
-            const exists = st.characters.some((x) => x.id === c.id)
-            const updated = { ...c, updatedAt: Date.now() }
+            const prev = st.characters.find((x) => x.id === c.id)
+            // sprites は store 直接管理（書き手は setCharacterSprite / applyImageJobResult のみ）。
+            // エディタ draft のスナップショットで上書きすると、編集中に生成・解除した立ち絵が
+            // 巻き戻る（消える / deleteImage 済みの imageId が復活する）ため、既存キャラでは常に
+            // store 側の sprites を保持する。
+            const updated = { ...c, ...(prev ? { sprites: prev.sprites } : {}), updatedAt: Date.now() }
             return {
-              characters: exists
+              characters: prev
                 ? st.characters.map((x) => (x.id === c.id ? updated : x))
                 : [updated, ...st.characters],
             }
@@ -1905,6 +1910,7 @@ export const useStore = create<AppState>()(
                     usedEventIds,
                     state: applyState(sess.state),
                     overlay: nextOverlay(sess.overlay),
+                    spriteEmotions: [], // シーンは時間・場面が飛ぶため前シーンの表情を持ち越さない
                     updatedAt: Date.now(),
                   }
                 : sess,
@@ -2269,7 +2275,12 @@ export const useStore = create<AppState>()(
           const { provider, model } = parseModelRef(choicesModelOf(session), get().providers)
           if (!provider?.apiKey.trim()) return
           const recent = session.messages
-            .filter((m) => m.content.trim().length > 0)
+            .filter(
+              (m) =>
+                m.content.trim().length > 0 &&
+                m.content !== CONTINUE_PROMPT &&
+                m.content !== SCENE_START_PROMPT,
+            )
             .slice(-3)
             .map((m) => m.content)
           if (recent.length === 0) return
@@ -2529,11 +2540,13 @@ export const useStore = create<AppState>()(
           }))
         },
 
-        dismissImageJob: (jobId) =>
+        dismissImageJob: (jobId) => {
+          abortJobController(jobId) // 実行中に dismiss された場合も裏の fetch を確実に止める
           set((st) => ({
             imageJobs: st.imageJobs.filter((j) => j.id !== jobId),
             imageJobToasts: st.imageJobToasts.filter((t) => t.jobId !== jobId),
-          })),
+          }))
+        },
 
         dismissImageJobToasts: () => set({ imageJobToasts: [] }),
 
