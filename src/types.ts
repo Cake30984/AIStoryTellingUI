@@ -2,6 +2,17 @@ export type Role = 'system' | 'user' | 'assistant'
 
 export type SessionMode = 'roleplay' | 'story'
 
+/** 感情の固定セット（V4）。id は英語（プロンプトのタグと対応）、label は UI 表示用 */
+export const EMOTIONS = [
+  { id: 'neutral', label: 'ふつう', tags: 'neutral expression' },
+  { id: 'joy', label: '喜び', tags: 'smile, happy, cheerful expression' },
+  { id: 'anger', label: '怒り', tags: 'angry, frowning, annoyed expression' },
+  { id: 'sadness', label: '悲しみ', tags: 'sad, teary eyes, downcast expression' },
+  { id: 'shy', label: '照れ', tags: 'blushing, embarrassed, shy expression' },
+  { id: 'surprise', label: '驚き', tags: 'surprised, wide eyes, open mouth' },
+] as const
+export type EmotionId = (typeof EMOTIONS)[number]['id']
+
 /** アバター表現（画像参照＋テーマ色）。絵文字は廃止 */
 export interface Avatar {
   /** IndexedDB 画像ストアの id。未設定なら色＋名前イニシャルで表示 */
@@ -36,6 +47,8 @@ export interface Character {
   avatar: Avatar
   /** 画像生成用の固定英語タグ（画風・髪色・LoRA トリガー等。挿絵/アバター生成時に自動結合） */
   imagePrompt?: string
+  /** 表情つき立ち絵（V4。emotion ごとに1枚。ステージ表示・裏方感情判定と連動） */
+  sprites?: { emotion: EmotionId; imageId: string }[]
   tags: string[]
   /**
    * このキャラ専用の本編モデル参照（ModelRef 形式）。
@@ -247,6 +260,8 @@ export interface Scene {
   sceneTypeId?: string
   /** 挿絵（手動生成のみ。任意＝旧データには無い） */
   illustrations?: SceneIllustration[]
+  /** シーン背景画像（V4。手動生成・シーンごとに1枚） */
+  backgroundImageId?: string
   /** 終了済みなら時刻 */
   endedAt?: number
   createdAt: number
@@ -376,6 +391,10 @@ export interface Session {
   state: SessionState
   /** 発見・深化した設定の上乗せ（セッション固有・素材は不変） */
   overlay: SessionOverlay
+  /** 立ち絵ステージ表示の ON/OFF（V4） */
+  spritesEnabled?: boolean
+  /** 各キャラの現在の表情判定結果（V4・裏方LLMが毎応答後に判定） */
+  spriteEmotions?: { characterId: string; emotion: EmotionId }[]
   messages: Message[]
   temperature: number
   maxTokens: number

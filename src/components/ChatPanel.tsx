@@ -21,6 +21,7 @@ import StatusPanel from './StatusPanel'
 import DiscoveryPanel from './DiscoveryPanel'
 import GalleryModal from './GalleryModal'
 import EntityAvatar from './EntityAvatar'
+import StageBar from './StageBar'
 
 interface Props {
   session: Session
@@ -364,6 +365,13 @@ export default function ChatPanel({ session }: Props) {
           🖼
         </button>
         <button
+          className={'icon-btn' + (session.spritesEnabled ? ' on' : '')}
+          onClick={() => updateSession(session.id, { spritesEnabled: !session.spritesEnabled })}
+          title="立ち絵ステージ表示"
+        >
+          🎭
+        </button>
+        <button
           className="icon-btn"
           onClick={() => setShowImageGen(true)}
           disabled={!scene}
@@ -393,6 +401,8 @@ export default function ChatPanel({ session }: Props) {
           🗑
         </button>
       </div>
+
+      {session.spritesEnabled && <StageBar session={session} scene={scene} participants={participants} />}
 
       <div className="chat">
         <div className="chat-inner">

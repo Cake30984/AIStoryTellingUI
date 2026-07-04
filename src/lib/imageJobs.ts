@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react'
+import type { EmotionId } from '../types'
 
 /** バックグラウンド画像生成ジョブの対象（保存先）。Blob を含むため store 側でも localStorage には入れない */
 export type ImageJobTarget =
   | { type: 'scene-illustration'; sessionId: string; sceneId: string; messageId?: string }
   | { type: 'character-avatar'; characterId: string }
   | { type: 'persona-avatar'; personaId: string }
+  | { type: 'character-sprite'; characterId: string; emotion: EmotionId }
+  | { type: 'scene-background'; sessionId: string; sceneId: string }
 
 export interface ImageJob {
   id: string

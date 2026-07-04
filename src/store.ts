@@ -10,6 +10,7 @@ import type {
   Condition,
   CounterDef,
   Development,
+  EmotionId,
   ExportBundle,
   ImageProvider,
   LoreEntry,
@@ -29,8 +30,9 @@ import type {
   StatDef,
   World,
 } from './types'
+import { EMOTIONS } from './types'
 import { fetchModels, streamChat } from './lib/openrouter'
-import { gcImages, putImage } from './lib/imageStore'
+import { deleteImage, gcImages, putImage } from './lib/imageStore'
 import { normalizeImage } from './lib/avatarGen'
 import { generateImage } from './lib/imageGen'
 import {
@@ -47,6 +49,7 @@ import {
   choicesUserNudge,
   CONTINUATION_NUDGE,
   CONTINUE_PROMPT,
+  emotionSystem,
   nextSceneSystem,
   reviewSystem,
   SCENE_START_PROMPT,
@@ -192,6 +195,29 @@ function unlockAchievements(
     }
   }
   return { state: candidate, unlocked }
+}
+
+/**
+ * 表情判定（V4）のモデル出力を検証・解決する純粋関数。
+ * キャラ名は完全一致 → 前方一致の順で解決し、解決できない名前・6値以外の emotion は捨てる。
+ */
+export function resolveEmotionUpdates(
+  raw: { character?: string; emotion?: string }[],
+  characters: { id: string; name: string }[],
+): { characterId: string; emotion: EmotionId }[] {
+  const validEmotions = new Set(EMOTIONS.map((e) => e.id as string))
+  const out: { characterId: string; emotion: EmotionId }[] = []
+  for (const item of raw) {
+    const name = item.character?.trim()
+    const emotion = item.emotion
+    if (!name || !emotion || !validEmotions.has(emotion)) continue
+    const hit =
+      characters.find((c) => c.name === name) ??
+      characters.find((c) => c.name && (name.startsWith(c.name) || c.name.startsWith(name)))
+    if (!hit) continue
+    out.push({ characterId: hit.id, emotion: emotion as EmotionId })
+  }
+  return out
 }
 
 /**
@@ -600,8 +626,20 @@ interface AppState {
   cancelImageJob: (jobId: string) => void
   dismissImageJob: (jobId: string) => void
   dismissImageJobToasts: () => void
-  /** 候補から採用。保存先は target で分岐（挿絵/キャラアバター/ペルソナアバター）し、完了後ジョブを自動 dismiss */
+  /** 候補から採用。保存先は target で分岐（挿絵/キャラアバター/ペルソナアバター/立ち絵/背景）し、完了後ジョブを自動 dismiss */
   applyImageJobResult: (jobId: string, index: number) => Promise<void>
+  /** 立ち絵セットの一括生成（V4）。6感情ぶんのジョブを前を待って順番に起動する（ComfyUI が並列に弱いため） */
+  startSpriteBatch: (args: {
+    characterId: string
+    characterName: string
+    providerId: string
+    prompts: { emotion: EmotionId; prompt: string }[]
+    negative?: string
+    width: number
+    height: number
+  }) => void
+  /** 表情判定（V4・方式A）。runCompletion の正常完了後に fire-and-forget で呼ぶ */
+  classifyEmotions: (sessionId: string) => Promise<void>
 
   // データ入出力
   exportBundle: () => ExportBundle
@@ -919,6 +957,10 @@ export const useStore = create<AppState>()(
         if (after && finalMsg && finalMsg.content.trim() && after.choiceMode !== 'off') {
           await genChoices(after, assistantId)
         }
+        // 表情判定（V4・方式A）。本編をブロックしない fire-and-forget
+        if (finalMsg && finalMsg.content.trim()) {
+          get().classifyEmotions(sessionId)
+        }
       }
 
       /** 直近のアシスタント応答に対する選択肢を生成して付与 */
@@ -988,6 +1030,58 @@ export const useStore = create<AppState>()(
         } finally {
           controller = null
           set({ isGeneratingChoices: false })
+        }
+      }
+
+      /**
+       * 画像生成ジョブ1件分の直列生成ループ（startImageJob と startSpriteBatch の共通処理）。
+       * ジョブは呼び出し側が事前に imageJobs へ追加済みであること。完了まで待つ Promise を返す
+       * （バッチ生成は前のジョブがこれを await し終えてから次を起動する）。
+       */
+      async function runImageJobLoop(
+        id: string,
+        args: { providerId: string; prompt: string; negative?: string; width: number; height: number; count: number },
+      ): Promise<void> {
+        const ctrl = new AbortController()
+        registerJobAbort(id, ctrl)
+        let lastError: string | undefined
+        for (let i = 0; i < args.count; i++) {
+          if (get().imageJobs.find((j) => j.id === id)?.status === 'canceled') break
+          const provider = get().imageProviders.find((p) => p.id === args.providerId)
+          if (!provider) {
+            lastError = '画像生成の接続先が見つかりません（削除された可能性があります）。'
+            break
+          }
+          try {
+            const blob = await generateImage(
+              provider,
+              { prompt: args.prompt, negative: args.negative, width: args.width, height: args.height },
+              ctrl.signal,
+            )
+            set((st) => ({
+              imageJobs: st.imageJobs.map((j) => (j.id === id ? { ...j, results: [...j.results, blob] } : j)),
+            }))
+          } catch (e) {
+            if ((e as Error).name === 'AbortError') {
+              clearJobAbort(id)
+              set((st) => ({
+                imageJobs: st.imageJobs.map((j) => (j.id === id ? { ...j, status: 'canceled' as const } : j)),
+              }))
+              return
+            }
+            lastError = (e as Error).message
+            break
+          }
+        }
+        clearJobAbort(id)
+        const finished = get().imageJobs.find((j) => j.id === id)
+        if (!finished || finished.status === 'canceled') return
+        const status = finished.results.length > 0 ? ('selecting' as const) : ('error' as const)
+        set((st) => ({
+          imageJobs: st.imageJobs.map((j) => (j.id === id ? { ...j, status, error: lastError } : j)),
+        }))
+        if (status === 'selecting') {
+          set((st) => ({ imageJobToasts: [...st.imageJobToasts, { jobId: id, label: finished.label }] }))
         }
       }
 
@@ -2145,6 +2239,50 @@ export const useStore = create<AppState>()(
           set({ isStreaming: false })
         },
 
+        classifyEmotions: async (sessionId) => {
+          const session = get().sessions.find((s) => s.id === sessionId)
+          if (!session?.spritesEnabled) return
+          const castChars = get().characters.filter((c) => session.characterIds.includes(c.id))
+          if (!castChars.some((c) => (c.sprites?.length ?? 0) > 0)) return
+          const { provider, model } = parseModelRef(choicesModelOf(session), get().providers)
+          if (!provider?.apiKey.trim()) return
+          const recent = session.messages
+            .filter((m) => m.content.trim().length > 0)
+            .slice(-3)
+            .map((m) => m.content)
+          if (recent.length === 0) return
+          try {
+            const raw = await streamChat(
+              {
+                provider,
+                model,
+                messages: [
+                  { role: 'system', content: emotionSystem(castChars.map((c) => c.name)) },
+                  { role: 'user', content: recent.join('\n---\n') },
+                ],
+                temperature: 0,
+                maxTokens: 300,
+              },
+              () => {},
+            )
+            const json = extractJson<{ emotions?: { character?: string; emotion?: string }[] }>(raw.text)
+            const updates = resolveEmotionUpdates(json?.emotions ?? [], castChars)
+            if (updates.length === 0) return
+            const cur = get().sessions.find((s) => s.id === sessionId)
+            if (!cur) return
+            const nextEmotions = [...(cur.spriteEmotions ?? [])]
+            for (const u of updates) {
+              const idx = nextEmotions.findIndex((e) => e.characterId === u.characterId)
+              if (idx >= 0) nextEmotions[idx] = u
+              else nextEmotions.push(u)
+            }
+            get().updateSession(sessionId, { spriteEmotions: nextEmotions })
+          } catch (e) {
+            // 表情判定は失敗しても本編には影響させない。現状維持（次の応答でまた判定される）
+            console.warn('[emotion] 判定に失敗:', (e as Error)?.message)
+          }
+        },
+
         exportBundle: () => {
           const { characters, worlds, personas, sceneTypes, sessions } = get()
           // providers（API キー）は localStorage のみに保持し、エクスポートには含めない（共有時の漏洩防止）
@@ -2223,13 +2361,21 @@ export const useStore = create<AppState>()(
               imageId: x.avatar.imageId ? idMap.get(x.avatar.imageId) : undefined,
             },
           })
+          // 立ち絵の imageId も同梱画像への参照なので remap する（忘れるとカード復元で立ち絵が消える）
+          const remapSprites = (c: Character): Character =>
+            c.sprites && c.sprites.length > 0
+              ? { ...c, sprites: c.sprites.map((sp) => ({ ...sp, imageId: idMap.get(sp.imageId) ?? sp.imageId })) }
+              : c
 
           // 2) 素材は importBundle と同じ id マージ（既存 id はスキップ＝既存優先）
           //    セッション本体は常に追加（id 衝突時は新 id 採番）
           set((st) => {
             const now = Date.now()
             const charIds = new Set(st.characters.map((c) => c.id))
-            const freshChars = bundle.characters.filter((c) => !charIds.has(c.id)).map(remapAvatar)
+            const freshChars = bundle.characters
+              .filter((c) => !charIds.has(c.id))
+              .map(remapAvatar)
+              .map(remapSprites)
 
             const worldExists = bundle.world && st.worlds.some((w) => w.id === bundle.world!.id)
             const freshWorlds = bundle.world && !worldExists ? [bundle.world] : []
@@ -2241,13 +2387,16 @@ export const useStore = create<AppState>()(
             const session: Session = {
               ...bundle.session,
               id: sessionIdTaken ? uid() : bundle.session.id,
-              // 挿絵の imageId を remap（対応が無いものは表示フォールバックに任せてそのまま）
+              // 挿絵・背景の imageId を remap（対応が無いものは表示フォールバックに任せてそのまま）
               scenes: bundle.session.scenes.map((sc) => ({
                 ...sc,
                 illustrations: (sc.illustrations ?? []).map((ill) => ({
                   ...ill,
                   imageId: idMap.get(ill.imageId) ?? ill.imageId,
                 })),
+                ...(sc.backgroundImageId
+                  ? { backgroundImageId: idMap.get(sc.backgroundImageId) ?? sc.backgroundImageId }
+                  : {}),
               })),
               overlay:
                 bundle.session.overlay &&
@@ -2316,52 +2465,37 @@ export const useStore = create<AppState>()(
             createdAt: Date.now(),
           }
           set((st) => ({ imageJobs: [...st.imageJobs, job] }))
+          runImageJobLoop(id, args)
+          return id
+        },
 
+        startSpriteBatch: (args) => {
           ;(async () => {
-            const ctrl = new AbortController()
-            registerJobAbort(id, ctrl)
-            let lastError: string | undefined
-            for (let i = 0; i < args.count; i++) {
-              if (get().imageJobs.find((j) => j.id === id)?.status === 'canceled') break
-              const provider = get().imageProviders.find((p) => p.id === args.providerId)
-              if (!provider) {
-                lastError = '画像生成の接続先が見つかりません（削除された可能性があります）。'
-                break
+            for (const p of args.prompts) {
+              const emotionLabel = EMOTIONS.find((e) => e.id === p.emotion)?.label ?? p.emotion
+              const id = uid()
+              const jobArgs = {
+                providerId: args.providerId,
+                prompt: p.prompt,
+                negative: args.negative,
+                width: args.width,
+                height: args.height,
+                count: 1,
               }
-              try {
-                const blob = await generateImage(
-                  provider,
-                  { prompt: args.prompt, negative: args.negative, width: args.width, height: args.height },
-                  ctrl.signal,
-                )
-                set((st) => ({
-                  imageJobs: st.imageJobs.map((j) => (j.id === id ? { ...j, results: [...j.results, blob] } : j)),
-                }))
-              } catch (e) {
-                if ((e as Error).name === 'AbortError') {
-                  clearJobAbort(id)
-                  set((st) => ({
-                    imageJobs: st.imageJobs.map((j) => (j.id === id ? { ...j, status: 'canceled' as const } : j)),
-                  }))
-                  return
-                }
-                lastError = (e as Error).message
-                break
+              const job: ImageJob = {
+                id,
+                label: `立ち絵: ${args.characterName}（${emotionLabel}）`,
+                target: { type: 'character-sprite', characterId: args.characterId, emotion: p.emotion },
+                ...jobArgs,
+                status: 'running',
+                results: [],
+                createdAt: Date.now(),
               }
-            }
-            clearJobAbort(id)
-            const finished = get().imageJobs.find((j) => j.id === id)
-            if (!finished || finished.status === 'canceled') return
-            const status = finished.results.length > 0 ? ('selecting' as const) : ('error' as const)
-            set((st) => ({
-              imageJobs: st.imageJobs.map((j) => (j.id === id ? { ...j, status, error: lastError } : j)),
-            }))
-            if (status === 'selecting') {
-              set((st) => ({ imageJobToasts: [...st.imageJobToasts, { jobId: id, label: finished.label }] }))
+              set((st) => ({ imageJobs: [...st.imageJobs, job] }))
+              // 前の感情のジョブが完了してから次を起動する（ComfyUI は並列に弱いため）
+              await runImageJobLoop(id, jobArgs)
             }
           })()
-
-          return id
         },
 
         cancelImageJob: (jobId) => {
@@ -2407,7 +2541,7 @@ export const useStore = create<AppState>()(
                 c.id === target.characterId ? { ...c, avatar: { ...c.avatar, imageId }, updatedAt: Date.now() } : c,
               ),
             }))
-          } else {
+          } else if (target.type === 'persona-avatar') {
             if (!get().personas.some((p) => p.id === target.personaId)) {
               throw new Error('対象のペルソナが見つかりません（削除された可能性があります）。')
             }
@@ -2418,6 +2552,48 @@ export const useStore = create<AppState>()(
                 p.id === target.personaId ? { ...p, avatar: { ...p.avatar, imageId }, updatedAt: Date.now() } : p,
               ),
             }))
+          } else if (target.type === 'character-sprite') {
+            const character = get().characters.find((c) => c.id === target.characterId)
+            if (!character) {
+              throw new Error('対象のキャラクターが見つかりません（削除された可能性があります）。')
+            }
+            const oldImageId = character.sprites?.find((s) => s.emotion === target.emotion)?.imageId
+            const normalized = await normalizeImage(blob, 1024)
+            const imageId = await putImage(normalized)
+            set((st) => ({
+              characters: st.characters.map((c) =>
+                c.id !== target.characterId
+                  ? c
+                  : {
+                      ...c,
+                      sprites: [
+                        ...(c.sprites ?? []).filter((s) => s.emotion !== target.emotion),
+                        { emotion: target.emotion, imageId },
+                      ],
+                      updatedAt: Date.now(),
+                    },
+              ),
+            }))
+            if (oldImageId) await deleteImage(oldImageId)
+          } else {
+            // scene-background
+            const oldImageId = get()
+              .sessions.find((s) => s.id === target.sessionId)
+              ?.scenes.find((sc) => sc.id === target.sceneId)?.backgroundImageId
+            const imageId = await putImage(blob)
+            set((st) => ({
+              sessions: st.sessions.map((s) =>
+                s.id !== target.sessionId
+                  ? s
+                  : {
+                      ...s,
+                      scenes: s.scenes.map((sc) =>
+                        sc.id !== target.sceneId ? sc : { ...sc, backgroundImageId: imageId },
+                      ),
+                    },
+              ),
+            }))
+            if (oldImageId) await deleteImage(oldImageId)
           }
           get().dismissImageJob(jobId)
         },
@@ -2425,11 +2601,18 @@ export const useStore = create<AppState>()(
         gcUnusedImages: async () => {
           const { characters, personas, sessions } = get()
           const used = new Set<string>()
-          for (const c of characters) if (c.avatar.imageId) used.add(c.avatar.imageId)
+          for (const c of characters) {
+            if (c.avatar.imageId) used.add(c.avatar.imageId)
+            // 立ち絵も使用中扱いにする（入れ忘れると GC で立ち絵が消える。V4の最重要の落とし穴）
+            for (const sp of c.sprites ?? []) used.add(sp.imageId)
+          }
           for (const p of personas) if (p.avatar.imageId) used.add(p.avatar.imageId)
-          // 挿絵も使用中扱いにする（入れ忘れると GC が挿絵を削除してしまう）
+          // 挿絵・背景も使用中扱いにする（入れ忘れると GC が削除してしまう）
           for (const s of sessions)
-            for (const sc of s.scenes) for (const ill of sc.illustrations ?? []) used.add(ill.imageId)
+            for (const sc of s.scenes) {
+              for (const ill of sc.illustrations ?? []) used.add(ill.imageId)
+              if (sc.backgroundImageId) used.add(sc.backgroundImageId)
+            }
           return gcImages(used)
         },
       }

@@ -254,6 +254,11 @@ select {
   color: var(--text);
   border-color: var(--accent);
 }
+.icon-btn.on {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
 
 /* ---------- 会話エリア ---------- */
 .chat {
@@ -1583,4 +1588,89 @@ select {
 .log-summary.empty {
   font-style: italic;
   color: var(--text-faint);
+}
+
+/* ---------- 立ち絵セット（V4） ---------- */
+.sprite-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.sprite-slot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 92px;
+}
+.sprite-thumb {
+  width: 92px;
+  height: 128px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-elev2);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+.sprite-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.sprite-empty {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.sprite-label {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+/* ---------- ステージ表示（立ち絵・背景。V4） ---------- */
+.stage {
+  position: relative;
+  height: 260px;
+  margin-bottom: 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-elev2);
+  overflow: hidden;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.stage-bg-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.stage-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0) 55%, rgba(0, 0, 0, 0.45) 100%);
+}
+.stage-sprites {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 4px;
+  height: 100%;
+  padding-top: 12px;
+}
+.stage-sprite-img {
+  height: 100%;
+  width: auto;
+  max-width: 220px;
+  object-fit: contain;
+  transition: opacity 0.25s ease;
+}
+.stage-bg-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: rgba(0, 0, 0, 0.55);
 }
