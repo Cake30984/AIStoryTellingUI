@@ -3,6 +3,8 @@ import { currentScene, reviewModelOf, useStore } from '../store'
 import {
   CONTINUE_PROMPT,
   SCENE_START_PROMPT,
+  backgroundContextUser,
+  backgroundPromptSystem,
   illustrationContextUser,
   illustrationPromptSystem,
 } from '../lib/prompts'
@@ -21,7 +23,7 @@ import StatusPanel from './StatusPanel'
 import DiscoveryPanel from './DiscoveryPanel'
 import GalleryModal from './GalleryModal'
 import EntityAvatar from './EntityAvatar'
-import StageBar from './StageBar'
+import StageBackdrop from './StageBackdrop'
 
 interface Props {
   session: Session
@@ -90,6 +92,7 @@ export default function ChatPanel({ session }: Props) {
     characters,
     personas,
     providers,
+    worlds,
   } = useStore()
 
   const [text, setText] = useState('')
@@ -101,6 +104,7 @@ export default function ChatPanel({ session }: Props) {
   const [showDiscovery, setShowDiscovery] = useState(false)
   const [showGallery, setShowGallery] = useState(false)
   const [showImageGen, setShowImageGen] = useState(false)
+  const [showBgGen, setShowBgGen] = useState(false)
   const [showImageJobs, setShowImageJobs] = useState(false)
   const [speaker, setSpeaker] = useState<string | undefined>(undefined)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
@@ -121,6 +125,8 @@ export default function ChatPanel({ session }: Props) {
         .filter((c): c is NonNullable<typeof c> => !!c),
     [castIds, characters],
   )
+  const world = worlds.find((w) => w.id === session.worldId)
+  const stageOn = session.spritesEnabled ?? true // 未設定は ON（コンテンツが無ければ何も描かれない）
   const persona = personas.find((p) => p.id === session.personaId)
   const novel = session.narrativeStyle === 'novel'
   const groupMode = session.mode === 'roleplay' && participants.length > 1 && !novel
@@ -365,9 +371,9 @@ export default function ChatPanel({ session }: Props) {
           🖼
         </button>
         <button
-          className={'icon-btn' + (session.spritesEnabled ? ' on' : '')}
-          onClick={() => updateSession(session.id, { spritesEnabled: !session.spritesEnabled })}
-          title="立ち絵ステージ表示"
+          className={'icon-btn' + (stageOn ? ' on' : '')}
+          onClick={() => updateSession(session.id, { spritesEnabled: !stageOn })}
+          title="背景・立ち絵の表示（立ち絵はキャラクター編集の「🎭 立ち絵セット」で生成できます）"
         >
           🎭
         </button>
@@ -378,6 +384,14 @@ export default function ChatPanel({ session }: Props) {
           title={scene ? 'この場面の挿絵を生成' : '物語を開始すると挿絵を生成できます'}
         >
           🎨
+        </button>
+        <button
+          className="icon-btn"
+          onClick={() => setShowBgGen(true)}
+          disabled={!scene}
+          title={scene ? 'この場面の背景を生成' : '物語を開始すると背景を生成できます'}
+        >
+          🏞
         </button>
         {imageJobs.length > 0 && (
           <button
@@ -402,73 +416,74 @@ export default function ChatPanel({ session }: Props) {
         </button>
       </div>
 
-      {session.spritesEnabled && <StageBar session={session} scene={scene} participants={participants} />}
-
-      <div className="chat">
-        <div className="chat-inner">
-          {session.messages.length === 0 && (
-            <div className="chat-hint">
-              {!isConfigured ? (
-                <p>
-                  右上の ⚙ から
-                  {session.mode === 'roleplay' ? '参加キャラ' : '物語の前提'}を設定しましょう。
-                </p>
-              ) : session.mode === 'roleplay' ? (
-                <p>下の入力欄から話しかけてみましょう。</p>
-              ) : (
-                <p>「物語をはじめる」を押すか、最初の状況を入力してください。</p>
-              )}
-            </div>
-          )}
-
-          {session.scenes.map((sc) => {
-            const isCurrent = sc.id === session.currentSceneId
-            const msgs = session.messages.filter(
-              (m) => m.sceneId === sc.id || (isCurrent && !m.sceneId),
-            )
-            if (msgs.length === 0 && !sc.summary && !isCurrent) return null
-            const open = isCurrent || expanded.has(sc.id)
-            const castNames = sc.activeCharacterIds
-              .map((id) => characters.find((c) => c.id === id)?.name)
-              .filter(Boolean)
-            // 複数シーンがある時だけ仕切りを表示
-            const showDivider = session.scenes.length > 1
-            return (
-              <Fragment key={sc.id}>
-                {showDivider && (
-                  <div className="scene-divider">
-                    <span className="scene-title">📖 {sc.title}</span>
-                    {castNames.length > 0 && (
-                      <span className="scene-cast">{castNames.join('・')}</span>
-                    )}
-                    {!isCurrent && msgs.length > 0 && (
-                      <button className="scene-toggle" onClick={() => toggleScene(sc.id)}>
-                        {open ? '会話を隠す' : '会話を表示'}
-                      </button>
-                    )}
-                  </div>
+      <div className="chat-wrap">
+        {stageOn && <StageBackdrop session={session} scene={scene} participants={participants} />}
+        <div className="chat">
+          <div className="chat-inner">
+            {session.messages.length === 0 && (
+              <div className="chat-hint">
+                {!isConfigured ? (
+                  <p>
+                    右上の ⚙ から
+                    {session.mode === 'roleplay' ? '参加キャラ' : '物語の前提'}を設定しましょう。
+                  </p>
+                ) : session.mode === 'roleplay' ? (
+                  <p>下の入力欄から話しかけてみましょう。</p>
+                ) : (
+                  <p>「物語をはじめる」を押すか、最初の状況を入力してください。</p>
                 )}
-                {!isCurrent && sc.summary && (
-                  <div className="scene-summary">
-                    <div className="scene-summary-label">
-                      あらすじ
-                      <button
-                        className="scene-summary-regen"
-                        onClick={() => prepareSceneReview(sc.id)}
-                        disabled={isStreaming || isReviewing}
-                        title="このシーンの要約と次シーンの方針を再生成する"
-                      >
-                        🔄 再生成
-                      </button>
+              </div>
+            )}
+
+            {session.scenes.map((sc) => {
+              const isCurrent = sc.id === session.currentSceneId
+              const msgs = session.messages.filter(
+                (m) => m.sceneId === sc.id || (isCurrent && !m.sceneId),
+              )
+              if (msgs.length === 0 && !sc.summary && !isCurrent) return null
+              const open = isCurrent || expanded.has(sc.id)
+              const castNames = sc.activeCharacterIds
+                .map((id) => characters.find((c) => c.id === id)?.name)
+                .filter(Boolean)
+              // 複数シーンがある時だけ仕切りを表示
+              const showDivider = session.scenes.length > 1
+              return (
+                <Fragment key={sc.id}>
+                  {showDivider && (
+                    <div className="scene-divider">
+                      <span className="scene-title">📖 {sc.title}</span>
+                      {castNames.length > 0 && (
+                        <span className="scene-cast">{castNames.join('・')}</span>
+                      )}
+                      {!isCurrent && msgs.length > 0 && (
+                        <button className="scene-toggle" onClick={() => toggleScene(sc.id)}>
+                          {open ? '会話を隠す' : '会話を表示'}
+                        </button>
+                      )}
                     </div>
-                    <div className="scene-summary-body">{sc.summary}</div>
-                  </div>
-                )}
-                {open && renderSceneContent(sc, msgs)}
-              </Fragment>
-            )
-          })}
-          <div ref={anchorRef} className="scroll-anchor" />
+                  )}
+                  {!isCurrent && sc.summary && (
+                    <div className="scene-summary">
+                      <div className="scene-summary-label">
+                        あらすじ
+                        <button
+                          className="scene-summary-regen"
+                          onClick={() => prepareSceneReview(sc.id)}
+                          disabled={isStreaming || isReviewing}
+                          title="このシーンの要約と次シーンの方針を再生成する"
+                        >
+                          🔄 再生成
+                        </button>
+                      </div>
+                      <div className="scene-summary-body">{sc.summary}</div>
+                    </div>
+                  )}
+                  {open && renderSceneContent(sc, msgs)}
+                </Fragment>
+              )
+            })}
+            <div ref={anchorRef} className="scroll-anchor" />
+          </div>
         </div>
       </div>
 
@@ -712,6 +727,29 @@ export default function ChatPanel({ session }: Props) {
           }}
           label={`挿絵: ${scene.title || 'シーン'}`}
           onClose={() => setShowImageGen(false)}
+        />
+      )}
+      {showBgGen && scene && (
+        <ImageGenModal
+          title="場面の背景を生成"
+          draftContext={{
+            system: backgroundPromptSystem(),
+            user: backgroundContextUser({
+              sceneTitle: scene.title,
+              sceneNote: scene.note,
+              timeLabel: scene.timeLabel,
+              worldDescription: world?.description,
+              recentMessages: session.messages
+                .filter((m) => (m.sceneId === scene.id || !m.sceneId) && m.content.trim())
+                .slice(-6)
+                .map((m) => m.content),
+            }),
+            modelRef: reviewModelOf(session),
+          }}
+          defaultSizeIdx={1}
+          target={{ type: 'scene-background', sessionId: session.id, sceneId: scene.id }}
+          label={`背景: ${scene.title || 'シーン'}`}
+          onClose={() => setShowBgGen(false)}
         />
       )}
       {showImageJobs && <ImageJobsPanel onClose={() => setShowImageJobs(false)} />}

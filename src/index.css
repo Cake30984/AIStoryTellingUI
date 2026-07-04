@@ -262,6 +262,8 @@ select {
 
 /* ---------- 会話エリア ---------- */
 .chat {
+  position: relative;
+  z-index: 1;
   flex: 1;
   overflow-y: auto;
   padding: 24px 0 8px;
@@ -1636,50 +1638,68 @@ select {
   width: 100%;
 }
 
-/* ---------- ステージ表示（立ち絵・背景。V4） ---------- */
-.stage {
-  position: relative;
-  height: 260px;
-  margin-bottom: 10px;
-  border-radius: var(--radius);
-  border: 1px solid var(--border);
-  background: var(--bg-elev2);
-  overflow: hidden;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
+/* ---------- ステージ・バックドロップ（背景＋立ち絵を本文の背面に薄く敷く。V5b） ---------- */
+:root {
+  --stage-bg-opacity: 0.25; /* 背景画像の濃さ（文字の可読性と相談してここだけ調整） */
+  --stage-sprite-opacity: 0.5; /* 立ち絵の濃さ */
 }
-.stage-bg-img {
+.chat-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.stage-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none; /* 表示専用。本文のクリック・選択を妨げない */
+}
+.stage-backdrop-bg {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
+  opacity: var(--stage-bg-opacity);
 }
-.stage-overlay {
+.stage-backdrop-sprites {
   position: absolute;
-  inset: 0;
-  background: linear-gradient(to bottom, rgba(0, 0, 0, 0) 55%, rgba(0, 0, 0, 0.45) 100%);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: min(72%, 520px);
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-evenly;
+  gap: 8px;
+  padding: 0 4%;
 }
-.stage-sprites {
-  position: relative;
+/* キャラ数で横幅を等分するセル。何人いても重ならない */
+.stage-backdrop-cell {
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 340px;
+  height: 100%;
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  gap: 4px;
-  height: 100%;
-  padding-top: 12px;
 }
-.stage-sprite-img {
+.stage-backdrop-sprite {
+  width: 100%;
   height: 100%;
-  width: auto;
-  max-width: 220px;
   object-fit: contain;
-  transition: opacity 0.25s ease;
+  object-position: bottom center;
+  opacity: var(--stage-sprite-opacity);
+  animation: sprite-fade 0.3s ease;
 }
-.stage-bg-btn {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  background: rgba(0, 0, 0, 0.55);
+@keyframes sprite-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: var(--stage-sprite-opacity);
+  }
 }
