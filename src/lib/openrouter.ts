@@ -1,4 +1,5 @@
 import type { OpenRouterModel, Provider, Role } from '../types'
+import { appFetch } from './platform'
 
 export interface ChatMessage {
   role: Role
@@ -42,7 +43,7 @@ export async function streamChat(
   params: ChatParams,
   onDelta: (chunk: string) => void,
 ): Promise<ChatResult> {
-  const res = await fetch(`${params.provider.baseUrl}/chat/completions`, {
+  const res = await appFetch(`${params.provider.baseUrl}/chat/completions`, {
     method: 'POST',
     headers: commonHeaders(params.provider),
     signal: params.signal,
@@ -100,7 +101,7 @@ export async function streamChat(
 
 /** 利用可能なモデル一覧を取得 */
 export async function fetchModels(provider: Provider): Promise<OpenRouterModel[]> {
-  const res = await fetch(`${provider.baseUrl}/models`, {
+  const res = await appFetch(`${provider.baseUrl}/models`, {
     headers: provider.apiKey ? { Authorization: `Bearer ${provider.apiKey}` } : undefined,
   })
   if (!res.ok) {

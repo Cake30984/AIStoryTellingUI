@@ -129,6 +129,18 @@ Rust command `stream_chat(url, headers, body, channel)` を自作: `reqwest` の
 
 **完了条件**: PoC 1〜4 すべて通過。`npm run dev`（ブラウザ版）が従来通り動くこと（Preview MCP・エラー 0 件）。
 
+### 実装結果（2026-07-05）
+
+- 導入・appFetch 置換・capabilities は上記のとおり実装。**plugin-http でストリーミング・中断は正常動作**（代替の Rust command は不要だった）。
+- **Vite の watcher が `src-tauri` を監視し cargo のビルド書き込みと競合する問題**が発生（`EBUSY: resource busy or locked`）。`vite.config.ts` の `server.watch.ignored: ['**/src-tauri/**']` で解消（本設計書 T1 節に記載漏れだったため追記・実装済み）。
+- **Windows Defender の「コントロールされたフォルダーアクセス」(Controlled Folder Access) が cargo/rustc の書き込みをブロックし、ビルド成果物ディレクトリが ReadOnly 属性を帯びて `num-traits`（autocfg 使用）のビルドが `output path is not a writable directory` で失敗する**環境要因を確認。`cargo.exe`/`rustc.exe` を Windows セキュリティの「ランサムウェア防止 → アプリを許可する」に追加して解消。**開発機でこのビルドエラーが再発した場合はまずこれを疑う**（Malwarebytes 等の他のリアルタイム保護は無関係だった）。
+- PoC 1〜3（起動・ストリーミング逐次表示・◼ 停止の即時反映）は確認 OK。
+
+### 既知の問題（次セッションで対応。T1 の完了自体は妨げない）
+
+1. **選択肢生成中に次シーンの本編生成が始まると、選択肢生成側の AbortController が追従せず `Cannot read properties of null (reading 'signal')` が発生（3回試行後にエラー表示）**。本編生成の中断は `stop`/`stopChoices`/`stopReview` に独立済み（V5d）だが、「次の本文の生成を開始したら、進行中の選択肢生成も自動的に中断する」導線が無い。本編生成開始時に `stopChoices` 相当のキャンセルを先んじて呼ぶ修正が必要。
+2. **ComfyUI が `--enable-cors-header` なしの通常起動では接続できなかった**（要調査）。T1 の目的の一つは「CORS 制約を受けない」ことだったため、これは想定と異なる。appFetch 経由になっていない呼び出し経路が残っている、あるいは検証時にブラウザ版(`npm run dev`)で確認してしまった可能性を含め、次セッションで原因切り分けが必要。
+
 ## T2: 環境アダプタ層の整備（保存ダイアログ・ストレージ interface）
 
 Tauri の WebView では `<a download>` によるダウンロードが機能しない（カード PNG・バンドル JSON の保存が全滅する）ため、保存経路をアダプタ化する。同時に、T3 と将来の分岐チェックポイントが乗るストレージ interface を定義する。
