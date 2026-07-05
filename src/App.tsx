@@ -25,8 +25,8 @@ export default function App() {
     dismissImageJobToasts,
   } = useStore()
   const [showSettings, setShowSettings] = useState(false)
-  // storage が async 化（T3 のファイル backend）した場合に備えたハイドレーション待ち。
-  // 現行の Web/Tauri 実装はどちらも同期 localStorage のため体感差は無い。
+  // storage は async 化済み（Web は同期 localStorage・Tauri は T3 のファイル backend）。
+  // ハイドレーション完了までスプラッシュを表示する。
   const [hydrated, setHydrated] = useState(() => useStore.persist.hasHydrated())
 
   // いずれかのプロバイダに API キーが設定されているか
