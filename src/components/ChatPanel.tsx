@@ -76,6 +76,8 @@ export default function ChatPanel({ session }: Props) {
     continueStory,
     regenerate,
     stop,
+    stopChoices,
+    stopReview,
     prepareSceneReview,
     startStory,
     continueLast,
@@ -506,7 +508,7 @@ export default function ChatPanel({ session }: Props) {
             </button>
             <button
               className="scene-btn end"
-              onClick={() => (isReviewing ? stop() : prepareSceneReview())}
+              onClick={() => (isReviewing ? stopReview() : prepareSceneReview())}
               disabled={isStreaming}
               title={isReviewing ? 'レビュー生成を中止' : 'このシーンを振り返って次のシーンへ'}
             >
@@ -579,7 +581,7 @@ export default function ChatPanel({ session }: Props) {
           {isGeneratingChoices && (
             <div className="choices-loading">
               選択肢を考え中…
-              <button className="link" style={{ marginLeft: 8 }} onClick={stop}>
+              <button className="link" style={{ marginLeft: 8 }} onClick={stopChoices}>
                 中止
               </button>
             </div>
