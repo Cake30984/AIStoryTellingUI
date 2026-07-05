@@ -1,25 +1,16 @@
 import type { ExportBundle } from '../types'
+import { saveBlob } from './platform'
 
 /** バンドルをファイルとしてダウンロードさせる */
-export function downloadBundle(bundle: ExportBundle): void {
+export async function downloadBundle(bundle: ExportBundle): Promise<void> {
   const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
   const stamp = new Date().toISOString().slice(0, 10)
-  a.href = url
-  a.download = `storytelling-backup-${stamp}.json`
-  a.click()
-  URL.revokeObjectURL(url)
+  await saveBlob(blob, `storytelling-backup-${stamp}.json`)
 }
 
 /** 任意の blob をファイルとしてダウンロードさせる */
-export function downloadBlob(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  a.click()
-  URL.revokeObjectURL(url)
+export async function downloadBlob(blob: Blob, filename: string): Promise<void> {
+  await saveBlob(blob, filename)
 }
 
 /** JSON 文字列を検証してバンドルとして解釈 */

@@ -25,6 +25,9 @@ export default function App() {
     dismissImageJobToasts,
   } = useStore()
   const [showSettings, setShowSettings] = useState(false)
+  // storage が async 化（T3 のファイル backend）した場合に備えたハイドレーション待ち。
+  // 現行の Web/Tauri 実装はどちらも同期 localStorage のため体感差は無い。
+  const [hydrated, setHydrated] = useState(() => useStore.persist.hasHydrated())
 
   // いずれかのプロバイダに API キーが設定されているか
   const hasApiKey = providers.some((p) => p.apiKey.trim() !== '')
@@ -32,9 +35,30 @@ export default function App() {
   const active = sessions.find((s) => s.id === activeId)
 
   useEffect(() => {
+    if (useStore.persist.hasHydrated()) {
+      setHydrated(true)
+      return
+    }
+    return useStore.persist.onFinishHydration(() => setHydrated(true))
+  }, [])
+
+  useEffect(() => {
+    if (!hydrated) return
     if (!hasApiKey) setShowSettings(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [hydrated])
+
+  if (!hydrated) {
+    return (
+      <div className="app">
+        <div className="main">
+          <div className="empty">
+            <p>読み込み中…</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="app">
