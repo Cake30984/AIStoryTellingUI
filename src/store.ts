@@ -615,7 +615,12 @@ interface AppState {
   editMessage: (messageId: string, content: string) => void
   deleteMessage: (messageId: string) => void
   regenerateFrom: (messageId: string) => Promise<void>
+  /** 本編生成の停止（選択肢・レビュー生成には影響しない） */
   stop: () => void
+  /** 選択肢生成の停止（本編には影響しない） */
+  stopChoices: () => void
+  /** レビュー生成（シーン整理・次シーン候補の再生成）の停止 */
+  stopReview: () => void
 
   // 挿絵
   addIllustration: (sessionId: string, sceneId: string, ill: SceneIllustration) => void
@@ -662,7 +667,11 @@ interface AppState {
   gcUnusedImages: () => Promise<number>
 }
 
-let controller: AbortController | null = null
+// 生成の中断は用途別に独立させる。単一の共有 controller だと、選択肢生成の中止が
+// 並行中の本編生成を巻き込む（またはその逆で中断が空振りする）ため分離する。
+let mainController: AbortController | null = null
+let choicesController: AbortController | null = null
+let reviewController: AbortController | null = null
 
 /**
  * 状態（関係性 prose ＋ 気分 ＋ 注入対象スタット）をプロンプト用テキストに整形（空なら ''）。
@@ -858,7 +867,7 @@ export const useStore = create<AppState>()(
           return
         }
 
-        controller = new AbortController()
+        mainController = new AbortController()
         set({ isStreaming: true, error: null })
 
         // 既存メッセージへ追記する場合はそれを対象に、そうでなければ空メッセージを新規追加
@@ -914,7 +923,7 @@ export const useStore = create<AppState>()(
                 messages: buildRequestMessages(),
                 temperature: s.temperature,
                 maxTokens: s.maxTokens,
-                signal: controller.signal,
+                signal: mainController.signal,
               },
               (chunk) => {
                 gotContent = true
@@ -960,7 +969,7 @@ export const useStore = create<AppState>()(
             .filter((m) => !(m.id === assistantId && m.content.trim() === ''))
           patchTarget({ messages: msgs })
         }
-        controller = null
+        mainController = null
         set({ isStreaming: false })
 
         // 選択肢の生成（off 以外、かつ応答が生成された場合）
@@ -1004,10 +1013,10 @@ export const useStore = create<AppState>()(
           const maxAttempts = mode === 'always' ? 2 : 1
           let choices: Choice[] = []
           let bestChoices: Choice[] = []
-          controller = new AbortController()
+          choicesController = new AbortController()
           for (let attempt = 1; attempt <= maxAttempts; attempt++) {
             const raw = await streamChat(
-              { provider, model, messages: msgs, temperature: 0.5, maxTokens: 600, signal: controller.signal },
+              { provider, model, messages: msgs, temperature: 0.5, maxTokens: 600, signal: choicesController.signal },
               () => {},
             )
             const parsedChoices = coerceChoices(extractJson<unknown>(raw.text), world, refs.characters)
@@ -1037,10 +1046,12 @@ export const useStore = create<AppState>()(
             }
           }
         } catch (e) {
-          // 選択肢は失敗しても本編には影響させない（診断用にのみ記録）
-          console.warn('[choices] 生成に失敗:', (e as Error)?.message)
+          // 選択肢は失敗しても本編には影響させない（診断用にのみ記録。中止は正常系なので黙る）
+          if ((e as Error)?.name !== 'AbortError') {
+            console.warn('[choices] 生成に失敗:', (e as Error)?.message)
+          }
         } finally {
-          controller = null
+          choicesController = null
           set({ isGeneratingChoices: false })
         }
       }
@@ -1541,7 +1552,7 @@ export const useStore = create<AppState>()(
             const hasSummary = (p: any) =>
               (typeof p?.summary === 'string' && p.summary.trim().length > 0) ||
               (Array.isArray(p?.summary) && p.summary.length > 0)
-            controller = new AbortController()
+            reviewController = new AbortController()
             for (let attempt = 0; attempt < maxAttempts; attempt++) {
               raw = await streamChat(
                 {
@@ -1550,7 +1561,7 @@ export const useStore = create<AppState>()(
                   messages: reviewMessages,
                   temperature: 0.4,
                   maxTokens: REVIEW_MAX_TOKENS,
-                  signal: controller.signal,
+                  signal: reviewController.signal,
                 },
                 () => {},
               )
@@ -1710,7 +1721,7 @@ export const useStore = create<AppState>()(
           } catch (e) {
             if ((e as Error).name !== 'AbortError') set({ error: (e as Error).message })
           } finally {
-            controller = null
+            reviewController = null
             set({ isReviewing: false })
           }
         },
@@ -2021,7 +2032,7 @@ export const useStore = create<AppState>()(
                 `【次シーンの時間】次シーンは「${nextTimeLabel}」。時間が経過した後の場面として書いてください。`,
               )
             }
-            controller = new AbortController()
+            reviewController = new AbortController()
             const raw = await streamChat(
               {
                 provider,
@@ -2032,7 +2043,7 @@ export const useStore = create<AppState>()(
                 ],
                 temperature: 0.7,
                 maxTokens: 800,
-                signal: controller.signal,
+                signal: reviewController.signal,
               },
               () => {},
             )
@@ -2050,7 +2061,7 @@ export const useStore = create<AppState>()(
           } catch (e) {
             if ((e as Error).name !== 'AbortError') set({ error: (e as Error).message })
           } finally {
-            controller = null
+            reviewController = null
             set({ isRegenSuggestions: false })
           }
         },
@@ -2276,9 +2287,19 @@ export const useStore = create<AppState>()(
         },
 
         stop: () => {
-          controller?.abort()
-          controller = null
+          mainController?.abort()
+          mainController = null
           set({ isStreaming: false })
+        },
+
+        stopChoices: () => {
+          choicesController?.abort()
+          choicesController = null
+        },
+
+        stopReview: () => {
+          reviewController?.abort()
+          reviewController = null
         },
 
         classifyEmotions: async (sessionId) => {

@@ -14,7 +14,7 @@ export default function SceneReviewModal() {
     sceneTypes,
     sessions,
     activeId,
-    stop,
+    stopReview,
   } = useStore()
   const review = sceneReview!
   const session = sessions.find((s) => s.id === activeId)
@@ -166,7 +166,7 @@ export default function SceneReviewModal() {
                 {isRegenSuggestions && (
                   <div className="choices-loading">
                     次シーンの候補を生成中…
-                    <button className="link" style={{ marginLeft: 8 }} onClick={stop}>
+                    <button className="link" style={{ marginLeft: 8 }} onClick={stopReview}>
                       中止
                     </button>
                   </div>
