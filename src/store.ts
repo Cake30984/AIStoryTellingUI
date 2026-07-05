@@ -477,7 +477,8 @@ function newSession(mode: SessionMode): Session {
     overlay: { lore: [], characterDevelopments: [] },
     messages: [],
     temperature: 0.9,
-    maxTokens: 1024,
+    // max_tokens は打ち切り上限（書き終われば自然に止まる）。途中切れ防止を優先して余裕を持たせる
+    maxTokens: 4096,
     createdAt: now,
     updatedAt: now,
   }
