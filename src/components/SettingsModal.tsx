@@ -41,6 +41,7 @@ export default function SettingsModal({ onClose }: Props) {
   const [addKind, setAddKind] = useState<'openrouter' | 'openai'>(PROVIDER_PRESETS[0].kind)
   const [addKey, setAddKey] = useState('')
   const [showAddKey, setShowAddKey] = useState(false)
+  const [includeImages, setIncludeImages] = useState(true)
 
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -73,8 +74,14 @@ export default function SettingsModal({ onClose }: Props) {
     setNotice('接続先を追加しました。')
   }
 
-  const onExport = () => {
-    downloadBundle(exportBundle())
+  const onExport = async () => {
+    const bundle = await exportBundle(includeImages)
+    if (bundle.images && bundle.images.length > 0) {
+      const bytes = bundle.images.reduce((sum, img) => sum + img.dataBase64.length * 0.75, 0)
+      const mb = (bytes / (1024 * 1024)).toFixed(1)
+      if (!confirm(`画像 ${bundle.images.length} 件を含めます（概算 ${mb} MB）。書き出しますか？`)) return
+    }
+    downloadBundle(bundle)
     setNotice('全データをエクスポートしました。')
   }
 
@@ -102,8 +109,9 @@ export default function SettingsModal({ onClose }: Props) {
         }
       } else {
         const bundle = parseBundle(await file.text())
-        const { added } = importBundle(bundle)
-        setNotice(`インポート完了：${added} 件を追加しました（既存は保持）。`)
+        const { added } = await importBundle(bundle)
+        const imgNote = bundle.images && bundle.images.length > 0 ? `（画像 ${bundle.images.length} 件を含む）` : ''
+        setNotice(`インポート完了：${added} 件を追加しました（既存は保持）。${imgNote}`)
       }
     } catch (e) {
       setNotice(`インポート失敗：${(e as Error).message}`)
@@ -295,6 +303,14 @@ export default function SettingsModal({ onClose }: Props) {
               キャラ・世界観・ペルソナは単体を PNG カード（画像1枚に情報を埋め込み）でも入出力できます
               （キャラクターは SillyTavern 互換）。
             </div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, fontSize: 13 }}>
+              <input
+                type="checkbox"
+                checked={includeImages}
+                onChange={(e) => setIncludeImages(e.target.checked)}
+              />
+              🖼 画像も含める（アバター・立ち絵・挿絵・背景。容量が大きくなる場合があります）
+            </label>
             <div style={{ display: 'flex', gap: 8 }}>
               <button className="btn" onClick={onExport}>
                 ⬇ エクスポート

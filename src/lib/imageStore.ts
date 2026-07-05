@@ -49,6 +49,12 @@ export async function putImage(blob: Blob): Promise<string> {
   return id
 }
 
+/** id を指定して画像を保存する（インポート復元用。既存 id があれば上書き＝同一画像とみなす） */
+export async function putImageAs(id: string, blob: Blob): Promise<void> {
+  const record: ImageRecord = { id, blob, createdAt: Date.now() }
+  await withStore('readwrite', (store) => store.put(record))
+}
+
 export async function getImage(id: string): Promise<Blob | undefined> {
   const record = await withStore<ImageRecord | undefined>('readonly', (store) => store.get(id))
   return record?.blob
@@ -69,6 +75,28 @@ export async function gcImages(usedIds: Set<string>): Promise<number> {
   const unused = ids.filter((id) => !usedIds.has(id))
   for (const id of unused) await deleteImage(id)
   return unused.length
+}
+
+// バイト列 → Latin-1 文字列（チャンク分割。1バイトずつの連結は数MB級で極端に遅い）
+function bytesToBinaryString(bytes: Uint8Array): string {
+  const CHUNK = 0x8000
+  let bin = ''
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK) as unknown as number[])
+  }
+  return bin
+}
+
+/** 画像 blob → base64 文字列（エクスポート用） */
+export async function blobToBase64(blob: Blob): Promise<string> {
+  return btoa(bytesToBinaryString(new Uint8Array(await blob.arrayBuffer())))
+}
+
+/** base64 文字列 → 画像 blob（インポート用） */
+export function base64ToBlob(b64: string, mime: string): Blob {
+  const bin = atob(b64)
+  const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0))
+  return new Blob([bytes as BlobPart], { type: mime })
 }
 
 // 表示用 objectURL キャッシュ（アプリ寿命で保持。revoke はしない）
