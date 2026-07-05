@@ -425,12 +425,15 @@ export default function SessionEditor({ session, onClose }: Props) {
                 <input
                   type="range"
                   min={256}
-                  max={4096}
-                  step={128}
+                  max={32768}
+                  step={256}
                   value={d.maxTokens}
                   onChange={(e) => patch({ maxTokens: Number(e.target.value) })}
                 />
-                <span className="val">{d.maxTokens}</span>
+                <span className="val">{d.maxTokens.toLocaleString()}</span>
+              </div>
+              <div className="desc">
+                出力の打ち切り上限。モデルは書き終われば自然に止まるため、大きめに設定しても無駄な出力やコスト増にはならない（途中切れ防止には余裕を推奨）
               </div>
             </div>
           </div>
