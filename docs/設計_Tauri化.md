@@ -139,7 +139,11 @@ Rust command `stream_chat(url, headers, body, channel)` を自作: `reqwest` の
 ### 既知の問題（次セッションで対応。T1 の完了自体は妨げない）
 
 1. **選択肢生成中に次シーンの本編生成が始まると、選択肢生成側の AbortController が追従せず `Cannot read properties of null (reading 'signal')` が発生（3回試行後にエラー表示）**。本編生成の中断は `stop`/`stopChoices`/`stopReview` に独立済み（V5d）だが、「次の本文の生成を開始したら、進行中の選択肢生成も自動的に中断する」導線が無い。本編生成開始時に `stopChoices` 相当のキャンセルを先んじて呼ぶ修正が必要。
-2. **ComfyUI が `--enable-cors-header` なしの通常起動では接続できなかった**（要調査）。T1 の目的の一つは「CORS 制約を受けない」ことだったため、これは想定と異なる。appFetch 経由になっていない呼び出し経路が残っている、あるいは検証時にブラウザ版(`npm run dev`)で確認してしまった可能性を含め、次セッションで原因切り分けが必要。
+2. **ComfyUI が `--enable-cors-header` なしの通常起動では接続できなかった（設計通りの挙動ではない＝バグ）**。T1 の目的の一つが「plugin-http で Rust 側から HTTP を実行し CORS 制約を受けない」ことである以上、Tauri シェルで起動している限り ComfyUI 側のフラグは不要になるはずで、これは明確に設計との齟齬。考えられる原因（次セッションで切り分け）:
+   - `ImageProviderSettings`/`ImageGenModal`/`imageGen.ts` の接続テスト・生成経路のどこかに `appFetch` へ未置換の `fetch` が残っている、または `imageGen.ts` の `appFetch` importが効いていない（ビルドキャッシュ等）
+   - 検証時にブラウザ版（`npm run dev`、ポート5173をブラウザで直接開いた場合）で確認してしまい、Tauri ウィンドウ経由ではなかった
+   - `isTauri()` の判定（`'__TAURI_INTERNALS__' in window`）が何らかの理由で false になっている（生成対象のiframe/worker等、別コンテキストで実行されている可能性）
+   - plugin-http 自体は CORS を無視するが、ComfyUI 側のレスポンスヘッダ欠如が別の理由（例: リダイレクトやcontent-type起因)でブロックされている
 
 ## T2: 環境アダプタ層の整備（保存ダイアログ・ストレージ interface）
 
