@@ -193,6 +193,7 @@ select {
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  position: relative; /* ステージ・バックドロップ（絶対配置）の基準 */
 }
 
 .topbar {
@@ -429,6 +430,8 @@ select {
   border-top: 1px solid var(--border);
   background: var(--bg-elev);
   padding: 14px 0 18px;
+  position: relative; /* バックドロップ（z-index:0）より前面に */
+  z-index: 1;
 }
 .composer {
   max-width: 760px;
@@ -1652,7 +1655,10 @@ select {
 }
 .stage-backdrop {
   position: absolute;
-  inset: 0;
+  top: 56px; /* topbar の高さぶん下げる（背景・立ち絵をトップバーに重ねない）。V5d で .main 直下に移設 */
+  left: 0;
+  right: 0;
+  bottom: 0;
   z-index: 0;
   overflow: hidden;
   pointer-events: none; /* 表示専用。本文のクリック・選択を妨げない */
@@ -1702,4 +1708,15 @@ select {
   to {
     opacity: var(--stage-sprite-opacity);
   }
+}
+
+/* ステージON時は背景・立ち絵がコンポーザー（入力欄・選択肢・シーンバー）の背面にも透ける（V5d） */
+.main.stage-on .composer-wrap {
+  background: color-mix(in srgb, var(--bg-elev) 72%, transparent);
+}
+.main.stage-on .input-row,
+.main.stage-on .scene-bar,
+.main.stage-on .choice-btn,
+.main.stage-on .story-actions button:not(.primary) {
+  background: color-mix(in srgb, var(--bg-elev2) 72%, transparent);
 }
