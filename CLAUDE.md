@@ -1,6 +1,6 @@
 # CLAUDE.md — AI Storytelling Studio
 
-マルチプロバイダ（OpenRouter・OpenAI 互換等）で好きなモデルを使い、AI とのロールプレイ／自動進行する物語づくりを行うクライアント完結型アプリ。**Tauri 化 T1 実装済み**（デスクトップシェルが動作。T3 のファイルストレージ移行までは Web 版が実質正式版）。UI 文言・コメントは日本語。ユーザーは日本語でやり取りする。
+マルチプロバイダ（OpenRouter・OpenAI 互換等）で好きなモデルを使い、AI とのロールプレイ／自動進行する物語づくりを行うクライアント完結型アプリ。**Tauri 化 T2 実装済み**（デスクトップシェルが動作し保存ダイアログにも対応。T3 のファイルストレージ移行までは Web 版が実質正式版）。UI 文言・コメントは日本語。ユーザーは日本語でやり取りする。
 
 ## コマンド
 - 開発（Web 版）: `npm run dev`（Vite, ポート5173）
@@ -22,14 +22,14 @@ rustup（`winget install Rustlang.Rustup`）と VS Build Tools（C++ デスク�
 - 変更が一区切りついた適切なタイミングで、都度 `git commit` → `git push origin main` まで行う（作業を溜め込んでまとめてコミットしない）。
 
 ## 技術スタック
-React 18 + TypeScript + Vite / 状態管理は zustand（`persist` で localStorage 永続化）/ 追加ライブラリは最小限。**Tauri 2（デスクトップシェル。T1実装済み）+ Web 版併存**（環境差は `src/lib/platform.ts` に集約。`isTauri()` 分岐はこのファイルの外に書かない）。
+React 18 + TypeScript + Vite / 状態管理は zustand（`persist`。storage は `src/lib/platform.ts` の `stateStorage` アダプタ経由で永続化。現状は Web/Tauri とも localStorage 実装＝T3 でファイル backend に切替予定）/ 追加ライブラリは最小限。**Tauri 2（デスクトップシェル。T1〜T2実装済み）+ Web 版併存**（環境差は `src/lib/platform.ts` に集約。`isTauri()` 分岐はこのファイルの外に書かない）。
 
 ## ディレクトリ
 - `src/types.ts` — 全データ型（ここを最初に読む）
 - `src/store.ts` — zustand ストア。状態・全アクション・**永続化（クリーンブレイク・移行なし）**・状態エンジン（関係性 prose／事実の数）・ディレクター抽選など中核ロジック
-- `src-tauri/`（T1）— Tauri シェル（Rust）。設定・権限のみで独自ロジックはほぼ無し。`tauri.conf.json`（productName/identifier/window等）・`capabilities/default.json`（`core:default`＋`http:default`をhttp/https全許可）・`src/lib.rs`（`tauri_plugin_http::init()`を登録するのみ）
+- `src-tauri/`（T1・T2）— Tauri シェル（Rust）。設定・権限のみで独自ロジックはほぼ無し。`tauri.conf.json`（productName/identifier/window等）・`capabilities/default.json`（`core:default`＋`http:default`をhttp/https全許可＋`dialog:default`＋`fs:default`＋`fs:allow-write-file`）・`src/lib.rs`（`tauri_plugin_http::init()`/`tauri_plugin_fs::init()`/`tauri_plugin_dialog::init()`を登録するのみ）
 - `src/lib/`
-  - `platform.ts`（T1）— 環境差（Web/Tauri）を吸収するアダプタ層。`isTauri()`/`appFetch`（Tauri では動的importした`@tauri-apps/plugin-http`のfetchをRust側で実行、CORS制約を受けない。Web は`window.fetch`）。9箇所の`fetch`呼び出し（`openrouter.ts`2箇所・`imageGen.ts`7箇所）を`appFetch`に置換済み
+  - `platform.ts`（T1・T2）— 環境差（Web/Tauri）を吸収するアダプタ層。`isTauri()`/`appFetch`（Tauri では動的importした`@tauri-apps/plugin-http`のfetchをRust側で実行、CORS制約を受けない。Web は`window.fetch`）。9箇所の`fetch`呼び出し（`openrouter.ts`2箇所・`imageGen.ts`7箇所）を`appFetch`に置換済み。**T2**: `saveBlob`（Web は`<a download>`、Tauri は`@tauri-apps/plugin-dialog`の`save`→`@tauri-apps/plugin-fs`の`writeFile`。dialogが選択パスをfsのスコープへ自動許可するため追加のスコープ設定は不要）、`stateStorage`（zustand persist の`StateStorage`互換。現状はWeb/TauriともlocalStorageの薄いラッパ＝T3でファイルbackendに差し替える土台）
   - `providers.ts` — `Provider` 型・プリセット・`parseModelRef`/`makeModelRef`/`splitRef`/`modelRefLabel`
   - `openrouter.ts` — SSEストリーミング補完・モデル一覧取得（プロバイダ駆動。provider オブジェクトを受け取る）
   - `prompts.ts` — system プロンプト組み立て・選択肢/レビュー用プロンプト・定数（`CONTINUE_PROMPT`/`SCENE_START_PROMPT` 等）・画像プロンプト起案（`illustrationPromptSystem`/`illustrationContextUser`/`avatarContextUser`。G2。V1で「本文が長い場合は末尾の場面を描く」指針を追加、`illustrationContextUser`の文脈見出しは「【このシーンの本文】」）。**V4**: `emotionSystem`（表情判定用。方式A＝裏方LLMが毎応答後に対象キャラ名を渡し6値の感情を判定）、`backgroundPromptSystem`/`backgroundContextUser`（人物を含めない背景専用。指針が濁らないよう挿絵用とは別関数）
@@ -37,8 +37,8 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist` で localStor
   - `timeline.ts` — `advanceTimeline`/`timeLabelOf`/`timelinePromptInfo`/`isNearEnd`
   - `json.ts` — `extractJson`（モデル出力から堅牢な JSON 抽出）
   - `tokens.ts` — `estimateTokens`/`tokenLevel`
-  - `io.ts` — `downloadBundle`（JSON DL）/`downloadBlob`（任意 blob のDL。カード画像もこれで保存）/`parseBundle`（取り込みファイルの検証・整形。`images?` を含むバンドルもそのまま透過）。※エクスポートバンドルの組み立て本体は `store.exportBundle`
-  - `imageStore.ts`（P1・T0）— アバター・カード画像の IndexedDB ストア（`putImage`/`putImageAs`（T0。id 指定保存＝画像込みインポート復元用）/`getImage`/`deleteImage`/`listImageIds`/`gcImages`）＋`blobToBase64`/`base64ToBlob`（T0。エクスポート/インポートの画像シリアライズ用）＋表示用 `useImageUrl` フック。localStorage には画像を入れない
+  - `io.ts` — `downloadBundle`（JSON DL）/`downloadBlob`（任意 blob のDL。カード画像もこれで保存）/`parseBundle`（取り込みファイルの検証・整形。`images?` を含むバンドルもそのまま透過）。**T2**: `downloadBundle`/`downloadBlob` はどちらも内部で `platform.ts` の `saveBlob` を呼ぶだけの async 関数（呼び出し元は無変更）。※エクスポートバンドルの組み立て本体は `store.exportBundle`
+  - `imageStore.ts`（P1・T0・T2）— アバター・カード画像の IndexedDB ストア（`putImage`/`putImageAs`（T0。id 指定保存＝画像込みインポート復元用）/`getImage`/`deleteImage`/`listImageIds`/`gcImages`）＋`blobToBase64`/`base64ToBlob`（T0。エクスポート/インポートの画像シリアライズ用）＋表示用 `useImageUrl` フック。localStorage には画像を入れない。**T2**: 内部を`BlobStore` interface（`put`/`putAs`/`get`/`delete`/`listIds`）＋ Web 実装（IndexedDB）に再編（T3 でファイル backend を差し込む土台。公開関数のシグネチャは無変更）
   - `avatarGen.ts`（P1）— `generateDefaultAvatar`（名前イニシャル＋色から canvas でデフォルト画像生成）/ `normalizeImage`（アップロード画像の縮小・PNG化）
   - `png.ts`（P3）— PNG の tEXt チャンク読み書き（自前実装。`readTextChunks`/`writeTextChunk`。CRC32はtype+dataのみ対象、textは必ずbase64経由でLatin-1化。**組み立てはセグメント連結方式＝`push(...spread)`は数MB級でスタックオーバーフローするため禁止**）
   - `imageGen.ts`（G1）— 画像生成の抽象層。`generateImage`（comfyui: /prompt→/historyポーリング→/view、openai-image: /images/generations の b64_json）/`testImageProvider`/`fillWorkflow`（プレースホルダ置換。%PROMPT%/%NEGATIVE% はJSONエスケープ、"%SEED%"/"%WIDTH%"/"%HEIGHT%" は引用符ごと数値化）/`DEFAULT_COMFY_WORKFLOW`
@@ -67,7 +67,7 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist` で localStor
 - `docs/設計_画像カードとアバター.md` — PNG カード入出力（SillyTavern 互換キャラカード＋独自世界/ペルソナカード）・絵文字全廃のアバター画像化（IndexedDB 画像ストア）の設計仕様。フェーズP1〜P4は実装済み
 - `docs/設計_画像生成連携.md` — P5 の詳細設計。ImageProvider（comfyui/openai-image）抽象層・ImageGenModal（裏方LLMプロンプト起案）・アバター生成・`imagePrompt` 固定タグ・挿絵（`Scene.illustrations`）・セッションカード（`aist_session`・画像base64同梱）。フェーズG1〜G4は実装済み
 - `docs/設計_画像改善_立ち絵と生成ジョブ.md` — 画像改善 V1〜V4 の詳細設計（スタイルプリセット・バックグラウンド生成ジョブ・ギャラリー・立ち絵/表情差分/背景）。**V1〜V4実装済み**
-- `docs/設計_Tauri化.md` — デスクトップアプリ化（Tauri 2・Windows のみ・手動配布）の設計。T0=画像込みフルエクスポート（ブラウザ→デスクトップ移行準備）→ T1=シェル起動＋CORS-free HTTP の PoC（plugin-http のストリーミング互換が最大リスク）→ T2=環境アダプタ層（`platform.ts`＝`isTauri`/`appFetch`/`saveBlob`・StateStorage/BlobStore interface）→ T3=ファイルストレージ（`%APPDATA%` に state.json＋images/。アトミック書込＋デバウンス）→ T4=配布（NSIS・GitHub Releases）。Web 版は開発・検証用に併存、persist スキーマ不変。**未実装（次に着手）**
+- `docs/設計_Tauri化.md` — デスクトップアプリ化（Tauri 2・Windows のみ・手動配布）の設計。T0=画像込みフルエクスポート（ブラウザ→デスクトップ移行準備）→ T1=シェル起動＋CORS-free HTTP の PoC（plugin-http のストリーミング互換が最大リスク）→ T2=環境アダプタ層（`platform.ts`＝`isTauri`/`appFetch`/`saveBlob`・StateStorage/BlobStore interface）→ T3=ファイルストレージ（`%APPDATA%` に state.json＋images/。アトミック書込＋デバウンス）→ T4=配布（NSIS・GitHub Releases）。Web 版は開発・検証用に併存、persist スキーマ不変。**T0〜T2実装済み。次はT3（ファイルストレージ backend）**
 - `docs/設計_画像改善_V5_不具合修正とステージ改善.md` — V4 実使用フィードバックの修正設計（V5a〜V5c）。①保存で立ち絵が消えるバグ（`upsertCharacter` が draft でキャラ全置換し store 直書きの sprites を巻き戻す）等の store 修正、②ステージ帯を廃止しチャット背面のバックドロップに背景・立ち絵を薄く常時表示（`spritesEnabled ?? true`・🏞 トップバー移設・ギャラリー背景タイル）、③起案の固定タグ維持（`pinTags`/`ensureTags`）・negative 初期適用・接続先/起案モデルの記憶・一括生成ガード。**V5a〜V5cすべて実装済み**
 
 ## データモデル（要点）
@@ -127,20 +127,29 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist` で localStor
 - API キーは localStorage のみ。エクスポートバンドルに providers は含めない（`importBundle` は providers をマージしない）。
 - **画像 id を増やしたら `gcUnusedImages`（store.ts）の使用中収集に必ず追加する**（V4で`character.sprites[].imageId`・`scene.backgroundImageId`を追加済み。入れ忘れると「未使用画像を整理」でまだ使っている画像が消える）。同様にセッションカード（`cards.ts`の`exportSessionCard`）の画像収集・`importSessionCard`の remap にも追加が必要。
 - **store 直接管理のフィールド（`character.sprites`）を draft 全置換系のエディタ保存で上書きしない**（V5a）。`CharacterEditor` 等は開いた時点の draft を `upsertCharacter(c)` で丸ごと置換するため、`setCharacterSprite`/`applyImageJobResult` が編集中に直接書いた `sprites` が保存で巻き戻る（＝立ち絵が消える／`deleteImage`済みの旧imageIdが復活する）バグがあった。`upsertCharacter` は既存キャラでは常に store 側の `sprites` を保持するよう修正済み。同種のフィールドを増やす場合も同じ罠に注意。
+- **`<a download>` は Tauri の WebView で機能しない**（T2）。ファイルダウンロードは必ず `io.ts` の `downloadBundle`/`downloadBlob`（内部で `platform.ts` の `saveBlob` アダプタを経由）を使う。直接アンカー DL を新規に書かない。
+- **`isTauri()` 分岐は `platform.ts`（とストレージ実装ファイル＝`imageStore.ts`）の外に書かない**。コンポーネント・store に環境分岐を持ち込まない（T2 の `saveBlob`/`BlobStore` もこの規約に従う）。
+- **Tauri plugin の JS パッケージ（`@tauri-apps/plugin-*`）は必ず動的 import**（Web ビルドのバンドルを汚さない・Web 実行時に評価させない）。`saveBlob` の `plugin-dialog`/`plugin-fs` もこの形。
 
 ## 検証ワークフロー
 1. `npx tsc --noEmit` → `npm run build` を必ず通す。
 2. Preview MCP（`preview_start` 等）で起動。`preview_eval` で旧バージョンの localStorage を seed → reload → 移行確認。`preview_console_logs(level:error)` でエラー0件。
 3. 純粋関数は `preview_eval` で `await import('/src/lib/xxx.ts')` して直接テスト可能。
 4. 検証後は seed した localStorage を削除し `preview_stop`。ポート残留時は `npx kill-port 5173`。
+5. **Tauri 固有部**（appFetch / saveBlob / ファイルストレージ）を触った時のみ、`npm run tauri:dev` で手動チェックリスト（Preview MCP はブラウザ専用のため自動検証不可）:
+   - 本編生成が逐次ストリーミング表示される／◼ 停止が効く
+   - ComfyUI（通常起動）で画像生成 → 採用できる
+   - カード PNG・エクスポート JSON が保存ダイアログ（native の SaveAs）で保存できる（T2）
+   - 再起動してセッション・画像が保持されている（T3 以降）
 
 ## 実装状況
-**主要機能はすべて実装済み**。実装済み: セッション(RP/物語)・キャラ/世界観/ペルソナ/シーンタイプの素材ライブラリ・ロアブック・グループ会話・シーン管理・タイムライン・選択肢進行・統合レビュー・シーン演出エンジン・文体切替・**マルチプロバイダ（プロバイダ管理・キャラ別モデル・役割別裏方モデル）**・あらすじ閲覧・会話編集/削除/作り直し・エクスポート/インポート・トークン目安・出力停止対策・状態エンジン（関係性prose＋事実の数＋条件エンジン＋実績＋選択肢連動加点。ADR-1 P1〜P5）・**セッション・オーバーレイ（発見ロア／キャラ成長を素材から分離しセッションへ隔離＋実効ビュー注入＋発見ログUI＋素材への昇格。B1〜B4）**・**画像基盤とPNGカード入出力（IndexedDB画像ストア・EntityAvatar・ST互換キャラカード・世界/ペルソナカード。P1〜P4）**・**画像生成連携（ComfyUI/OpenAI互換の接続先管理・裏方LLMプロンプト起案・アバター生成・挿絵・セッションカード。G1〜G4）**・**画像生成のプロンプト品質改善（スタイルプリセットprefill・起案maxTokens拡大・挿絵起案のシーン全文文脈。V1）**・**画像生成のバックグラウンドジョブ化（複数枚シード違い生成・候補選択・ジョブパネル・完了トースト。V2）**・**セッション内画像ギャラリー（GalleryModal。V3）**・**立ち絵・表情差分・背景（キャラの表情つき立ち絵セット生成・裏方LLMによる毎応答表情判定・シーン背景生成・ステージ表示・セッションカード/GC対応。V4）**・**画像改善V5a〜V5c（立ち絵が保存で消える等のstore不具合修正・ステージのバックドロップ化＝チャット背面への背景/立ち絵の薄い常時表示・ギャラリー背景タイル対応・起案の固定タグ維持/negative初期適用/接続先・起案モデルの記憶/一括生成ガード）**・**UX小修正V5d（生成中断の用途別独立化＝本編/選択肢/レビュー・maxTokens上限32,768と新規既定4096・バックドロップのコンポーザー背面拡張と半透明化）**・**Tauri化T0（画像込みフルエクスポート。`ExportBundle.images`＋`collectUsedImageIds`共通化＋`putImageAs`/`blobToBase64`/`base64ToBlob`＋SettingsModalの「画像も含める」チェックボックス。ブラウザ→デスクトップ移行の唯一の経路）**。
+**主要機能はすべて実装済み**。実装済み: セッション(RP/物語)・キャラ/世界観/ペルソナ/シーンタイプの素材ライブラリ・ロアブック・グループ会話・シーン管理・タイムライン・選択肢進行・統合レビュー・シーン演出エンジン・文体切替・**マルチプロバイダ（プロバイダ管理・キャラ別モデル・役割別裏方モデル）**・あらすじ閲覧・会話編集/削除/作り直し・エクスポート/インポート・トークン目安・出力停止対策・状態エンジン（関係性prose＋事実の数＋条件エンジン＋実績＋選択肢連動加点。ADR-1 P1〜P5）・**セッション・オーバーレイ（発見ロア／キャラ成長を素材から分離しセッションへ隔離＋実効ビュー注入＋発見ログUI＋素材への昇格。B1〜B4）**・**画像基盤とPNGカード入出力（IndexedDB画像ストア・EntityAvatar・ST互換キャラカード・世界/ペルソナカード。P1〜P4）**・**画像生成連携（ComfyUI/OpenAI互換の接続先管理・裏方LLMプロンプト起案・アバター生成・挿絵・セッションカード。G1〜G4）**・**画像生成のプロンプト品質改善（スタイルプリセットprefill・起案maxTokens拡大・挿絵起案のシーン全文文脈。V1）**・**画像生成のバックグラウンドジョブ化（複数枚シード違い生成・候補選択・ジョブパネル・完了トースト。V2）**・**セッション内画像ギャラリー（GalleryModal。V3）**・**立ち絵・表情差分・背景（キャラの表情つき立ち絵セット生成・裏方LLMによる毎応答表情判定・シーン背景生成・ステージ表示・セッションカード/GC対応。V4）**・**画像改善V5a〜V5c（立ち絵が保存で消える等のstore不具合修正・ステージのバックドロップ化＝チャット背面への背景/立ち絵の薄い常時表示・ギャラリー背景タイル対応・起案の固定タグ維持/negative初期適用/接続先・起案モデルの記憶/一括生成ガード）**・**UX小修正V5d（生成中断の用途別独立化＝本編/選択肢/レビュー・maxTokens上限32,768と新規既定4096・バックドロップのコンポーザー背面拡張と半透明化）**・**Tauri化T0（画像込みフルエクスポート。`ExportBundle.images`＋`collectUsedImageIds`共通化＋`putImageAs`/`blobToBase64`/`base64ToBlob`＋SettingsModalの「画像も含める」チェックボックス。ブラウザ→デスクトップ移行の唯一の経路）**・**Tauri化T1（シェル起動＋plugin-httpのCORS-free HTTP。appFetchアダプタでストリーミング・中断とも実機確認済み）**・**Tauri化T2（環境アダプタ層。`saveBlob`＝Tauriは保存ダイアログ経由でカードPNG/エクスポートJSONを保存、Webは従来のアンカーDL。`stateStorage`＝zustand persistのStateStorage互換interface、`imageStore.ts`のBlobStore interface化。いずれもT3のファイルbackend実装の受け皿で、現状の実データはWeb/TauriともlocalStorage/IndexedDBのまま挙動不変）**。
 
 ## 次にやること（ロードマップ）
-2026-07-05 の設計相談で以下の順序に合意（小修正バッチ V5d・Tauri化 T0・T1 は実装済み）:
-1. **Tauri 化（デスクトップアプリ化。決定済み・分岐機能より先に行う）**: 設計書 → `docs/設計_Tauri化.md`（T0〜T4）。T0（画像込みフルエクスポート）・**T1（Tauriシェル起動＋plugin-httpのCORS-free HTTP。ストリーミング・中断とも実機確認済み）実装済み**。次のアクションは T2（環境アダプタ層＝保存ダイアログ・StateStorage/BlobStore interface）から。
-   - **T1で判明した既知の問題（次セッションで対応予定・詳細は設計書）**: ①選択肢生成中に次シーンの本編生成が始まると選択肢側のAbortControllerが追従せず `Cannot read properties of null (reading 'signal')` が発生する（本編生成開始時に選択肢生成の中断も連動させる必要）。②ComfyUIが `--enable-cors-header` なしの通常起動では接続できなかった（**設計通りの挙動ではない＝バグ**。T1の目的が「plugin-httpでRust側からHTTP実行しCORS制約を受けない」ことである以上、appFetch未置換経路の残存やisTauri()誤判定等を疑って原因切り分けが必要。詳細は設計書）。
+2026-07-05 の設計相談で以下の順序に合意（小修正バッチ V5d・Tauri化 T0・T1・T2 は実装済み）:
+1. **Tauri 化（デスクトップアプリ化。決定済み・分岐機能より先に行う）**: 設計書 → `docs/設計_Tauri化.md`（T0〜T4）。T0（画像込みフルエクスポート）・T1（Tauriシェル起動＋plugin-httpのCORS-free HTTP。ストリーミング・中断とも実機確認済み）・**T2（環境アダプタ層＝`saveBlob`保存ダイアログ・`stateStorage`/`BlobStore` interface）実装済み**。次のアクションは T3（`%APPDATA%` へのファイルストレージ backend＝state.json＋images/。アトミック書込＋デバウンス＋WebView内蔵データからの自動移行）から。
+   - **T2の既知の未検証事項**: カード PNG・エクスポート JSON の保存ダイアログでの実際の保存成功は自動検証手段が無い（Preview MCP はブラウザ専用、ネイティブダイアログは自動操作不可）ため、次回 `npm run tauri:dev` を手動起動できるタイミングで確認が必要（`tsc`/`build`/Rust `cargo check` は通過済み。`dialog:default`＋`fs:default`＋`fs:allow-write-file` の capabilities 追加は、tauri-plugin-dialog のソース確認により `save()` が選択パスを fs プラグインの Scope へ自動許可することを確認済みなので追加スコープ設定は不要なはず）。
+   - **T1で判明した既知の問題（未対応・詳細は設計書）**: ①選択肢生成中に次シーンの本編生成が始まると選択肢側のAbortControllerが追従せず `Cannot read properties of null (reading 'signal')` が発生する（本編生成開始時に選択肢生成の中断も連動させる必要）。②ComfyUIが `--enable-cors-header` なしの通常起動では接続できなかった（**設計通りの挙動ではない＝バグ**。T1の目的が「plugin-httpでRust側からHTTP実行しCORS制約を受けない」ことである以上、appFetch未置換経路の残存やisTauri()誤判定等を疑って原因切り分けが必要。詳細は設計書）。ユーザー指示によりこの2件は当面据え置き。
 2. **セーブ/ロードと分岐周回**（合意済み方針→ `docs/設計_セーブロードと分岐.md` を書いてから実装）: チェックポイント方式＝各ユーザー操作でセッション全体の深コピーを圧縮保存（大容量ストア側）し、木のメタデータ（親リンク・ラベル）は軽量ストアに持つ。全操作が自動 fork（明示 fork 操作なし・積極的な剪定UI）／大ポイント＝レビュー確定（レビューやり直しは直前の小ポイントへ。レビュー直前ポイントは表示を変える）／小ポイントのラベルは「選んだ選択肢テキスト→ユーザー入力冒頭→本文冒頭」の優先順＋全自動記録＋しおり（★・任意名・サムネイル）のハイブリッド／**画像の即時 `deleteImage` を全廃し GC 一本化（チェックポイント内の imageId も使用中扱い）**／素材昇格・素材編集はツリー外の共有資産と割り切り、他分岐へ影響し得る旨を UI 注釈で明示。
 3. **品質プロンプトのユーザー定義化（スタイルプリセット廃止）**: `STYLE_PRESETS`・`lastImageStyle` を廃止し、**ImageProvider（接続先）ごと**にデフォルト positive/negative（LoRA トリガー・画風・品質タグ）を設定できるようにする。生成実行時に裏で結合し、プロンプト欄には表示しない。起案 LLM には品質・画風タグを含めない指示を明示。キャラ固有 `imagePrompt`（キャラ専用 LoRA 等）は別物として現状維持。
 4. **構造化出力**（専用設計書が必要な大物）: 本編出力をセリフ/ナレーション/話者/表情が機械可読な形式にし、①立ち絵の表情をセリフ行単位でストリーミング中に切替（毎応答後の裏方判定＝方式Aを置換）、②将来の読み上げ（TTS）でキャラ声/ナレーション振り分け、③チャット画面はマークアップを隠して綺麗に表示。フォーマットは行単位軽量タグ vs XML を設計書で比較（弱モデル耐性・途中切れ耐性から graceful degradation を必須仕様に）。既存平文メッセージとの共存（レンダラ二刀流）も設計する。

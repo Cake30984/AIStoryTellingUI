@@ -41,32 +41,62 @@ async function withStore<T>(mode: IDBTransactionMode, fn: (store: IDBObjectStore
   })
 }
 
+/** 画像 Blob の保存先の抽象（T3 でファイル backend に差し替えるための土台。公開関数のシグネチャは維持） */
+interface BlobStore {
+  put(blob: Blob): Promise<string>
+  putAs(id: string, blob: Blob): Promise<void>
+  get(id: string): Promise<Blob | undefined>
+  delete(id: string): Promise<void>
+  listIds(): Promise<string[]>
+}
+
+/** Web 実装（IndexedDB）。Tauri は当面同じ WebView ストレージを使う（T3 でファイル backend に切替） */
+const webBlobStore: BlobStore = {
+  async put(blob) {
+    const id = uid()
+    const record: ImageRecord = { id, blob, createdAt: Date.now() }
+    await withStore('readwrite', (store) => store.put(record))
+    return id
+  },
+  async putAs(id, blob) {
+    const record: ImageRecord = { id, blob, createdAt: Date.now() }
+    await withStore('readwrite', (store) => store.put(record))
+  },
+  async get(id) {
+    const record = await withStore<ImageRecord | undefined>('readonly', (store) => store.get(id))
+    return record?.blob
+  },
+  async delete(id) {
+    await withStore('readwrite', (store) => store.delete(id))
+  },
+  async listIds() {
+    const keys = await withStore<IDBValidKey[]>('readonly', (store) => store.getAllKeys())
+    return keys.map((k) => String(k))
+  },
+}
+
+const blobStore: BlobStore = webBlobStore
+
 /** 画像を保存し、新規発行した id を返す */
-export async function putImage(blob: Blob): Promise<string> {
-  const id = uid()
-  const record: ImageRecord = { id, blob, createdAt: Date.now() }
-  await withStore('readwrite', (store) => store.put(record))
-  return id
+export function putImage(blob: Blob): Promise<string> {
+  return blobStore.put(blob)
 }
 
 /** id を指定して画像を保存する（インポート復元用。既存 id があれば上書き＝同一画像とみなす） */
-export async function putImageAs(id: string, blob: Blob): Promise<void> {
-  const record: ImageRecord = { id, blob, createdAt: Date.now() }
-  await withStore('readwrite', (store) => store.put(record))
+export function putImageAs(id: string, blob: Blob): Promise<void> {
+  return blobStore.putAs(id, blob)
 }
 
-export async function getImage(id: string): Promise<Blob | undefined> {
-  const record = await withStore<ImageRecord | undefined>('readonly', (store) => store.get(id))
-  return record?.blob
+export function getImage(id: string): Promise<Blob | undefined> {
+  return blobStore.get(id)
 }
 
-export async function deleteImage(id: string): Promise<void> {
-  await withStore('readwrite', (store) => store.delete(id))
+export function deleteImage(id: string): Promise<void> {
+  return blobStore.delete(id)
 }
 
-export async function listImageIds(): Promise<string[]> {
-  const keys = await withStore<IDBValidKey[]>('readonly', (store) => store.getAllKeys())
-  return keys.map((k) => String(k))
+export function listImageIds(): Promise<string[]> {
+  return blobStore.listIds()
 }
 
 /** 使用中でない画像を削除し、削除件数を返す */

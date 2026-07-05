@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { createJSONStorage, persist } from 'zustand/middleware'
 import type {
   AchievementDef,
   Avatar,
@@ -33,6 +33,7 @@ import type {
 import { EMOTIONS } from './types'
 import { fetchModels, streamChat } from './lib/openrouter'
 import { base64ToBlob, blobToBase64, deleteImage, gcImages, getImage, putImage, putImageAs } from './lib/imageStore'
+import { stateStorage } from './lib/platform'
 import { normalizeImage } from './lib/avatarGen'
 import { generateImage } from './lib/imageGen'
 import {
@@ -2736,6 +2737,7 @@ export const useStore = create<AppState>()(
       // クリーンブレイク：Avatar 型刷新（絵文字廃止→画像参照）に伴い persist キーを再度刷新（旧 v2 は破棄）。
       // 後方互換は不要なため migrate 連鎖は持たない。
       name: 'ai-storytelling-store-v3',
+      storage: createJSONStorage(() => stateStorage),
       partialize: (st) => ({
         providers: st.providers,
         // 画像生成の接続先も API キーを含むため localStorage のみ（exportBundle には含めない）

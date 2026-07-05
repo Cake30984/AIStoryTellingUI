@@ -13,6 +13,9 @@
         { "url": "http://**" },
         { "url": "https://**" }
       ]
-    }
+    },
+    "dialog:default",
+    "fs:default",
+    "fs:allow-write-file"
   ]
 }
