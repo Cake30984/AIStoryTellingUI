@@ -350,7 +350,7 @@ export default function ChatPanel({ session }: Props) {
   }
 
   return (
-    <div className="main">
+    <div className={'main' + (stageOn ? ' stage-on' : '')}>
       <div className="topbar">
         <input
           className="session-title"
@@ -418,8 +418,9 @@ export default function ChatPanel({ session }: Props) {
         </button>
       </div>
 
+      {/* バックドロップは .main 直下（topbar 以下全体）に敷き、コンポーザーの背面にも透けるようにする（V5d） */}
+      {stageOn && <StageBackdrop session={session} scene={scene} participants={participants} />}
       <div className="chat-wrap">
-        {stageOn && <StageBackdrop session={session} scene={scene} participants={participants} />}
         <div className="chat">
           <div className="chat-inner">
             {session.messages.length === 0 && (
