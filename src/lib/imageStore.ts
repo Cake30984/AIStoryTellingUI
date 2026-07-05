@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
+import { isTauri } from './platform'
 
-/** アバター・カード画像を保存する IndexedDB ストア（localStorage には入れない） */
+/** アバター・カード画像を保存するストア（Web は IndexedDB、Tauri は %APPDATA%/data/images/ のファイル） */
 
 const DB_NAME = 'aist-images'
 const DB_VERSION = 1
@@ -41,7 +42,7 @@ async function withStore<T>(mode: IDBTransactionMode, fn: (store: IDBObjectStore
   })
 }
 
-/** 画像 Blob の保存先の抽象（T3 でファイル backend に差し替えるための土台。公開関数のシグネチャは維持） */
+/** 画像 Blob の保存先の抽象（Web/Tauri で実装を差し替える。公開関数のシグネチャは共通） */
 interface BlobStore {
   put(blob: Blob): Promise<string>
   putAs(id: string, blob: Blob): Promise<void>
@@ -50,7 +51,7 @@ interface BlobStore {
   listIds(): Promise<string[]>
 }
 
-/** Web 実装（IndexedDB）。Tauri は当面同じ WebView ストレージを使う（T3 でファイル backend に切替） */
+/** Web 実装（IndexedDB） */
 const webBlobStore: BlobStore = {
   async put(blob) {
     const id = uid()
@@ -75,7 +76,119 @@ const webBlobStore: BlobStore = {
   },
 }
 
-const blobStore: BlobStore = webBlobStore
+// --- Tauri 実装（T3: %APPDATA%/data/images/<id>.<ext> のファイル backend） ---
+// id は uid() が発行する不透明な文字列（ドットを含まない）なので、拡張子は
+// mime から決めてファイル名に付与し、読み出し時は同 id プレフィックスのファイルを
+// readDir で探して拡張子から mime を逆引きする（別途インデックスファイルは持たない）。
+
+const TAURI_IMAGES_DIR = 'data/images'
+const TAURI_MIGRATION_MARKER = `${TAURI_IMAGES_DIR}/.migrated-from-indexeddb`
+
+function extOfMime(mime: string): string {
+  if (mime.includes('jpeg') || mime.includes('jpg')) return 'jpg'
+  if (mime.includes('webp')) return 'webp'
+  if (mime.includes('gif')) return 'gif'
+  return 'png'
+}
+
+function mimeOfExt(ext: string): string {
+  switch (ext.toLowerCase()) {
+    case 'jpg':
+    case 'jpeg':
+      return 'image/jpeg'
+    case 'webp':
+      return 'image/webp'
+    case 'gif':
+      return 'image/gif'
+    default:
+      return 'image/png'
+  }
+}
+
+async function ensureImagesDir(): Promise<void> {
+  const { mkdir, exists, BaseDirectory } = await import('@tauri-apps/plugin-fs')
+  if (!(await exists(TAURI_IMAGES_DIR, { baseDir: BaseDirectory.AppData }))) {
+    await mkdir(TAURI_IMAGES_DIR, { baseDir: BaseDirectory.AppData, recursive: true })
+  }
+}
+
+async function findFileFor(id: string): Promise<string | undefined> {
+  await ensureImagesDir()
+  const { readDir, BaseDirectory } = await import('@tauri-apps/plugin-fs')
+  const entries = await readDir(TAURI_IMAGES_DIR, { baseDir: BaseDirectory.AppData })
+  return entries.find((e) => e.name?.startsWith(`${id}.`))?.name
+}
+
+async function writeImageFile(id: string, blob: Blob): Promise<void> {
+  await ensureImagesDir()
+  const { writeFile, remove, BaseDirectory } = await import('@tauri-apps/plugin-fs')
+  const existing = await findFileFor(id)
+  if (existing) await remove(`${TAURI_IMAGES_DIR}/${existing}`, { baseDir: BaseDirectory.AppData })
+  const ext = extOfMime(blob.type || 'image/png')
+  await writeFile(`${TAURI_IMAGES_DIR}/${id}.${ext}`, new Uint8Array(await blob.arrayBuffer()), {
+    baseDir: BaseDirectory.AppData,
+  })
+}
+
+// 旧 WebView 内蔵 IndexedDB からの一度きりの自動移行（マーカーファイルが無い場合のみ）。
+// IndexedDB 側データは削除しない（state.json 側の移行と同じくロールバックの余地を残す）。
+let imageMigrationPromise: Promise<void> | null = null
+function ensureImagesMigrated(): Promise<void> {
+  if (!imageMigrationPromise) imageMigrationPromise = migrateImagesFromIndexedDbIfNeeded()
+  return imageMigrationPromise
+}
+async function migrateImagesFromIndexedDbIfNeeded(): Promise<void> {
+  await ensureImagesDir()
+  const { exists, writeFile, BaseDirectory } = await import('@tauri-apps/plugin-fs')
+  if (await exists(TAURI_MIGRATION_MARKER, { baseDir: BaseDirectory.AppData })) return
+  try {
+    const ids = await webBlobStore.listIds()
+    for (const id of ids) {
+      const blob = await webBlobStore.get(id)
+      if (blob) await writeImageFile(id, blob)
+    }
+  } catch (e) {
+    console.error('[imageStore] IndexedDB からファイルへの画像移行に失敗', e)
+  }
+  await writeFile(TAURI_MIGRATION_MARKER, new Uint8Array(), { baseDir: BaseDirectory.AppData })
+}
+
+const tauriBlobStore: BlobStore = {
+  async put(blob) {
+    await ensureImagesMigrated()
+    const id = uid()
+    await writeImageFile(id, blob)
+    return id
+  },
+  async putAs(id, blob) {
+    await ensureImagesMigrated()
+    await writeImageFile(id, blob)
+  },
+  async get(id) {
+    await ensureImagesMigrated()
+    const name = await findFileFor(id)
+    if (!name) return undefined
+    const { readFile, BaseDirectory } = await import('@tauri-apps/plugin-fs')
+    const bytes = await readFile(`${TAURI_IMAGES_DIR}/${name}`, { baseDir: BaseDirectory.AppData })
+    const ext = name.slice(name.lastIndexOf('.') + 1)
+    return new Blob([bytes as BlobPart], { type: mimeOfExt(ext) })
+  },
+  async delete(id) {
+    await ensureImagesMigrated()
+    const name = await findFileFor(id)
+    if (!name) return
+    const { remove, BaseDirectory } = await import('@tauri-apps/plugin-fs')
+    await remove(`${TAURI_IMAGES_DIR}/${name}`, { baseDir: BaseDirectory.AppData })
+  },
+  async listIds() {
+    await ensureImagesMigrated()
+    const { readDir, BaseDirectory } = await import('@tauri-apps/plugin-fs')
+    const entries = await readDir(TAURI_IMAGES_DIR, { baseDir: BaseDirectory.AppData })
+    return entries.filter((e) => e.isFile && !e.name.startsWith('.')).map((e) => e.name.slice(0, e.name.lastIndexOf('.')))
+  },
+}
+
+const blobStore: BlobStore = isTauri() ? tauriBlobStore : webBlobStore
 
 /** 画像を保存し、新規発行した id を返す */
 export function putImage(blob: Blob): Promise<string> {

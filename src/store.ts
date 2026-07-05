@@ -33,7 +33,7 @@ import type {
 import { EMOTIONS } from './types'
 import { fetchModels, streamChat } from './lib/openrouter'
 import { base64ToBlob, blobToBase64, deleteImage, gcImages, getImage, putImage, putImageAs } from './lib/imageStore'
-import { stateStorage } from './lib/platform'
+import { PERSIST_KEY, stateStorage } from './lib/platform'
 import { normalizeImage } from './lib/avatarGen'
 import { generateImage } from './lib/imageGen'
 import {
@@ -2735,8 +2735,9 @@ export const useStore = create<AppState>()(
     },
     {
       // クリーンブレイク：Avatar 型刷新（絵文字廃止→画像参照）に伴い persist キーを再度刷新（旧 v2 は破棄）。
-      // 後方互換は不要なため migrate 連鎖は持たない。
-      name: 'ai-storytelling-store-v3',
+      // 後方互換は不要なため migrate 連鎖は持たない。キー文字列は platform.ts の PERSIST_KEY と共有
+      // （Tauri のファイル backend が旧 WebView localStorage からの移行判定に使う）。
+      name: PERSIST_KEY,
       storage: createJSONStorage(() => stateStorage),
       partialize: (st) => ({
         providers: st.providers,
