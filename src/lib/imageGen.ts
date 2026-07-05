@@ -1,4 +1,5 @@
 import type { ImageProvider, ImageProviderKind } from '../types'
+import { appFetch } from './platform'
 
 function uid(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
@@ -84,7 +85,7 @@ async function generateComfy(p: ImageProvider, req: ImageGenRequest, signal?: Ab
   const clientId = uid()
   let res: Response
   try {
-    res = await fetch(`${base}/prompt`, {
+    res = await appFetch(`${base}/prompt`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt: workflow, client_id: clientId }),
@@ -106,7 +107,7 @@ async function generateComfy(p: ImageProvider, req: ImageGenRequest, signal?: Ab
   while (Date.now() < deadline) {
     if (signal?.aborted) throw new DOMException('中断されました', 'AbortError')
     await sleep(1500)
-    const h = await fetch(`${base}/history/${encodeURIComponent(promptId)}`, { signal })
+    const h = await appFetch(`${base}/history/${encodeURIComponent(promptId)}`, { signal })
     if (!h.ok) continue
     const json = await h.json()
     const entry = json?.[promptId]
@@ -124,7 +125,7 @@ async function generateComfy(p: ImageProvider, req: ImageGenRequest, signal?: Ab
           `subfolder=${encodeURIComponent(img.subfolder ?? '')}`,
           `type=${encodeURIComponent(img.type ?? 'output')}`,
         ].join('&')
-        const v = await fetch(`${base}/view?${q}`, { signal })
+        const v = await appFetch(`${base}/view?${q}`, { signal })
         if (!v.ok) throw new Error(`生成画像の取得に失敗しました (${v.status})`)
         return v.blob()
       }
@@ -136,7 +137,7 @@ async function generateComfy(p: ImageProvider, req: ImageGenRequest, signal?: Ab
 async function generateOpenAiImage(p: ImageProvider, req: ImageGenRequest, signal?: AbortSignal): Promise<Blob> {
   const base = stripSlash(p.baseUrl)
   const size = `${req.width ?? 1024}x${req.height ?? 1024}`
-  const res = await fetch(`${base}/images/generations`, {
+  const res = await appFetch(`${base}/images/generations`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${p.apiKey}`,
@@ -165,7 +166,7 @@ async function generateOpenAiImage(p: ImageProvider, req: ImageGenRequest, signa
   }
   if (item?.url) {
     try {
-      const r = await fetch(item.url, { signal })
+      const r = await appFetch(item.url, { signal })
       if (r.ok) return r.blob()
     } catch {
       // CORS 失敗は下の明示エラーへ
@@ -186,11 +187,11 @@ export async function testImageProvider(p: ImageProvider): Promise<{ ok: boolean
   const base = stripSlash(p.baseUrl)
   try {
     if (p.kind === 'comfyui') {
-      const res = await fetch(`${base}/system_stats`)
+      const res = await appFetch(`${base}/system_stats`)
       if (res.ok) return { ok: true, message: 'ComfyUI に接続できました。' }
       return { ok: false, message: `応答はありますがエラーです (${res.status})` }
     }
-    const res = await fetch(`${base}/models`, {
+    const res = await appFetch(`${base}/models`, {
       headers: p.apiKey ? { Authorization: `Bearer ${p.apiKey}` } : undefined,
     })
     if (res.ok) return { ok: true, message: 'API に接続できました。' }

@@ -1,12 +1,17 @@
 # CLAUDE.md — AI Storytelling Studio
 
-マルチプロバイダ（OpenRouter・OpenAI 互換等）で好きなモデルを使い、AI とのロールプレイ／自動進行する物語づくりを行うクライアント完結型 Web アプリ。UI 文言・コメントは日本語。ユーザーは日本語でやり取りする。
+マルチプロバイダ（OpenRouter・OpenAI 互換等）で好きなモデルを使い、AI とのロールプレイ／自動進行する物語づくりを行うクライアント完結型アプリ。**Tauri 化 T1 実装済み**（デスクトップシェルが動作。T3 のファイルストレージ移行までは Web 版が実質正式版）。UI 文言・コメントは日本語。ユーザーは日本語でやり取りする。
 
 ## コマンド
-- 開発: `npm run dev`（Vite, ポート5173）
+- 開発（Web 版）: `npm run dev`（Vite, ポート5173）
+- 開発（デスクトップ版・Tauri シェル）: `npm run tauri:dev`（初回は Rust クレートのフルビルドで数分かかる。ブラウザ版 dev との同時起動不可＝ポート5173競合）
+- デスクトップ版ビルド: `npm run tauri:build`
 - 型チェック: `npx tsc --noEmit`
 - ビルド: `npm run build`（`tsc && vite build`）
-- 変更後は必ず「型チェック → build」で確認。
+- 変更後は必ず「型チェック → build」で確認。Tauri 固有部を触った時のみ `npm run tauri:dev` の手動チェックリスト（後述）も実施。
+
+### Rust 前提環境（初回のみ）
+rustup（`winget install Rustlang.Rustup`）と VS Build Tools（C++ デスクトップ開発ワークロード）が必要。**Windows Defender の「コントロールされたフォルダーアクセス」が有効な環境では `cargo.exe`/`rustc.exe` を「ランサムウェア防止 → アプリを許可する」に追加しないと、ビルド成果物ディレクトリが ReadOnly 属性を帯びて `num-traits`（autocfg 使用）等のビルドが `output path is not a writable directory` で失敗する**（2026-07-05 T1 実装時に確認・詳細は `docs/設計_Tauri化.md`）。
 
 ## Git・バージョン管理
 - リモート: `https://github.com/Cake30984/AIStoryTellingUI.git`（ブランチ: `main`）
@@ -17,12 +22,14 @@
 - 変更が一区切りついた適切なタイミングで、都度 `git commit` → `git push origin main` まで行う（作業を溜め込んでまとめてコミットしない）。
 
 ## 技術スタック
-React 18 + TypeScript + Vite / 状態管理は zustand（`persist` で localStorage 永続化）/ 追加ライブラリは最小限。バックエンドなし・完全クライアント。
+React 18 + TypeScript + Vite / 状態管理は zustand（`persist` で localStorage 永続化）/ 追加ライブラリは最小限。**Tauri 2（デスクトップシェル。T1実装済み）+ Web 版併存**（環境差は `src/lib/platform.ts` に集約。`isTauri()` 分岐はこのファイルの外に書かない）。
 
 ## ディレクトリ
 - `src/types.ts` — 全データ型（ここを最初に読む）
 - `src/store.ts` — zustand ストア。状態・全アクション・**永続化（クリーンブレイク・移行なし）**・状態エンジン（関係性 prose／事実の数）・ディレクター抽選など中核ロジック
+- `src-tauri/`（T1）— Tauri シェル（Rust）。設定・権限のみで独自ロジックはほぼ無し。`tauri.conf.json`（productName/identifier/window等）・`capabilities/default.json`（`core:default`＋`http:default`をhttp/https全許可）・`src/lib.rs`（`tauri_plugin_http::init()`を登録するのみ）
 - `src/lib/`
+  - `platform.ts`（T1）— 環境差（Web/Tauri）を吸収するアダプタ層。`isTauri()`/`appFetch`（Tauri では動的importした`@tauri-apps/plugin-http`のfetchをRust側で実行、CORS制約を受けない。Web は`window.fetch`）。9箇所の`fetch`呼び出し（`openrouter.ts`2箇所・`imageGen.ts`7箇所）を`appFetch`に置換済み
   - `providers.ts` — `Provider` 型・プリセット・`parseModelRef`/`makeModelRef`/`splitRef`/`modelRefLabel`
   - `openrouter.ts` — SSEストリーミング補完・モデル一覧取得（プロバイダ駆動。provider オブジェクトを受け取る）
   - `prompts.ts` — system プロンプト組み立て・選択肢/レビュー用プロンプト・定数（`CONTINUE_PROMPT`/`SCENE_START_PROMPT` 等）・画像プロンプト起案（`illustrationPromptSystem`/`illustrationContextUser`/`avatarContextUser`。G2。V1で「本文が長い場合は末尾の場面を描く」指針を追加、`illustrationContextUser`の文脈見出しは「【このシーンの本文】」）。**V4**: `emotionSystem`（表情判定用。方式A＝裏方LLMが毎応答後に対象キャラ名を渡し6値の感情を判定）、`backgroundPromptSystem`/`backgroundContextUser`（人物を含めない背景専用。指針が濁らないよう挿絵用とは別関数）
@@ -131,12 +138,13 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist` で localStor
 **主要機能はすべて実装済み**。実装済み: セッション(RP/物語)・キャラ/世界観/ペルソナ/シーンタイプの素材ライブラリ・ロアブック・グループ会話・シーン管理・タイムライン・選択肢進行・統合レビュー・シーン演出エンジン・文体切替・**マルチプロバイダ（プロバイダ管理・キャラ別モデル・役割別裏方モデル）**・あらすじ閲覧・会話編集/削除/作り直し・エクスポート/インポート・トークン目安・出力停止対策・状態エンジン（関係性prose＋事実の数＋条件エンジン＋実績＋選択肢連動加点。ADR-1 P1〜P5）・**セッション・オーバーレイ（発見ロア／キャラ成長を素材から分離しセッションへ隔離＋実効ビュー注入＋発見ログUI＋素材への昇格。B1〜B4）**・**画像基盤とPNGカード入出力（IndexedDB画像ストア・EntityAvatar・ST互換キャラカード・世界/ペルソナカード。P1〜P4）**・**画像生成連携（ComfyUI/OpenAI互換の接続先管理・裏方LLMプロンプト起案・アバター生成・挿絵・セッションカード。G1〜G4）**・**画像生成のプロンプト品質改善（スタイルプリセットprefill・起案maxTokens拡大・挿絵起案のシーン全文文脈。V1）**・**画像生成のバックグラウンドジョブ化（複数枚シード違い生成・候補選択・ジョブパネル・完了トースト。V2）**・**セッション内画像ギャラリー（GalleryModal。V3）**・**立ち絵・表情差分・背景（キャラの表情つき立ち絵セット生成・裏方LLMによる毎応答表情判定・シーン背景生成・ステージ表示・セッションカード/GC対応。V4）**・**画像改善V5a〜V5c（立ち絵が保存で消える等のstore不具合修正・ステージのバックドロップ化＝チャット背面への背景/立ち絵の薄い常時表示・ギャラリー背景タイル対応・起案の固定タグ維持/negative初期適用/接続先・起案モデルの記憶/一括生成ガード）**・**UX小修正V5d（生成中断の用途別独立化＝本編/選択肢/レビュー・maxTokens上限32,768と新規既定4096・バックドロップのコンポーザー背面拡張と半透明化）**・**Tauri化T0（画像込みフルエクスポート。`ExportBundle.images`＋`collectUsedImageIds`共通化＋`putImageAs`/`blobToBase64`/`base64ToBlob`＋SettingsModalの「画像も含める」チェックボックス。ブラウザ→デスクトップ移行の唯一の経路）**。
 
 ## 次にやること（ロードマップ）
-2026-07-05 の設計相談で以下の順序に合意（小修正バッチ V5d・Tauri化 T0 は実装済み）:
-1. **Tauri 化（デスクトップアプリ化。決定済み・分岐機能より先に行う）**: 設計書済み → `docs/設計_Tauri化.md`（T0〜T4。Web版は開発検証用に併存・データはファイル群・手動配布・Windowsのみ）。T0（画像込みフルエクスポート）は実装済み。次のアクションは T1（Rustツールチェーン導入→Tauriシェル起動＋plugin-httpのSSEストリーミングPoC）から。
+2026-07-05 の設計相談で以下の順序に合意（小修正バッチ V5d・Tauri化 T0・T1 は実装済み）:
+1. **Tauri 化（デスクトップアプリ化。決定済み・分岐機能より先に行う）**: 設計書 → `docs/設計_Tauri化.md`（T0〜T4）。T0（画像込みフルエクスポート）・**T1（Tauriシェル起動＋plugin-httpのCORS-free HTTP。ストリーミング・中断とも実機確認済み）実装済み**。次のアクションは T2（環境アダプタ層＝保存ダイアログ・StateStorage/BlobStore interface）から。
+   - **T1で判明した既知の問題（次セッションで対応予定・詳細は設計書）**: ①選択肢生成中に次シーンの本編生成が始まると選択肢側のAbortControllerが追従せず `Cannot read properties of null (reading 'signal')` が発生する（本編生成開始時に選択肢生成の中断も連動させる必要）。②ComfyUIが `--enable-cors-header` なしの通常起動では接続できなかった（T1の目的の一つと矛盾するため要調査）。
 2. **セーブ/ロードと分岐周回**（合意済み方針→ `docs/設計_セーブロードと分岐.md` を書いてから実装）: チェックポイント方式＝各ユーザー操作でセッション全体の深コピーを圧縮保存（大容量ストア側）し、木のメタデータ（親リンク・ラベル）は軽量ストアに持つ。全操作が自動 fork（明示 fork 操作なし・積極的な剪定UI）／大ポイント＝レビュー確定（レビューやり直しは直前の小ポイントへ。レビュー直前ポイントは表示を変える）／小ポイントのラベルは「選んだ選択肢テキスト→ユーザー入力冒頭→本文冒頭」の優先順＋全自動記録＋しおり（★・任意名・サムネイル）のハイブリッド／**画像の即時 `deleteImage` を全廃し GC 一本化（チェックポイント内の imageId も使用中扱い）**／素材昇格・素材編集はツリー外の共有資産と割り切り、他分岐へ影響し得る旨を UI 注釈で明示。
 3. **品質プロンプトのユーザー定義化（スタイルプリセット廃止）**: `STYLE_PRESETS`・`lastImageStyle` を廃止し、**ImageProvider（接続先）ごと**にデフォルト positive/negative（LoRA トリガー・画風・品質タグ）を設定できるようにする。生成実行時に裏で結合し、プロンプト欄には表示しない。起案 LLM には品質・画風タグを含めない指示を明示。キャラ固有 `imagePrompt`（キャラ専用 LoRA 等）は別物として現状維持。
 4. **構造化出力**（専用設計書が必要な大物）: 本編出力をセリフ/ナレーション/話者/表情が機械可読な形式にし、①立ち絵の表情をセリフ行単位でストリーミング中に切替（毎応答後の裏方判定＝方式Aを置換）、②将来の読み上げ（TTS）でキャラ声/ナレーション振り分け、③チャット画面はマークアップを隠して綺麗に表示。フォーマットは行単位軽量タグ vs XML を設計書で比較（弱モデル耐性・途中切れ耐性から graceful degradation を必須仕様に）。既存平文メッセージとの共存（レンダラ二刀流）も設計する。
-5. 既存残タスク: **ComfyUI 実機での動作確認**（Tauri 化で CORS 問題は解消見込み。ワークフローテンプレの拡充＝SDXL以外・LoRAノード入りも未実施）／**openai-image 系の実プロバイダ確認**（`response_format: b64_json` 非対応 API への追従が必要になったら `imageGen.ts` の openai 経路にバリエーションを足す）。
+5. 既存残タスク: **ComfyUI 実機での動作確認**（上記T1既知の問題②を参照。ワークフローテンプレの拡充＝SDXL以外・LoRAノード入りも未実施）／**openai-image 系の実プロバイダ確認**（`response_format: b64_json` 非対応 API への追従が必要になったら `imageGen.ts` の openai 経路にバリエーションを足す）。
 
 ## 設計上の根本分岐（ADR）
 後から別パターンを試せるよう、根本決定と**却下案**を残す。詳細実装計画は `docs/設計_ステータスエンジン.md`。
