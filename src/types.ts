@@ -542,4 +542,6 @@ export interface ExportBundle {
   sessions: Session[]
   sceneTypes?: SceneType[]
   providers?: Provider[]
+  /** 画像込みエクスポート時のみ同梱（アバター・立ち絵・挿絵・背景の実体。T0） */
+  images?: { id: string; mime: string; dataBase64: string }[]
 }

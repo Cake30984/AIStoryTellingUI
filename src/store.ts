@@ -32,7 +32,7 @@ import type {
 } from './types'
 import { EMOTIONS } from './types'
 import { fetchModels, streamChat } from './lib/openrouter'
-import { deleteImage, gcImages, putImage } from './lib/imageStore'
+import { base64ToBlob, blobToBase64, deleteImage, gcImages, getImage, putImage, putImageAs } from './lib/imageStore'
 import { normalizeImage } from './lib/avatarGen'
 import { generateImage } from './lib/imageGen'
 import {
@@ -489,6 +489,25 @@ export function currentScene(s: Session): Scene | undefined {
   return s.scenes.find((sc) => sc.id === s.currentSceneId) ?? s.scenes[s.scenes.length - 1]
 }
 
+/**
+ * 使用中の画像 id を収集する（GC・エクスポートの両方から呼ぶ。片方だけ更新される事故を防ぐため
+ * 「画像 id を増やしたら GC に追加」の規約はこの関数 1 箇所への追加に集約する＝T0）
+ */
+export function collectUsedImageIds(characters: Character[], personas: Persona[], sessions: Session[]): Set<string> {
+  const used = new Set<string>()
+  for (const c of characters) {
+    if (c.avatar.imageId) used.add(c.avatar.imageId)
+    for (const sp of c.sprites ?? []) used.add(sp.imageId)
+  }
+  for (const p of personas) if (p.avatar.imageId) used.add(p.avatar.imageId)
+  for (const s of sessions)
+    for (const sc of s.scenes) {
+      for (const ill of sc.illustrations ?? []) used.add(ill.imageId)
+      if (sc.backgroundImageId) used.add(sc.backgroundImageId)
+    }
+  return used
+}
+
 interface AppState {
   // 永続化
   providers: Provider[]
@@ -660,8 +679,9 @@ interface AppState {
   classifyEmotions: (sessionId: string) => Promise<void>
 
   // データ入出力
-  exportBundle: () => ExportBundle
-  importBundle: (bundle: ExportBundle) => { added: number }
+  /** includeImages=true で使用中の画像（アバター・立ち絵・挿絵・背景）を base64 同梱する（T0） */
+  exportBundle: (includeImages?: boolean) => Promise<ExportBundle>
+  importBundle: (bundle: ExportBundle) => Promise<{ added: number }>
   /** セッションカード（aist_session）の取り込み。同梱画像を putImage し直して参照を remap する */
   importSessionCard: (bundle: SessionCardBundle) => Promise<void>
   /** 未使用のアバター・挿絵画像（IndexedDB）を削除し、削除件数を返す */
@@ -2352,10 +2372,10 @@ export const useStore = create<AppState>()(
           }
         },
 
-        exportBundle: () => {
+        exportBundle: async (includeImages) => {
           const { characters, worlds, personas, sceneTypes, sessions } = get()
           // providers（API キー）は localStorage のみに保持し、エクスポートには含めない（共有時の漏洩防止）
-          return {
+          const bundle: ExportBundle = {
             type: 'ai-storytelling-studio',
             version: 1,
             exportedAt: Date.now(),
@@ -2365,10 +2385,27 @@ export const useStore = create<AppState>()(
             sceneTypes,
             sessions,
           }
+          if (includeImages) {
+            const ids = collectUsedImageIds(characters, personas, sessions)
+            const images: { id: string; mime: string; dataBase64: string }[] = []
+            for (const id of ids) {
+              const blob = await getImage(id)
+              if (!blob) continue
+              images.push({ id, mime: blob.type || 'image/png', dataBase64: await blobToBase64(blob) })
+            }
+            bundle.images = images
+          }
+          return bundle
         },
 
-        importBundle: (bundle) => {
+        importBundle: async (bundle) => {
           let added = 0
+          // 画像込みバンドルなら、参照が指す id をそのまま維持して先に復元する（avatar.imageId 等の書き換え不要）
+          if (bundle.images && bundle.images.length > 0) {
+            for (const img of bundle.images) {
+              await putImageAs(img.id, base64ToBlob(img.dataBase64, img.mime))
+            }
+          }
           // クリーンブレイク：移行連鎖は廃止。現行スキーマのバンドルのみを id マージする。
           // ワールドは新フィールド欠落に備え最小限だけ補完する。
           const normalizeAvatar = (a: any): Avatar => ({
@@ -2691,20 +2728,7 @@ export const useStore = create<AppState>()(
 
         gcUnusedImages: async () => {
           const { characters, personas, sessions } = get()
-          const used = new Set<string>()
-          for (const c of characters) {
-            if (c.avatar.imageId) used.add(c.avatar.imageId)
-            // 立ち絵も使用中扱いにする（入れ忘れると GC で立ち絵が消える。V4の最重要の落とし穴）
-            for (const sp of c.sprites ?? []) used.add(sp.imageId)
-          }
-          for (const p of personas) if (p.avatar.imageId) used.add(p.avatar.imageId)
-          // 挿絵・背景も使用中扱いにする（入れ忘れると GC が削除してしまう）
-          for (const s of sessions)
-            for (const sc of s.scenes) {
-              for (const ill of sc.illustrations ?? []) used.add(ill.imageId)
-              if (sc.backgroundImageId) used.add(sc.backgroundImageId)
-            }
-          return gcImages(used)
+          return gcImages(collectUsedImageIds(characters, personas, sessions))
         },
       }
     },
