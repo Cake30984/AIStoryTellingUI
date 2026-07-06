@@ -58,7 +58,7 @@ export default function DiscoveryPanel({ session, onClose }: Props) {
     if (!session.worldId) return
     if (
       !confirm(
-        `このロアを元のワールド${worldName ? `「${worldName}」` : ''}へ反映しますか？\n以後は発見ログから消え、ワールド編集に表示されます。`,
+        `このロアを元のワールド${worldName ? `「${worldName}」` : ''}へ反映しますか？\n以後は発見ログから消え、ワールド編集に表示されます。\n（素材への反映はすべてのセッション・すべての分岐に共有され、分岐を戻しても巻き戻りません）`,
       )
     )
       return
@@ -67,7 +67,11 @@ export default function DiscoveryPanel({ session, onClose }: Props) {
   }
 
   const promoteDev = (characterId: string, dev: Development) => {
-    if (!confirm(`この設定を「${charName(characterId)}」の正式なプロフィールへ反映しますか？\n以後は発見ログから消え、キャラ編集に表示されます。`))
+    if (
+      !confirm(
+        `この設定を「${charName(characterId)}」の正式なプロフィールへ反映しますか？\n以後は発見ログから消え、キャラ編集に表示されます。\n（素材への反映はすべてのセッション・すべての分岐に共有され、分岐を戻しても巻き戻りません）`,
+      )
+    )
       return
     promoteOverlayDev(session.id, characterId, dev)
     setOv((prev) => ({
