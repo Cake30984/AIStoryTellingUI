@@ -508,6 +508,20 @@ export function sessionImageIds(session: Session): string[] {
 }
 
 /**
+ * しおり（C3）のサムネイルをチェックポイントのスナップショットから自動選択する。
+ * 新しいシーンから遡り、背景 → 挿絵（末尾＝最新）の優先度で最初に見つかった画像を使う。
+ */
+function pickThumbFromSnapshot(session: Session): string | undefined {
+  for (let i = session.scenes.length - 1; i >= 0; i--) {
+    const sc = session.scenes[i]
+    if (sc.backgroundImageId) return sc.backgroundImageId
+    const ills = sc.illustrations ?? []
+    if (ills.length > 0) return ills[ills.length - 1].imageId
+  }
+  return undefined
+}
+
+/**
  * 使用中の画像 id を収集する（GC・エクスポートの両方から呼ぶ。片方だけ更新される事故を防ぐため
  * 「画像 id を増やしたら GC に追加」の規約はこの関数 1 箇所への追加に集約する＝T0）
  */
@@ -619,6 +633,12 @@ interface AppState {
   deleteBranchSubtree: (sessionId: string, nodeId: string) => Promise<void>
   /** 現在パス以外のノードを一括削除する「この分岐だけ残す」（C2） */
   pruneToCurrentPath: (sessionId: string) => Promise<void>
+  /** しおりを設定する（C3）。サムネイルはノードのスナップショットから自動選択（背景優先） */
+  setBranchStar: (sessionId: string, nodeId: string, name: string) => Promise<void>
+  /** しおりを外す（C3） */
+  removeBranchStar: (sessionId: string, nodeId: string) => void
+  /** 起動時の孤児チェックポイント掃除（C3）。木のノードに対応しない実体ファイルを削除する */
+  cleanupOrphanCheckpoints: () => Promise<void>
   /**
    * 発見ロアをセッションのオーバーレイから元ワールドへ昇格（move）。元素材は明示操作でのみ更新される。
    * entry は呼び出し側（DiscoveryPanel）でローカル編集済みの内容をそのまま渡す
@@ -1622,6 +1642,66 @@ export const useStore = create<AppState>()(
             }
           })
           await Promise.all(toDelete.map((id) => checkpointStore.delete(sessionId, id)))
+        },
+
+        setBranchStar: async (sessionId, nodeId, name) => {
+          const tree = get().branchTrees[sessionId]
+          const node = tree?.nodes.find((n) => n.id === nodeId)
+          if (!tree || !node) return
+          let thumbImageId: string | undefined
+          try {
+            const raw = await checkpointStore.get(sessionId, nodeId)
+            if (raw) {
+              const parsed = JSON.parse(await gunzipText(raw)) as { v: number; session: Session }
+              thumbImageId = pickThumbFromSnapshot(parsed.session)
+            }
+          } catch {
+            // サムネイル取得に失敗しても名前だけは保存する
+          }
+          set((st) => {
+            const t = st.branchTrees[sessionId]
+            if (!t) return {}
+            return {
+              branchTrees: {
+                ...st.branchTrees,
+                [sessionId]: {
+                  ...t,
+                  nodes: t.nodes.map((n) => (n.id === nodeId ? { ...n, star: { name, thumbImageId } } : n)),
+                },
+              },
+            }
+          })
+        },
+
+        removeBranchStar: (sessionId, nodeId) =>
+          set((st) => {
+            const t = st.branchTrees[sessionId]
+            if (!t) return {}
+            return {
+              branchTrees: {
+                ...st.branchTrees,
+                [sessionId]: {
+                  ...t,
+                  nodes: t.nodes.map((n) => (n.id === nodeId ? { ...n, star: undefined } : n)),
+                },
+              },
+            }
+          }),
+
+        cleanupOrphanCheckpoints: async () => {
+          for (const [sessionId, tree] of Object.entries(get().branchTrees)) {
+            const known = new Set(tree.nodes.map((n) => n.id))
+            let actual: string[]
+            try {
+              actual = await checkpointStore.listNodeIds(sessionId)
+            } catch {
+              continue
+            }
+            const orphans = actual.filter((id) => !known.has(id))
+            if (orphans.length > 0) {
+              await Promise.all(orphans.map((id) => checkpointStore.delete(sessionId, id)))
+            }
+          }
         },
 
         promoteOverlayLore: (sessionId, entry) =>

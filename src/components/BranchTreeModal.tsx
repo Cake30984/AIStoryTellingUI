@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useStore } from '../store'
 import type { BranchNode, BranchTree, Session } from '../types'
+import { useImageUrl } from '../lib/imageStore'
 
 interface Props {
   session: Session
@@ -29,6 +30,11 @@ function currentPathIds(tree: BranchTree): Set<string> {
   return ids
 }
 
+/** しおり付きノードを新しい順に並べる（C3。★しおりタブ用） */
+function starredNodesOf(tree: BranchTree): BranchNode[] {
+  return tree.nodes.filter((n) => !!n.star).sort((a, b) => b.createdAt - a.createdAt)
+}
+
 /** 指定ノード自身とその子孫すべて（削除confirmの件数・合計サイズ表示に使う） */
 function subtreeNodes(tree: BranchTree, rootId: string): BranchNode[] {
   const byId = new Map(tree.nodes.map((n) => [n.id, n]))
@@ -51,6 +57,50 @@ function subtreeNodes(tree: BranchTree, rootId: string): BranchNode[] {
   return out
 }
 
+/** しおりのサムネイル（背景/挿絵があれば表示、無ければプレースホルダ） */
+function StarThumb({ imageId, size = 28 }: { imageId?: string; size?: number }) {
+  const url = useImageUrl(imageId)
+  const style = { width: size, height: size }
+  if (imageId && url) {
+    return <img className="star-thumb" style={style} src={url} alt="" />
+  }
+  return (
+    <div className="star-thumb star-thumb-placeholder" style={style}>
+      ★
+    </div>
+  )
+}
+
+function StarButton({
+  node,
+  busy,
+  onSetStar,
+  onRemoveStar,
+}: {
+  node: BranchNode
+  busy: boolean
+  onSetStar: (node: BranchNode) => void
+  onRemoveStar: (node: BranchNode) => void
+}) {
+  if (node.star) {
+    return (
+      <button
+        className="icon-btn small"
+        disabled={busy}
+        title={`しおり: ${node.star.name}（クリックで外す）`}
+        onClick={() => onRemoveStar(node)}
+      >
+        ★
+      </button>
+    )
+  }
+  return (
+    <button className="icon-btn small" disabled={busy} title="しおりを付ける" onClick={() => onSetStar(node)}>
+      ☆
+    </button>
+  )
+}
+
 function NodeRow({
   node,
   depth,
@@ -59,6 +109,8 @@ function NodeRow({
   busy,
   onRestore,
   onDeleteSubtree,
+  onSetStar,
+  onRemoveStar,
 }: {
   node: BranchNode
   depth: number
@@ -67,6 +119,8 @@ function NodeRow({
   busy: boolean
   onRestore: (nodeId: string) => void
   onDeleteSubtree: (node: BranchNode) => void
+  onSetStar: (node: BranchNode) => void
+  onRemoveStar: (node: BranchNode) => void
 }) {
   const indent = depth * 16
   const deleteBtn = (
@@ -79,6 +133,7 @@ function NodeRow({
       🗑
     </button>
   )
+  const starBtn = <StarButton node={node} busy={busy} onSetStar={onSetStar} onRemoveStar={onRemoveStar} />
   if (node.kind === 'scene') {
     return (
       <div className="branch-row branch-scene" style={{ marginLeft: indent }}>
@@ -86,6 +141,7 @@ function NodeRow({
           📖 {node.label}
           {node.timeLabel ? `（${node.timeLabel}）` : ''}
         </span>
+        {node.star && <span className="badge">★ {node.star.name}</span>}
         {isCurrent && <span className="badge">▶ いまここ</span>}
         <span className="branch-size">{formatBytes(node.bytes)}</span>
         {node.parentId && (
@@ -93,6 +149,7 @@ function NodeRow({
             ↩ レビュー前に戻る
           </button>
         )}
+        {starBtn}
         {deleteBtn}
       </div>
     )
@@ -101,6 +158,7 @@ function NodeRow({
     <div className="branch-row branch-action" style={{ marginLeft: indent }}>
       <span className="branch-label">{node.label}</span>
       <span className="branch-time">{new Date(node.createdAt).toLocaleString()}</span>
+      {node.star && <span className="badge">★ {node.star.name}</span>}
       {isCurrent && <span className="badge">▶ いまここ</span>}
       <span className="branch-size">{formatBytes(node.bytes)}</span>
       {!isCurrent && (
@@ -108,6 +166,7 @@ function NodeRow({
           ⏪ ここに戻る
         </button>
       )}
+      {starBtn}
       {deleteBtn}
     </div>
   )
@@ -127,6 +186,8 @@ function Chain({
   busy,
   onRestore,
   onDeleteSubtree,
+  onSetStar,
+  onRemoveStar,
   depth,
 }: {
   tree: BranchTree
@@ -138,6 +199,8 @@ function Chain({
   busy: boolean
   onRestore: (nodeId: string) => void
   onDeleteSubtree: (node: BranchNode) => void
+  onSetStar: (node: BranchNode) => void
+  onRemoveStar: (node: BranchNode) => void
   depth: number
 }) {
   const rows: JSX.Element[] = []
@@ -158,6 +221,8 @@ function Chain({
         busy={busy}
         onRestore={onRestore}
         onDeleteSubtree={onDeleteSubtree}
+        onSetStar={onSetStar}
+        onRemoveStar={onRemoveStar}
       />,
     )
     const children = childrenOf(tree, node.id)
@@ -192,6 +257,8 @@ function Chain({
                   busy={busy}
                   onRestore={onRestore}
                   onDeleteSubtree={onDeleteSubtree}
+                  onSetStar={onSetStar}
+                  onRemoveStar={onRemoveStar}
                   depth={depth + 1}
                 />
               ))}
@@ -212,6 +279,8 @@ export default function BranchTreeModal({ session, onClose }: Props) {
     restoreCheckpoint,
     deleteBranchSubtree,
     pruneToCurrentPath,
+    setBranchStar,
+    removeBranchStar,
     isStreaming,
     isGeneratingChoices,
     isReviewing,
@@ -220,6 +289,7 @@ export default function BranchTreeModal({ session, onClose }: Props) {
   const generating = isStreaming || isGeneratingChoices || isReviewing
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [busyAction, setBusyAction] = useState(false)
+  const [tab, setTab] = useState<'tree' | 'starred'>('tree')
   const busy = generating || busyAction
 
   const toggle = (id: string) =>
@@ -280,6 +350,21 @@ export default function BranchTreeModal({ session, onClose }: Props) {
 
   const root = tree?.nodes.find((n) => n.parentId === null)
   const totalBytes = tree ? tree.nodes.reduce((sum, n) => sum + n.bytes, 0) : 0
+  const starred = tree ? starredNodesOf(tree) : []
+
+  const doSetStar = async (node: BranchNode) => {
+    if (busy) return
+    const name = window.prompt('しおりの名前を入力してください', node.star?.name ?? node.label)
+    if (name === null) return
+    const trimmed = name.trim()
+    if (!trimmed) return
+    await setBranchStar(session.id, node.id, trimmed)
+  }
+
+  const doRemoveStar = (node: BranchNode) => {
+    if (busy || !node.star) return
+    removeBranchStar(session.id, node.id)
+  }
 
   return (
     <div className="overlay" onClick={onClose}>
@@ -291,8 +376,54 @@ export default function BranchTreeModal({ session, onClose }: Props) {
           </button>
         </div>
         <div className="modal-body">
+          {tree && (
+            <div className="seg" style={{ marginBottom: 14 }}>
+              <button className={tab === 'tree' ? 'on' : ''} onClick={() => setTab('tree')}>
+                ツリー
+              </button>
+              <button className={tab === 'starred' ? 'on' : ''} onClick={() => setTab('starred')}>
+                ★ しおり{starred.length > 0 ? `（${starred.length}）` : ''}
+              </button>
+            </div>
+          )}
           {!tree || !root ? (
             <p className="desc">まだ記録がありません。物語を進めると、ここに時点が記録されていきます。</p>
+          ) : tab === 'starred' ? (
+            starred.length === 0 ? (
+              <p className="desc">まだしおりがありません。各ノードの ☆ から名前を付けて登録できます。</p>
+            ) : (
+              <div className="star-list">
+                {starred.map((n) => (
+                  <div className="star-row" key={n.id}>
+                    <StarThumb imageId={n.star?.thumbImageId} size={56} />
+                    <div className="star-row-info">
+                      <div className="star-row-name">★ {n.star?.name}</div>
+                      <div className="desc">
+                        {n.kind === 'scene' ? `📖 ${n.label}` : n.label}
+                        {n.timeLabel ? `（${n.timeLabel}）` : ''}
+                      </div>
+                      <div className="branch-time">{new Date(n.createdAt).toLocaleString()}</div>
+                    </div>
+                    {tree.currentId === n.id && <span className="badge">▶ いまここ</span>}
+                    <button
+                      className="btn"
+                      disabled={busy || tree.currentId === n.id}
+                      onClick={() => doRestore(n.id)}
+                    >
+                      ⏪ ここに戻る
+                    </button>
+                    <button
+                      className="icon-btn small"
+                      disabled={busy}
+                      title="しおりを外す"
+                      onClick={() => doRemoveStar(n)}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )
           ) : (
             <div className="branch-list">
               <Chain
@@ -305,6 +436,8 @@ export default function BranchTreeModal({ session, onClose }: Props) {
                 busy={busy}
                 onRestore={doRestore}
                 onDeleteSubtree={doDeleteSubtree}
+                onSetStar={doSetStar}
+                onRemoveStar={doRemoveStar}
                 depth={0}
               />
             </div>
