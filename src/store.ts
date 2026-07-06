@@ -613,6 +613,13 @@ interface AppState {
    */
   restoreCheckpoint: (sessionId: string, nodeId: string) => Promise<void>
   /**
+   * 指定ノード以下のサブツリーを削除する（チェックポイント実体も削除。C2）。
+   * 現在パス（root→currentId）上のノードは削除不可（例外を投げる。UI 側で confirm 済みの前提）。
+   */
+  deleteBranchSubtree: (sessionId: string, nodeId: string) => Promise<void>
+  /** 現在パス以外のノードを一括削除する「この分岐だけ残す」（C2） */
+  pruneToCurrentPath: (sessionId: string) => Promise<void>
+  /**
    * 発見ロアをセッションのオーバーレイから元ワールドへ昇格（move）。元素材は明示操作でのみ更新される。
    * entry は呼び出し側（DiscoveryPanel）でローカル編集済みの内容をそのまま渡す
    * （store 側の overlay を経由しないため、他の未保存編集に触れない）。
@@ -728,6 +735,38 @@ function serializeCheckpointWrite(sessionId: string, fn: () => Promise<void>): P
 /** チェックポイント比較用の安定した JSON（updatedAt はチェックポイント無関係の書換で変わるため除外） */
 function stableSessionJson(s: Session): string {
   return JSON.stringify({ ...s, updatedAt: 0 })
+}
+
+/** 現在パス（ルート→currentId）のノード id 集合（C2。削除保護・「この分岐だけ残す」に使う） */
+function currentPathIds(tree: BranchTree): Set<string> {
+  const byId = new Map(tree.nodes.map((n) => [n.id, n]))
+  const ids = new Set<string>()
+  let id: string | null = tree.currentId
+  while (id) {
+    ids.add(id)
+    id = byId.get(id)?.parentId ?? null
+  }
+  return ids
+}
+
+/** 指定ノード自身とその子孫すべての id（C2。サブツリー削除に使う） */
+function subtreeNodeIds(tree: BranchTree, rootId: string): string[] {
+  const childrenOf = new Map<string, string[]>()
+  for (const n of tree.nodes) {
+    if (n.parentId) {
+      const arr = childrenOf.get(n.parentId) ?? []
+      arr.push(n.id)
+      childrenOf.set(n.parentId, arr)
+    }
+  }
+  const out: string[] = []
+  const stack = [rootId]
+  while (stack.length) {
+    const id = stack.pop()!
+    out.push(id)
+    for (const c of childrenOf.get(id) ?? []) stack.push(c)
+  }
+  return out
 }
 
 function headOf(text: string, max = 24): string {
@@ -1543,6 +1582,46 @@ export const useStore = create<AppState>()(
               },
             },
           }))
+        },
+
+        deleteBranchSubtree: async (sessionId, nodeId) => {
+          const tree = get().branchTrees[sessionId]
+          if (!tree) return
+          if (currentPathIds(tree).has(nodeId)) {
+            throw new Error('現在の分岐上のノードは削除できません。')
+          }
+          const toDelete = subtreeNodeIds(tree, nodeId)
+          const toDeleteSet = new Set(toDelete)
+          set((st) => {
+            const t = st.branchTrees[sessionId]
+            if (!t) return {}
+            return {
+              branchTrees: {
+                ...st.branchTrees,
+                [sessionId]: { ...t, nodes: t.nodes.filter((n) => !toDeleteSet.has(n.id)) },
+              },
+            }
+          })
+          await Promise.all(toDelete.map((id) => checkpointStore.delete(sessionId, id)))
+        },
+
+        pruneToCurrentPath: async (sessionId) => {
+          const tree = get().branchTrees[sessionId]
+          if (!tree) return
+          const keep = currentPathIds(tree)
+          const toDelete = tree.nodes.filter((n) => !keep.has(n.id)).map((n) => n.id)
+          if (toDelete.length === 0) return
+          set((st) => {
+            const t = st.branchTrees[sessionId]
+            if (!t) return {}
+            return {
+              branchTrees: {
+                ...st.branchTrees,
+                [sessionId]: { ...t, nodes: t.nodes.filter((n) => keep.has(n.id)) },
+              },
+            }
+          })
+          await Promise.all(toDelete.map((id) => checkpointStore.delete(sessionId, id)))
         },
 
         promoteOverlayLore: (sessionId, entry) =>

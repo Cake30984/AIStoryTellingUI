@@ -22,6 +22,7 @@ import StoryLogModal from './StoryLogModal'
 import StatusPanel from './StatusPanel'
 import DiscoveryPanel from './DiscoveryPanel'
 import GalleryModal from './GalleryModal'
+import BranchTreeModal from './BranchTreeModal'
 import EntityAvatar from './EntityAvatar'
 import StageBackdrop from './StageBackdrop'
 
@@ -105,6 +106,7 @@ export default function ChatPanel({ session }: Props) {
   const [showStatus, setShowStatus] = useState(false)
   const [showDiscovery, setShowDiscovery] = useState(false)
   const [showGallery, setShowGallery] = useState(false)
+  const [showBranchTree, setShowBranchTree] = useState(false)
   const [showImageGen, setShowImageGen] = useState(false)
   const [showBgGen, setShowBgGen] = useState(false)
   const [showImageJobs, setShowImageJobs] = useState(false)
@@ -371,6 +373,9 @@ export default function ChatPanel({ session }: Props) {
         </button>
         <button className="icon-btn" onClick={() => setShowGallery(true)} title="画像ギャラリー">
           🖼
+        </button>
+        <button className="icon-btn" onClick={() => setShowBranchTree(true)} title="分岐ツリー（セーブ/ロード）">
+          🕘
         </button>
         <button
           className={'icon-btn' + (stageOn ? ' on' : '')}
@@ -684,6 +689,7 @@ export default function ChatPanel({ session }: Props) {
         <DiscoveryPanel session={session} onClose={() => setShowDiscovery(false)} />
       )}
       {showGallery && <GalleryModal session={session} onClose={() => setShowGallery(false)} />}
+      {showBranchTree && <BranchTreeModal session={session} onClose={() => setShowBranchTree(false)} />}
       {showImageGen && scene && (
         <ImageGenModal
           title="この場面の挿絵を生成"

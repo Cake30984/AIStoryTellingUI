@@ -46,6 +46,9 @@ export default function CharacterEditor({ character, onClose }: Props) {
           </button>
         </div>
         <div className="modal-body">
+          <p style={{ fontSize: 12, color: 'var(--text-faint)', marginTop: 0, marginBottom: 10 }}>
+            素材の編集・保存はすべてのセッション・すべての分岐に共有されます（分岐を戻しても巻き戻りません）。
+          </p>
           <div className="field">
             <label>アバター</label>
             <AvatarField
