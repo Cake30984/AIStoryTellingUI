@@ -531,6 +531,33 @@ export interface SceneReview {
   scheduledEventName?: string
 }
 
+/** 分岐ツリーの1ノード（C1）。チェックポイント実体は CheckpointStore に nodeId で保存する */
+export interface BranchNode {
+  id: string
+  /** null = ルート（このセッションで最初に記録された時点） */
+  parentId: string | null
+  /** action = 小ポイント（物語操作1回） / scene = 大ポイント（レビュー確定） */
+  kind: 'action' | 'scene'
+  /** 作成時に確定するラベル（選択肢テキスト・入力冒頭・シーンタイトル等） */
+  label: string
+  /** シーン見出し用（大ポイントのみ: timeLabel） */
+  timeLabel?: string
+  createdAt: number
+  /** スナップショットが参照する画像 id（GC 用。チェックポイントを展開せず集計するため保存時に抽出） */
+  imageIds: string[]
+  /** 圧縮後バイト数（剪定 UI のサイズ表示用） */
+  bytes: number
+  /** しおり（C3） */
+  star?: { name: string; thumbImageId?: string }
+}
+
+/** セッションごとの分岐ツリー（軽量メタデータのみ。zustand persist 対象。実体は CheckpointStore） */
+export interface BranchTree {
+  /** 現在地。次のチェックポイントはこのノードの子として積まれる */
+  currentId: string | null
+  nodes: BranchNode[]
+}
+
 /** エクスポート/インポート用のデータ束 */
 export interface ExportBundle {
   type: 'ai-storytelling-studio'

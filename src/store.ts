@@ -3,6 +3,8 @@ import { createJSONStorage, persist } from 'zustand/middleware'
 import type {
   AchievementDef,
   Avatar,
+  BranchNode,
+  BranchTree,
   Character,
   Choice,
   ChoiceEffect,
@@ -32,8 +34,9 @@ import type {
 } from './types'
 import { EMOTIONS } from './types'
 import { fetchModels, streamChat } from './lib/openrouter'
-import { base64ToBlob, blobToBase64, deleteImage, gcImages, getImage, putImage, putImageAs } from './lib/imageStore'
-import { PERSIST_KEY, stateStorage } from './lib/platform'
+import { base64ToBlob, blobToBase64, gcImages, getImage, putImage, putImageAs } from './lib/imageStore'
+import { checkpointStore, PERSIST_KEY, stateStorage } from './lib/platform'
+import { gunzipText, gzipText } from './lib/checkpoint'
 import { normalizeImage } from './lib/avatarGen'
 import { generateImage } from './lib/imageGen'
 import {
@@ -491,6 +494,20 @@ export function currentScene(s: Session): Scene | undefined {
 }
 
 /**
+ * セッション1件が参照する画像 id を抽出する（C1）。ライブ収集（collectUsedImageIds）と
+ * チェックポイント保存時の imageIds 抽出の両方がこの1関数を使う。「画像 id を増やしたら
+ * ここに追加」の規約はこの関数1箇所に集約する。
+ */
+export function sessionImageIds(session: Session): string[] {
+  const ids: string[] = []
+  for (const sc of session.scenes) {
+    for (const ill of sc.illustrations ?? []) ids.push(ill.imageId)
+    if (sc.backgroundImageId) ids.push(sc.backgroundImageId)
+  }
+  return ids
+}
+
+/**
  * 使用中の画像 id を収集する（GC・エクスポートの両方から呼ぶ。片方だけ更新される事故を防ぐため
  * 「画像 id を増やしたら GC に追加」の規約はこの関数 1 箇所への追加に集約する＝T0）
  */
@@ -501,11 +518,7 @@ export function collectUsedImageIds(characters: Character[], personas: Persona[]
     for (const sp of c.sprites ?? []) used.add(sp.imageId)
   }
   for (const p of personas) if (p.avatar.imageId) used.add(p.avatar.imageId)
-  for (const s of sessions)
-    for (const sc of s.scenes) {
-      for (const ill of sc.illustrations ?? []) used.add(ill.imageId)
-      if (sc.backgroundImageId) used.add(sc.backgroundImageId)
-    }
+  for (const s of sessions) for (const id of sessionImageIds(s)) used.add(id)
   return used
 }
 
@@ -527,6 +540,8 @@ interface AppState {
   sceneTypes: SceneType[]
   sessions: Session[]
   activeId: string | null
+  /** セッションごとの分岐ツリー（軽量メタデータのみ。実体は checkpointStore。C1） */
+  branchTrees: Record<string, BranchTree>
 
   // ランタイム
   view: View
@@ -592,6 +607,12 @@ interface AppState {
   updateSession: (id: string, patch: Partial<Session>) => void
   resolveRefs: (session: Session) => ResolvedRefs
   /**
+   * チェックポイントへ復元する（C1）。プレイ用ノブ（title/model/reviewModel/choicesModel/
+   * temperature/maxTokens/spritesEnabled）だけ現在値を維持し、それ以外はスナップショットから復元する。
+   * 復元は何も削除しない（次の物語操作でこのノードの子が積まれ、既存の子がいれば兄弟分岐になる）。
+   */
+  restoreCheckpoint: (sessionId: string, nodeId: string) => Promise<void>
+  /**
    * 発見ロアをセッションのオーバーレイから元ワールドへ昇格（move）。元素材は明示操作でのみ更新される。
    * entry は呼び出し側（DiscoveryPanel）でローカル編集済みの内容をそのまま渡す
    * （store 側の overlay を経由しないため、他の未保存編集に触れない）。
@@ -646,8 +667,8 @@ interface AppState {
   // 挿絵
   addIllustration: (sessionId: string, sceneId: string, ill: SceneIllustration) => void
   removeIllustration: (sessionId: string, sceneId: string, illId: string) => void
-  /** シーン背景を外す（imageId は IndexedDB からも削除。V5b） */
-  removeSceneBackground: (sessionId: string, sceneId: string) => Promise<void>
+  /** シーン背景を外す（参照除去のみ。実体回収は GC 一本化により gcUnusedImages に任せる） */
+  removeSceneBackground: (sessionId: string, sceneId: string) => void
 
   // 画像生成ジョブ（V2・バックグラウンド生成）
   /** ジョブを起動し fire-and-forget で直列生成を回す。jobId を返す */
@@ -694,6 +715,38 @@ interface AppState {
 let mainController: AbortController | null = null
 let choicesController: AbortController | null = null
 let reviewController: AbortController | null = null
+
+// チェックポイント書き込みの直列化（セッションごと。fire-and-forget での順序逆転を防ぐ。C1）
+const checkpointWriteChains = new Map<string, Promise<void>>()
+function serializeCheckpointWrite(sessionId: string, fn: () => Promise<void>): Promise<void> {
+  const prev = checkpointWriteChains.get(sessionId) ?? Promise.resolve()
+  const next = prev.then(fn, fn)
+  checkpointWriteChains.set(sessionId, next)
+  return next
+}
+
+/** チェックポイント比較用の安定した JSON（updatedAt はチェックポイント無関係の書換で変わるため除外） */
+function stableSessionJson(s: Session): string {
+  return JSON.stringify({ ...s, updatedAt: 0 })
+}
+
+function headOf(text: string, max = 24): string {
+  const t = text.trim().replace(/\s+/g, ' ')
+  return t.length > max ? `${t.slice(0, max)}…` : t
+}
+
+/** 小ポイント（action）のラベルを、現在のセッション末尾の発言から決める */
+function actionCheckpointLabel(session: Session): string {
+  const lastUser = [...session.messages].reverse().find((m) => m.role === 'user')
+  if (lastUser) {
+    if (lastUser.content === SCENE_START_PROMPT) return '🎬 シーン導入'
+    if (lastUser.content === CONTINUE_PROMPT) return '⏩ 続き'
+    if (lastUser.content.trim()) return headOf(lastUser.content)
+  }
+  const lastAssistant = [...session.messages].reverse().find((m) => m.role === 'assistant')
+  if (lastAssistant?.content.trim()) return headOf(lastAssistant.content)
+  return '（無題）'
+}
 
 /**
  * 状態（関係性 prose ＋ 気分 ＋ 注入対象スタット）をプロンプト用テキストに整形（空なら ''）。
@@ -817,6 +870,67 @@ export const useStore = create<AppState>()(
       const patchActive = (patch: Partial<Session>) => {
         const s = active()
         if (s) get().updateSession(s.id, patch)
+      }
+
+      async function writeCheckpointNode(sessionId: string, nodeId: string, session: Session): Promise<number> {
+        const gz = await gzipText(JSON.stringify({ v: 1, session }))
+        await checkpointStore.put(sessionId, nodeId, gz)
+        return gz.byteLength
+      }
+
+      /**
+       * チェックポイントを記録する（C1）。呼び出しは物語操作の完了直後（3契機に限定・store.ts 内に集約）。
+       * beforeSession は「この操作を始める前」のセッション参照（各操作の冒頭で active()/session lookup
+       * したものをそのまま渡す。immutable 更新のため参照は書き換わらない）。
+       * - 木が空なら beforeSession をルート（label「開始時点」）として先に積む（ルートの遅延生成）。
+       * - beforeSession と実質無変化（updatedAt 以外が完全一致）なら積まない（dedupe）。
+       * - 書き込みは sessionId ごとに直列化し、順序逆転を防ぐ。
+       */
+      async function recordCheckpoint(
+        sessionId: string,
+        kind: 'action' | 'scene',
+        label: string,
+        beforeSession: Session | undefined,
+        timeLabel?: string,
+      ): Promise<void> {
+        await serializeCheckpointWrite(sessionId, async () => {
+          const session = get().sessions.find((s) => s.id === sessionId)
+          if (!session) return
+          let tree = get().branchTrees[sessionId]
+          if (!tree || tree.nodes.length === 0) {
+            const rootSession = beforeSession ?? session
+            const rootId = uid()
+            const bytes = await writeCheckpointNode(sessionId, rootId, rootSession)
+            const rootNode: BranchNode = {
+              id: rootId,
+              parentId: null,
+              kind: 'scene',
+              label: '開始時点',
+              createdAt: Date.now(),
+              imageIds: sessionImageIds(rootSession),
+              bytes,
+            }
+            tree = { currentId: rootId, nodes: [rootNode] }
+            set((st) => ({ branchTrees: { ...st.branchTrees, [sessionId]: tree! } }))
+          }
+          if (beforeSession && stableSessionJson(beforeSession) === stableSessionJson(session)) return
+          const nodeId = uid()
+          const bytes = await writeCheckpointNode(sessionId, nodeId, session)
+          const node: BranchNode = {
+            id: nodeId,
+            parentId: tree.currentId,
+            kind,
+            label,
+            timeLabel,
+            createdAt: Date.now(),
+            imageIds: sessionImageIds(session),
+            bytes,
+          }
+          set((st) => {
+            const cur = st.branchTrees[sessionId] ?? tree!
+            return { branchTrees: { ...st.branchTrees, [sessionId]: { currentId: nodeId, nodes: [...cur.nodes, node] } } }
+          })
+        })
       }
 
       /** 素材（World/Character）にセッションのオーバーレイ（発見ロア・キャラ成長）を合成した実効ビューを返す */
@@ -1000,6 +1114,11 @@ export const useStore = create<AppState>()(
         if (after && finalMsg && finalMsg.content.trim() && after.choiceMode !== 'off') {
           await genChoices(after, assistantId)
         }
+        // チェックポイント記録（C1）。中断（Abort）・エラー終了時は finishReason が null のままなので積まない
+        if (finishReason !== null) {
+          const finalSession = target()
+          if (finalSession) void recordCheckpoint(sessionId, 'action', actionCheckpointLabel(finalSession), s)
+        }
         // 表情判定（V4・方式A）。本編をブロックしない fire-and-forget
         if (finalMsg && finalMsg.content.trim()) {
           get().classifyEmotions(sessionId)
@@ -1144,6 +1263,7 @@ export const useStore = create<AppState>()(
         sceneTypes: defaultSceneTypes(),
         sessions: [],
         activeId: null,
+        branchTrees: {},
 
         view: 'sessions',
         modelsByProvider: {},
@@ -1274,7 +1394,8 @@ export const useStore = create<AppState>()(
         setCharacterSprite: async (characterId, emotion, imageId) => {
           const character = get().characters.find((c) => c.id === characterId)
           if (!character) return
-          const oldImageId = character.sprites?.find((s) => s.emotion === emotion)?.imageId
+          // 旧 imageId の実体削除はしない（GC 一本化。分岐チェックポイントが参照している可能性があるため
+          // 参照を外すだけにとどめ、回収は gcUnusedImages に任せる）
           set((st) => ({
             characters: st.characters.map((c) =>
               c.id !== characterId
@@ -1288,7 +1409,6 @@ export const useStore = create<AppState>()(
                   },
             ),
           }))
-          if (oldImageId && oldImageId !== imageId) await deleteImage(oldImageId)
         },
 
         upsertWorld: (w) =>
@@ -1369,12 +1489,16 @@ export const useStore = create<AppState>()(
           set((st) => ({ sessions: [s, ...st.sessions], activeId: s.id, view: 'sessions' }))
         },
 
-        deleteSession: (id) =>
+        deleteSession: (id) => {
           set((st) => {
             const sessions = st.sessions.filter((s) => s.id !== id)
             const activeId = st.activeId === id ? (sessions[0]?.id ?? null) : st.activeId
-            return { sessions, activeId }
-          }),
+            const branchTrees = { ...st.branchTrees }
+            delete branchTrees[id]
+            return { sessions, activeId, branchTrees }
+          })
+          void checkpointStore.deleteSession(id)
+        },
 
         setActive: (id) => set({ activeId: id, view: 'sessions' }),
 
@@ -1386,6 +1510,40 @@ export const useStore = create<AppState>()(
           })),
 
         resolveRefs,
+
+        restoreCheckpoint: async (sessionId, nodeId) => {
+          if (get().isStreaming || get().isGeneratingChoices || get().isReviewing) {
+            throw new Error('生成中は復元できません。生成の完了・停止後にもう一度お試しください。')
+          }
+          const cur = get().sessions.find((s) => s.id === sessionId)
+          if (!cur) return
+          const raw = await checkpointStore.get(sessionId, nodeId)
+          if (!raw) throw new Error('チェックポイントが見つかりません。')
+          const parsed = JSON.parse(await gunzipText(raw)) as { v: number; session: Session }
+          // プレイ用ノブだけ現在値を維持（passthrough）。それ以外はスナップショットから復元する
+          const restored: Session = {
+            ...parsed.session,
+            title: cur.title,
+            model: cur.model,
+            reviewModel: cur.reviewModel,
+            choicesModel: cur.choicesModel,
+            temperature: cur.temperature,
+            maxTokens: cur.maxTokens,
+            spritesEnabled: cur.spritesEnabled,
+            updatedAt: Date.now(),
+          }
+          set((st) => ({
+            sessions: st.sessions.map((s) => (s.id === sessionId ? restored : s)),
+            sceneReview: null,
+            branchTrees: {
+              ...st.branchTrees,
+              [sessionId]: {
+                currentId: nodeId,
+                nodes: st.branchTrees[sessionId]?.nodes ?? [],
+              },
+            },
+          }))
+        },
 
         promoteOverlayLore: (sessionId, entry) =>
           set((st) => {
@@ -1916,6 +2074,7 @@ export const useStore = create<AppState>()(
               ),
               sceneReview: null,
             }))
+            void recordCheckpoint(s.id, 'scene', `📖 ${scene.title}（再レビュー）`, s, scene.timeLabel)
             return
           }
 
@@ -1965,6 +2124,7 @@ export const useStore = create<AppState>()(
             sceneReview: null,
             newlyUnlockedAchievements: newlyUnlocked,
           }))
+          void recordCheckpoint(s.id, 'scene', next.title, s, next.timeLabel)
 
           // 新シーンの導入を自動生成（→ 続けて選択肢が提示される）
           void get().beginScene()
@@ -2284,6 +2444,7 @@ export const useStore = create<AppState>()(
           get().updateSession(s.id, {
             messages: s.messages.map((m) => (m.id === messageId ? { ...m, content } : m)),
           })
+          void recordCheckpoint(s.id, 'action', `✏ 編集: ${headOf(content)}`, s)
         },
 
         deleteMessage: (messageId) => {
@@ -2292,6 +2453,7 @@ export const useStore = create<AppState>()(
           get().updateSession(s.id, {
             messages: s.messages.filter((m) => m.id !== messageId),
           })
+          void recordCheckpoint(s.id, 'action', '🗑 削除', s)
         },
 
         regenerateFrom: async (messageId) => {
@@ -2555,11 +2717,9 @@ export const useStore = create<AppState>()(
             ),
           })),
 
-        removeSceneBackground: async (sessionId, sceneId) => {
-          const oldImageId = get()
-            .sessions.find((s) => s.id === sessionId)
-            ?.scenes.find((sc) => sc.id === sceneId)?.backgroundImageId
-          if (!oldImageId) return
+        removeSceneBackground: (sessionId, sceneId) => {
+          // 実体削除はしない（GC 一本化。分岐チェックポイントが参照している可能性があるため
+          // 参照を外すだけにとどめ、回収は gcUnusedImages に任せる）
           set((st) => ({
             sessions: st.sessions.map((s) =>
               s.id !== sessionId
@@ -2572,7 +2732,6 @@ export const useStore = create<AppState>()(
                   },
             ),
           }))
-          await deleteImage(oldImageId)
         },
 
         startImageJob: (args) => {
@@ -2686,7 +2845,7 @@ export const useStore = create<AppState>()(
             if (!character) {
               throw new Error('対象のキャラクターが見つかりません（削除された可能性があります）。')
             }
-            const oldImageId = character.sprites?.find((s) => s.emotion === target.emotion)?.imageId
+            // 旧 imageId の実体削除はしない（GC 一本化。参照を外すだけ・回収は gcUnusedImages）
             const normalized = await normalizeImage(blob, 1024)
             const imageId = await putImage(normalized)
             set((st) => ({
@@ -2703,12 +2862,8 @@ export const useStore = create<AppState>()(
                     },
               ),
             }))
-            if (oldImageId) await deleteImage(oldImageId)
           } else {
-            // scene-background
-            const oldImageId = get()
-              .sessions.find((s) => s.id === target.sessionId)
-              ?.scenes.find((sc) => sc.id === target.sceneId)?.backgroundImageId
+            // scene-background（旧 imageId の実体削除はしない。GC 一本化）
             const imageId = await putImage(blob)
             set((st) => ({
               sessions: st.sessions.map((s) =>
@@ -2722,14 +2877,21 @@ export const useStore = create<AppState>()(
                     },
               ),
             }))
-            if (oldImageId) await deleteImage(oldImageId)
           }
           get().dismissImageJob(jobId)
         },
 
         gcUnusedImages: async () => {
-          const { characters, personas, sessions } = get()
-          return gcImages(collectUsedImageIds(characters, personas, sessions))
+          const { characters, personas, sessions, branchTrees } = get()
+          const used = collectUsedImageIds(characters, personas, sessions)
+          // チェックポイント（分岐ツリー）が参照する画像も使用中扱い（GC 一本化。C1）
+          for (const tree of Object.values(branchTrees)) {
+            for (const node of tree.nodes) {
+              for (const id of node.imageIds) used.add(id)
+              if (node.star?.thumbImageId) used.add(node.star.thumbImageId)
+            }
+          }
+          return gcImages(used)
         },
       }
     },
@@ -2753,6 +2915,7 @@ export const useStore = create<AppState>()(
         sceneTypes: st.sceneTypes,
         sessions: st.sessions,
         activeId: st.activeId,
+        branchTrees: st.branchTrees,
       }),
       // 生成中にタブを閉じた/リロードした際の残骸を起動時に掃除する：
       // 空の pending メッセージは削除、内容があるものは途中で切れた可能性が高いため

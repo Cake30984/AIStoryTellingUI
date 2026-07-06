@@ -160,6 +160,155 @@ const tauriStateStorage: StateStorageLike = {
 /** 環境に応じた永続化ストレージ。Web は localStorage、Tauri は %APPDATA%/data/state.json */
 export const stateStorage: StateStorageLike = isTauri() ? tauriStateStorage : webStateStorage
 
+// --- CheckpointStore（C1: セーブ/ロードと分岐周回のチェックポイント実体） ---
+// stateStorage / BlobStore と同じ流儀で Web(IndexedDB)/Tauri(ファイル) を切替。
+// 実体は gzip 済みバイナリ（呼び出し側で圧縮/伸長する）。
+
+export interface CheckpointStore {
+  put(sessionId: string, nodeId: string, data: Uint8Array): Promise<void>
+  get(sessionId: string, nodeId: string): Promise<Uint8Array | undefined>
+  delete(sessionId: string, nodeId: string): Promise<void>
+  /** セッション削除時にまとめて破棄 */
+  deleteSession(sessionId: string): Promise<void>
+  /** 整合性チェック（木に無い孤児の掃除）用 */
+  listNodeIds(sessionId: string): Promise<string[]>
+}
+
+const CHECKPOINT_DB_NAME = 'aist-checkpoints'
+const CHECKPOINT_DB_VERSION = 1
+const CHECKPOINT_STORE_NAME = 'checkpoints'
+
+interface CheckpointRecord {
+  key: string
+  sessionId: string
+  nodeId: string
+  data: Uint8Array
+  createdAt: number
+}
+
+function openCheckpointDb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(CHECKPOINT_DB_NAME, CHECKPOINT_DB_VERSION)
+    req.onupgradeneeded = () => {
+      const db = req.result
+      if (!db.objectStoreNames.contains(CHECKPOINT_STORE_NAME)) {
+        const store = db.createObjectStore(CHECKPOINT_STORE_NAME, { keyPath: 'key' })
+        store.createIndex('sessionId', 'sessionId', { unique: false })
+      }
+    }
+    req.onsuccess = () => resolve(req.result)
+    req.onerror = () => reject(req.error)
+  })
+}
+
+async function withCheckpointStore<T>(
+  mode: IDBTransactionMode,
+  fn: (store: IDBObjectStore) => IDBRequest<T>,
+): Promise<T> {
+  const db = await openCheckpointDb()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(CHECKPOINT_STORE_NAME, mode)
+    const store = tx.objectStore(CHECKPOINT_STORE_NAME)
+    const req = fn(store)
+    req.onsuccess = () => resolve(req.result)
+    req.onerror = () => reject(req.error)
+  })
+}
+
+const webCheckpointStore: CheckpointStore = {
+  async put(sessionId, nodeId, data) {
+    const record: CheckpointRecord = { key: `${sessionId}/${nodeId}`, sessionId, nodeId, data, createdAt: Date.now() }
+    await withCheckpointStore('readwrite', (store) => store.put(record))
+  },
+  async get(sessionId, nodeId) {
+    const record = await withCheckpointStore<CheckpointRecord | undefined>('readonly', (store) =>
+      store.get(`${sessionId}/${nodeId}`),
+    )
+    return record?.data
+  },
+  async delete(sessionId, nodeId) {
+    await withCheckpointStore('readwrite', (store) => store.delete(`${sessionId}/${nodeId}`))
+  },
+  async deleteSession(sessionId) {
+    const db = await openCheckpointDb()
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(CHECKPOINT_STORE_NAME, 'readwrite')
+      const index = tx.objectStore(CHECKPOINT_STORE_NAME).index('sessionId')
+      const req = index.openCursor(IDBKeyRange.only(sessionId))
+      req.onsuccess = () => {
+        const cursor = req.result
+        if (cursor) {
+          cursor.delete()
+          cursor.continue()
+        } else {
+          resolve()
+        }
+      }
+      req.onerror = () => reject(req.error)
+    })
+  },
+  async listNodeIds(sessionId) {
+    const db = await openCheckpointDb()
+    return new Promise<string[]>((resolve, reject) => {
+      const tx = db.transaction(CHECKPOINT_STORE_NAME, 'readonly')
+      const index = tx.objectStore(CHECKPOINT_STORE_NAME).index('sessionId')
+      const req = index.getAll(IDBKeyRange.only(sessionId))
+      req.onsuccess = () => resolve((req.result as CheckpointRecord[]).map((r) => r.nodeId))
+      req.onerror = () => reject(req.error)
+    })
+  },
+}
+
+// --- Tauri 実装（T3 で予約済みの %APPDATA%/data/checkpoints/<sessionId>/<nodeId>.bin ） ---
+
+const CHECKPOINTS_DIR = 'data/checkpoints'
+
+async function ensureCheckpointDir(sessionId: string): Promise<void> {
+  const { mkdir, exists, BaseDirectory } = await import('@tauri-apps/plugin-fs')
+  const dir = `${CHECKPOINTS_DIR}/${sessionId}`
+  if (!(await exists(dir, { baseDir: BaseDirectory.AppData }))) {
+    await mkdir(dir, { baseDir: BaseDirectory.AppData, recursive: true })
+  }
+}
+
+const tauriCheckpointStore: CheckpointStore = {
+  async put(sessionId, nodeId, data) {
+    await ensureCheckpointDir(sessionId)
+    const { writeFile, BaseDirectory } = await import('@tauri-apps/plugin-fs')
+    await writeFile(`${CHECKPOINTS_DIR}/${sessionId}/${nodeId}.bin`, data, { baseDir: BaseDirectory.AppData })
+  },
+  async get(sessionId, nodeId) {
+    const { readFile, exists, BaseDirectory } = await import('@tauri-apps/plugin-fs')
+    const path = `${CHECKPOINTS_DIR}/${sessionId}/${nodeId}.bin`
+    if (!(await exists(path, { baseDir: BaseDirectory.AppData }))) return undefined
+    return readFile(path, { baseDir: BaseDirectory.AppData })
+  },
+  async delete(sessionId, nodeId) {
+    const { remove, exists, BaseDirectory } = await import('@tauri-apps/plugin-fs')
+    const path = `${CHECKPOINTS_DIR}/${sessionId}/${nodeId}.bin`
+    if (await exists(path, { baseDir: BaseDirectory.AppData })) {
+      await remove(path, { baseDir: BaseDirectory.AppData })
+    }
+  },
+  async deleteSession(sessionId) {
+    const { remove, exists, BaseDirectory } = await import('@tauri-apps/plugin-fs')
+    const dir = `${CHECKPOINTS_DIR}/${sessionId}`
+    if (await exists(dir, { baseDir: BaseDirectory.AppData })) {
+      await remove(dir, { baseDir: BaseDirectory.AppData, recursive: true })
+    }
+  },
+  async listNodeIds(sessionId) {
+    const { readDir, exists, BaseDirectory } = await import('@tauri-apps/plugin-fs')
+    const dir = `${CHECKPOINTS_DIR}/${sessionId}`
+    if (!(await exists(dir, { baseDir: BaseDirectory.AppData }))) return []
+    const entries = await readDir(dir, { baseDir: BaseDirectory.AppData })
+    return entries.filter((e) => e.isFile && e.name?.endsWith('.bin')).map((e) => e.name.slice(0, -4))
+  },
+}
+
+/** 環境に応じたチェックポイント実体ストア。Web は IndexedDB、Tauri は %APPDATA%/data/checkpoints/ */
+export const checkpointStore: CheckpointStore = isTauri() ? tauriCheckpointStore : webCheckpointStore
+
 // ウィンドウの close 要求時、デバウンス中の書き込みを flush してから閉じる
 if (isTauri()) {
   void (async () => {
