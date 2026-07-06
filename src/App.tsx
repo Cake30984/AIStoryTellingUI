@@ -48,6 +48,12 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hydrated])
 
+  // 起動時に木へ対応しない孤児チェックポイント（書込み中断等の残骸）を掃除する（C3）
+  useEffect(() => {
+    if (!hydrated) return
+    void useStore.getState().cleanupOrphanCheckpoints()
+  }, [hydrated])
+
   if (!hydrated) {
     return (
       <div className="app">
