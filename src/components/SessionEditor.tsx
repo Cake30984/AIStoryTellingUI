@@ -65,6 +65,7 @@ export default function SessionEditor({ session, onClose }: Props) {
       timeline: d.timeline,
       choiceMode: d.choiceMode,
       narrativeStyle: d.narrativeStyle,
+      structuredOutput: d.structuredOutput,
       reviewModel: d.reviewModel,
       choicesModel: d.choicesModel,
       director: d.director,
@@ -210,6 +211,22 @@ export default function SessionEditor({ session, onClose }: Props) {
                   {m === 'novel' ? '小説形式' : '会話劇'}
                 </button>
               ))}
+            </div>
+          </div>
+
+          {/* 構造化出力（ST1） */}
+          <div className="field">
+            <label className="chk">
+              <input
+                type="checkbox"
+                checked={d.structuredOutput ?? false}
+                onChange={(e) => patch({ structuredOutput: e.target.checked })}
+              />
+              構造化出力
+            </label>
+            <div className="desc">
+              セリフを @名前(感情)「…」の行形式で書かせ、立ち絵の表情切替・話者表示に使います。
+              対応が不安定なモデルでは OFF に。OFF でも表示・立ち絵は従来方式で動作します。
             </div>
           </div>
 

@@ -1369,6 +1369,56 @@ select {
   opacity: 1;
 }
 
+/* ---------- 構造化出力（@名前(感情)「セリフ」の行形式。ST1） ---------- */
+/* 小説形式: セリフ行を話者チップ付きの行として独立表示 */
+.st-dialogue {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0;
+}
+.st-speaker {
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  font-weight: 700;
+  overflow: hidden;
+  color: #fff;
+}
+.st-tail {
+  color: var(--text-faint);
+}
+
+/* 会話形式: 吹き出しグループ＋地の文ブロックをまとめた1メッセージ */
+.st-message {
+  position: relative;
+  margin-bottom: 22px;
+}
+.st-message:hover .msg-actions {
+  opacity: 1;
+}
+.st-group {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 10px;
+  animation: fade 0.25s ease;
+}
+.st-narration {
+  margin: 0 0 10px 44px;
+  padding: 4px 0 4px 14px;
+  border-left: 2px solid var(--border);
+  color: var(--text-dim);
+  font-style: italic;
+  white-space: pre-wrap;
+}
+.st-narration.st-tail {
+  color: var(--text-faint);
+}
+
 /* メッセージ編集ボックス */
 .edit-box textarea {
   width: 100%;

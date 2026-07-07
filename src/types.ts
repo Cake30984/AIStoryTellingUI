@@ -395,6 +395,8 @@ export interface Session {
   spritesEnabled?: boolean
   /** 各キャラの現在の表情判定結果（V4・裏方LLMが毎応答後に判定） */
   spriteEmotions?: { characterId: string; emotion: EmotionId }[]
+  /** 構造化出力（本編を @名前(感情)「セリフ」の行形式で書かせる。undefined=OFF。設計は docs/設計_構造化出力.md） */
+  structuredOutput?: boolean
   messages: Message[]
   temperature: number
   maxTokens: number
