@@ -3,7 +3,7 @@ import { useStore } from '../store'
 import { streamChat } from '../lib/openrouter'
 import { parseModelRef, modelRefLabel } from '../lib/providers'
 import { extractJson } from '../lib/json'
-import { STYLE_PRESETS, applyStylePreset, ensureTags } from '../lib/imagePresets'
+import { ensureTags } from '../lib/promptTags'
 import { useBlobUrl, type ImageJobTarget } from '../lib/imageJobs'
 import ModelPicker from './ModelPicker'
 
@@ -56,8 +56,6 @@ export default function ImageGenModal({ title, draftContext, initialPrompt, targ
   const {
     imageProviders,
     providers,
-    lastImageStyle,
-    setLastImageStyle,
     lastImageProviderId,
     setLastImageProviderId,
     lastDraftModel,
@@ -73,14 +71,8 @@ export default function ImageGenModal({ title, draftContext, initialPrompt, targ
   )
   const [sizeIdx, setSizeIdx] = useState(defaultSizeIdx ?? 0)
   const [count, setCount] = useState(1)
-  const [styleId, setStyleId] = useState<'anime' | 'realistic' | ''>(lastImageStyle ?? '')
-  const [prompt, setPrompt] = useState(() => {
-    const init = initialPrompt ?? ''
-    return (lastImageStyle ?? '') ? applyStylePreset({ prompt: init, negative: '' }, lastImageStyle ?? '').prompt : init
-  })
-  const [negative, setNegative] = useState(() =>
-    (lastImageStyle ?? '') ? applyStylePreset({ prompt: '', negative: '' }, lastImageStyle ?? '').negative : '',
-  )
+  const [prompt, setPrompt] = useState(initialPrompt ?? '')
+  const [negative, setNegative] = useState('')
   const [draftModel, setDraftModel] = useState(lastDraftModel || draftContext?.modelRef || '')
   const [showModelPicker, setShowModelPicker] = useState(false)
   const [drafting, setDrafting] = useState(false)
@@ -90,14 +82,6 @@ export default function ImageGenModal({ title, draftContext, initialPrompt, targ
 
   const provider = imageProviders.find((p) => p.id === providerId)
   const job = imageJobs.find((j) => j.id === jobId)
-
-  const changeStyle = (v: 'anime' | 'realistic' | '') => {
-    setStyleId(v)
-    setLastImageStyle(v)
-    const applied = applyStylePreset({ prompt, negative }, v)
-    setPrompt(applied.prompt)
-    setNegative(applied.negative)
-  }
 
   const draft = async () => {
     if (!draftContext) return
@@ -142,11 +126,9 @@ export default function ImageGenModal({ title, draftContext, initialPrompt, targ
         draftedPrompt = res.text.trim()
         draftedNegative = negative
       }
-      // 起案結果にスタイルタグが混ざっていても、除去した上で選択中スタイルを先頭に付け直す
-      const applied = applyStylePreset({ prompt: draftedPrompt, negative: draftedNegative }, styleId)
       // 起案は全文置換のため、LoRA トリガー・表情タグ等の固定タグが欠けていれば末尾に補う（V5c）
-      setPrompt(pinTags ? ensureTags(applied.prompt, pinTags) : applied.prompt)
-      setNegative(applied.negative)
+      setPrompt(pinTags ? ensureTags(draftedPrompt, pinTags) : draftedPrompt)
+      setNegative(draftedNegative)
     } catch (e) {
       setError(`起案に失敗しました: ${(e as Error).message}`)
     } finally {
@@ -225,14 +207,6 @@ export default function ImageGenModal({ title, draftContext, initialPrompt, targ
                       </option>
                     ))}
                   </select>
-                  <select value={styleId} onChange={(e) => changeStyle(e.target.value as 'anime' | 'realistic' | '')} style={{ flex: 1 }}>
-                    <option value="">スタイルなし</option>
-                    {STYLE_PRESETS.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.label}
-                      </option>
-                    ))}
-                  </select>
                   <select value={count} onChange={(e) => setCount(Number(e.target.value))} style={{ width: 90 }}>
                     {[1, 2, 3, 4].map((n) => (
                       <option key={n} value={n}>
@@ -256,12 +230,18 @@ export default function ImageGenModal({ title, draftContext, initialPrompt, targ
                   </div>
                 )}
                 <textarea rows={4} value={prompt} placeholder="例: 1girl, long black hair, school uniform, ..." onChange={(e) => setPrompt(e.target.value)} />
+                {provider?.defaultPositive?.trim() && (
+                  <div className="desc">🏷 生成時に自動付加: {provider.defaultPositive}</div>
+                )}
               </div>
 
               {provider?.kind === 'comfyui' && (
                 <div className="field">
                   <label>ネガティブプロンプト（任意）</label>
                   <textarea rows={2} value={negative} placeholder="例: lowres, bad anatomy" onChange={(e) => setNegative(e.target.value)} />
+                  {provider?.defaultNegative?.trim() && (
+                    <div className="desc">🏷 生成時に自動付加: {provider.defaultNegative}</div>
+                  )}
                 </div>
               )}
 

@@ -337,7 +337,7 @@ export function illustrationPromptSystem(): string {
     `指針:\n` +
     `- キャラクターに【画像生成タグ】が与えられている場合は、その文字列を改変せずそのまま prompt に含める（LoRA トリガー等のため）。\n` +
     `- 人数・外見・構図・背景・光・雰囲気を具体的なタグにする。\n` +
-    `- masterpiece 等の品質タグは入れない（利用者が固定タグ側で管理する）。\n` +
+    `- masterpiece 等の品質タグ、anime style / photorealistic 等の画風タグは入れない（接続先のデフォルトタグとして自動で付加される）。\n` +
     `- 本文が長い場合は最後の場面（本文の末尾）を描く。シーン全体のダイジェストにしない。`
   )
 }
@@ -399,7 +399,7 @@ export function backgroundPromptSystem(): string {
     `指針:\n` +
     `- 場所・時間帯・天候・光・雰囲気を具体的なタグにする。\n` +
     `- 人物・キャラクターは一切含めない（no humans, no people 等を prompt か negative に含めてよい）。\n` +
-    `- masterpiece 等の品質タグは入れない（利用者が固定タグ側で管理する）。`
+    `- masterpiece 等の品質タグ、anime style / photorealistic 等の画風タグは入れない（接続先のデフォルトタグとして自動で付加される）。`
   )
 }
 

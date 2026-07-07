@@ -3,7 +3,6 @@ import { EMOTIONS, type EmotionId } from '../../types'
 import { useStore } from '../../store'
 import { putImage, useImageUrl } from '../../lib/imageStore'
 import { normalizeImage } from '../../lib/avatarGen'
-import { applyStylePreset } from '../../lib/imagePresets'
 import { avatarContextUser, illustrationPromptSystem } from '../../lib/prompts'
 import ImageGenModal from '../ImageGenModal'
 
@@ -126,7 +125,6 @@ export default function SpriteSetField({ characterId, name, appearance, imagePro
   // バックグラウンドジョブが直接 store を書き換えるため、draft 経由だと反映されない）
   const sprites = useStore((s) => s.characters.find((c) => c.id === characterId)?.sprites ?? [])
   const imageProviders = useStore((s) => s.imageProviders)
-  const lastImageStyle = useStore((s) => s.lastImageStyle)
   const lastImageProviderId = useStore((s) => s.lastImageProviderId)
   const startSpriteBatch = useStore((s) => s.startSpriteBatch)
   const batchRunning = useStore((s) =>
@@ -140,18 +138,14 @@ export default function SpriteSetField({ characterId, name, appearance, imagePro
   const batchGenerate = () => {
     if (!characterId || imageProviders.length === 0 || batchRunning) return
     const providerId = imageProviders.some((p) => p.id === lastImageProviderId) ? lastImageProviderId! : imageProviders[0].id
-    const style = lastImageStyle ?? ''
-    const negative = applyStylePreset({ prompt: '', negative: '' }, style).negative
-    const prompts = EMOTIONS.map((e) => ({
-      emotion: e.id,
-      prompt: applyStylePreset({ prompt: spritePrompt(imagePrompt, e.id), negative: '' }, style).prompt,
-    }))
+    // 品質・画風タグは接続先のデフォルトタグとして生成時に自動結合される（imageGen.generateImage）
+    const prompts = EMOTIONS.map((e) => ({ emotion: e.id, prompt: spritePrompt(imagePrompt, e.id) }))
     startSpriteBatch({
       characterId,
       characterName: name || '無名',
       providerId,
       prompts,
-      negative: negative || undefined,
+      negative: undefined,
       width: 832,
       height: 1216,
     })

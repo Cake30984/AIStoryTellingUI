@@ -1,5 +1,6 @@
 import type { ImageProvider, ImageProviderKind } from '../types'
 import { appFetch } from './platform'
+import { combineWithDefaults } from './promptTags'
 
 function uid(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
@@ -36,6 +37,9 @@ export function newImageProvider(kind: ImageProviderKind): ImageProvider {
       apiKey: '',
       model: '',
       workflowJson: DEFAULT_COMFY_WORKFLOW,
+      defaultPositive: 'masterpiece, best quality, very aesthetic, absurdres',
+      defaultNegative:
+        'low quality, worst quality, bad anatomy, bad hands, extra fingers, missing fingers, extra digits, jpeg artifacts, signature, watermark, username',
     }
   }
   return {
@@ -176,10 +180,15 @@ async function generateOpenAiImage(p: ImageProvider, req: ImageGenRequest, signa
   throw new Error('画像データが返されませんでした。')
 }
 
-/** プロバイダ種別を吸収して1枚生成する。失敗は throw（呼び出し側で表示） */
+/** プロバイダ種別を吸収して1枚生成する。接続先のデフォルトタグをここで結合する。失敗は throw（呼び出し側で表示） */
 export async function generateImage(p: ImageProvider, req: ImageGenRequest, signal?: AbortSignal): Promise<Blob> {
-  if (p.kind === 'comfyui') return generateComfy(p, req, signal)
-  return generateOpenAiImage(p, req, signal)
+  const merged: ImageGenRequest = {
+    ...req,
+    prompt: combineWithDefaults(p.defaultPositive, req.prompt),
+    negative: combineWithDefaults(p.defaultNegative, req.negative ?? '') || undefined,
+  }
+  if (p.kind === 'comfyui') return generateComfy(p, merged, signal)
+  return generateOpenAiImage(p, merged, signal)
 }
 
 /** 接続テスト。到達可否と簡単なメッセージを返す（throw しない） */
