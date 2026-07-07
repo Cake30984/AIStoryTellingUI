@@ -38,6 +38,7 @@ import { base64ToBlob, blobToBase64, gcImages, getImage, putImage, putImageAs } 
 import { checkpointStore, PERSIST_KEY, stateStorage } from './lib/platform'
 import { gunzipText, gzipText } from './lib/checkpoint'
 import { normalizeImage } from './lib/avatarGen'
+import { matchCharacterByName } from './lib/structured'
 import { generateImage } from './lib/imageGen'
 import {
   abortJobController,
@@ -215,11 +216,9 @@ export function resolveEmotionUpdates(
     const name = item.character?.trim()
     const emotion = item.emotion
     if (!name || !emotion || !validEmotions.has(emotion)) continue
-    const hit =
-      characters.find((c) => c.name === name) ??
-      characters.find((c) => c.name && (name.startsWith(c.name) || c.name.startsWith(name)))
-    if (!hit) continue
-    out.push({ characterId: hit.id, emotion: emotion as EmotionId })
+    const characterId = matchCharacterByName(name, characters)
+    if (!characterId) continue
+    out.push({ characterId, emotion: emotion as EmotionId })
   }
   return out
 }
@@ -479,6 +478,7 @@ function newSession(mode: SessionMode): Session {
     usedEventIds: [],
     state: { relations: [], moods: [], stats: [], counters: [], achievements: [] },
     overlay: { lore: [], characterDevelopments: [] },
+    structuredOutput: true,
     messages: [],
     temperature: 0.9,
     // max_tokens は打ち切り上限（書き終われば自然に止まる）。途中切れ防止を優先して余裕を持たせる

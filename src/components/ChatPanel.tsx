@@ -12,6 +12,7 @@ import { estimateTokens, tokenLevel } from '../lib/tokens'
 import { modelRefLabel } from '../lib/providers'
 import { getImage, useImageUrl } from '../lib/imageStore'
 import { downloadBlob } from '../lib/io'
+import { hasStructuredLines } from '../lib/structured'
 import ImageGenModal from './ImageGenModal'
 import ImageJobsPanel from './ImageJobsPanel'
 import type { Message, Scene, SceneIllustration, Session } from '../types'
@@ -25,6 +26,7 @@ import GalleryModal from './GalleryModal'
 import BranchTreeModal from './BranchTreeModal'
 import EntityAvatar from './EntityAvatar'
 import StageBackdrop from './StageBackdrop'
+import { StructuredChatBody, StructuredNovelBody } from './StructuredMessage'
 
 interface Props {
   session: Session
@@ -274,10 +276,21 @@ export default function ChatPanel({ session }: Props) {
     if (editingId === m.id) return <div className="prose-block" key={m.id}>{editBox()}</div>
     const marker = isMarker(m)
     if (m.role === 'assistant') {
+      const structured = hasStructuredLines(m.content, participants)
       return (
         <div className="prose-block" key={m.id}>
-          {renderProse(m.content)}
-          {m.pending && isStreaming && <span className="cursor" />}
+          {structured ? (
+            <StructuredNovelBody
+              content={m.content}
+              participants={participants}
+              pending={!!m.pending && isStreaming}
+            />
+          ) : (
+            <>
+              {renderProse(m.content)}
+              {m.pending && isStreaming && <span className="cursor" />}
+            </>
+          )}
           {msgActions(m)}
         </div>
       )
@@ -293,6 +306,18 @@ export default function ChatPanel({ session }: Props) {
   const renderMessage = (m: Message) => {
     if (novel) return renderNovelMessage(m)
     const marker = isMarker(m)
+    if (m.role === 'assistant' && editingId !== m.id && hasStructuredLines(m.content, participants)) {
+      return (
+        <div className="st-message" key={m.id}>
+          <StructuredChatBody
+            content={m.content}
+            participants={participants}
+            pending={!!m.pending && isStreaming}
+          />
+          {msgActions(m)}
+        </div>
+      )
+    }
     const av = m.role === 'assistant' ? avatarFor(m.characterId) : null
     const name = m.role === 'assistant' ? (av?.name ?? 'AI') : persona?.name || 'あなた'
     return (
