@@ -1,0 +1,57 @@
+{
+  "spec": "aist_world",
+  "spec_version": "1.0",
+  "data": {
+    "id": "任意の一意なid文字列",
+    "name": "世界観の名前",
+    "description": "世界観の説明（常時プロンプトに注入される）",
+    "entries": [
+      {
+        "id": "entry-1",
+        "keys": ["キーワード1", "キーワード2"],
+        "content": "このキーワードが本文に登場したときに注入されるロア内容",
+        "alwaysOn": false,
+        "enabled": true,
+        "order": 0
+      }
+    ],
+    "scheduledEvents": [
+      {
+        "id": "event-1",
+        "day": 3,
+        "name": "イベント名",
+        "note": "シーンの状況・方向性メモ",
+        "condition": { "all": [{ "kind": "stat", "defId": "stat-1", "op": ">=", "value": 50 }] }
+      }
+    ],
+    "relationAspects": [
+      { "id": "aspect-1", "name": "信頼", "guidance": "相手の言動の何を信じ何を疑うか" },
+      { "id": "aspect-2", "name": "恋愛感情" }
+    ],
+    "stats": [
+      {
+        "id": "stat-1",
+        "name": "好感度",
+        "scope": "character",
+        "default": 0,
+        "min": 0,
+        "max": 100,
+        "inject": false
+      }
+    ],
+    "counters": [
+      { "id": "counter-1", "name": "デート回数", "scope": "character", "inject": true }
+    ],
+    "achievements": [
+      {
+        "id": "ach-1",
+        "name": "実績名",
+        "description": "実績の説明",
+        "condition": { "all": [{ "kind": "stat", "defId": "stat-1", "op": ">=", "value": 50 }] },
+        "hidden": false
+      }
+    ],
+    "createdAt": 0,
+    "updatedAt": 0
+  }
+}

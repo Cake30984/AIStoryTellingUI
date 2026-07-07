@@ -1,0 +1,13 @@
+{
+  "spec": "aist_persona",
+  "spec_version": "1.0",
+  "data": {
+    "id": "任意の一意なid文字列",
+    "name": "ペルソナ名",
+    "description": "利用者が演じる人物の説明",
+    "avatar": { "color": "#5b8def" },
+    "imagePrompt": "画像生成用の固定英語タグ（任意）",
+    "createdAt": 0,
+    "updatedAt": 0
+  }
+}

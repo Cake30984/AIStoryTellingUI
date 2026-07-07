@@ -1,0 +1,76 @@
+{
+  "spec": "aist_session",
+  "spec_version": "1.0",
+  "data": {
+    "session": {
+      "id": "任意の一意なid文字列",
+      "title": "セッションタイトル",
+      "mode": "roleplay",
+      "model": "providerId::modelId",
+      "reviewModel": "",
+      "choicesModel": "",
+      "characterIds": ["character-1"],
+      "worldId": "world-1",
+      "personaId": "persona-1",
+      "authorNote": "常に記憶させたい固定メモ",
+      "story": { "premise": "", "genre": "", "protagonist": "" },
+      "scenes": [
+        {
+          "id": "scene-1",
+          "title": "シーンタイトル",
+          "activeCharacterIds": ["character-1"],
+          "note": "時・場所・状況メモ",
+          "summary": "",
+          "timeLabel": "1日目 朝",
+          "sceneTypeId": null,
+          "illustrations": [],
+          "endedAt": null,
+          "createdAt": 0
+        }
+      ],
+      "currentSceneId": "scene-1",
+      "timeline": {
+        "enabled": false,
+        "slots": ["朝", "昼", "夜"],
+        "totalDays": null,
+        "spanLabel": "",
+        "currentDay": 1,
+        "currentSlot": 0
+      },
+      "choiceMode": "off",
+      "narrativeStyle": "novel",
+      "director": { "enabled": false, "typeIds": [] },
+      "usedEventIds": [],
+      "state": {
+        "relations": [
+          {
+            "fromId": "character-1",
+            "toId": "hero",
+            "stance": "関係の現在地を1〜2文で",
+            "aspects": [{ "aspectId": "aspect-1", "note": "その次元での記述" }],
+            "flags": [],
+            "updatedAt": 0
+          }
+        ],
+        "moods": [{ "characterId": "character-1", "mood": "現在の一時的な気分" }],
+        "stats": [{ "defId": "stat-1", "characterId": "character-1", "value": 0 }],
+        "counters": [{ "defId": "counter-1", "characterId": "character-1", "value": 0 }],
+        "achievements": []
+      },
+      "overlay": { "lore": [], "characterDevelopments": [] },
+      "messages": [],
+      "temperature": 1,
+      "maxTokens": 1024,
+      "createdAt": 0,
+      "updatedAt": 0
+    },
+    "characters": [
+      { "$ref": "card_character_template.json の character 部分と同じ形（model は含めない）" }
+    ],
+    "world": { "$ref": "card_world_template.json の data 部分と同じ形（任意）" },
+    "persona": { "$ref": "card_persona_template.json の data 部分と同じ形（任意）" },
+    "images": [
+      { "id": "参照元環境での画像id（avatar.imageId や illustration.imageId と一致）", "b64": "PNGバイナリのbase64文字列" }
+    ]
+  }
+}

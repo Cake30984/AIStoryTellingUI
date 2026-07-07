@@ -1,0 +1,40 @@
+{
+  "spec": "chara_card_v2",
+  "spec_version": "2.0",
+  "data": {
+    "name": "キャラクター名",
+    "description": "性格・背景の説明\n\n【外見】\n外見の説明（appearanceがある場合のみ付与される）",
+    "personality": "口調・話し方の特徴",
+    "scenario": "",
+    "first_mes": "最初の挨拶メッセージ",
+    "mes_example": "セリフ例",
+    "creator_notes": "AI Storytelling Studio で作成",
+    "system_prompt": "",
+    "post_history_instructions": "",
+    "alternate_greetings": [],
+    "tags": ["タグ1", "タグ2"],
+    "creator": "",
+    "character_version": "",
+    "extensions": {
+      "aistorytelling": {
+        "version": 1,
+        "kind": "character",
+        "character": {
+          "id": "任意の一意なid文字列",
+          "name": "キャラクター名",
+          "persona": "性格・背景の説明",
+          "speechStyle": "口調・話し方の特徴",
+          "appearance": "外見の説明",
+          "exampleDialogues": "セリフ例",
+          "greeting": "最初の挨拶メッセージ",
+          "developments": [],
+          "avatar": { "color": "#5b8def" },
+          "imagePrompt": "画像生成用の固定英語タグ（任意）",
+          "tags": ["タグ1", "タグ2"],
+          "createdAt": 0,
+          "updatedAt": 0
+        }
+      }
+    }
+  }
+}
