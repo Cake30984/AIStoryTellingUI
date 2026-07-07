@@ -541,8 +541,6 @@ interface AppState {
   providers: Provider[]
   /** 画像生成の接続先（LLM とは別系統）。localStorage のみ・エクスポート除外 */
   imageProviders: ImageProvider[]
-  /** 直近選択した画像スタイルプリセット（ImageGenModal の初期値に使う） */
-  lastImageStyle?: 'anime' | 'realistic' | ''
   /** 最後に画像生成で使った接続先（ImageGenModal・一括生成の初期値。V5c） */
   lastImageProviderId?: string
   /** 最後に起案（プロンプト起草）に使ったモデル（"providerId::modelId"。V5c） */
@@ -589,7 +587,6 @@ interface AppState {
   // 画像生成の接続先
   upsertImageProvider: (p: ImageProvider) => void
   deleteImageProvider: (id: string) => void
-  setLastImageStyle: (v: 'anime' | 'realistic' | '') => void
   /** 最後に画像生成で使った接続先を記憶する（V5c） */
   setLastImageProviderId: (id: string) => void
   /** 最後に起案に使ったモデルを記憶する（V5c） */
@@ -1312,7 +1309,6 @@ export const useStore = create<AppState>()(
       return {
         providers: [defaultOpenRouterProvider('')],
         imageProviders: [],
-        lastImageStyle: '',
         lastImageProviderId: undefined,
         lastDraftModel: undefined,
         favoriteModels: [],
@@ -1363,7 +1359,6 @@ export const useStore = create<AppState>()(
         deleteImageProvider: (id) =>
           set((st) => ({ imageProviders: st.imageProviders.filter((p) => p.id !== id) })),
 
-        setLastImageStyle: (v) => set({ lastImageStyle: v }),
         setLastImageProviderId: (id) => set({ lastImageProviderId: id }),
         setLastDraftModel: (ref) => set({ lastDraftModel: ref }),
 
@@ -3064,7 +3059,6 @@ export const useStore = create<AppState>()(
         providers: st.providers,
         // 画像生成の接続先も API キーを含むため localStorage のみ（exportBundle には含めない）
         imageProviders: st.imageProviders,
-        lastImageStyle: st.lastImageStyle,
         lastImageProviderId: st.lastImageProviderId,
         lastDraftModel: st.lastDraftModel,
         favoriteModels: st.favoriteModels,

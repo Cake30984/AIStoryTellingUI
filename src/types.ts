@@ -441,6 +441,10 @@ export interface ImageProvider {
   model: string
   /** comfyui のみ: API Format の workflow JSON（%PROMPT% 等のプレースホルダ入り文字列） */
   workflowJson: string
+  /** 生成時にプロンプト先頭へ自動結合される定型タグ（品質・画風・LoRA トリガー等。プロンプト欄には表示しない） */
+  defaultPositive?: string
+  /** 生成時にネガティブ先頭へ自動結合される定型タグ（comfyui のみ有効） */
+  defaultNegative?: string
 }
 
 /** 次シーンの提案 */
