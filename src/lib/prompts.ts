@@ -152,7 +152,7 @@ export function buildSystemPrompt(
       `あなたは熟練の小説家です。情景・心情・行動を描く「地の文」と、登場人物のセリフ「…」を自然に織り交ぜた小説形式で執筆します。\n` +
         `【執筆ルール】\n` +
         `- 地の文と会話を混在させ、一篇の小説のように書いてください。セリフは鉤括弧「」で示します。\n` +
-        `- 誰の発言か紛らわしい場合のみ、「名前「セリフ」」の形で話者を示してください（多用しすぎない）。\n` +
+        `${session.structuredOutput ? '' : '- 誰の発言か紛らわしい場合のみ、「名前「セリフ」」の形で話者を示してください（多用しすぎない）。\n'}` +
         `- 1回の応答で1〜3段落。情景→会話→展開、と流れを作り、物語を前へ進めてください。\n` +
         `- 場面の終わりに、続きが気になる引きや${heroName}が行動したくなる余白を残してください。\n` +
         `- ${heroName}（ユーザー）の心情や決断を勝手に断定しすぎず、選択の余地を残してください。\n` +
@@ -184,9 +184,24 @@ export function buildSystemPrompt(
       parts.push(
         `【今回の応答】\n` +
           `この場面で最も自然に発言するキャラクターを1人選び、その人物として応答してください。` +
-          `応答は必ず「キャラ名: 」で始めてください。`,
+          (session.structuredOutput
+            ? `セリフはすべて @名前(感情) 行で書くため、応答の先頭に「キャラ名: 」は付けないでください。`
+            : `応答は必ず「キャラ名: 」で始めてください。`),
       )
     }
+  }
+
+  // 8. セリフの出力形式（構造化出力）
+  if (session.structuredOutput) {
+    parts.push(
+      `【セリフの出力形式（厳守）】\n` +
+        `- 登場人物のセリフは、1発話につき1行で、行頭を「@名前(感情)」にしてから鉤括弧のセリフを続けてください。\n` +
+        `  例: @美咲(joy)「ほんとに？　ありがとう！」\n` +
+        `- 感情は neutral / joy / anger / sadness / shy / surprise の6語のみ（括弧内は英語小文字のまま）。\n` +
+        `- 地の文（情景・心情・行動の描写）は行頭に @ を付けず、普通の文章として書いてください。\n` +
+        `- セリフ行に地の文を混ぜない。地の文に鉤括弧のセリフを埋め込まない（発話は必ず @ 行に分ける）。\n` +
+        `- 名前は【登場人物】の表記を正確に使ってください。名前の無い脇役は「@店員(neutral)「…」」のように役割名で構いません。`,
+    )
   }
 
   return parts.join('\n\n')
@@ -202,8 +217,8 @@ export function buildMessages(
     role: 'system',
     content: buildSystemPrompt(session, refs, activeCharacter),
   }
-  // 会話劇のグループ時のみ、誰の発言かをテキストに織り込む
-  const multi = session.narrativeStyle !== 'novel' && refs.characters.length > 1
+  // 会話劇のグループ時のみ、誰の発言かをテキストに織り込む（構造化出力ONでは @ 行が話者を運ぶためスキップ）
+  const multi = session.narrativeStyle !== 'novel' && refs.characters.length > 1 && !session.structuredOutput
   const nameOf = (id?: string) => refs.characters.find((c) => c.id === id)?.name
   // 履歴は現在シーンの発言のみ（過去シーンは要約で引き継ぐ）
   const history: ChatMessage[] = session.messages
