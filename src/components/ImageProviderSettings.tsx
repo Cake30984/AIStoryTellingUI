@@ -111,6 +111,27 @@ export default function ImageProviderSettings() {
             </>
           )}
 
+          <div className="desc" style={{ marginBottom: 4 }}>
+            デフォルトタグ: 生成のたびにプロンプトの先頭へ自動で結合されます（品質・画風・LoRA トリガー等。
+            生成モーダルのプロンプト欄には表示されません）。
+          </div>
+          <textarea
+            rows={2}
+            style={inputStyle}
+            placeholder="デフォルトプロンプト（例: masterpiece, best quality, very aesthetic）"
+            value={p.defaultPositive ?? ''}
+            onChange={(e) => upsertImageProvider({ ...p, defaultPositive: e.target.value })}
+          />
+          {p.kind === 'comfyui' && (
+            <textarea
+              rows={2}
+              style={inputStyle}
+              placeholder="デフォルトネガティブ（例: low quality, worst quality, bad anatomy）"
+              value={p.defaultNegative ?? ''}
+              onChange={(e) => upsertImageProvider({ ...p, defaultNegative: e.target.value })}
+            />
+          )}
+
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <button
               className="btn"
