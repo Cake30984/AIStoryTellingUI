@@ -38,7 +38,7 @@ import { base64ToBlob, blobToBase64, gcImages, getImage, putImage, putImageAs } 
 import { checkpointStore, PERSIST_KEY, stateStorage } from './lib/platform'
 import { gunzipText, gzipText } from './lib/checkpoint'
 import { normalizeImage } from './lib/avatarGen'
-import { emotionUpdatesOf, matchCharacterByName, parseStructured } from './lib/structured'
+import { emotionUpdatesOf, matchCharacterByName, parseStructured, plainTextOf } from './lib/structured'
 import { generateImage } from './lib/imageGen'
 import {
   abortJobController,
@@ -797,10 +797,10 @@ function actionCheckpointLabel(session: Session): string {
   if (lastUser) {
     if (lastUser.content === SCENE_START_PROMPT) return '🎬 シーン導入'
     if (lastUser.content === CONTINUE_PROMPT) return '⏩ 続き'
-    if (lastUser.content.trim()) return headOf(lastUser.content)
+    if (lastUser.content.trim()) return headOf(plainTextOf(lastUser.content))
   }
   const lastAssistant = [...session.messages].reverse().find((m) => m.role === 'assistant')
-  if (lastAssistant?.content.trim()) return headOf(lastAssistant.content)
+  if (lastAssistant?.content.trim()) return headOf(plainTextOf(lastAssistant.content))
   return '（無題）'
 }
 
@@ -1834,7 +1834,7 @@ export const useStore = create<AppState>()(
               .map((m) =>
                 m.role === 'user'
                   ? `${refs.persona?.name || 'ユーザー'}: ${m.content}`
-                  : `${nameOf(m.characterId)}: ${m.content}`,
+                  : `${nameOf(m.characterId)}: ${plainTextOf(m.content)}`,
               )
               .join('\n')
 
@@ -2698,7 +2698,7 @@ export const useStore = create<AppState>()(
                 m.content !== SCENE_START_PROMPT,
             )
             .slice(-3)
-            .map((m) => m.content)
+            .map((m) => plainTextOf(m.content))
           if (recent.length === 0) return
           try {
             const raw = await streamChat(

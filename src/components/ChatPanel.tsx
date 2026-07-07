@@ -12,7 +12,7 @@ import { estimateTokens, tokenLevel } from '../lib/tokens'
 import { modelRefLabel } from '../lib/providers'
 import { getImage, useImageUrl } from '../lib/imageStore'
 import { downloadBlob } from '../lib/io'
-import { hasStructuredLines } from '../lib/structured'
+import { hasStructuredLines, plainTextOf } from '../lib/structured'
 import ImageGenModal from './ImageGenModal'
 import ImageJobsPanel from './ImageJobsPanel'
 import type { Message, Scene, SceneIllustration, Session } from '../types'
@@ -739,7 +739,7 @@ export default function ChatPanel({ session }: Props) {
                 const recent: string[] = []
                 let used = 0
                 for (let i = sceneMsgs.length - 1; i >= 0; i--) {
-                  const c = sceneMsgs[i].content
+                  const c = plainTextOf(sceneMsgs[i].content)
                   if (used + c.length > budget && recent.length > 0) break
                   recent.unshift(c)
                   used += c.length
@@ -776,7 +776,7 @@ export default function ChatPanel({ session }: Props) {
               recentMessages: session.messages
                 .filter((m) => (m.sceneId === scene.id || !m.sceneId) && m.content.trim())
                 .slice(-6)
-                .map((m) => m.content),
+                .map((m) => plainTextOf(m.content)),
             }),
             modelRef: reviewModelOf(session),
           }}
