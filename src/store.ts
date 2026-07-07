@@ -38,7 +38,7 @@ import { base64ToBlob, blobToBase64, gcImages, getImage, putImage, putImageAs } 
 import { checkpointStore, PERSIST_KEY, stateStorage } from './lib/platform'
 import { gunzipText, gzipText } from './lib/checkpoint'
 import { normalizeImage } from './lib/avatarGen'
-import { matchCharacterByName } from './lib/structured'
+import { emotionUpdatesOf, matchCharacterByName, parseStructured } from './lib/structured'
 import { generateImage } from './lib/imageGen'
 import {
   abortJobController,
@@ -1087,6 +1087,29 @@ export const useStore = create<AppState>()(
           })
         }
 
+        // 構造化出力のストリーミング表情切替（ST2）: 確定行（改行済み）が増えるたびに立ち絵の感情を反映する
+        const structuredOn = !!s.structuredOutput
+        const watchEmotions =
+          structuredOn && !!s.spritesEnabled && refs.characters.some((c) => (c.sprites?.length ?? 0) > 0)
+        let acc = appendToId ? (target()?.messages.find((m) => m.id === appendToId)?.content ?? '') : ''
+        let processedLineCount = acc.split('\n').length - 1
+        let emotionApplied = false
+
+        const applyLineEmotions = (completedLines: string[]) => {
+          const updates = emotionUpdatesOf(completedLines, refs.characters)
+          if (updates.length === 0) return
+          emotionApplied = true
+          const cur = target()
+          if (!cur) return
+          const next = [...(cur.spriteEmotions ?? [])]
+          for (const u of updates) {
+            const idx = next.findIndex((e) => e.characterId === u.characterId)
+            if (idx >= 0) next[idx] = u
+            else next.push(u)
+          }
+          patchTarget({ spriteEmotions: next })
+        }
+
         const writeDelta = (chunk: string) => {
           const cur = target()
           if (!cur) return
@@ -1095,6 +1118,15 @@ export const useStore = create<AppState>()(
               m.id === assistantId ? { ...m, content: m.content + chunk } : m,
             ),
           })
+          acc += chunk
+          if (watchEmotions && chunk.includes('\n')) {
+            const lines = acc.split('\n')
+            const completed = lines.slice(0, -1)
+            if (completed.length > processedLineCount) {
+              applyLineEmotions(completed.slice(processedLineCount))
+              processedLineCount = completed.length
+            }
+          }
         }
 
         // 「続きを生成」の念押しは履歴には積まず、API 送信時だけ末尾に付加する
@@ -1137,6 +1169,11 @@ export const useStore = create<AppState>()(
           }
         }
 
+        if (watchEmotions) {
+          const lines = acc.split('\n')
+          applyLineEmotions(lines.slice(processedLineCount))
+        }
+
         const cur = target()
         if (cur) {
           const msgs = cur.messages
@@ -1144,8 +1181,14 @@ export const useStore = create<AppState>()(
               if (m.id !== assistantId) return m
               let content = m.content
               let characterId = m.characterId
-              // おまかせ(会話劇・複数キャラ・話者未指定)時は先頭の「名前:」から話者を判定
-              if (!novel && !characterId && refs.characters.length > 1) {
+              if (structuredOn) {
+                // 構造化出力ON: 最初の @ 行の話者を代表 characterId に採用する（名前: 剥がしはしない＝ @ 行を壊さない）
+                if (!novel && !characterId && refs.characters.length > 1) {
+                  const first = parseStructured(content, refs.characters).find((l) => l.kind === 'dialogue')
+                  if (first?.characterId) characterId = first.characterId
+                }
+              } else if (!novel && !characterId && refs.characters.length > 1) {
+                // おまかせ(会話劇・複数キャラ・話者未指定)時は先頭の「名前:」から話者を判定
                 const match = content.match(/^\s*([^:：\n]{1,20})[:：]\s*/)
                 if (match) {
                   const nm = match[1].trim()
@@ -1175,8 +1218,8 @@ export const useStore = create<AppState>()(
           const finalSession = target()
           if (finalSession) void recordCheckpoint(sessionId, 'action', actionCheckpointLabel(finalSession), s)
         }
-        // 表情判定（V4・方式A）。本編をブロックしない fire-and-forget
-        if (finalMsg && finalMsg.content.trim()) {
+        // 表情判定（V4・方式A）。構造化出力で1件でも感情が取れた応答ではスキップ（ST2のフォールバック）
+        if (finalMsg && finalMsg.content.trim() && !emotionApplied) {
           get().classifyEmotions(sessionId)
         }
       }
