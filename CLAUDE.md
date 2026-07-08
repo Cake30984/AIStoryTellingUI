@@ -155,11 +155,15 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist`。storage は
 - **`buildMessages` の履歴からマークアップを剥がさない**（ST3）。API へ送る過去メッセージは`@名前(感情)「…」`込みの生テキストのまま送る（モデルが自分の過去出力の形式を見て形式遵守が強化される＝few-shot効果）。`plainTextOf`を適用してよいのは裏方文脈・ラベル（レビューtranscript・チェックポイントラベル・挿絵/背景起案・表情判定フォールバック）の5箇所のみ。`estimateTokens`・編集UI・エクスポート・チェックポイント本体にも適用しない。
 
 ## 検証ワークフロー
+**方針（2026-07-08合意）: 見た目・UX上の挙動確認はユーザーが直接ブラウザ／`npm run tauri:dev`で行う。** Claude は Preview MCP でのブラウザ操作（スクリーンショット・snapshot等）を、見た目確認が目的の場合は行わない（トークン消費が重く、目視確認は人間の方が速いため）。Claude が担当するのは型チェック・ビルド・`preview_eval`でのstore関数/純粋関数の直接検証など「目視では追いにくい」確認のみ。ユーザーから明示的に「ブラウザで確認して」と依頼された場合のみ Preview MCP を使ってよい。
+
 1. `npx tsc --noEmit` → `npm run build` を必ず通す。
-2. Preview MCP（`preview_start` 等）で起動。`preview_eval` で旧バージョンの localStorage を seed → reload → 移行確認。`preview_console_logs(level:error)` でエラー0件。
-3. 純粋関数は `preview_eval` で `await import('/src/lib/xxx.ts')` して直接テスト可能。
-4. 検証後は seed した localStorage を削除し `preview_stop`。ポート残留時は `npx kill-port 5173`。
-5. **Tauri 固有部**（appFetch / saveBlob / ファイルストレージ）を触った時のみ、`npm run tauri:dev` で手動チェックリスト（Preview MCP はブラウザ専用のため自動検証不可）:
+2. ロジック検証が必要な場合のみ Preview MCP を使う。`preview_eval` で `await import('/src/lib/xxx.ts')` して純粋関数を直接テスト、または store 関数を直叩きして状態遷移を確認。`preview_console_logs(level:error)` でエラー0件を確認。検証後は seed した localStorage を削除し `preview_stop`（ポート残留時は `npx kill-port 5173`）。
+3. **見た目・UXに関わる変更を行った場合、作業完了報告に「確認してほしいこと」と「手順」を箇条書きで明記する。** 例:
+   - 「① ChatPanel で🎭トグルをONにする → 発言に応じて立ち絵の表情が変わることを確認」
+   - 「② 🕘分岐ツリーを開く → 新しい action ノードが追加されていることを確認」
+   これにより、ユーザーは何を・どういう手順で見ればよいかがすぐ分かる状態で自分の目で確認できる。
+4. **Tauri 固有部**（appFetch / saveBlob / ファイルストレージ）を触った時は、`npm run tauri:dev` を使ったユーザー自身の手動チェックリスト（Preview MCP はブラウザ専用のため自動検証不可）を上記3の形式で提示する:
    - 本編生成が逐次ストリーミング表示される／◼ 停止が効く
    - ComfyUI（通常起動）で画像生成 → 採用できる
    - カード PNG・エクスポート JSON が保存ダイアログ（native の SaveAs）で保存できる（T2）
