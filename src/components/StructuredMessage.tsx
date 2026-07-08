@@ -1,6 +1,6 @@
 import { Fragment, useMemo } from 'react'
 import { parseStructured, type StructuredLine } from '../lib/structured'
-import type { Character } from '../types'
+import type { Character, Persona } from '../types'
 import EntityAvatar from './EntityAvatar'
 
 /** 「」を強調表示する（小説形式の地の文用。ChatPanel の renderProse と同じ規則） */
@@ -24,13 +24,27 @@ function rawTextOf(line: StructuredLine): string {
 interface BodyProps {
   content: string
   participants: Character[]
+  /** ユーザーが演じる人物。@ペルソナ名 行のアイコン解決に含める（立ち絵・感情判定には使わない） */
+  persona?: Persona
   /** ストリーミング中（末尾の未改行行を未確定として扱う） */
   pending: boolean
 }
 
+/**
+ * 名前解決・アイコン表示に使う話者リスト（参加キャラ＋ペルソナ）。
+ * ペルソナは末尾に置きキャラを優先させる（前方一致の衝突時）。id/name/avatar のみ参照。
+ */
+function useSpeakers(participants: Character[], persona?: Persona) {
+  return useMemo(
+    () => (persona ? [...participants, persona] : participants),
+    [participants, persona],
+  )
+}
+
 /** 小説形式: 地の文はそのまま流し込み、セリフ行は話者チップ付きの行として表示する */
-export function StructuredNovelBody({ content, participants, pending }: BodyProps) {
-  const lines = useMemo(() => parseStructured(content, participants), [content, participants])
+export function StructuredNovelBody({ content, participants, persona, pending }: BodyProps) {
+  const speakers = useSpeakers(participants, persona)
+  const lines = useMemo(() => parseStructured(content, speakers), [content, speakers])
   const endsWithNewline = content.endsWith('\n')
   const settled = pending && !endsWithNewline ? lines.slice(0, -1) : lines
   const tail = pending && !endsWithNewline ? lines[lines.length - 1] : undefined
@@ -47,7 +61,7 @@ export function StructuredNovelBody({ content, participants, pending }: BodyProp
           <div className="st-dialogue" key={i} title={line.emotion}>
             <EntityAvatar
               className="st-speaker"
-              avatar={participants.find((c) => c.id === line.characterId)?.avatar ?? { color: '#666' }}
+              avatar={speakers.find((c) => c.id === line.characterId)?.avatar ?? { color: '#666' }}
               name={line.name}
             />
             <span className="dialogue">{line.text}</span>
@@ -89,8 +103,9 @@ function groupChatLines(lines: StructuredLine[]): ChatGroup[] {
 }
 
 /** 会話形式: 連続する同一話者のセリフを1つの吹き出しにまとめ、地の文は吹き出し間のブロックとして挟む */
-export function StructuredChatBody({ content, participants, pending }: BodyProps) {
-  const lines = useMemo(() => parseStructured(content, participants), [content, participants])
+export function StructuredChatBody({ content, participants, persona, pending }: BodyProps) {
+  const speakers = useSpeakers(participants, persona)
+  const lines = useMemo(() => parseStructured(content, speakers), [content, speakers])
   const endsWithNewline = content.endsWith('\n')
   const settled = pending && !endsWithNewline ? lines.slice(0, -1) : lines
   const tail = pending && !endsWithNewline ? lines[lines.length - 1] : undefined
@@ -107,7 +122,7 @@ export function StructuredChatBody({ content, participants, pending }: BodyProps
           <div className="st-group" key={i}>
             <EntityAvatar
               className="avatar"
-              avatar={participants.find((c) => c.id === g.characterId)?.avatar ?? { color: '#666' }}
+              avatar={speakers.find((c) => c.id === g.characterId)?.avatar ?? { color: '#666' }}
               name={g.name}
             />
             <div className="bubble">

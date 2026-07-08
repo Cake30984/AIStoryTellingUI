@@ -283,6 +283,7 @@ export default function ChatPanel({ session }: Props) {
             <StructuredNovelBody
               content={m.content}
               participants={participants}
+              persona={persona}
               pending={!!m.pending && isStreaming}
             />
           ) : (
@@ -312,6 +313,7 @@ export default function ChatPanel({ session }: Props) {
           <StructuredChatBody
             content={m.content}
             participants={participants}
+            persona={persona}
             pending={!!m.pending && isStreaming}
           />
           {msgActions(m)}
