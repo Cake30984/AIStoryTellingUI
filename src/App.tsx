@@ -8,6 +8,7 @@ import WorldLibrary from './components/library/WorldLibrary'
 import PersonaLibrary from './components/library/PersonaLibrary'
 import SceneTypeLibrary from './components/library/SceneTypeLibrary'
 import SceneReviewModal from './components/SceneReviewModal'
+import DialogHost from './components/DialogHost'
 
 // 積層トーストの1件。autoCloseMs があれば一定時間後に自動で onClose を呼ぶ（UI-0）
 function ToastItem({
@@ -135,6 +136,8 @@ export default function App() {
 
       {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
       {sceneReview && <SceneReviewModal />}
+
+      <DialogHost />
 
       <div className="toast-stack">
         {error && <ToastItem className="toast" text={error} onClose={clearError} />}

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useStore } from '../store'
 import { makeModelRef, splitRef } from '../lib/providers'
+import ModalShell from './ModalShell'
 
 interface Props {
   current: string
@@ -60,16 +61,21 @@ export default function ModelPicker({ current, onPick, onClose }: Props) {
   }
 
   return (
-    <div className="overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">
-          <h3>モデルを選択</h3>
-          <button className="icon-btn" onClick={onClose}>
-            ✕
+    <ModalShell
+      title="モデルを選択"
+      onClose={onClose}
+      footer={
+        <>
+          <button className="btn" onClick={() => loadModels(selectedProviderId)}>
+            再読み込み
           </button>
-        </div>
-        <div className="modal-body">
-          {/* 接続先セレクタ */}
+          <button className="btn primary" onClick={onClose}>
+            閉じる
+          </button>
+        </>
+      }
+    >
+      {/* 接続先セレクタ */}
           {providers.length > 1 && (
             <div style={{ marginBottom: 12 }}>
               <div className="seg" style={{ display: 'flex', width: '100%', borderRadius: 'var(--radius-sm)' }}>
@@ -136,16 +142,6 @@ export default function ModelPicker({ current, onPick, onClose }: Props) {
               )
             })}
           </div>
-        </div>
-        <div className="modal-foot">
-          <button className="btn" onClick={() => loadModels(selectedProviderId)}>
-            再読み込み
-          </button>
-          <button className="btn primary" onClick={onClose}>
-            閉じる
-          </button>
-        </div>
-      </div>
-    </div>
+    </ModalShell>
   )
 }

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useStore } from '../store'
 import type { Scene, Session } from '../types'
 import EntityAvatar from './EntityAvatar'
+import ModalShell from './ModalShell'
 
 interface Props {
   session: Session
@@ -12,7 +13,11 @@ interface Props {
 export default function SceneEditor({ session, scene, onClose }: Props) {
   const { updateScene, characters } = useStore()
   const [d, setD] = useState<Scene>(scene)
-  const patch = (p: Partial<Scene>) => setD((s) => ({ ...s, ...p }))
+  const [dirty, setDirty] = useState(false)
+  const patch = (p: Partial<Scene>) => {
+    setD((s) => ({ ...s, ...p }))
+    setDirty(true)
+  }
 
   // 候補はセッションの登場キャラ（ロスター）
   const roster = session.characterIds
@@ -27,15 +32,32 @@ export default function SceneEditor({ session, scene, onClose }: Props) {
     })
 
   return (
-    <div className="overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">
-          <h3>📖 シーン設定</h3>
-          <button className="icon-btn" onClick={onClose}>
-            ✕
+    <ModalShell
+      title="📖 シーン設定"
+      onClose={onClose}
+      dirty={dirty}
+      footer={
+        <>
+          <button className="btn" onClick={onClose}>
+            キャンセル
           </button>
-        </div>
-        <div className="modal-body">
+          <button
+            className="btn primary"
+            onClick={() => {
+              updateScene(d.id, {
+                title: d.title,
+                activeCharacterIds: d.activeCharacterIds,
+                note: d.note,
+                summary: d.summary,
+              })
+              onClose()
+            }}
+          >
+            保存
+          </button>
+        </>
+      }
+    >
           <div className="field">
             <label>シーン名</label>
             <input
@@ -89,27 +111,6 @@ export default function SceneEditor({ session, scene, onClose }: Props) {
               />
             </div>
           )}
-        </div>
-        <div className="modal-foot">
-          <button className="btn" onClick={onClose}>
-            キャンセル
-          </button>
-          <button
-            className="btn primary"
-            onClick={() => {
-              updateScene(d.id, {
-                title: d.title,
-                activeCharacterIds: d.activeCharacterIds,
-                note: d.note,
-                summary: d.summary,
-              })
-              onClose()
-            }}
-          >
-            保存
-          </button>
-        </div>
-      </div>
-    </div>
+    </ModalShell>
   )
 }

@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { useStore } from '../../store'
 import type { SceneType } from '../../types'
+import { appConfirm } from '../../lib/dialogs'
+import ModalShell from '../ModalShell'
 
 const COLORS = ['#7c5cff', '#ef6f6c', '#4cc9a4', '#f0a76b', '#5b8def', '#d77ad8', '#e0b341', '#8b95a7']
 
@@ -12,18 +14,46 @@ interface Props {
 export default function SceneTypeEditor({ sceneType, onClose }: Props) {
   const { upsertSceneType, deleteSceneType } = useStore()
   const [d, setD] = useState<SceneType>(sceneType)
-  const patch = (p: Partial<SceneType>) => setD((x) => ({ ...x, ...p }))
+  const [dirty, setDirty] = useState(false)
+  const patch = (p: Partial<SceneType>) => {
+    setD((x) => ({ ...x, ...p }))
+    setDirty(true)
+  }
 
   return (
-    <div className="overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">
-          <h3>シーンの種類</h3>
-          <button className="icon-btn" onClick={onClose}>
-            ✕
+    <ModalShell
+      title="シーンの種類"
+      onClose={onClose}
+      dirty={dirty}
+      footer={
+        <>
+          <button
+            className="btn danger"
+            onClick={async () => {
+              if (await appConfirm({ message: 'このシーン種類を削除しますか？', danger: true })) {
+                deleteSceneType(d.id)
+                onClose()
+              }
+            }}
+          >
+            削除
           </button>
-        </div>
-        <div className="modal-body">
+          <div style={{ flex: 1 }} />
+          <button className="btn" onClick={onClose}>
+            キャンセル
+          </button>
+          <button
+            className="btn primary"
+            onClick={() => {
+              upsertSceneType(d)
+              onClose()
+            }}
+          >
+            保存
+          </button>
+        </>
+      }
+    >
           <div className="field">
             <label>名称</label>
             <input
@@ -86,34 +116,6 @@ export default function SceneTypeEditor({ sceneType, onClose }: Props) {
               ))}
             </div>
           </div>
-        </div>
-        <div className="modal-foot">
-          <button
-            className="btn danger"
-            onClick={() => {
-              if (confirm('このシーン種類を削除しますか？')) {
-                deleteSceneType(d.id)
-                onClose()
-              }
-            }}
-          >
-            削除
-          </button>
-          <div style={{ flex: 1 }} />
-          <button className="btn" onClick={onClose}>
-            キャンセル
-          </button>
-          <button
-            className="btn primary"
-            onClick={() => {
-              upsertSceneType(d)
-              onClose()
-            }}
-          >
-            保存
-          </button>
-        </div>
-      </div>
-    </div>
+    </ModalShell>
   )
 }

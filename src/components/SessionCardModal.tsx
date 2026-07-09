@@ -4,6 +4,7 @@ import { exportSessionCard } from '../lib/cards'
 import { getImage, useImageUrl } from '../lib/imageStore'
 import { generateDefaultAvatar } from '../lib/avatarGen'
 import type { SceneIllustration, Session } from '../types'
+import ModalShell from './ModalShell'
 
 interface Props {
   session: Session
@@ -65,15 +66,21 @@ export default function SessionCardModal({ session, onClose }: Props) {
   }
 
   return (
-    <div className="overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">
-          <h3>セッションをカード化</h3>
-          <button className="icon-btn" onClick={onClose}>
-            ✕
+    <ModalShell
+      title="セッションをカード化"
+      onClose={onClose}
+      footer={
+        <>
+          <div style={{ flex: 1 }} />
+          <button className="btn" onClick={onClose}>
+            キャンセル
           </button>
-        </div>
-        <div className="modal-body">
+          <button className="btn primary" onClick={exportCard} disabled={busy}>
+            {busy ? '書き出し中…' : '🖼 カードとして保存'}
+          </button>
+        </>
+      }
+    >
           <div className="desc">
             会話・状態・参照素材・画像をすべて1枚の PNG に埋め込みます。読み込むと物語がまるごと復元されます。
           </div>
@@ -98,17 +105,6 @@ export default function SessionCardModal({ session, onClose }: Props) {
             )}
           </div>
           {error && <p className="notice">{error}</p>}
-        </div>
-        <div className="modal-foot">
-          <div style={{ flex: 1 }} />
-          <button className="btn" onClick={onClose}>
-            キャンセル
-          </button>
-          <button className="btn primary" onClick={exportCard} disabled={busy}>
-            {busy ? '書き出し中…' : '🖼 カードとして保存'}
-          </button>
-        </div>
-      </div>
-    </div>
+    </ModalShell>
   )
 }

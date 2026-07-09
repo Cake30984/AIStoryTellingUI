@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { useStore } from '../store'
 import type { Development, LoreEntry, Session, SessionOverlay } from '../types'
 import CsvInput from './CsvInput'
+import { appConfirm } from '../lib/dialogs'
+import ModalShell from './ModalShell'
 
 interface Props {
   session: Session
@@ -21,17 +23,22 @@ export default function DiscoveryPanel({ session, onClose }: Props) {
       developments: x.developments.map((d) => ({ ...d })),
     })),
   }))
+  const [dirty, setDirty] = useState(false)
+  const mutateOv = (updater: (prev: SessionOverlay) => SessionOverlay) => {
+    setOv(updater)
+    setDirty(true)
+  }
 
   const updateLore = (id: string, patch: Partial<LoreEntry>) =>
-    setOv((prev) => ({
+    mutateOv((prev) => ({
       ...prev,
       lore: prev.lore.map((e) => (e.id === id ? { ...e, ...patch } : e)),
     }))
   const removeLore = (id: string) =>
-    setOv((prev) => ({ ...prev, lore: prev.lore.filter((e) => e.id !== id) }))
+    mutateOv((prev) => ({ ...prev, lore: prev.lore.filter((e) => e.id !== id) }))
 
   const updateDev = (characterId: string, devId: string, patch: Partial<Development>) =>
-    setOv((prev) => ({
+    mutateOv((prev) => ({
       ...prev,
       characterDevelopments: prev.characterDevelopments.map((x) =>
         x.characterId === characterId
@@ -43,7 +50,7 @@ export default function DiscoveryPanel({ session, onClose }: Props) {
       ),
     }))
   const removeDev = (characterId: string, devId: string) =>
-    setOv((prev) => ({
+    mutateOv((prev) => ({
       ...prev,
       characterDevelopments: prev.characterDevelopments.map((x) =>
         x.characterId === characterId
@@ -54,27 +61,27 @@ export default function DiscoveryPanel({ session, onClose }: Props) {
 
   // 昇格はローカル編集済みの内容（entry/dev）をそのまま store へ渡す。
   // overlay 全体を書き戻さないため、他の未保存編集や2連続クリックの競合に影響されない。
-  const promoteLore = (entry: LoreEntry) => {
+  const promoteLore = async (entry: LoreEntry) => {
     if (!session.worldId) return
     if (
-      !confirm(
+      !(await appConfirm(
         `このロアを元のワールド${worldName ? `「${worldName}」` : ''}へ反映しますか？\n以後は発見ログから消え、ワールド編集に表示されます。\n（素材への反映はすべてのセッション・すべての分岐に共有され、分岐を戻しても巻き戻りません）`,
-      )
+      ))
     )
       return
     promoteOverlayLore(session.id, entry)
-    setOv((prev) => ({ ...prev, lore: prev.lore.filter((e) => e.id !== entry.id) }))
+    mutateOv((prev) => ({ ...prev, lore: prev.lore.filter((e) => e.id !== entry.id) }))
   }
 
-  const promoteDev = (characterId: string, dev: Development) => {
+  const promoteDev = async (characterId: string, dev: Development) => {
     if (
-      !confirm(
+      !(await appConfirm(
         `この設定を「${charName(characterId)}」の正式なプロフィールへ反映しますか？\n以後は発見ログから消え、キャラ編集に表示されます。\n（素材への反映はすべてのセッション・すべての分岐に共有され、分岐を戻しても巻き戻りません）`,
-      )
+      ))
     )
       return
     promoteOverlayDev(session.id, characterId, dev)
-    setOv((prev) => ({
+    mutateOv((prev) => ({
       ...prev,
       characterDevelopments: prev.characterDevelopments.map((x) =>
         x.characterId === characterId
@@ -93,15 +100,21 @@ export default function DiscoveryPanel({ session, onClose }: Props) {
   }
 
   return (
-    <div className="overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">
-          <h3>📖 発見ログ</h3>
-          <button className="icon-btn" onClick={onClose}>
-            ✕
+    <ModalShell
+      title="📖 発見ログ"
+      onClose={onClose}
+      dirty={dirty}
+      footer={
+        <>
+          <button className="btn" onClick={onClose}>
+            キャンセル
           </button>
-        </div>
-        <div className="modal-body">
+          <button className="btn primary" onClick={save}>
+            保存
+          </button>
+        </>
+      }
+    >
           {isEmpty && (
             <p className="inline-empty">
               まだ発見された設定はありません。シーンを終えるとレビューでここに追記されます。
@@ -206,16 +219,6 @@ export default function DiscoveryPanel({ session, onClose }: Props) {
           <p className="desc" style={{ marginTop: 4 }}>
             関係性・気分・実績は 📊 状態パネルをご覧ください。
           </p>
-        </div>
-        <div className="modal-foot">
-          <button className="btn" onClick={onClose}>
-            キャンセル
-          </button>
-          <button className="btn primary" onClick={save}>
-            保存
-          </button>
-        </div>
-      </div>
-    </div>
+    </ModalShell>
   )
 }

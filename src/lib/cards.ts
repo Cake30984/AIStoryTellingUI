@@ -3,6 +3,7 @@ import { readTextChunks, writeTextChunk } from './png'
 import { getImage, putImage } from './imageStore'
 import { generateDefaultAvatar, normalizeImage } from './avatarGen'
 import { downloadBlob } from './io'
+import { appConfirm } from './dialogs'
 
 function uid(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
@@ -301,7 +302,7 @@ export async function exportSessionCard(
 
   if (totalBytes > 30 * 1024 * 1024) {
     const mb = Math.round(totalBytes / 1024 / 1024)
-    if (!confirm(`同梱画像の合計が約 ${mb}MB あり、カードファイルが大きくなります。続行しますか？`)) return
+    if (!(await appConfirm(`同梱画像の合計が約 ${mb}MB あり、カードファイルが大きくなります。続行しますか？`))) return
   }
 
   // キャラの model（ModelRef）は環境固有のため除外。session 側の ModelRef は

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useStore } from '../store'
 import type { Session, SessionState } from '../types'
 import EntityAvatar from './EntityAvatar'
+import ModalShell from './ModalShell'
 
 interface Props {
   session: Session
@@ -29,6 +30,11 @@ export default function StatusPanel({ session, onClose }: Props) {
     counters: (session.state.counters ?? []).map((c) => ({ ...c })),
     achievements: (session.state.achievements ?? []).map((a) => ({ ...a })),
   }))
+  const [dirty, setDirty] = useState(false)
+  const mutate = (updater: (prev: SessionState) => SessionState) => {
+    setSt(updater)
+    setDirty(true)
+  }
 
   const statValue = (defId: string, characterId?: string): number => {
     const v = st.stats.find((s) => s.defId === defId && s.characterId === characterId)
@@ -36,7 +42,7 @@ export default function StatusPanel({ session, onClose }: Props) {
     return world?.stats.find((d) => d.id === defId)?.default ?? 0
   }
   const setStat = (defId: string, characterId: string | undefined, value: number) =>
-    setSt((prev) => {
+    mutate((prev) => {
       const stats = prev.stats.slice()
       const idx = stats.findIndex((s) => s.defId === defId && s.characterId === characterId)
       if (idx >= 0) stats[idx] = { ...stats[idx], value }
@@ -44,13 +50,13 @@ export default function StatusPanel({ session, onClose }: Props) {
       return { ...prev, stats }
     })
   const setStance = (i: number, stance: string) =>
-    setSt((prev) => {
+    mutate((prev) => {
       const relations = prev.relations.slice()
       relations[i] = { ...relations[i], stance }
       return { ...prev, relations }
     })
   const setAspectNote = (i: number, aspectId: string, note: string) =>
-    setSt((prev) => {
+    mutate((prev) => {
       const relations = prev.relations.slice()
       relations[i] = {
         ...relations[i],
@@ -62,7 +68,7 @@ export default function StatusPanel({ session, onClose }: Props) {
   const counterValue = (defId: string, characterId?: string): number =>
     st.counters.find((c) => c.defId === defId && c.characterId === characterId)?.value ?? 0
   const setCounter = (defId: string, characterId: string | undefined, value: number) =>
-    setSt((prev) => {
+    mutate((prev) => {
       const counters = (prev.counters ?? []).slice()
       const idx = counters.findIndex((c) => c.defId === defId && c.characterId === characterId)
       if (idx >= 0) counters[idx] = { ...counters[idx], value }
@@ -72,7 +78,7 @@ export default function StatusPanel({ session, onClose }: Props) {
 
   const isUnlocked = (defId: string) => st.achievements.some((a) => a.defId === defId)
   const toggleAchievement = (defId: string) =>
-    setSt((prev) => {
+    mutate((prev) => {
       const has = prev.achievements.some((a) => a.defId === defId)
       const achievements = has
         ? prev.achievements.filter((a) => a.defId !== defId)
@@ -92,15 +98,21 @@ export default function StatusPanel({ session, onClose }: Props) {
   }
 
   return (
-    <div className="overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">
-          <h3>📊 状態</h3>
-          <button className="icon-btn" onClick={onClose}>
-            ✕
+    <ModalShell
+      title="📊 状態"
+      onClose={onClose}
+      dirty={dirty}
+      footer={
+        <>
+          <button className="btn" onClick={onClose}>
+            キャンセル
           </button>
-        </div>
-        <div className="modal-body">
+          <button className="btn primary" onClick={save}>
+            保存
+          </button>
+        </>
+      }
+    >
           {!world && (
             <p className="inline-empty">
               ワールドを設定すると、関係性・ステータスを管理できます。
@@ -236,16 +248,6 @@ export default function StatusPanel({ session, onClose }: Props) {
               })}
             </div>
           )}
-        </div>
-        <div className="modal-foot">
-          <button className="btn" onClick={onClose}>
-            キャンセル
-          </button>
-          <button className="btn primary" onClick={save}>
-            保存
-          </button>
-        </div>
-      </div>
-    </div>
+    </ModalShell>
   )
 }

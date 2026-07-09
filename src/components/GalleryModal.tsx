@@ -2,7 +2,10 @@ import { useState } from 'react'
 import { useStore } from '../store'
 import { getImage, useImageUrl } from '../lib/imageStore'
 import { downloadBlob } from '../lib/io'
+import { appConfirm } from '../lib/dialogs'
 import type { Scene, SceneIllustration, Session } from '../types'
+import ModalShell from './ModalShell'
+import ZoomOverlay from './ZoomOverlay'
 
 interface Props {
   session: Session
@@ -37,23 +40,26 @@ function GalleryThumb({
         <button
           className="icon-btn small"
           title="挿絵を削除"
-          onClick={() => {
-            if (confirm('この挿絵を削除しますか？')) onRemove()
+          onClick={async () => {
+            if (await appConfirm({ message: 'この挿絵を削除しますか？', danger: true })) onRemove()
           }}
         >
           🗑
         </button>
       </div>
       {zoom && (
-        <div className="overlay" onClick={() => setZoom(false)}>
-          <div className="modal-body" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '92vw' }}>
-            <img src={url} alt="" style={{ maxWidth: '92vw', maxHeight: '80vh', borderRadius: 'var(--radius)', display: 'block' }} />
-            <p className="desc" style={{ marginTop: 8, whiteSpace: 'pre-wrap' }}>
-              {ill.prompt}
-            </p>
-            <p className="desc">{new Date(ill.createdAt).toLocaleString()}</p>
-          </div>
-        </div>
+        <ZoomOverlay
+          url={url}
+          onClose={() => setZoom(false)}
+          caption={
+            <>
+              <p className="desc" style={{ marginTop: 8, whiteSpace: 'pre-wrap' }}>
+                {ill.prompt}
+              </p>
+              <p className="desc">{new Date(ill.createdAt).toLocaleString()}</p>
+            </>
+          }
+        />
       )}
     </div>
   )
@@ -96,18 +102,14 @@ function BackgroundThumb({ imageId, sceneId, onRemove }: { imageId: string; scen
         <button
           className="icon-btn small"
           title="背景を外す"
-          onClick={() => {
-            if (confirm('この場面の背景を外しますか？')) onRemove()
+          onClick={async () => {
+            if (await appConfirm({ message: 'この場面の背景を外しますか？', danger: true })) onRemove()
           }}
         >
           🗑
         </button>
       </div>
-      {zoom && (
-        <div className="overlay" onClick={() => setZoom(false)}>
-          <img src={url} alt="" style={{ maxWidth: '92vw', maxHeight: '92vh', borderRadius: 'var(--radius)' }} />
-        </div>
-      )}
+      {zoom && <ZoomOverlay url={url} onClose={() => setZoom(false)} />}
     </div>
   )
 }
@@ -123,15 +125,19 @@ export default function GalleryModal({ session, onClose }: Props) {
   const sceneHeading = (sc: Scene) => [sc.timeLabel, sc.title].filter(Boolean).join('｜') || 'シーン'
 
   return (
-    <div className="overlay" onClick={onClose}>
-      <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">
-          <h3>🖼 画像ギャラリー</h3>
-          <button className="icon-btn" onClick={onClose}>
-            ✕
+    <ModalShell
+      title="🖼 画像ギャラリー"
+      onClose={onClose}
+      wide
+      footer={
+        <>
+          <div style={{ flex: 1 }} />
+          <button className="btn primary" onClick={onClose}>
+            閉じる
           </button>
-        </div>
-        <div className="modal-body">
+        </>
+      }
+    >
           {scenesWithImages.length === 0 ? (
             <p className="desc">まだ画像がありません。</p>
           ) : (
@@ -161,14 +167,6 @@ export default function GalleryModal({ session, onClose }: Props) {
               ))}
             </div>
           )}
-        </div>
-        <div className="modal-foot">
-          <div style={{ flex: 1 }} />
-          <button className="btn primary" onClick={onClose}>
-            閉じる
-          </button>
-        </div>
-      </div>
-    </div>
+    </ModalShell>
   )
 }

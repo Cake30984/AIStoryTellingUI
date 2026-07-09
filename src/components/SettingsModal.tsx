@@ -4,7 +4,9 @@ import { downloadBundle, parseBundle } from '../lib/io'
 import { parseCardPng, attachCardImage } from '../lib/cards'
 import { PROVIDER_PRESETS, newProvider } from '../lib/providers'
 import ImageProviderSettings from './ImageProviderSettings'
+import { appConfirm } from '../lib/dialogs'
 import type { Provider } from '../types'
+import ModalShell from './ModalShell'
 
 interface Props {
   onClose: () => void
@@ -79,7 +81,7 @@ export default function SettingsModal({ onClose }: Props) {
     if (bundle.images && bundle.images.length > 0) {
       const bytes = bundle.images.reduce((sum, img) => sum + img.dataBase64.length * 0.75, 0)
       const mb = (bytes / (1024 * 1024)).toFixed(1)
-      if (!confirm(`画像 ${bundle.images.length} 件を含めます（概算 ${mb} MB）。書き出しますか？`)) return
+      if (!(await appConfirm(`画像 ${bundle.images.length} 件を含めます（概算 ${mb} MB）。書き出しますか？`))) return
     }
     downloadBundle(bundle)
     setNotice('全データをエクスポートしました。')
@@ -131,16 +133,15 @@ export default function SettingsModal({ onClose }: Props) {
   } as const
 
   return (
-    <div className="overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">
-          <h3>設定・データ管理</h3>
-          <button className="icon-btn" onClick={onClose}>
-            ✕
-          </button>
-        </div>
-        <div className="modal-body">
-
+    <ModalShell
+      title="設定・データ管理"
+      onClose={onClose}
+      footer={
+        <button className="btn primary" onClick={onClose}>
+          閉じる
+        </button>
+      }
+    >
           {/* 接続先（プロバイダ）管理 */}
           <div className="field">
             <label>接続先（API プロバイダ）</label>
@@ -352,13 +353,6 @@ export default function SettingsModal({ onClose }: Props) {
           </div>
 
           {notice && <p className="notice">{notice}</p>}
-        </div>
-        <div className="modal-foot">
-          <button className="btn primary" onClick={onClose}>
-            閉じる
-          </button>
-        </div>
-      </div>
-    </div>
+    </ModalShell>
   )
 }

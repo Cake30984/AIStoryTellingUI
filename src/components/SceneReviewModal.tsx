@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useStore } from '../store'
 import { advanceTimeline, timeLabelOf } from '../lib/timeline'
+import ModalShell from './ModalShell'
 
 export default function SceneReviewModal() {
   const {
@@ -88,15 +89,27 @@ export default function SceneReviewModal() {
   }
 
   return (
-    <div className="overlay" onClick={cancelReview}>
-      <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">
-          <h3>シーン終了レビュー</h3>
-          <button className="icon-btn" onClick={cancelReview}>
-            ✕
+    <ModalShell
+      title="シーン終了レビュー"
+      onClose={cancelReview}
+      dirty
+      discardMessage="生成済みのレビューを破棄しますか？"
+      wide
+      footer={
+        <>
+          <button className="btn" onClick={cancelReview}>
+            キャンセル
           </button>
-        </div>
-        <div className="modal-body">
+          <button
+            className="btn primary"
+            onClick={confirm}
+            disabled={isReviewing || isRegenSuggestions}
+          >
+            {isPastScene ? '要約を更新' : '確定して次のシーンへ'}
+          </button>
+        </>
+      }
+    >
           {isReviewing ? (
             <div className="reviewing-placeholder">要約を生成中...</div>
           ) : (
@@ -336,20 +349,6 @@ export default function SceneReviewModal() {
               )}
             </>
           )}
-        </div>
-        <div className="modal-foot">
-          <button className="btn" onClick={cancelReview}>
-            キャンセル
-          </button>
-          <button
-            className="btn primary"
-            onClick={confirm}
-            disabled={isReviewing || isRegenSuggestions}
-          >
-            {isPastScene ? '要約を更新' : '確定して次のシーンへ'}
-          </button>
-        </div>
-      </div>
-    </div>
+    </ModalShell>
   )
 }

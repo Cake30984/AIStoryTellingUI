@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { useStore } from '../store'
 import type { BranchNode, BranchTree, Session } from '../types'
 import { useImageUrl } from '../lib/imageStore'
+import { appConfirm, appPrompt } from '../lib/dialogs'
+import ModalShell from './ModalShell'
 
 interface Props {
   session: Session
@@ -303,7 +305,7 @@ export default function BranchTreeModal({ session, onClose }: Props) {
   const doRestore = async (nodeId: string) => {
     if (busy) return
     if (
-      !confirm('この地点に戻りますか？\n現在の物語はそのまま残り、ここから新しい分岐が始まります。')
+      !(await appConfirm('この地点に戻りますか？\n現在の物語はそのまま残り、ここから新しい分岐が始まります。'))
     )
       return
     setBusyAction(true)
@@ -321,7 +323,12 @@ export default function BranchTreeModal({ session, onClose }: Props) {
     if (busy || !tree) return
     const nodes = subtreeNodes(tree, node.id)
     const totalBytes = nodes.reduce((sum, n) => sum + n.bytes, 0)
-    if (!confirm(`この分岐（${nodes.length}件・${formatBytes(totalBytes)}）を削除しますか？\n元に戻せません。`))
+    if (
+      !(await appConfirm({
+        message: `この分岐（${nodes.length}件・${formatBytes(totalBytes)}）を削除しますか？\n元に戻せません。`,
+        danger: true,
+      }))
+    )
       return
     setBusyAction(true)
     try {
@@ -338,7 +345,12 @@ export default function BranchTreeModal({ session, onClose }: Props) {
 
   const doPrune = async () => {
     if (busy || !tree || pruneCount <= 0) return
-    if (!confirm(`現在の分岐（${pathIds.size}件）以外の${pruneCount}件を削除します。\n元に戻せません。よろしいですか？`))
+    if (
+      !(await appConfirm({
+        message: `現在の分岐（${pathIds.size}件）以外の${pruneCount}件を削除します。\n元に戻せません。よろしいですか？`,
+        danger: true,
+      }))
+    )
       return
     setBusyAction(true)
     try {
@@ -354,7 +366,10 @@ export default function BranchTreeModal({ session, onClose }: Props) {
 
   const doSetStar = async (node: BranchNode) => {
     if (busy) return
-    const name = window.prompt('しおりの名前を入力してください', node.star?.name ?? node.label)
+    const name = await appPrompt({
+      message: 'しおりの名前を入力してください',
+      initial: node.star?.name ?? node.label,
+    })
     if (name === null) return
     const trimmed = name.trim()
     if (!trimmed) return
@@ -367,15 +382,29 @@ export default function BranchTreeModal({ session, onClose }: Props) {
   }
 
   return (
-    <div className="overlay" onClick={onClose}>
-      <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">
-          <h3>🕘 分岐ツリー</h3>
-          <button className="icon-btn" onClick={onClose}>
-            ✕
+    <ModalShell
+      title="🕘 分岐ツリー"
+      onClose={onClose}
+      wide
+      footer={
+        <>
+          {tree && (
+            <span className="desc">
+              合計 {tree.nodes.length} 件・{formatBytes(totalBytes)}
+            </span>
+          )}
+          <div style={{ flex: 1 }} />
+          {tree && pruneCount > 0 && (
+            <button className="btn danger" disabled={busy} onClick={doPrune}>
+              ✂ この分岐だけ残す
+            </button>
+          )}
+          <button className="btn primary" onClick={onClose}>
+            閉じる
           </button>
-        </div>
-        <div className="modal-body">
+        </>
+      }
+    >
           {tree && (
             <div className="seg" style={{ marginBottom: 14 }}>
               <button className={tab === 'tree' ? 'on' : ''} onClick={() => setTab('tree')}>
@@ -442,24 +471,6 @@ export default function BranchTreeModal({ session, onClose }: Props) {
               />
             </div>
           )}
-        </div>
-        <div className="modal-foot">
-          {tree && (
-            <span className="desc">
-              合計 {tree.nodes.length} 件・{formatBytes(totalBytes)}
-            </span>
-          )}
-          <div style={{ flex: 1 }} />
-          {tree && pruneCount > 0 && (
-            <button className="btn danger" disabled={busy} onClick={doPrune}>
-              ✂ この分岐だけ残す
-            </button>
-          )}
-          <button className="btn primary" onClick={onClose}>
-            閉じる
-          </button>
-        </div>
-      </div>
-    </div>
+    </ModalShell>
   )
 }
