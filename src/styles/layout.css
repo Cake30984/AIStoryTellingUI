@@ -192,7 +192,79 @@
   color: var(--text);
 }
 
+/* ---------- シーンチップ（トップバー。UI-2でシーンバーから移設） ---------- */
+.scene-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-elev2);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  white-space: nowrap;
+  max-width: 320px;
+  flex-shrink: 1;
+  overflow: hidden;
+}
+.scene-chip:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.scene-chip-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- 進行状態インジケータ（UI-2） ---------- */
+.activity {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  color: var(--text);
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.activity-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: blink 1s steps(2) infinite;
+}
+.activity-more {
+  color: var(--text-faint);
+}
+.activity-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+/* ---------- パネル群・⋯メニューの土台（UI-2） ---------- */
+.topbar-group {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.menu-anchor {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
 .icon-btn {
+  position: relative;
   background: transparent;
   border: 1px solid var(--border);
   color: var(--text-dim);
@@ -211,6 +283,21 @@
   color: var(--accent);
   background: var(--accent-soft);
   border-color: var(--accent);
+}
+.icon-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
 }
 
 /* ---------- 空状態 ---------- */

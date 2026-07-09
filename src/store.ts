@@ -562,6 +562,8 @@ interface AppState {
   isStreaming: boolean
   isGeneratingChoices: boolean
   isReviewing: boolean
+  /** 表情判定（方式A・classifyEmotions）が進行中か（非永続。ActivityIndicator 用） */
+  isClassifyingEmotions: boolean
   /** 次シーン候補（suggestions）だけを再生成中 */
   isRegenSuggestions: boolean
   sceneReview: SceneReview | null
@@ -1369,6 +1371,7 @@ export const useStore = create<AppState>()(
         isStreaming: false,
         isGeneratingChoices: false,
         isReviewing: false,
+        isClassifyingEmotions: false,
         isRegenSuggestions: false,
         sceneReview: null,
         error: null,
@@ -2700,6 +2703,7 @@ export const useStore = create<AppState>()(
             .slice(-3)
             .map((m) => plainTextOf(m.content))
           if (recent.length === 0) return
+          set({ isClassifyingEmotions: true })
           try {
             const raw = await streamChat(
               {
@@ -2729,6 +2733,8 @@ export const useStore = create<AppState>()(
           } catch (e) {
             // 表情判定は失敗しても本編には影響させない。現状維持（次の応答でまた判定される）
             console.warn('[emotion] 判定に失敗:', (e as Error)?.message)
+          } finally {
+            set({ isClassifyingEmotions: false })
           }
         },
 

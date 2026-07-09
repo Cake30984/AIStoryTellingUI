@@ -12,6 +12,41 @@
   padding: 0 20px;
 }
 
+/* ---------- コンポーザー操作行（UI-2。旧 story-actions×3・シーンバーのボタン群・選択肢再生成を統合） ---------- */
+.composer-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.composer-tools .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.composer-tool-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 12.5px;
+  padding: 7px 12px;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+}
+.composer-tool-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.composer-tool-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .story-actions {
   display: flex;
   gap: 8px;

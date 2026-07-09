@@ -47,6 +47,62 @@
   background: var(--bg-elev);
 }
 
+/* ---------- 汎用ポップオーバー（⋯メニュー・アクティビティ内訳。UI-2） ---------- */
+.menu-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 230px;
+  background: var(--bg-elev2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+  padding: 6px;
+  z-index: var(--z-dock);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.menu-pop.align-left {
+  right: auto;
+  left: 0;
+}
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  text-align: left;
+}
+.menu-item:hover:not(:disabled) {
+  background: var(--bg-elev);
+}
+.menu-item:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.menu-item.danger {
+  color: var(--danger);
+}
+.menu-item .menu-check {
+  margin-left: auto;
+  opacity: 0;
+}
+.menu-item.checked .menu-check {
+  opacity: 1;
+}
+.menu-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 2px;
+}
+
 .field {
   margin-bottom: 18px;
 }
