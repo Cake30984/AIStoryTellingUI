@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { useStore } from '../store'
 import { useBlobUrl } from '../lib/imageJobs'
+import ModalShell from './ModalShell'
+import ZoomOverlay from './ZoomOverlay'
 
 /** 選択待ちの生成候補1枚（クリックで拡大・採用） */
 function Candidate({ blob, busy, onUse }: { blob: Blob; busy: boolean; onUse: () => void }) {
@@ -13,11 +15,7 @@ function Candidate({ blob, busy, onUse }: { blob: Blob; busy: boolean; onUse: ()
       <button className="btn primary" style={{ fontSize: 12, padding: '4px 10px' }} onClick={onUse} disabled={busy}>
         ✔ 採用
       </button>
-      {zoom && (
-        <div className="overlay" onClick={() => setZoom(false)}>
-          <img src={url} alt="" style={{ maxWidth: '92vw', maxHeight: '92vh', borderRadius: 'var(--radius)' }} />
-        </div>
-      )}
+      {zoom && <ZoomOverlay url={url} onClose={() => setZoom(false)} />}
     </div>
   )
 }
@@ -41,15 +39,19 @@ export default function ImageJobsPanel({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="overlay" onClick={onClose}>
-      <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">
-          <h3>画像生成ジョブ</h3>
-          <button className="icon-btn" onClick={onClose}>
-            ✕
+    <ModalShell
+      title="画像生成ジョブ"
+      onClose={onClose}
+      wide
+      footer={
+        <>
+          <div style={{ flex: 1 }} />
+          <button className="btn" onClick={onClose}>
+            閉じる
           </button>
-        </div>
-        <div className="modal-body">
+        </>
+      }
+    >
           {imageJobs.length === 0 ? (
             <p className="desc">実行中のジョブはありません。</p>
           ) : (
@@ -97,14 +99,6 @@ export default function ImageJobsPanel({ onClose }: { onClose: () => void }) {
             ))
           )}
           {error && <p className="notice">{error}</p>}
-        </div>
-        <div className="modal-foot">
-          <div style={{ flex: 1 }} />
-          <button className="btn" onClick={onClose}>
-            閉じる
-          </button>
-        </div>
-      </div>
-    </div>
+    </ModalShell>
   )
 }

@@ -6,6 +6,8 @@ import { extractJson } from '../lib/json'
 import { ensureTags } from '../lib/promptTags'
 import { useBlobUrl, type ImageJobTarget } from '../lib/imageJobs'
 import ModelPicker from './ModelPicker'
+import ModalShell from './ModalShell'
+import ZoomOverlay from './ZoomOverlay'
 
 /** サイズプリセット（openai系は API 側の許容値に依存。エラーはそのまま表示する） */
 const SIZE_PRESETS = [
@@ -25,11 +27,7 @@ function ResultThumb({ blob, busy, onUse }: { blob: Blob; busy: boolean; onUse: 
       <button className="btn primary" style={{ fontSize: 12, padding: '4px 10px' }} onClick={onUse} disabled={busy}>
         ✔ この画像を使う
       </button>
-      {zoom && (
-        <div className="overlay" onClick={() => setZoom(false)}>
-          <img src={url} alt="" style={{ maxWidth: '92vw', maxHeight: '92vh', borderRadius: 'var(--radius)' }} />
-        </div>
-      )}
+      {zoom && <ZoomOverlay url={url} onClose={() => setZoom(false)} />}
     </div>
   )
 }
@@ -175,15 +173,19 @@ export default function ImageGenModal({ title, draftContext, initialPrompt, targ
   }
 
   return (
-    <div className="overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">
-          <h3>{title}</h3>
-          <button className="icon-btn" onClick={onClose}>
-            ✕
+    <>
+    <ModalShell
+      title={title}
+      onClose={onClose}
+      footer={
+        <>
+          <div style={{ flex: 1 }} />
+          <button className="btn" onClick={onClose}>
+            {job?.status === 'running' ? '閉じる（生成は継続します）' : '閉じる'}
           </button>
-        </div>
-        <div className="modal-body">
+        </>
+      }
+    >
           {imageProviders.length === 0 ? (
             <p className="desc">
               画像生成の接続先が未設定です。「⚙ 設定・データ管理」から ComfyUI または画像 API を追加してください。
@@ -281,14 +283,7 @@ export default function ImageGenModal({ title, draftContext, initialPrompt, targ
           )}
 
           {error && <p className="notice">{error}</p>}
-        </div>
-        <div className="modal-foot">
-          <div style={{ flex: 1 }} />
-          <button className="btn" onClick={onClose}>
-            {job?.status === 'running' ? '閉じる（生成は継続します）' : '閉じる'}
-          </button>
-        </div>
-      </div>
+    </ModalShell>
       {showModelPicker && (
         <ModelPicker
           current={draftModel}
@@ -299,6 +294,6 @@ export default function ImageGenModal({ title, draftContext, initialPrompt, targ
           onClose={() => setShowModelPicker(false)}
         />
       )}
-    </div>
+    </>
   )
 }

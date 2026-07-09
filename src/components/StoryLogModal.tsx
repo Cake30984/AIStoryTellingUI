@@ -1,5 +1,6 @@
 import { useStore } from '../store'
 import type { Session } from '../types'
+import ModalShell from './ModalShell'
 
 interface Props {
   session: Session
@@ -19,15 +20,24 @@ export default function StoryLogModal({ session, onClose }: Props) {
   }
 
   return (
-    <div className="overlay" onClick={onClose}>
-      <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">
-          <h3>📜 あらすじ一覧</h3>
-          <button className="icon-btn" onClick={onClose}>
-            ✕
+    <ModalShell
+      title="📜 あらすじ一覧"
+      onClose={onClose}
+      wide
+      footer={
+        <>
+          {recap && (
+            <button className="btn" onClick={copyAll}>
+              全文コピー
+            </button>
+          )}
+          <div style={{ flex: 1 }} />
+          <button className="btn primary" onClick={onClose}>
+            閉じる
           </button>
-        </div>
-        <div className="modal-body">
+        </>
+      }
+    >
           {session.scenes.every((sc) => !sc.summary.trim()) ? (
             <p style={{ color: 'var(--text-dim)' }}>
               まだ要約がありません。シーンを「✓ このシーンを終える」で締めると、ここにあらすじが蓄積されます。
@@ -57,19 +67,6 @@ export default function StoryLogModal({ session, onClose }: Props) {
               })}
             </div>
           )}
-        </div>
-        <div className="modal-foot">
-          {recap && (
-            <button className="btn" onClick={copyAll}>
-              全文コピー
-            </button>
-          )}
-          <div style={{ flex: 1 }} />
-          <button className="btn primary" onClick={onClose}>
-            閉じる
-          </button>
-        </div>
-      </div>
-    </div>
+    </ModalShell>
   )
 }

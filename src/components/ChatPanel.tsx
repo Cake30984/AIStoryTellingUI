@@ -13,6 +13,7 @@ import { modelRefLabel } from '../lib/providers'
 import { getImage, useImageUrl } from '../lib/imageStore'
 import { downloadBlob } from '../lib/io'
 import { hasStructuredLines, plainTextOf } from '../lib/structured'
+import { appConfirm } from '../lib/dialogs'
 import ImageGenModal from './ImageGenModal'
 import ImageJobsPanel from './ImageJobsPanel'
 import type { Message, Scene, SceneIllustration, Session } from '../types'
@@ -27,6 +28,7 @@ import BranchTreeModal from './BranchTreeModal'
 import EntityAvatar from './EntityAvatar'
 import StageBackdrop from './StageBackdrop'
 import { StructuredChatBody, StructuredNovelBody } from './StructuredMessage'
+import ZoomOverlay from './ZoomOverlay'
 
 interface Props {
   session: Session
@@ -54,18 +56,14 @@ function IllustrationView({ ill, onRemove }: { ill: SceneIllustration; onRemove:
         <button
           className="icon-btn small"
           title="挿絵を削除"
-          onClick={() => {
-            if (confirm('この挿絵を削除しますか？')) onRemove()
+          onClick={async () => {
+            if (await appConfirm({ message: 'この挿絵を削除しますか？', danger: true })) onRemove()
           }}
         >
           🗑
         </button>
       </div>
-      {zoom && (
-        <div className="overlay" onClick={() => setZoom(false)}>
-          <img src={url} alt="" style={{ maxWidth: '92vw', maxHeight: '92vh', borderRadius: 'var(--radius)' }} />
-        </div>
-      )}
+      {zoom && <ZoomOverlay url={url} onClose={() => setZoom(false)} />}
     </figure>
   )
 }
@@ -441,8 +439,9 @@ export default function ChatPanel({ session }: Props) {
         </button>
         <button
           className="icon-btn"
-          onClick={() => {
-            if (confirm('このセッションを削除しますか？')) deleteSession(session.id)
+          onClick={async () => {
+            if (await appConfirm({ message: 'このセッションを削除しますか？', danger: true }))
+              deleteSession(session.id)
           }}
           title="削除"
         >

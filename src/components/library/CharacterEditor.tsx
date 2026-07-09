@@ -7,6 +7,8 @@ import SpriteSetField from './SpriteSetField'
 import CsvInput from '../CsvInput'
 import ModelPicker from '../ModelPicker'
 import { exportCharacterCard } from '../../lib/cards'
+import { appConfirm } from '../../lib/dialogs'
+import ModalShell from '../ModalShell'
 
 interface Props {
   character: Character
@@ -20,7 +22,11 @@ export default function CharacterEditor({ character, onClose }: Props) {
   const savedExists = characters.some((c) => c.id === d.id)
   const [showModelPicker, setShowModelPicker] = useState(false)
   const [exporting, setExporting] = useState(false)
-  const patch = (p: Partial<Character>) => setD((c) => ({ ...c, ...p }))
+  const [dirty, setDirty] = useState(false)
+  const patch = (p: Partial<Character>) => {
+    setD((c) => ({ ...c, ...p }))
+    setDirty(true)
+  }
 
   const exportCard = async () => {
     setExporting(true)
@@ -37,15 +43,37 @@ export default function CharacterEditor({ character, onClose }: Props) {
   }
 
   return (
-    <div className="overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">
-          <h3>キャラクター</h3>
-          <button className="icon-btn" onClick={onClose}>
-            ✕
+    <>
+    <ModalShell
+      title="キャラクター"
+      onClose={onClose}
+      dirty={dirty}
+      footer={
+        <>
+          <button
+            className="btn danger"
+            onClick={async () => {
+              if (await appConfirm({ message: 'このキャラを削除しますか？', danger: true })) {
+                deleteCharacter(d.id)
+                onClose()
+              }
+            }}
+          >
+            削除
           </button>
-        </div>
-        <div className="modal-body">
+          <button className="btn" onClick={exportCard} disabled={exporting}>
+            {exporting ? '書き出し中…' : '🖼 カードとして保存'}
+          </button>
+          <div style={{ flex: 1 }} />
+          <button className="btn" onClick={onClose}>
+            キャンセル
+          </button>
+          <button className="btn primary" onClick={save}>
+            保存
+          </button>
+        </>
+      }
+    >
           <p style={{ fontSize: 12, color: 'var(--text-faint)', marginTop: 0, marginBottom: 10 }}>
             素材の編集・保存はすべてのセッション・すべての分岐に共有されます（分岐を戻しても巻き戻りません）。
           </p>
@@ -202,31 +230,7 @@ export default function CharacterEditor({ character, onClose }: Props) {
               )}
             </div>
           </div>
-        </div>
-        <div className="modal-foot">
-          <button
-            className="btn danger"
-            onClick={() => {
-              if (confirm('このキャラを削除しますか？')) {
-                deleteCharacter(d.id)
-                onClose()
-              }
-            }}
-          >
-            削除
-          </button>
-          <button className="btn" onClick={exportCard} disabled={exporting}>
-            {exporting ? '書き出し中…' : '🖼 カードとして保存'}
-          </button>
-          <div style={{ flex: 1 }} />
-          <button className="btn" onClick={onClose}>
-            キャンセル
-          </button>
-          <button className="btn primary" onClick={save}>
-            保存
-          </button>
-        </div>
-      </div>
+    </ModalShell>
       {showModelPicker && (
         <ModelPicker
           current={d.model ?? ''}
@@ -234,6 +238,6 @@ export default function CharacterEditor({ character, onClose }: Props) {
           onClose={() => setShowModelPicker(false)}
         />
       )}
-    </div>
+    </>
   )
 }

@@ -6,6 +6,7 @@ import CsvInput from './CsvInput'
 import ModelPicker from './ModelPicker'
 import EntityAvatar from './EntityAvatar'
 import SessionCardModal from './SessionCardModal'
+import ModalShell from './ModalShell'
 
 type PickerTarget = 'review' | 'choices' | 'bulk'
 
@@ -19,7 +20,11 @@ export default function SessionEditor({ session, onClose }: Props) {
   const [d, setD] = useState<Session>(session)
   const [pickerTarget, setPickerTarget] = useState<PickerTarget | null>(null)
   const [showCardModal, setShowCardModal] = useState(false)
-  const patch = (p: Partial<Session>) => setD((s) => ({ ...s, ...p }))
+  const [dirty, setDirty] = useState(false)
+  const patch = (p: Partial<Session>) => {
+    setD((s) => ({ ...s, ...p }))
+    setDirty(true)
+  }
 
   const toggleDirectorType = (id: string) =>
     patch({
@@ -76,15 +81,26 @@ export default function SessionEditor({ session, onClose }: Props) {
   }
 
   return (
-    <div className="overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">
-          <h3>セッション設定</h3>
-          <button className="icon-btn" onClick={onClose}>
-            ✕
+    <>
+    <ModalShell
+      title="セッション設定"
+      onClose={onClose}
+      dirty={dirty}
+      footer={
+        <>
+          <button className="btn" onClick={() => setShowCardModal(true)} title="会話・状態・素材・画像を1枚のPNGに埋め込んで共有">
+            🖼 セッションをカード化
           </button>
-        </div>
-        <div className="modal-body">
+          <div style={{ flex: 1 }} />
+          <button className="btn" onClick={onClose}>
+            キャンセル
+          </button>
+          <button className="btn primary" onClick={save}>
+            保存
+          </button>
+        </>
+      }
+    >
           <div className="field">
             <label>タイトル</label>
             <input value={d.title} onChange={(e) => patch({ title: e.target.value })} />
@@ -454,20 +470,7 @@ export default function SessionEditor({ session, onClose }: Props) {
               </div>
             </div>
           </div>
-        </div>
-        <div className="modal-foot">
-          <button className="btn" onClick={() => setShowCardModal(true)} title="会話・状態・素材・画像を1枚のPNGに埋め込んで共有">
-            🖼 セッションをカード化
-          </button>
-          <div style={{ flex: 1 }} />
-          <button className="btn" onClick={onClose}>
-            キャンセル
-          </button>
-          <button className="btn primary" onClick={save}>
-            保存
-          </button>
-        </div>
-      </div>
+    </ModalShell>
       {showCardModal && <SessionCardModal session={session} onClose={() => setShowCardModal(false)} />}
       {pickerTarget === 'review' && (
         <ModelPicker
@@ -493,6 +496,6 @@ export default function SessionEditor({ session, onClose }: Props) {
           onClose={() => setPickerTarget(null)}
         />
       )}
-    </div>
+    </>
   )
 }

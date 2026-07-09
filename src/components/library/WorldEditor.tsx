@@ -24,6 +24,8 @@ import type {
 } from '../../types'
 import CsvInput from '../CsvInput'
 import { exportWorldCard } from '../../lib/cards'
+import { appConfirm } from '../../lib/dialogs'
+import ModalShell from '../ModalShell'
 
 const OPS: Op[] = ['>=', '>', '<=', '<', '==', '!=']
 
@@ -154,7 +156,11 @@ export default function WorldEditor({ world, onClose }: Props) {
   const { upsertWorld, deleteWorld } = useStore()
   const [d, setD] = useState<World>(world)
   const [exporting, setExporting] = useState(false)
-  const patch = (p: Partial<World>) => setD((w) => ({ ...w, ...p }))
+  const [dirty, setDirty] = useState(false)
+  const patch = (p: Partial<World>) => {
+    setD((w) => ({ ...w, ...p }))
+    setDirty(true)
+  }
 
   const exportCard = async () => {
     setExporting(true)
@@ -284,15 +290,37 @@ export default function WorldEditor({ world, onClose }: Props) {
   }
 
   return (
-    <div className="overlay" onClick={onClose}>
-      <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">
-          <h3>🌍 世界観（ロアブック）</h3>
-          <button className="icon-btn" onClick={onClose}>
-            ✕
+    <ModalShell
+      title="🌍 世界観（ロアブック）"
+      onClose={onClose}
+      dirty={dirty}
+      wide
+      footer={
+        <>
+          <button
+            className="btn danger"
+            onClick={async () => {
+              if (await appConfirm({ message: 'この世界観を削除しますか？', danger: true })) {
+                deleteWorld(d.id)
+                onClose()
+              }
+            }}
+          >
+            削除
           </button>
-        </div>
-        <div className="modal-body">
+          <button className="btn" onClick={exportCard} disabled={exporting}>
+            {exporting ? '書き出し中…' : '🖼 カードとして保存'}
+          </button>
+          <div style={{ flex: 1 }} />
+          <button className="btn" onClick={onClose}>
+            キャンセル
+          </button>
+          <button className="btn primary" onClick={save}>
+            保存
+          </button>
+        </>
+      }
+    >
           <p style={{ fontSize: 12, color: 'var(--text-faint)', marginTop: 0, marginBottom: 10 }}>
             素材の編集・保存はすべてのセッション・すべての分岐に共有されます（分岐を戻しても巻き戻りません）。
           </p>
@@ -698,31 +726,6 @@ export default function WorldEditor({ world, onClose }: Props) {
           <button className="btn" style={{ marginTop: 8 }} onClick={addAchievement}>
             ＋ 実績を追加
           </button>
-        </div>
-        <div className="modal-foot">
-          <button
-            className="btn danger"
-            onClick={() => {
-              if (confirm('この世界観を削除しますか？')) {
-                deleteWorld(d.id)
-                onClose()
-              }
-            }}
-          >
-            削除
-          </button>
-          <button className="btn" onClick={exportCard} disabled={exporting}>
-            {exporting ? '書き出し中…' : '🖼 カードとして保存'}
-          </button>
-          <div style={{ flex: 1 }} />
-          <button className="btn" onClick={onClose}>
-            キャンセル
-          </button>
-          <button className="btn primary" onClick={save}>
-            保存
-          </button>
-        </div>
-      </div>
-    </div>
+    </ModalShell>
   )
 }
