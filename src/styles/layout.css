@@ -1,0 +1,380 @@
+/* ---------- レイアウト ---------- */
+.app {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* ---------- サイドバー ---------- */
+.sidebar {
+  background: var(--bg-elev);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.sidebar-head {
+  padding: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.brand {
+  font-weight: 700;
+  font-size: 16px;
+  letter-spacing: 0.3px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.brand .dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 12px var(--accent);
+}
+
+/* 元々2箇所に重複定義されていたのをここに1つへマージ（UI-0） */
+.new-buttons {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 12px 12px 4px;
+}
+
+.new-buttons button {
+  flex: 1;
+  background: var(--bg-elev2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 9px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  transition: 0.15s;
+}
+
+.new-buttons button:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.session-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.session-item {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  margin-bottom: 4px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: 1px solid transparent;
+  transition: 0.12s;
+}
+
+.session-item:hover {
+  background: var(--bg-elev2);
+}
+
+.session-item.active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.session-item .title {
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.session-item .meta {
+  font-size: 11px;
+  color: var(--text-faint);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--bg-elev2);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+}
+
+.badge.roleplay {
+  color: var(--badge-rp);
+}
+.badge.story {
+  color: var(--badge-story);
+}
+
+.sidebar-foot {
+  padding: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.sidebar-foot button {
+  width: 100%;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  padding: 9px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+}
+.sidebar-foot button:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+/* ---------- メイン ---------- */
+.main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  position: relative; /* ステージ・バックドロップ（絶対配置）の基準 */
+}
+
+.topbar {
+  height: 56px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 18px;
+  gap: 12px;
+  background: var(--bg-elev);
+}
+
+.topbar .session-title {
+  font-weight: 600;
+  font-size: 15px;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+}
+.topbar .session-title:hover,
+.topbar .session-title:focus {
+  background: var(--bg-elev2);
+  outline: none;
+}
+
+.model-chip {
+  font-size: 12px;
+  color: var(--text-dim);
+  background: var(--bg-elev2);
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  border-radius: 999px;
+  max-width: 220px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.model-chip:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.icon-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-sm);
+  display: grid;
+  place-items: center;
+  font-size: 16px;
+}
+.icon-btn:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+.icon-btn.on {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+/* ---------- 空状態 ---------- */
+.empty {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  color: var(--text-dim);
+  padding: 40px;
+}
+.empty h2 {
+  color: var(--text);
+  margin-bottom: 6px;
+}
+.empty .cta {
+  margin-top: 18px;
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+.empty .cta button {
+  background: var(--accent);
+  border: none;
+  color: #fff;
+  padding: 10px 18px;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+}
+.empty .cta button.ghost {
+  background: var(--bg-elev2);
+  border: 1px solid var(--border);
+}
+
+/* ---------- ナビ ---------- */
+.nav {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-top: 14px;
+}
+.nav-btn {
+  background: var(--bg-elev2);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  padding: 8px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  transition: 0.12s;
+}
+.nav-btn:first-child {
+  grid-column: 1 / -1;
+}
+.nav-btn:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+.nav-btn.on {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.session-item .meta .cast {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 110px;
+}
+
+/* ---------- ライブラリ ---------- */
+.library {
+  overflow-y: auto;
+  padding: 28px 32px;
+}
+.library-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 22px;
+}
+.library-head h2 {
+  margin: 0;
+  font-size: 20px;
+}
+.library-empty {
+  color: var(--text-dim);
+  background: var(--bg-elev);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 40px;
+  text-align: center;
+}
+.library-empty.drag-over {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 14px;
+}
+.card-grid.drag-over {
+  outline: 2px dashed var(--accent);
+  outline-offset: 6px;
+  border-radius: var(--radius);
+}
+.entity-card {
+  display: flex;
+  gap: 12px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  cursor: pointer;
+  transition: 0.15s;
+}
+.entity-card:hover {
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+.entity-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 11px;
+  display: grid;
+  place-items: center;
+  font-size: 20px;
+  flex-shrink: 0;
+  overflow: hidden;
+  color: #fff;
+}
+.entity-body {
+  min-width: 0;
+  flex: 1;
+}
+.entity-name {
+  font-weight: 600;
+  margin-bottom: 3px;
+}
+.entity-desc {
+  font-size: 12.5px;
+  color: var(--text-dim);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 8px;
+}
+.tag {
+  font-size: 11px;
+  background: var(--bg-elev2);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  padding: 1px 8px;
+  border-radius: 999px;
+}

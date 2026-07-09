@@ -9,6 +9,33 @@ import PersonaLibrary from './components/library/PersonaLibrary'
 import SceneTypeLibrary from './components/library/SceneTypeLibrary'
 import SceneReviewModal from './components/SceneReviewModal'
 
+// 積層トーストの1件。autoCloseMs があれば一定時間後に自動で onClose を呼ぶ（UI-0）
+function ToastItem({
+  className,
+  text,
+  onClose,
+  autoCloseMs,
+}: {
+  className: string
+  text: string
+  onClose: () => void
+  autoCloseMs?: number
+}) {
+  useEffect(() => {
+    if (!autoCloseMs) return
+    const t = setTimeout(onClose, autoCloseMs)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoCloseMs])
+
+  return (
+    <div className={className}>
+      <span>{text}</span>
+      <button onClick={onClose}>閉じる</button>
+    </div>
+  )
+}
+
 export default function App() {
   const {
     sessions,
@@ -109,28 +136,27 @@ export default function App() {
       {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
       {sceneReview && <SceneReviewModal />}
 
-      {error && (
-        <div className="toast">
-          <span>{error}</span>
-          <button onClick={clearError}>閉じる</button>
-        </div>
-      )}
+      <div className="toast-stack">
+        {error && <ToastItem className="toast" text={error} onClose={clearError} />}
 
-      {newlyUnlockedAchievements.length > 0 && (
-        <div className="toast achievement">
-          <span>
-            🏆 実績解除: {newlyUnlockedAchievements.map((a) => a.name || '無名').join(' / ')}
-          </span>
-          <button onClick={dismissNewAchievements}>閉じる</button>
-        </div>
-      )}
+        {newlyUnlockedAchievements.length > 0 && (
+          <ToastItem
+            className="toast achievement"
+            text={`🏆 実績解除: ${newlyUnlockedAchievements.map((a) => a.name || '無名').join(' / ')}`}
+            onClose={dismissNewAchievements}
+            autoCloseMs={6000}
+          />
+        )}
 
-      {imageJobToasts.length > 0 && (
-        <div className="toast image">
-          <span>🖼 生成完了: {imageJobToasts.map((t) => t.label).join(' / ')}</span>
-          <button onClick={dismissImageJobToasts}>閉じる</button>
-        </div>
-      )}
+        {imageJobToasts.length > 0 && (
+          <ToastItem
+            className="toast image"
+            text={`🖼 生成完了: ${imageJobToasts.map((t) => t.label).join(' / ')}`}
+            onClose={dismissImageJobToasts}
+            autoCloseMs={6000}
+          />
+        )}
+      </div>
     </div>
   )
 }
