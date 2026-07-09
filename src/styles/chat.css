@@ -204,30 +204,10 @@
   white-space: pre-wrap;
 }
 
-.scene-bar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
-  margin-bottom: 10px;
-  background: var(--bg-elev2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  flex-wrap: wrap;
-}
-.scene-bar-title {
-  font-size: 13px;
-  font-weight: 600;
-}
-.scene-bar-cast {
-  font-size: 12px;
-  color: var(--text-faint);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 280px;
-}
 .scene-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   background: transparent;
   border: 1px solid var(--border);
   color: var(--text-dim);
@@ -444,13 +424,12 @@
   }
 }
 
-/* ステージON時は背景・立ち絵がコンポーザー（入力欄・選択肢・シーンバー）の背面にも透ける（V5d） */
+/* ステージON時は背景・立ち絵がコンポーザー（入力欄・選択肢・操作行のボタン）の背面にも透ける（V5d。UI-2でシーンバーは廃止しトップバーのシーンチップへ移設） */
 .main.stage-on .composer-wrap {
   background: color-mix(in srgb, var(--bg-elev) 72%, transparent);
 }
 .main.stage-on .input-row,
-.main.stage-on .scene-bar,
 .main.stage-on .choice-btn,
-.main.stage-on .story-actions button:not(.primary) {
+.main.stage-on .composer-tool-btn {
   background: color-mix(in srgb, var(--bg-elev2) 72%, transparent);
 }

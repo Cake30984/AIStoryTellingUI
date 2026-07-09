@@ -25,10 +25,14 @@ import StatusPanel from './StatusPanel'
 import DiscoveryPanel from './DiscoveryPanel'
 import GalleryModal from './GalleryModal'
 import BranchTreeModal from './BranchTreeModal'
+import SessionCardModal from './SessionCardModal'
 import EntityAvatar from './EntityAvatar'
 import StageBackdrop from './StageBackdrop'
 import { StructuredChatBody, StructuredNovelBody } from './StructuredMessage'
 import ZoomOverlay from './ZoomOverlay'
+import { Icon } from './icons'
+import MenuPopover from './MenuPopover'
+import ActivityIndicator from './ActivityIndicator'
 
 interface Props {
   session: Session
@@ -110,6 +114,8 @@ export default function ChatPanel({ session }: Props) {
   const [showImageGen, setShowImageGen] = useState(false)
   const [showBgGen, setShowBgGen] = useState(false)
   const [showImageJobs, setShowImageJobs] = useState(false)
+  const [showSessionCard, setShowSessionCard] = useState(false)
+  const [showMenu, setShowMenu] = useState(false)
   const [speaker, setSpeaker] = useState<string | undefined>(undefined)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -198,6 +204,9 @@ export default function ChatPanel({ session }: Props) {
     participants.length > 0 || (session.mode === 'story' && !!session.story.premise)
 
   const lastMsg = session.messages[session.messages.length - 1]
+  const storyStarted = session.messages.filter((m) => m.sceneId === scene?.id).length > 0
+  const hasAssistantMsg = session.messages.some((m) => m.role === 'assistant')
+  const showRegen = (session.mode === 'story' && hasAssistantMsg) || (groupMode && hasAssistantMsg)
   const showChoices =
     !isStreaming &&
     !isGeneratingChoices &&
@@ -384,69 +393,134 @@ export default function ChatPanel({ session }: Props) {
           value={session.title}
           onChange={(e) => updateSession(session.id, { title: e.target.value })}
         />
-        <button className="model-chip" onClick={() => setShowModels(true)} title="モデルを変更">
-          {modelRefLabel(session.model, providers) || session.model}
-        </button>
-        <button className="icon-btn" onClick={() => setShowLog(true)} title="あらすじ一覧">
-          📜
-        </button>
-        <button className="icon-btn" onClick={() => setShowStatus(true)} title="状態（関係性・ステータス）">
-          📊
-        </button>
-        <button className="icon-btn" onClick={() => setShowDiscovery(true)} title="発見ログ（このセッションで見つかった設定）">
-          📖
-        </button>
-        <button className="icon-btn" onClick={() => setShowGallery(true)} title="画像ギャラリー">
-          🖼
-        </button>
-        <button className="icon-btn" onClick={() => setShowBranchTree(true)} title="分岐ツリー（セーブ/ロード）">
-          🕘
-        </button>
-        <button
-          className={'icon-btn' + (stageOn ? ' on' : '')}
-          onClick={() => updateSession(session.id, { spritesEnabled: !stageOn })}
-          title="背景・立ち絵の表示（立ち絵はキャラクター編集の「🎭 立ち絵セット」で生成できます）"
-        >
-          🎭
-        </button>
-        <button
-          className="icon-btn"
-          onClick={() => setShowImageGen(true)}
-          disabled={!scene}
-          title={scene ? 'この場面の挿絵を生成' : '物語を開始すると挿絵を生成できます'}
-        >
-          🎨
-        </button>
-        <button
-          className="icon-btn"
-          onClick={() => setShowBgGen(true)}
-          disabled={!scene}
-          title={scene ? 'この場面の背景を生成' : '物語を開始すると背景を生成できます'}
-        >
-          🏞
-        </button>
-        {imageJobs.length > 0 && (
+
+        {scene && (
+          <button className="scene-chip" onClick={() => setShowSceneEditor(true)} title="登場キャラ・シーン編集">
+            <Icon name="book-open" size={14} />
+            <span className="scene-chip-title">
+              {scene.title}
+              {scene.timeLabel ? `・${scene.timeLabel}` : ''}
+            </span>
+            <span className={'token-badge ' + tokLvl} title="現在シーンのおおよそのトークン量">
+              ~{sceneTokens.toLocaleString()} tok{tokLvl === 'high' ? ' ・締め時' : ''}
+            </span>
+          </button>
+        )}
+
+        <ActivityIndicator />
+
+        <div className="topbar-group">
+          <button className="icon-btn" onClick={() => setShowStatus(true)} title="状態（関係性・ステータス）">
+            <Icon name="bar-chart-3" />
+          </button>
+          <button
+            className="icon-btn"
+            onClick={() => setShowDiscovery(true)}
+            title="発見ログ（このセッションで見つかった設定）"
+          >
+            <Icon name="book-open" />
+          </button>
+          <button className="icon-btn" onClick={() => setShowGallery(true)} title="画像ギャラリー">
+            <Icon name="image" />
+          </button>
+          <button className="icon-btn" onClick={() => setShowBranchTree(true)} title="分岐ツリー（セーブ/ロード）">
+            <Icon name="git-branch" />
+          </button>
           <button
             className="icon-btn"
             onClick={() => setShowImageJobs(true)}
             title="画像生成ジョブ（進行中・選択待ち）"
           >
-            ⏳ {imageJobs.length}
+            <Icon name="hourglass" />
+            {imageJobs.length > 0 && <span className="icon-badge">{imageJobs.length}</span>}
           </button>
-        )}
-        <button className="icon-btn" onClick={() => setShowEditor(true)} title="セッション設定">
-          ⚙
-        </button>
-        <button
-          className="icon-btn"
-          onClick={async () => {
-            if (await appConfirm({ message: 'このセッションを削除しますか？', danger: true }))
-              deleteSession(session.id)
-          }}
-          title="削除"
-        >
-          🗑
-        </button>
+        </div>
+
+        <div className="menu-anchor">
+          <button className="icon-btn" onClick={() => setShowMenu((v) => !v)} title="メニュー">
+            <Icon name="more-horizontal" />
+          </button>
+          {showMenu && (
+            <MenuPopover onClose={() => setShowMenu(false)}>
+              <button
+                className="menu-item"
+                onClick={() => {
+                  setShowMenu(false)
+                  setShowModels(true)
+                }}
+              >
+                モデル: {modelRefLabel(session.model, providers) || session.model}
+              </button>
+              <div className="menu-sep" />
+              <button
+                className="menu-item"
+                onClick={() => {
+                  setShowMenu(false)
+                  setShowLog(true)
+                }}
+              >
+                <Icon name="scroll-text" size={15} /> あらすじ
+              </button>
+              <button
+                className="menu-item"
+                disabled={!scene}
+                onClick={() => {
+                  setShowMenu(false)
+                  setShowImageGen(true)
+                }}
+              >
+                <Icon name="palette" size={15} /> 挿絵を生成
+              </button>
+              <button
+                className="menu-item"
+                disabled={!scene}
+                onClick={() => {
+                  setShowMenu(false)
+                  setShowBgGen(true)
+                }}
+              >
+                <Icon name="mountain" size={15} /> 背景を生成
+              </button>
+              <button
+                className="menu-item"
+                onClick={() => {
+                  setShowMenu(false)
+                  setShowSessionCard(true)
+                }}
+              >
+                <Icon name="credit-card" size={15} /> セッションをカード化
+              </button>
+              <button
+                className={'menu-item' + (stageOn ? ' checked' : '')}
+                onClick={() => updateSession(session.id, { spritesEnabled: !stageOn })}
+                title="背景・立ち絵の表示（立ち絵はキャラクター編集の「立ち絵セット」で生成できます）"
+              >
+                <Icon name="layers" size={15} /> ステージ表示
+                <Icon name="check" size={14} className="menu-check" />
+              </button>
+              <div className="menu-sep" />
+              <button
+                className="menu-item"
+                onClick={() => {
+                  setShowMenu(false)
+                  setShowEditor(true)
+                }}
+              >
+                <Icon name="settings" size={15} /> セッション設定
+              </button>
+              <button
+                className="menu-item danger"
+                onClick={async () => {
+                  setShowMenu(false)
+                  if (await appConfirm({ message: 'このセッションを削除しますか？', danger: true }))
+                    deleteSession(session.id)
+                }}
+              >
+                <Icon name="trash-2" size={15} /> セッションを削除
+              </button>
+            </MenuPopover>
+          )}
+        </div>
       </div>
 
       {/* バックドロップは .main 直下（topbar 以下全体）に敷き、コンポーザーの背面にも透けるようにする（V5d） */}
@@ -523,31 +597,6 @@ export default function ChatPanel({ session }: Props) {
 
       <div className="composer-wrap">
         <div className="composer">
-          {/* シーンバー */}
-          <div className="scene-bar">
-            <span className="scene-bar-title">📖 {scene?.title ?? 'シーン'}</span>
-            {participants.length > 0 && (
-              <span className="scene-bar-cast">
-                登場: {participants.map((c) => c.name || '無名').join('・')}
-              </span>
-            )}
-            <span className={'token-badge ' + tokLvl} title="現在シーンのおおよそのトークン量">
-              ~{sceneTokens.toLocaleString()} tok{tokLvl === 'high' ? ' ・締め時' : ''}
-            </span>
-            <div style={{ flex: 1 }} />
-            <button className="scene-btn" onClick={() => setShowSceneEditor(true)}>
-              登場キャラ・シーン編集
-            </button>
-            <button
-              className="scene-btn end"
-              onClick={() => (isReviewing ? stopReview() : prepareSceneReview())}
-              disabled={isStreaming}
-              title={isReviewing ? 'レビュー生成を中止' : 'このシーンを振り返って次のシーンへ'}
-            >
-              {isReviewing ? '◼ レビュー作成中…（中止）' : '✓ このシーンを終える'}
-            </button>
-          </div>
-
           {groupMode && (
             <div className="speaker-row">
               <span className="speaker-label">次に話す:</span>
@@ -567,46 +616,6 @@ export default function ChatPanel({ session }: Props) {
                   {c.name || '無名'}
                 </button>
               ))}
-            </div>
-          )}
-
-          {session.mode === 'story' &&
-            (session.messages.filter((m) => m.sceneId === scene?.id).length === 0 ? (
-              <div className="story-actions">
-                <button className="primary" onClick={() => startStory()} disabled={isStreaming}>
-                  ▶ 物語をはじめる
-                </button>
-              </div>
-            ) : (
-              <div className="story-actions">
-                <button
-                  className="primary"
-                  onClick={() => continueStory(effectiveSpeaker)}
-                  disabled={isStreaming}
-                >
-                  ⏩ 続ける
-                </button>
-                {session.messages.some((m) => m.role === 'assistant') && (
-                  <button onClick={() => regenerate(effectiveSpeaker)} disabled={isStreaming}>
-                    ↻ やり直す
-                  </button>
-                )}
-              </div>
-            ))}
-
-          {groupMode && session.messages.some((m) => m.role === 'assistant') && (
-            <div className="story-actions">
-              <button onClick={() => regenerate(effectiveSpeaker)} disabled={isStreaming}>
-                ↻ 直前をやり直す
-              </button>
-            </div>
-          )}
-
-          {!isStreaming && lastMsg?.role === 'assistant' && lastMsg.truncated && (
-            <div className="story-actions">
-              <button onClick={() => continueLast()} title="上限で途中で切れた続きを生成">
-                ⤵ 続きを生成
-              </button>
             </div>
           )}
 
@@ -648,19 +657,70 @@ export default function ChatPanel({ session }: Props) {
               ))}
             </div>
           )}
-          {/* 選択肢が出ない時の手動生成（モデル出力が想定外でも復旧できる） */}
-          {!isStreaming &&
-            !isGeneratingChoices &&
-            session.choiceMode !== 'off' &&
-            lastMsg?.role === 'assistant' &&
-            !!lastMsg.content.trim() &&
-            (!lastMsg.choices || lastMsg.choices.length === 0) && (
-              <div className="story-actions">
-                <button onClick={() => regenChoices()} title="この応答の選択肢を生成し直す">
-                  🔁 選択肢を生成
+          {/* コンポーザーの操作行（常時レンダリング。高さが跳ねないよう左右にツールをまとめる） */}
+          <div className="composer-tools">
+            {session.mode === 'story' &&
+              (storyStarted ? (
+                <button className="btn primary" onClick={() => continueStory(effectiveSpeaker)} disabled={isStreaming}>
+                  <Icon name="fast-forward" size={14} /> 続ける
                 </button>
-              </div>
+              ) : (
+                <button className="btn primary" onClick={() => startStory()} disabled={isStreaming}>
+                  <Icon name="play" size={14} /> 物語をはじめる
+                </button>
+              ))}
+            {showRegen && (
+              <button
+                className="composer-tool-btn"
+                onClick={() => regenerate(effectiveSpeaker)}
+                disabled={isStreaming}
+              >
+                <Icon name="rotate-ccw" size={14} /> {groupMode ? '直前をやり直す' : 'やり直す'}
+              </button>
             )}
+            {!isStreaming && lastMsg?.role === 'assistant' && lastMsg.truncated && (
+              <button
+                className="composer-tool-btn"
+                onClick={() => continueLast()}
+                title="上限で途中で切れた続きを生成"
+              >
+                <Icon name="corner-down-right" size={14} /> 続きを生成
+              </button>
+            )}
+            {/* 選択肢が出ない時の手動生成（モデル出力が想定外でも復旧できる） */}
+            {!isStreaming &&
+              !isGeneratingChoices &&
+              session.choiceMode !== 'off' &&
+              lastMsg?.role === 'assistant' &&
+              !!lastMsg.content.trim() &&
+              (!lastMsg.choices || lastMsg.choices.length === 0) && (
+                <button
+                  className="composer-tool-btn"
+                  onClick={() => regenChoices()}
+                  title="この応答の選択肢を生成し直す"
+                >
+                  <Icon name="refresh-cw" size={14} /> 選択肢を生成
+                </button>
+              )}
+            <div style={{ flex: 1 }} />
+            <button className="composer-tool-btn" onClick={() => setShowSceneEditor(true)}>
+              <Icon name="pencil" size={14} /> シーン編集
+            </button>
+            <button
+              className="scene-btn end"
+              onClick={() => (isReviewing ? stopReview() : prepareSceneReview())}
+              disabled={isStreaming}
+              title={isReviewing ? 'レビュー生成を中止' : 'このシーンを振り返って次のシーンへ'}
+            >
+              {isReviewing ? (
+                '◼ レビュー作成中…（中止）'
+              ) : (
+                <>
+                  <Icon name="check" size={14} /> このシーンを終える
+                </>
+              )}
+            </button>
+          </div>
 
           <div className="input-row">
             <textarea
@@ -788,6 +848,9 @@ export default function ChatPanel({ session }: Props) {
         />
       )}
       {showImageJobs && <ImageJobsPanel onClose={() => setShowImageJobs(false)} />}
+      {showSessionCard && (
+        <SessionCardModal session={session} onClose={() => setShowSessionCard(false)} />
+      )}
     </div>
   )
 }
