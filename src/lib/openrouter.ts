@@ -102,6 +102,10 @@ export async function streamChat(
 /** 利用可能なモデル一覧を取得 */
 export async function fetchModels(provider: Provider): Promise<OpenRouterModel[]> {
   const res = await appFetch(`${provider.baseUrl}/models`, {
+    // ブラウザの HTTP キャッシュは Authorization ヘッダの違いをキャッシュキーに含めないため、
+    // no-store にしないと「別接続先が同じ baseUrl へキー付きで取得済み」の場合に
+    // キー無しリクエストでもキャッシュされた成功レスポンスが返ってしまう。
+    cache: 'no-store',
     headers: provider.apiKey ? { Authorization: `Bearer ${provider.apiKey}` } : undefined,
   })
   if (!res.ok) {
