@@ -1,0 +1,48 @@
+:root {
+  --bg: #0f1117;
+  --bg-elev: #171a22;
+  --bg-elev2: #1f2330;
+  --border: #2a2f3d;
+  --text: #e6e8ee;
+  --text-dim: #9aa3b2;
+  --text-faint: #6b7280;
+  --accent: #7c5cff;
+  --accent-hover: #8f73ff;
+  --accent-soft: rgba(124, 92, 255, 0.15);
+  --user: #2563eb;
+  --danger: #ef4444;
+  --radius: 12px;
+  --radius-sm: 8px;
+  font-family: system-ui, -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN',
+    'Noto Sans JP', Meiryo, sans-serif;
+  color-scheme: dark;
+
+  /* 意味色（既存ハードコード値の昇格） */
+  --ok: #4cc9a4;
+  --warn: #e0b341;
+  --bad: #ef6f6c; /* 下降・過大の弱い危険色（--danger=#ef4444 とは別物として現状維持） */
+  --star: #f5c518;
+  --dialogue: #cfe3ff; /* 小説セリフの色。UI-4 でリーダー設定と接続 */
+  --badge-rp: #f0a76b;
+  --badge-story: #6bd6f0;
+  /* z-index スケール */
+  --z-dock: 40;
+  --z-modal: 50;
+  --z-toast: 60;
+  --z-palette: 70;
+  /* spacing（新規コードで使う。既存値の一括置換はしない） */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+  /* リーダー設定のフック（UI-4 で可変化。既定値=現行値） */
+  --font-size-prose: 15.5px;
+  --line-height-prose: 1.9;
+  --content-width: 760px;
+
+  /* ステージ・バックドロップの濃さ（V5b。UI-0 でここに統合移動） */
+  --stage-bg-opacity: 0.25; /* 背景画像の濃さ（文字の可読性と相談してここだけ調整） */
+  --stage-sprite-opacity: 0.5; /* 立ち絵の濃さ */
+}
