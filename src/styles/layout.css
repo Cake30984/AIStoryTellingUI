@@ -10,25 +10,29 @@
   grid-template-columns: 48px 1fr;
 }
 
-/* ---------- レール（Play/Library/System切替。UI-5） ---------- */
+/* ---------- レール（Play/Library/System切替。UI-5・F5でラベル＋暗色面） ---------- */
 .rail {
-  background: var(--bg-elev);
+  background: var(--bg-rail);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 14px 0;
-  gap: 8px;
+  padding: 12px 0;
+  gap: 6px;
 }
 .rail-btn {
-  width: 34px;
-  height: 34px;
+  width: 40px;
+  height: 44px;
   border-radius: var(--radius-sm);
   background: transparent;
   border: 1px solid transparent;
   color: var(--text-dim);
-  display: grid;
-  place-items: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  font-size: 9.5px;
 }
 .rail-btn:hover {
   color: var(--text);
@@ -76,7 +80,7 @@
   display: flex;
   gap: 8px;
   margin-top: 14px;
-  padding: 12px 12px 4px;
+  padding: 10px 12px 2px;
 }
 
 .new-buttons button {
@@ -106,7 +110,7 @@
 }
 
 .session-item {
-  padding: 10px 12px;
+  padding: 8px 10px;
   border-radius: var(--radius-sm);
   margin-bottom: 4px;
   cursor: pointer;
@@ -380,7 +384,8 @@
   /* width は ui.dockWidth をインライン指定（F1）。ここでは既定の見た目だけ */
   flex-shrink: 0;
   border-left: 1px solid var(--border);
-  background: var(--bg-elev);
+  /* ドックの読み面は本文と同じ --bg に（ヘッダだけ chrome 色。面の階層。F5） */
+  background: var(--bg);
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -405,6 +410,7 @@
   gap: 8px;
   padding: 10px 14px;
   border-bottom: 1px solid var(--border);
+  background: var(--bg-elev);
 }
 .dock-head-title {
   font-weight: 600;
@@ -414,7 +420,7 @@
 .dock-body {
   flex: 1;
   overflow-y: auto;
-  padding: 14px;
+  padding: 12px;
 }
 .dock-toolbar {
   display: flex;
@@ -543,7 +549,7 @@
 /* ---------- ライブラリ ---------- */
 .library {
   overflow-y: auto;
-  padding: 28px 32px;
+  padding: 22px 28px;
 }
 /* System ページ等、全幅だと間延びする内容を中央寄せでまとめる（F0/R11） */
 .page-narrow {

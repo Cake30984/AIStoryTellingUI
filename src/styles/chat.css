@@ -16,7 +16,7 @@
 .msg {
   display: flex;
   gap: 12px;
-  margin-bottom: 22px;
+  margin-bottom: 18px;
   animation: fade 0.25s ease;
 }
 
@@ -242,7 +242,7 @@
 .prose-block {
   white-space: pre-wrap;
   word-break: break-word;
-  margin-bottom: 18px;
+  margin-bottom: 16px;
   line-height: var(--line-height-prose);
   font-size: var(--font-size-prose);
   animation: fade 0.25s ease;
@@ -301,7 +301,7 @@
 /* 会話形式: 吹き出しグループ＋地の文ブロックをまとめた1メッセージ */
 .st-message {
   position: relative;
-  margin-bottom: 22px;
+  margin-bottom: 18px;
 }
 .st-message:hover .msg-actions {
   opacity: 1;

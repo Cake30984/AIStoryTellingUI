@@ -34,7 +34,7 @@
   font-size: 16px;
 }
 .modal-body {
-  padding: 22px;
+  padding: 18px 20px;
 }
 .modal-foot {
   padding: 16px 22px;
@@ -167,18 +167,18 @@
 }
 
 .field {
-  margin-bottom: 18px;
+  margin-bottom: 14px;
 }
 .field label {
   display: block;
   font-size: 13px;
   font-weight: 600;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }
 .field .desc {
   font-size: 12px;
   color: var(--text-faint);
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 .field input,
 .field textarea,
@@ -849,15 +849,15 @@
   border-radius: 50%;
   flex-shrink: 0;
   background: var(--text-faint);
-  box-shadow: 0 0 0 3px var(--bg-elev);
+  box-shadow: 0 0 0 3px var(--bg); /* ドック読み面（--bg）に合わせてトランク線に穴を開ける */
 }
 .bt-dot.current {
   background: var(--accent);
-  box-shadow: 0 0 0 3px var(--bg-elev), 0 0 8px var(--accent);
+  box-shadow: 0 0 0 3px var(--bg), 0 0 8px var(--accent);
 }
 .bt-dot.star {
   background: var(--star);
-  box-shadow: 0 0 0 3px var(--bg-elev);
+  box-shadow: 0 0 0 3px var(--bg);
 }
 .bt-label {
   flex: 1;

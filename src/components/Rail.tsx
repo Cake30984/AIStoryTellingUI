@@ -22,14 +22,16 @@ export default function Rail() {
         title="プレイ（セッション）"
         onClick={() => setView('sessions')}
       >
-        <Icon name="message-circle" size={20} />
+        <Icon name="message-circle" size={18} />
+        プレイ
       </button>
       <button
         className={'rail-btn' + (area === 'library' ? ' on' : '')}
         title="ライブラリ（キャラ・世界観・ペルソナ・演出）"
         onClick={() => setView(lastLibrary)}
       >
-        <Icon name="library-big" size={20} />
+        <Icon name="library-big" size={18} />
+        作る
       </button>
       {/* 設定は最下段の定位置に（空状態の案内「レール最下段 ⚙」と一致させる。F0/A4） */}
       <div style={{ flex: 1 }} />
@@ -38,7 +40,8 @@ export default function Rail() {
         title="設定・データ管理"
         onClick={() => setView('system')}
       >
-        <Icon name="settings" size={20} />
+        <Icon name="settings" size={18} />
+        設定
       </button>
     </div>
   )

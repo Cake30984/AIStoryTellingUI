@@ -64,14 +64,14 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist`。storage は
 - `EntityAvatar.tsx` — 画像 or 色＋イニシャルの共通アバター（全画面で統一）
 
 Play 領域:
-- `ChatPanel.tsx` — 会話画面。トップバー4要素（①タイトル②`.scene-chip`＝クリックで SceneEditor③`ActivityIndicator`④`.topbar-group`＝状態/発見/ギャラリー/分岐/ジョブの5ボタン＝`ui.dockTab` トグル⑤`ReaderSettings`（Aa）⑥`⋯`メニュー）。本文領域は `.play-body`＝`.play-col`（`StageBackdrop`＋`chat-wrap`＋`composer-wrap`）と `<ContextDock/>` の2カラム。コンポーザーに常時レンダリングの `.composer-tools`（開始/続ける・やり直す・続きを生成・選択肢生成・シーン編集・シーン終了）。assistant メッセージは `hasStructuredLines` が真なら `StructuredMessage` に描画切替。挿絵生成（🎨）・背景生成（🏞）は `ImageGenModal` にジョブ用 `target`/`label` を渡す
+- `ChatPanel.tsx` — 会話画面。トップバー（①`.session-title-wrap`＝タイトル入力＋hover鉛筆で編集可視化・F3②`.scene-chip`＝クリックで SceneEditor③`ActivityIndicator`④`.topbar-group`＝状態/発見/ギャラリー/分岐/ジョブの5ボタン＝`ui.dockTab` トグル⑤`ReaderSettings`（Aa）⑥`⋯`メニュー）。本文領域は `.play-body`＝`.play-col`（`StageBackdrop`＋`chat-wrap`＋`composer-wrap`）と `<ContextDock/>` の2カラム。コンポーザーに常時レンダリングの `.composer-tools`（開始/続ける・やり直す・続きを生成・選択肢生成・挿絵🎨・背景🏞・シーン編集・シーン終了）。挿絵・背景生成はコンポーザーと ⋯ メニューの両導線（F3）で `ImageGenModal` にジョブ用 `target`/`label` を渡す。assistant メッセージは `hasStructuredLines` が真なら `StructuredMessage` に描画切替。発見編集は `discoveryScope`（`DiscoveryScope`）で `DiscoveryPanel` を開く
 - `StructuredMessage.tsx` — 構造化出力の表示専用。`StructuredNovelBody`（narration そのまま＋dialogue は話者チップ独立行）／`StructuredChatBody`（同一話者を1吹き出しにまとめ・narration は間ブロック）。ストリーミング中の末尾未改行行は未確定表示。話者→アイコンは `useSpeakers`（参加キャラ＋persona 合成）
 - `StageBackdrop.tsx` — チャット背面のバックドロップ（表示専用・`pointer-events:none`）。`scene.backgroundImageId` を背景、参加キャラの `sprites` を現在感情→neutral→先頭の順で解決し等分セルに横並び。濃さは `ui.stageBgOpacity`/`ui.stageSpriteOpacity`
-- `ContextDock.tsx` — 右コンテキストドック本体。`ui.dockTab`（null=幅ゼロ非表示）を購読し `status`=`StatusView`／`discovery`=`DiscoveryView`／`gallery`=`GalleryBody`／`branch`=`BranchTreeBody`／`jobs`=`ImageJobsBody` を出し分け。状態/発見タブは「✎ 編集」で各モーダルを開く
-- `StatusView.tsx`/`DiscoveryView.tsx` — ドック専用の**読み取り専用**ビュー（編集 UI・保存処理を持たない）
-- `ReaderSettings.tsx` — Aa ボタン→ポップオーバー。文字サイズ/行間/本文幅/セリフ色分け/ステージ表示ON/OFF（`spritesEnabled`）/背景・立ち絵の濃さ/没入モードを `store.ui` へ即時反映（保存ボタンなし）
-- `Rail.tsx` — 左端48px の領域スイッチ（Play/Library/System）。Library は直前の素材ビューをローカル state で記憶
-- `Sidebar.tsx` — 文脈サイドバー。`areaOf(view)` で出し分け（play=検索＋新規＋セッション一覧＋アーカイブトグル／library=キャラ/世界観/ペルソナ/演出の縦ナビ）。セッションカード PNG の D&D 受付
+- `ContextDock.tsx` — 右コンテキストドック本体。`ui.dockTab`（null=非表示）を購読し `status`=`StatusView`／`discovery`=`DiscoveryView`／`gallery`=`GalleryBody`／`branch`=`BranchTreeBody`／`jobs`=`ImageJobsBody` を出し分け。幅は `ui.dockWidth`（左端 `.dock-resizer` ドラッグで 300〜560 可変・F1）。状態タブは head の「✎ 編集」で `StatusPanel` を開く。発見タブの編集は `DiscoveryView` 内タブ横の「✎ 編集」が選択スコープ（世界観 or キャラ）で `DiscoveryPanel` を開く（`onEditDiscovery(scope)`・F4）
+- `StatusView.tsx`/`DiscoveryView.tsx` — ドック専用の**読み取り専用**ビュー（編集 UI・保存処理を持たない）。`DiscoveryView` は「🌍世界観／キャラ（アバター＋件数）」のタブ切替（F4）
+- `ReaderSettings.tsx` — Aa ボタン→ポップオーバー。文字サイズ/行間/本文幅（`RsField`＝スライダー＋数値入力・数値で自由設定。F2）/セリフ色分け/ステージ表示ON/OFF（`spritesEnabled`）/背景・立ち絵の濃さ/没入モード/「表示を既定に戻す」を `store.ui` へ即時反映（保存ボタンなし）
+- `Rail.tsx` — 左端48px の領域スイッチ（Play/Library/System・アイコン＋日本語ラベル。設定は最下段固定。F0/F5）。Library は直前の素材ビューをローカル state で記憶
+- `Sidebar.tsx` — 文脈サイドバー。`areaOf(view)` で出し分け（play=検索＋新規＋セッション一覧＋アーカイブトグル／library=キャラ/世界観/ペルソナ/演出の縦ナビ）。ブランド表示なし（F3で撤去）。セッション右クリックで `MenuPopover`（開く/設定/カード化/アーカイブ/削除）。＋新規作成は `createSession` の返す id で設定モーダルを自動オープン。セッションカード PNG の D&D 受付
 - `CommandPalette.tsx` — `Ctrl+K` で開くパレット。セッション/素材の名前検索→移動＋固定コマンド。実行は既存 store アクション／`setUiPrefs` のみ
 
 モーダル・パネル:
@@ -82,9 +82,9 @@ Play 領域:
 - `ImageGenModal.tsx` — 画像生成モーダル（アバター/挿絵/ペルソナ/立ち絵/背景で共用）。接続先・サイズ・枚数選択、「プロンプトを起案」、`target: ImageJobTarget`＋`label` で `store.startImageJob` を呼びジョブ購読。接続先/起案モデルは記憶（`lastImageProviderId`/`lastDraftModel`）
 - `ImageJobsPanel.tsx` — `ImageJobsBody()`（ドックの jobs タブ）。running=進捗＋キャンセル、selecting=候補サムネ＋採用/破棄
 - `GalleryModal.tsx` — `GalleryBody({session})`（ドックの gallery タブ）。挿絵・背景をシーン見出し付きグリッド表示。保存・削除
-- `BranchTreeModal.tsx` — `BranchTreeBody({session})`（ドックの branch タブ）。分岐ツリーを現在パス基準の縦リスト＋「別の分岐」折りたたみで表示。↩レビュー前に戻る・⏪ここに戻る（`restoreCheckpoint`）・🗑サブツリー削除（`deleteBranchSubtree`）・✂この分岐だけ残す（`pruneToCurrentPath`）・☆しおり（`setBranchStar`/`removeBranchStar`）＋「★ しおり」タブ
+- `BranchTreeModal.tsx` — `BranchTreeBody({session})`（ドックの branch タブ）。git ログ風表示（F1）: 主線＝ルート→いまここ（現在ノードで止める）をドット＋トランク縦線で描き、scene ノードで章に折りたたみ（現在章のみ既定展開）。主線上の分岐点は「⑂ 別の分岐」、現在ノードの子は「▷ この先」を展開式（`.bt-*` クラス）。各行の ⋯ メニューにアクション集約（しおり `setBranchStar`/`removeBranchStar`・シーン開始前へ戻る・この分岐を削除 `deleteBranchSubtree`＝現在パス上は無効）＋行 hover の「↩ ここに戻る」`restoreCheckpoint`。「✂ 現在の分岐だけ残す（他n件を削除）」`pruneToCurrentPath`・「★ しおり」タブ・currentId 変化で自動スクロール
 - `ModelPicker.tsx` — プロバイダ切替・モデル一覧・お気に入り。`onPick` は `"providerId::modelId"`
-- `SceneEditor.tsx`/`SceneReviewModal.tsx`/`StoryLogModal.tsx`/`StatusPanel.tsx`/`DiscoveryPanel.tsx`/`CsvInput.tsx` — 各種閲覧・編集モーダル。StatusPanel/DiscoveryPanel はドックの「✎ 編集」経由で開く
+- `SceneEditor.tsx`/`SceneReviewModal.tsx`/`StoryLogModal.tsx`/`StatusPanel.tsx`/`DiscoveryPanel.tsx`/`CsvInput.tsx` — 各種閲覧・編集モーダル。StatusPanel/DiscoveryPanel はドックの「✎ 編集」経由で開く。`DiscoveryPanel` は `scope`（`'lore' | {characterId}`・F4）で世界観/キャラ別に編集画面を分割し、保存は live 起点でスコープ分だけ差し替え（編集中の他スコープ追記を巻き戻さない）
 - `library/` — 各素材の一覧＋エディタ（Character/World/Persona/SceneType）と `AvatarField`/`SpriteSetField`。各 Library は PNG カード D&D 受付＋検索。CharacterEditor/PersonaEditor は draft を保存ボタンで反映、`AvatarField`/`SpriteSetField` は store 直管理フィールド（avatar.imageId/sprites）を live 購読して同期。WorldEditor はフルページ（`.section-nav`＋`.section-content` の7セクション）
 
 ## 設計ドキュメント（`docs/`）
@@ -127,7 +127,7 @@ Play 領域:
 - **Message** — role/characterId?/sceneId?/content/choices?/truncated?/pending?
 - **ImageJob**（`imageJobs.ts`・store の `imageJobs`・**非永続**）— `{id,label,target,providerId,prompt,negative?,width,height,count,status:'running'|'selecting'|'error'|'canceled',results:Blob[],error?,createdAt}`。`target`＝`scene-illustration`/`character-avatar`/`persona-avatar`/`character-sprite`/`scene-background`。1枚でも自動採用せず、採用は常にユーザー選択（`applyImageJobResult`）。`store.imageJobToasts`（選択待ち通知・非永続）
 - **BranchNode/BranchTree/`branchTrees`** — `BranchNode{id,parentId,kind:'action'|'scene',label,timeLabel?,createdAt,imageIds,bytes,star?:{name,thumbImageId?}}`（`parentId:null`=ルート・実体は `checkpointStore` に nodeId で保存）、`BranchTree{currentId,nodes}`。`branchTrees: Record<sessionId,BranchTree>` は **Session の外・AppState 直下**（Session 内だとスナップショット深コピーが木を含んで再帰肥大するため）。persist 対象
-- **UiPrefs/`ui`**（`types.ts`）— `{dockTab: DockTab|null, fontScale, lineHeight, contentWidth, dialogueTint, stageBgOpacity, stageSpriteOpacity, immersive}`（`DockTab='status'|'discovery'|'gallery'|'branch'|'jobs'`）。**AppState 直下**（`DEFAULT_UI`）・persist 対象。`merge` で `ui` のみ深いマージ（将来フィールド追加で旧データが欠落しないように）。更新は `store.setUiPrefs(patch)` に一本化・編集 UI は `ReaderSettings.tsx`
+- **UiPrefs/`ui`**（`types.ts`）— `{dockTab: DockTab|null, dockWidth, fontSize, lineHeight, contentWidth, dialogueTint, stageBgOpacity, stageSpriteOpacity, immersive}`（`DockTab='status'|'discovery'|'gallery'|'branch'|'jobs'`）。**AppState 直下**（`DEFAULT_UI`）・persist 対象。`fontSize`/`lineHeight`/`contentWidth`/`dockWidth` は number（F2で段階式 union から数値化）で可変範囲は `UI_LIMITS`。`merge` は `normalizeUiPrefs()`（旧・段階式文字列値 s/m/l/xl・compact/normal/wide 等を数値へ引き継ぎ＋範囲クランプ＋欠落補完の純関数）を通す。更新は `store.setUiPrefs(patch)` に一本化（没入 OFF→ON で `infoNotice` 案内トーストをセット）・編集 UI は `ReaderSettings.tsx`（Aa。スライダー＋数値入力の `RsField`・「表示を既定に戻す」）
 
 ## ModelRef 形式
 モデル系フィールドはすべて `"providerId::modelId"` 形式（`::` 区切り）。区切り無しは `providers[0]`（OpenRouter）にフォールバック。空文字は「上位に継承」。
@@ -208,7 +208,7 @@ Play 領域:
 各フェーズの詳細・検証記録は対応する `docs/設計_*.md` を参照。
 
 ## 未着手・残タスク
-- **UI改善 F0〜F5（設計済み・実装未着手）**: UI再設計後のフィードバック対応。手順書 → `docs/設計_UI改善_フィードバック反映.md`。F0（バグ修正）を最優先で先行し、以降 F1（分岐ツリー刷新）→ F2（リーダー設定数値化）→ F3（動線）→ F4（発見ログ）→ F5（密度）の順を推奨（F1〜F5 は独立・入替可）
+- **UI改善 F0〜F5（実装済み・2026-07-11 / 実機目視は未）**: UI再設計後のフィードバック対応。手順書 → `docs/設計_UI改善_フィードバック反映.md`。F0（没入グリッド崩壊・checkbox全幅化・System幅・文言）／F1（分岐ツリーgitログ風刷新＝主線をいまここで止める・章折りたたみ・⑂別の分岐/▷この先・行アクション⋯集約＋ドック幅リサイズ `ui.dockWidth`）／F2（リーダー設定を数値化＝`fontSize`/`lineHeight`/`contentWidth` を number 化・`normalizeUiPrefs`・没入案内 `infoNotice`）／F3（生成ボタンをコンポーザーへ・タイトル hover 鉛筆・セッション右クリックメニュー・`createSession` が id 返却→新規作成で設定自動オープン・サイドバーのブランド撤去）／F4（発見ログをタブ＋アイコン化・`DiscoveryScope` で編集をスコープ分割）／F5（`--bg-rail` で面の階層・余白の一括締め・レールにラベル）。**tsc/build は全フェーズ通過済み・見た目/UX の実機目視はユーザー未実施**
 - **Tauri 実機検証**（未実施のまま持ち越し）: `tsc`/`build`/`cargo check` は通過済みだが、`npm run tauri:dev` 手動起動でのデータ保持・`%APPDATA%` ファイル生成・旧 WebView データ移行・保存ダイアログでのカード PNG/JSON 保存の確認が必要
 - **T1 で判明した既知の問題（据え置き）**: ①選択肢生成中に本編生成が始まると選択肢側 AbortController が追従せず `Cannot read properties of null (reading 'signal')`（V5d で用途別分離したが要再確認）②ComfyUI が通常起動（`--enable-cors-header` なし）で接続できなかった＝設計通りでないバグ。appFetch 未置換経路や `isTauri()` 誤判定を疑い切り分けが必要（詳細は `docs/設計_Tauri化.md`）
 - **T4（配布）**: NSIS・GitHub Releases。ユーザー判断で当面見送り（まだ公開しない）

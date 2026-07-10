@@ -1,4 +1,5 @@
 :root {
+  --bg-rail: #0b0d12; /* レール（最暗面。面の階層 rail<sidebar<card を作る。F5） */
   --bg: #0f1117;
   --bg-elev: #171a22;
   --bg-elev2: #1f2330;
