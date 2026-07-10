@@ -15,19 +15,17 @@ import { downloadBlob } from '../lib/io'
 import { hasStructuredLines, plainTextOf } from '../lib/structured'
 import { appConfirm } from '../lib/dialogs'
 import ImageGenModal from './ImageGenModal'
-import ImageJobsPanel from './ImageJobsPanel'
-import type { Message, Scene, SceneIllustration, Session } from '../types'
+import type { DockTab, Message, Scene, SceneIllustration, Session } from '../types'
 import ModelPicker from './ModelPicker'
 import SessionEditor from './SessionEditor'
 import SceneEditor from './SceneEditor'
 import StoryLogModal from './StoryLogModal'
 import StatusPanel from './StatusPanel'
 import DiscoveryPanel from './DiscoveryPanel'
-import GalleryModal from './GalleryModal'
-import BranchTreeModal from './BranchTreeModal'
 import SessionCardModal from './SessionCardModal'
 import EntityAvatar from './EntityAvatar'
 import StageBackdrop from './StageBackdrop'
+import ContextDock from './ContextDock'
 import { StructuredChatBody, StructuredNovelBody } from './StructuredMessage'
 import ZoomOverlay from './ZoomOverlay'
 import { Icon } from './icons'
@@ -100,6 +98,8 @@ export default function ChatPanel({ session }: Props) {
     personas,
     providers,
     worlds,
+    ui,
+    setUiPrefs,
   } = useStore()
 
   const [text, setText] = useState('')
@@ -109,11 +109,8 @@ export default function ChatPanel({ session }: Props) {
   const [showLog, setShowLog] = useState(false)
   const [showStatus, setShowStatus] = useState(false)
   const [showDiscovery, setShowDiscovery] = useState(false)
-  const [showGallery, setShowGallery] = useState(false)
-  const [showBranchTree, setShowBranchTree] = useState(false)
   const [showImageGen, setShowImageGen] = useState(false)
   const [showBgGen, setShowBgGen] = useState(false)
-  const [showImageJobs, setShowImageJobs] = useState(false)
   const [showSessionCard, setShowSessionCard] = useState(false)
   const [showMenu, setShowMenu] = useState(false)
   const [speaker, setSpeaker] = useState<string | undefined>(undefined)
@@ -124,6 +121,8 @@ export default function ChatPanel({ session }: Props) {
   const anchorRef = useRef<HTMLDivElement>(null)
   // 選択肢の連打による二重加点を防ぐ（適用済みメッセージ id を同期的に記録）
   const choiceLockRef = useRef<string | null>(null)
+  // ドックタブのトグル（同じタブを再クリックで閉じる。UI-3）
+  const toggleDock = (tab: DockTab) => setUiPrefs({ dockTab: ui.dockTab === tab ? null : tab })
 
   const scene = currentScene(session)
   const castIds = scene && scene.activeCharacterIds.length > 0 ? scene.activeCharacterIds : session.characterIds
@@ -410,25 +409,37 @@ export default function ChatPanel({ session }: Props) {
         <ActivityIndicator />
 
         <div className="topbar-group">
-          <button className="icon-btn" onClick={() => setShowStatus(true)} title="状態（関係性・ステータス）">
+          <button
+            className={'icon-btn' + (ui.dockTab === 'status' ? ' on' : '')}
+            onClick={() => toggleDock('status')}
+            title="状態（関係性・ステータス）"
+          >
             <Icon name="bar-chart-3" />
           </button>
           <button
-            className="icon-btn"
-            onClick={() => setShowDiscovery(true)}
+            className={'icon-btn' + (ui.dockTab === 'discovery' ? ' on' : '')}
+            onClick={() => toggleDock('discovery')}
             title="発見ログ（このセッションで見つかった設定）"
           >
             <Icon name="book-open" />
           </button>
-          <button className="icon-btn" onClick={() => setShowGallery(true)} title="画像ギャラリー">
+          <button
+            className={'icon-btn' + (ui.dockTab === 'gallery' ? ' on' : '')}
+            onClick={() => toggleDock('gallery')}
+            title="画像ギャラリー"
+          >
             <Icon name="image" />
           </button>
-          <button className="icon-btn" onClick={() => setShowBranchTree(true)} title="分岐ツリー（セーブ/ロード）">
+          <button
+            className={'icon-btn' + (ui.dockTab === 'branch' ? ' on' : '')}
+            onClick={() => toggleDock('branch')}
+            title="分岐ツリー（セーブ/ロード）"
+          >
             <Icon name="git-branch" />
           </button>
           <button
-            className="icon-btn"
-            onClick={() => setShowImageJobs(true)}
+            className={'icon-btn' + (ui.dockTab === 'jobs' ? ' on' : '')}
+            onClick={() => toggleDock('jobs')}
             title="画像生成ジョブ（進行中・選択待ち）"
           >
             <Icon name="hourglass" />
@@ -523,239 +534,248 @@ export default function ChatPanel({ session }: Props) {
         </div>
       </div>
 
-      {/* バックドロップは .main 直下（topbar 以下全体）に敷き、コンポーザーの背面にも透けるようにする（V5d） */}
-      {stageOn && <StageBackdrop session={session} scene={scene} participants={participants} />}
-      <div className="chat-wrap">
-        <div className="chat">
-          <div className="chat-inner">
-            {session.messages.length === 0 && (
-              <div className="chat-hint">
-                {!isConfigured ? (
-                  <p>
-                    右上の ⚙ から
-                    {session.mode === 'roleplay' ? '参加キャラ' : '物語の前提'}を設定しましょう。
-                  </p>
-                ) : session.mode === 'roleplay' ? (
-                  <p>下の入力欄から話しかけてみましょう。</p>
+      <div className="play-body">
+        <div className="play-col">
+          {/* バックドロップは play-col 直下に敷き、コンポーザーの背面にも透けるようにする（V5d・UI-3で.main直下からplay-colへ移設） */}
+          {stageOn && <StageBackdrop session={session} scene={scene} participants={participants} />}
+          <div className="chat-wrap">
+            <div className="chat">
+              <div className="chat-inner">
+                {session.messages.length === 0 && (
+                  <div className="chat-hint">
+                    {!isConfigured ? (
+                      <p>
+                        右上の ⚙ から
+                        {session.mode === 'roleplay' ? '参加キャラ' : '物語の前提'}を設定しましょう。
+                      </p>
+                    ) : session.mode === 'roleplay' ? (
+                      <p>下の入力欄から話しかけてみましょう。</p>
+                    ) : (
+                      <p>「物語をはじめる」を押すか、最初の状況を入力してください。</p>
+                    )}
+                  </div>
+                )}
+
+                {session.scenes.map((sc) => {
+                  const isCurrent = sc.id === session.currentSceneId
+                  const msgs = session.messages.filter(
+                    (m) => m.sceneId === sc.id || (isCurrent && !m.sceneId),
+                  )
+                  if (msgs.length === 0 && !sc.summary && !isCurrent) return null
+                  const open = isCurrent || expanded.has(sc.id)
+                  const castNames = sc.activeCharacterIds
+                    .map((id) => characters.find((c) => c.id === id)?.name)
+                    .filter(Boolean)
+                  // 複数シーンがある時だけ仕切りを表示
+                  const showDivider = session.scenes.length > 1
+                  return (
+                    <Fragment key={sc.id}>
+                      {showDivider && (
+                        <div className="scene-divider">
+                          <span className="scene-title">📖 {sc.title}</span>
+                          {castNames.length > 0 && (
+                            <span className="scene-cast">{castNames.join('・')}</span>
+                          )}
+                          {!isCurrent && msgs.length > 0 && (
+                            <button className="scene-toggle" onClick={() => toggleScene(sc.id)}>
+                              {open ? '会話を隠す' : '会話を表示'}
+                            </button>
+                          )}
+                        </div>
+                      )}
+                      {!isCurrent && sc.summary && (
+                        <div className="scene-summary">
+                          <div className="scene-summary-label">
+                            あらすじ
+                            <button
+                              className="scene-summary-regen"
+                              onClick={() => prepareSceneReview(sc.id)}
+                              disabled={isStreaming || isReviewing}
+                              title="このシーンの要約と次シーンの方針を再生成する"
+                            >
+                              🔄 再生成
+                            </button>
+                          </div>
+                          <div className="scene-summary-body">{sc.summary}</div>
+                        </div>
+                      )}
+                      {open && renderSceneContent(sc, msgs)}
+                    </Fragment>
+                  )
+                })}
+                <div ref={anchorRef} className="scroll-anchor" />
+              </div>
+            </div>
+          </div>
+
+          <div className="composer-wrap">
+            <div className="composer">
+              {groupMode && (
+                <div className="speaker-row">
+                  <span className="speaker-label">次に話す:</span>
+                  <button
+                    className={'speaker-chip' + (speaker === undefined ? ' on' : '')}
+                    onClick={() => setSpeaker(undefined)}
+                  >
+                    🎲 おまかせ
+                  </button>
+                  {participants.map((c) => (
+                    <button
+                      key={c.id}
+                      className={'speaker-chip' + (speaker === c.id ? ' on' : '')}
+                      onClick={() => setSpeaker(c.id)}
+                    >
+                      <EntityAvatar className="dot-avatar" avatar={c.avatar} name={c.name || '無名'} />
+                      {c.name || '無名'}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {isGeneratingChoices && (
+                <div className="choices-loading">
+                  選択肢を考え中…
+                  <button className="link" style={{ marginLeft: 8 }} onClick={stopChoices}>
+                    中止
+                  </button>
+                </div>
+              )}
+              {showChoices && (
+                <div className="choices">
+                  {lastMsg.choices!.map((c, i) => (
+                    <button
+                      key={i}
+                      className="choice-btn"
+                      onClick={() => {
+                        if (choiceLockRef.current === lastMsg.id) return
+                        choiceLockRef.current = lastMsg.id
+                        if (c.effects?.length) applyChoiceEffects(c.effects)
+                        send(c.text, effectiveSpeaker)
+                      }}
+                      disabled={isStreaming}
+                    >
+                      <span className="choice-num">{i + 1}</span>
+                      {c.text}
+                      {!!c.effects?.length && (
+                        <span className="choice-effects">
+                          {c.effects.map((e, j) => (
+                            <span key={j} className="choice-effect-badge">
+                              {e.delta > 0 ? '+' : ''}
+                              {e.delta} {e.name}
+                            </span>
+                          ))}
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {/* コンポーザーの操作行（常時レンダリング。高さが跳ねないよう左右にツールをまとめる） */}
+              <div className="composer-tools">
+                {session.mode === 'story' &&
+                  (storyStarted ? (
+                    <button className="btn primary" onClick={() => continueStory(effectiveSpeaker)} disabled={isStreaming}>
+                      <Icon name="fast-forward" size={14} /> 続ける
+                    </button>
+                  ) : (
+                    <button className="btn primary" onClick={() => startStory()} disabled={isStreaming}>
+                      <Icon name="play" size={14} /> 物語をはじめる
+                    </button>
+                  ))}
+                {showRegen && (
+                  <button
+                    className="composer-tool-btn"
+                    onClick={() => regenerate(effectiveSpeaker)}
+                    disabled={isStreaming}
+                  >
+                    <Icon name="rotate-ccw" size={14} /> {groupMode ? '直前をやり直す' : 'やり直す'}
+                  </button>
+                )}
+                {!isStreaming && lastMsg?.role === 'assistant' && lastMsg.truncated && (
+                  <button
+                    className="composer-tool-btn"
+                    onClick={() => continueLast()}
+                    title="上限で途中で切れた続きを生成"
+                  >
+                    <Icon name="corner-down-right" size={14} /> 続きを生成
+                  </button>
+                )}
+                {/* 選択肢が出ない時の手動生成（モデル出力が想定外でも復旧できる） */}
+                {!isStreaming &&
+                  !isGeneratingChoices &&
+                  session.choiceMode !== 'off' &&
+                  lastMsg?.role === 'assistant' &&
+                  !!lastMsg.content.trim() &&
+                  (!lastMsg.choices || lastMsg.choices.length === 0) && (
+                    <button
+                      className="composer-tool-btn"
+                      onClick={() => regenChoices()}
+                      title="この応答の選択肢を生成し直す"
+                    >
+                      <Icon name="refresh-cw" size={14} /> 選択肢を生成
+                    </button>
+                  )}
+                <div style={{ flex: 1 }} />
+                <button className="composer-tool-btn" onClick={() => setShowSceneEditor(true)}>
+                  <Icon name="pencil" size={14} /> シーン編集
+                </button>
+                <button
+                  className="scene-btn end"
+                  onClick={() => (isReviewing ? stopReview() : prepareSceneReview())}
+                  disabled={isStreaming}
+                  title={isReviewing ? 'レビュー生成を中止' : 'このシーンを振り返って次のシーンへ'}
+                >
+                  {isReviewing ? (
+                    '◼ レビュー作成中…（中止）'
+                  ) : (
+                    <>
+                      <Icon name="check" size={14} /> このシーンを終える
+                    </>
+                  )}
+                </button>
+              </div>
+
+              <div className="input-row">
+                <textarea
+                  ref={taRef}
+                  rows={1}
+                  value={text}
+                  placeholder={
+                    session.mode === 'roleplay'
+                      ? 'メッセージや行動を入力（Enter で送信 / Shift+Enter で改行）'
+                      : '物語への介入や方向づけを入力（任意）'
+                  }
+                  onChange={(e) => {
+                    setText(e.target.value)
+                    autoGrow()
+                  }}
+                  onKeyDown={onKey}
+                />
+                {isStreaming ? (
+                  <button className="send-btn stop" onClick={stop} title="停止">
+                    ◼
+                  </button>
                 ) : (
-                  <p>「物語をはじめる」を押すか、最初の状況を入力してください。</p>
+                  <button className="send-btn" onClick={submit} disabled={!text.trim()} title="送信">
+                    ↑
+                  </button>
                 )}
               </div>
-            )}
-
-            {session.scenes.map((sc) => {
-              const isCurrent = sc.id === session.currentSceneId
-              const msgs = session.messages.filter(
-                (m) => m.sceneId === sc.id || (isCurrent && !m.sceneId),
-              )
-              if (msgs.length === 0 && !sc.summary && !isCurrent) return null
-              const open = isCurrent || expanded.has(sc.id)
-              const castNames = sc.activeCharacterIds
-                .map((id) => characters.find((c) => c.id === id)?.name)
-                .filter(Boolean)
-              // 複数シーンがある時だけ仕切りを表示
-              const showDivider = session.scenes.length > 1
-              return (
-                <Fragment key={sc.id}>
-                  {showDivider && (
-                    <div className="scene-divider">
-                      <span className="scene-title">📖 {sc.title}</span>
-                      {castNames.length > 0 && (
-                        <span className="scene-cast">{castNames.join('・')}</span>
-                      )}
-                      {!isCurrent && msgs.length > 0 && (
-                        <button className="scene-toggle" onClick={() => toggleScene(sc.id)}>
-                          {open ? '会話を隠す' : '会話を表示'}
-                        </button>
-                      )}
-                    </div>
-                  )}
-                  {!isCurrent && sc.summary && (
-                    <div className="scene-summary">
-                      <div className="scene-summary-label">
-                        あらすじ
-                        <button
-                          className="scene-summary-regen"
-                          onClick={() => prepareSceneReview(sc.id)}
-                          disabled={isStreaming || isReviewing}
-                          title="このシーンの要約と次シーンの方針を再生成する"
-                        >
-                          🔄 再生成
-                        </button>
-                      </div>
-                      <div className="scene-summary-body">{sc.summary}</div>
-                    </div>
-                  )}
-                  {open && renderSceneContent(sc, msgs)}
-                </Fragment>
-              )
-            })}
-            <div ref={anchorRef} className="scroll-anchor" />
+              <div className="hint">
+                {groupMode
+                  ? '「次に話す」で発言者を選べます。登場キャラはシーン編集で絞れます。'
+                  : session.mode === 'story'
+                    ? '入力ありで介入、空のまま「続ける」で自動進行します。'
+                    : 'キャラになりきって応答します。設定は右上の ⚙ から。'}
+              </div>
+            </div>
           </div>
         </div>
-      </div>
-
-      <div className="composer-wrap">
-        <div className="composer">
-          {groupMode && (
-            <div className="speaker-row">
-              <span className="speaker-label">次に話す:</span>
-              <button
-                className={'speaker-chip' + (speaker === undefined ? ' on' : '')}
-                onClick={() => setSpeaker(undefined)}
-              >
-                🎲 おまかせ
-              </button>
-              {participants.map((c) => (
-                <button
-                  key={c.id}
-                  className={'speaker-chip' + (speaker === c.id ? ' on' : '')}
-                  onClick={() => setSpeaker(c.id)}
-                >
-                  <EntityAvatar className="dot-avatar" avatar={c.avatar} name={c.name || '無名'} />
-                  {c.name || '無名'}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {isGeneratingChoices && (
-            <div className="choices-loading">
-              選択肢を考え中…
-              <button className="link" style={{ marginLeft: 8 }} onClick={stopChoices}>
-                中止
-              </button>
-            </div>
-          )}
-          {showChoices && (
-            <div className="choices">
-              {lastMsg.choices!.map((c, i) => (
-                <button
-                  key={i}
-                  className="choice-btn"
-                  onClick={() => {
-                    if (choiceLockRef.current === lastMsg.id) return
-                    choiceLockRef.current = lastMsg.id
-                    if (c.effects?.length) applyChoiceEffects(c.effects)
-                    send(c.text, effectiveSpeaker)
-                  }}
-                  disabled={isStreaming}
-                >
-                  <span className="choice-num">{i + 1}</span>
-                  {c.text}
-                  {!!c.effects?.length && (
-                    <span className="choice-effects">
-                      {c.effects.map((e, j) => (
-                        <span key={j} className="choice-effect-badge">
-                          {e.delta > 0 ? '+' : ''}
-                          {e.delta} {e.name}
-                        </span>
-                      ))}
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
-          )}
-          {/* コンポーザーの操作行（常時レンダリング。高さが跳ねないよう左右にツールをまとめる） */}
-          <div className="composer-tools">
-            {session.mode === 'story' &&
-              (storyStarted ? (
-                <button className="btn primary" onClick={() => continueStory(effectiveSpeaker)} disabled={isStreaming}>
-                  <Icon name="fast-forward" size={14} /> 続ける
-                </button>
-              ) : (
-                <button className="btn primary" onClick={() => startStory()} disabled={isStreaming}>
-                  <Icon name="play" size={14} /> 物語をはじめる
-                </button>
-              ))}
-            {showRegen && (
-              <button
-                className="composer-tool-btn"
-                onClick={() => regenerate(effectiveSpeaker)}
-                disabled={isStreaming}
-              >
-                <Icon name="rotate-ccw" size={14} /> {groupMode ? '直前をやり直す' : 'やり直す'}
-              </button>
-            )}
-            {!isStreaming && lastMsg?.role === 'assistant' && lastMsg.truncated && (
-              <button
-                className="composer-tool-btn"
-                onClick={() => continueLast()}
-                title="上限で途中で切れた続きを生成"
-              >
-                <Icon name="corner-down-right" size={14} /> 続きを生成
-              </button>
-            )}
-            {/* 選択肢が出ない時の手動生成（モデル出力が想定外でも復旧できる） */}
-            {!isStreaming &&
-              !isGeneratingChoices &&
-              session.choiceMode !== 'off' &&
-              lastMsg?.role === 'assistant' &&
-              !!lastMsg.content.trim() &&
-              (!lastMsg.choices || lastMsg.choices.length === 0) && (
-                <button
-                  className="composer-tool-btn"
-                  onClick={() => regenChoices()}
-                  title="この応答の選択肢を生成し直す"
-                >
-                  <Icon name="refresh-cw" size={14} /> 選択肢を生成
-                </button>
-              )}
-            <div style={{ flex: 1 }} />
-            <button className="composer-tool-btn" onClick={() => setShowSceneEditor(true)}>
-              <Icon name="pencil" size={14} /> シーン編集
-            </button>
-            <button
-              className="scene-btn end"
-              onClick={() => (isReviewing ? stopReview() : prepareSceneReview())}
-              disabled={isStreaming}
-              title={isReviewing ? 'レビュー生成を中止' : 'このシーンを振り返って次のシーンへ'}
-            >
-              {isReviewing ? (
-                '◼ レビュー作成中…（中止）'
-              ) : (
-                <>
-                  <Icon name="check" size={14} /> このシーンを終える
-                </>
-              )}
-            </button>
-          </div>
-
-          <div className="input-row">
-            <textarea
-              ref={taRef}
-              rows={1}
-              value={text}
-              placeholder={
-                session.mode === 'roleplay'
-                  ? 'メッセージや行動を入力（Enter で送信 / Shift+Enter で改行）'
-                  : '物語への介入や方向づけを入力（任意）'
-              }
-              onChange={(e) => {
-                setText(e.target.value)
-                autoGrow()
-              }}
-              onKeyDown={onKey}
-            />
-            {isStreaming ? (
-              <button className="send-btn stop" onClick={stop} title="停止">
-                ◼
-              </button>
-            ) : (
-              <button className="send-btn" onClick={submit} disabled={!text.trim()} title="送信">
-                ↑
-              </button>
-            )}
-          </div>
-          <div className="hint">
-            {groupMode
-              ? '「次に話す」で発言者を選べます。登場キャラはシーン編集で絞れます。'
-              : session.mode === 'story'
-                ? '入力ありで介入、空のまま「続ける」で自動進行します。'
-                : 'キャラになりきって応答します。設定は右上の ⚙ から。'}
-          </div>
-        </div>
+        <ContextDock
+          session={session}
+          onEditStatus={() => setShowStatus(true)}
+          onEditDiscovery={() => setShowDiscovery(true)}
+        />
       </div>
 
       {showModels && (
@@ -774,8 +794,6 @@ export default function ChatPanel({ session }: Props) {
       {showDiscovery && (
         <DiscoveryPanel session={session} onClose={() => setShowDiscovery(false)} />
       )}
-      {showGallery && <GalleryModal session={session} onClose={() => setShowGallery(false)} />}
-      {showBranchTree && <BranchTreeModal session={session} onClose={() => setShowBranchTree(false)} />}
       {showImageGen && scene && (
         <ImageGenModal
           title="この場面の挿絵を生成"
@@ -847,7 +865,6 @@ export default function ChatPanel({ session }: Props) {
           onClose={() => setShowBgGen(false)}
         />
       )}
-      {showImageJobs && <ImageJobsPanel onClose={() => setShowImageJobs(false)} />}
       {showSessionCard && (
         <SessionCardModal session={session} onClose={() => setShowSessionCard(false)} />
       )}
