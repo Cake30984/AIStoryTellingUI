@@ -630,7 +630,7 @@ interface AppState {
   deletePersona: (id: string) => void
 
   // セッション
-  createSession: (mode: SessionMode) => void
+  createSession: (mode: SessionMode) => string
   deleteSession: (id: string) => void
   setActive: (id: string) => void
   updateSession: (id: string, patch: Partial<Session>) => void
@@ -1617,6 +1617,7 @@ export const useStore = create<AppState>()(
         createSession: (mode) => {
           const s = newSession(mode)
           set((st) => ({ sessions: [s, ...st.sessions], activeId: s.id, view: 'sessions' }))
+          return s.id // 呼び出し側で作成直後に設定モーダルを開くため（F3/R15）
         },
 
         deleteSession: (id) => {

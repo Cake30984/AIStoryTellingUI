@@ -2,7 +2,11 @@ import { useState } from 'react'
 import { areaOf, useStore, type View } from '../store'
 import { parseCardPng } from '../lib/cards'
 import { useCardDrop } from '../lib/useCardDrop'
+import { appConfirm } from '../lib/dialogs'
 import { Icon, type IconName } from './icons'
+import MenuPopover from './MenuPopover'
+import SessionEditor from './SessionEditor'
+import SessionCardModal from './SessionCardModal'
 
 const LIBRARY_NAV: { key: View; label: string; icon: IconName }[] = [
   { key: 'characters', label: 'キャラ', icon: 'users' },
@@ -12,10 +16,24 @@ const LIBRARY_NAV: { key: View; label: string; icon: IconName }[] = [
 ]
 
 export default function Sidebar() {
-  const { sessions, activeId, view, setView, setActive, createSession, characters, importSessionCard } = useStore()
+  const {
+    sessions,
+    activeId,
+    view,
+    setView,
+    setActive,
+    createSession,
+    updateSession,
+    deleteSession,
+    characters,
+    importSessionCard,
+  } = useStore()
   const [notice, setNotice] = useState('')
   const [query, setQuery] = useState('')
   const [showArchived, setShowArchived] = useState(false)
+  const [ctxMenu, setCtxMenu] = useState<{ id: string; x: number; y: number } | null>(null)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [cardId, setCardId] = useState<string | null>(null)
   const area = areaOf(view)
 
   // セッションカード（PNG）のドロップ受付
@@ -35,6 +53,12 @@ export default function Sidebar() {
   }
   const { dragOver, dropProps } = useCardDrop(handleFiles)
 
+  // 作成直後に設定モーダルを開く（顔ぶれ・世界観をすぐ設定できるように。F3/R15）
+  const newSession = (mode: 'roleplay' | 'story') => {
+    const id = createSession(mode)
+    setEditingId(id)
+  }
+
   const q = query.trim().toLowerCase()
   const matchesQuery = (s: (typeof sessions)[number]) => {
     if (!q) return true
@@ -46,15 +70,12 @@ export default function Sidebar() {
   const archivedCount = sessions.filter((s) => s.archived).length
   const visible = sessions.filter((s) => (showArchived || !s.archived) && matchesQuery(s))
 
+  const ctxSession = ctxMenu ? sessions.find((s) => s.id === ctxMenu.id) : undefined
+  const editingSession = editingId ? sessions.find((s) => s.id === editingId) : undefined
+  const cardSession = cardId ? sessions.find((s) => s.id === cardId) : undefined
+
   return (
     <aside className="sidebar" {...dropProps} style={dragOver ? { outline: '2px dashed var(--accent)', outlineOffset: -4 } : undefined}>
-      <div className="sidebar-head">
-        <div className="brand">
-          <span className="dot" />
-          AI Storytelling Studio
-        </div>
-      </div>
-
       {area === 'play' ? (
         <>
           <div className="sidebar-search">
@@ -67,10 +88,10 @@ export default function Sidebar() {
           </div>
 
           <div className="new-buttons">
-            <button onClick={() => createSession('roleplay')}>
+            <button onClick={() => newSession('roleplay')}>
               <Icon name="plus" size={14} /> ロールプレイ
             </button>
-            <button onClick={() => createSession('story')}>
+            <button onClick={() => newSession('story')}>
               <Icon name="plus" size={14} /> 物語
             </button>
           </div>
@@ -102,6 +123,10 @@ export default function Sidebar() {
                     (s.archived ? ' archived' : '')
                   }
                   onClick={() => setActive(s.id)}
+                  onContextMenu={(e) => {
+                    e.preventDefault()
+                    setCtxMenu({ id: s.id, x: e.clientX, y: e.clientY })
+                  }}
                 >
                   <div className="title">{s.title || '無題'}</div>
                   <div className="meta">
@@ -137,6 +162,64 @@ export default function Sidebar() {
           ))}
         </nav>
       )}
+
+      {/* セッションの右クリックメニュー（F3/R14）。⋯メニュー（ChatPanel）と両導線 */}
+      {ctxMenu && ctxSession && (
+        <MenuPopover position={{ x: ctxMenu.x, y: ctxMenu.y }} onClose={() => setCtxMenu(null)}>
+          <button
+            className="menu-item"
+            onClick={() => {
+              setActive(ctxMenu.id)
+              setCtxMenu(null)
+            }}
+          >
+            <Icon name="book-open" size={15} /> 開く
+          </button>
+          <button
+            className="menu-item"
+            onClick={() => {
+              setEditingId(ctxMenu.id)
+              setCtxMenu(null)
+            }}
+          >
+            <Icon name="settings" size={15} /> セッション設定
+          </button>
+          <button
+            className="menu-item"
+            onClick={() => {
+              setCardId(ctxMenu.id)
+              setCtxMenu(null)
+            }}
+          >
+            <Icon name="credit-card" size={15} /> セッションをカード化
+          </button>
+          <button
+            className="menu-item"
+            onClick={() => {
+              updateSession(ctxMenu.id, { archived: !ctxSession.archived })
+              setCtxMenu(null)
+            }}
+          >
+            <Icon name="archive" size={15} /> {ctxSession.archived ? 'アーカイブから戻す' : 'アーカイブする'}
+          </button>
+          <button
+            className="menu-item danger"
+            onClick={async () => {
+              const id = ctxMenu.id
+              setCtxMenu(null)
+              if (await appConfirm({ message: 'このセッションを削除しますか？', danger: true }))
+                deleteSession(id)
+            }}
+          >
+            <Icon name="trash-2" size={15} /> 削除
+          </button>
+        </MenuPopover>
+      )}
+
+      {editingSession && (
+        <SessionEditor session={editingSession} onClose={() => setEditingId(null)} />
+      )}
+      {cardSession && <SessionCardModal session={cardSession} onClose={() => setCardId(null)} />}
     </aside>
   )
 }

@@ -9,6 +9,7 @@ import WorldLibrary from './components/library/WorldLibrary'
 import PersonaLibrary from './components/library/PersonaLibrary'
 import SceneTypeLibrary from './components/library/SceneTypeLibrary'
 import SceneReviewModal from './components/SceneReviewModal'
+import SessionEditor from './components/SessionEditor'
 import DialogHost from './components/DialogHost'
 import CommandPalette from './components/CommandPalette'
 import { useGlobalShortcuts } from './lib/shortcuts'
@@ -63,6 +64,10 @@ export default function App() {
   // ハイドレーション完了までスプラッシュを表示する。
   const [hydrated, setHydrated] = useState(() => useStore.persist.hasHydrated())
   const [paletteOpen, setPaletteOpen] = useState(false)
+  // 空状態から新規作成した直後に開くセッション設定（F3/R15）
+  const [newEditorId, setNewEditorId] = useState<string | null>(null)
+  const startNew = (mode: 'roleplay' | 'story') => setNewEditorId(createSession(mode))
+  const newEditorSession = newEditorId ? sessions.find((s) => s.id === newEditorId) : undefined
 
   // いずれかのプロバイダに API キーが設定されているか
   const hasApiKey = providers.some((p) => p.apiKey.trim() !== '')
@@ -166,8 +171,8 @@ export default function App() {
                 自動で進む物語を楽しめます。
               </p>
               <div className="cta">
-                <button onClick={() => createSession('roleplay')}>ロールプレイを始める</button>
-                <button className="ghost" onClick={() => createSession('story')}>
+                <button onClick={() => startNew('roleplay')}>ロールプレイを始める</button>
+                <button className="ghost" onClick={() => startNew('story')}>
                   物語を始める
                 </button>
               </div>
@@ -182,6 +187,10 @@ export default function App() {
       )}
 
       {sceneReview && <SceneReviewModal />}
+
+      {newEditorSession && (
+        <SessionEditor session={newEditorSession} onClose={() => setNewEditorId(null)} />
+      )}
 
       {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} />}
 

@@ -159,7 +159,7 @@
 }
 
 .sidebar-search {
-  padding: 12px 12px 0;
+  padding: 14px 12px 0;
 }
 .sidebar-search .model-search {
   margin-bottom: 0;
@@ -195,21 +195,47 @@
   background: var(--bg-elev);
 }
 
+/* タイトルは編集可能と分かるよう hover で鉛筆＋背景を出す（F3/R8） */
+.session-title-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
 .topbar .session-title {
   font-weight: 600;
   font-size: 15px;
   background: transparent;
-  border: none;
+  border: 1px solid transparent;
   color: var(--text);
   flex: 1;
   min-width: 0;
-  padding: 6px 8px;
+  padding: 6px 30px 6px 8px;
   border-radius: var(--radius-sm);
 }
-.topbar .session-title:hover,
+.topbar .session-title:hover {
+  background: var(--bg-elev2);
+  border-color: var(--border);
+}
 .topbar .session-title:focus {
   background: var(--bg-elev2);
+  border-color: var(--accent);
   outline: none;
+}
+.title-pencil {
+  position: absolute;
+  right: 10px;
+  color: var(--text-faint);
+  opacity: 0;
+  pointer-events: none;
+  transition: 0.12s;
+}
+.session-title-wrap:hover .title-pencil {
+  opacity: 1;
+}
+.session-title:focus ~ .title-pencil {
+  opacity: 0;
 }
 
 .model-chip {

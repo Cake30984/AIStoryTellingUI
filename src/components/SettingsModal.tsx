@@ -349,6 +349,11 @@ export function SettingsBody() {
           </div>
 
           {notice && <p className="notice">{notice}</p>}
+
+          {/* アプリ名はサイドバーから撤去し、ここに控えめに置く（F3/R19） */}
+          <p className="desc" style={{ marginTop: 32, textAlign: 'center' }}>
+            AI Storytelling Studio
+          </p>
     </>
   )
 }

@@ -396,11 +396,15 @@ export default function ChatPanel({ session }: Props) {
       {/* 没入モードで topbar を隠した際、上端ホバーで呼び戻すための当たり判定（UI-4）。~ セレクタのため topbar の直前に置く */}
       {ui.immersive && <div className="top-hover" />}
       <div className="topbar">
-        <input
-          className="session-title"
-          value={session.title}
-          onChange={(e) => updateSession(session.id, { title: e.target.value })}
-        />
+        <div className="session-title-wrap">
+          <input
+            className="session-title"
+            value={session.title}
+            placeholder="無題（クリックで名前を編集）"
+            onChange={(e) => updateSession(session.id, { title: e.target.value })}
+          />
+          <Icon name="pencil" size={13} className="title-pencil" />
+        </div>
 
         {scene && (
           <button className="scene-chip" onClick={() => setShowSceneEditor(true)} title="登場キャラ・シーン編集">
@@ -728,6 +732,23 @@ export default function ChatPanel({ session }: Props) {
                     </button>
                   )}
                 <div style={{ flex: 1 }} />
+                {/* 挿絵・背景生成は「進行しながら使う」操作なので入力欄付近にも置く（⋯メニューとも両導線。F3/R9） */}
+                <button
+                  className="composer-tool-btn"
+                  disabled={!scene}
+                  title={scene ? 'この場面の挿絵を生成' : '物語を開始すると生成できます'}
+                  onClick={() => setShowImageGen(true)}
+                >
+                  <Icon name="palette" size={14} />
+                </button>
+                <button
+                  className="composer-tool-btn"
+                  disabled={!scene}
+                  title={scene ? 'この場面の背景を生成' : '物語を開始すると生成できます'}
+                  onClick={() => setShowBgGen(true)}
+                >
+                  <Icon name="mountain" size={14} />
+                </button>
                 <button className="composer-tool-btn" onClick={() => setShowSceneEditor(true)}>
                   <Icon name="pencil" size={14} /> シーン編集
                 </button>
