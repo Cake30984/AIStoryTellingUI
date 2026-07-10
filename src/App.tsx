@@ -10,7 +10,8 @@ import PersonaLibrary from './components/library/PersonaLibrary'
 import SceneTypeLibrary from './components/library/SceneTypeLibrary'
 import SceneReviewModal from './components/SceneReviewModal'
 import DialogHost from './components/DialogHost'
-import { modalStackSize } from './lib/modalStack'
+import CommandPalette from './components/CommandPalette'
+import { useGlobalShortcuts } from './lib/shortcuts'
 
 const FONT_SIZE_MAP = { s: '14px', m: '15.5px', l: '17px', xl: '18.5px' } as const
 const LINE_HEIGHT_MAP = { compact: '1.7', normal: '1.9', wide: '2.1' } as const
@@ -59,11 +60,11 @@ export default function App() {
     imageJobToasts,
     dismissImageJobToasts,
     ui,
-    setUiPrefs,
   } = useStore()
   // storage は async 化済み（Web は同期 localStorage・Tauri は T3 のファイル backend）。
   // ハイドレーション完了までスプラッシュを表示する。
   const [hydrated, setHydrated] = useState(() => useStore.persist.hasHydrated())
+  const [paletteOpen, setPaletteOpen] = useState(false)
 
   // いずれかのプロバイダに API キーが設定されているか
   const hasApiKey = providers.some((p) => p.apiKey.trim() !== '')
@@ -108,20 +109,8 @@ export default function App() {
     ui.stageSpriteOpacity,
   ])
 
-  // 没入モードのショートカット（UI-4）: Ctrl+. でトグル、Escape はモーダルが何も開いていない時のみ解除
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.key === '.') {
-        e.preventDefault()
-        setUiPrefs({ immersive: !useStore.getState().ui.immersive })
-      } else if (e.key === 'Escape' && modalStackSize() === 0 && useStore.getState().ui.immersive) {
-        setUiPrefs({ immersive: false })
-      }
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  // グローバルショートカット（UI-7）: Ctrl+K/1/2/3/G/.。没入モードの Ctrl+. トグルもここに集約（旧 UI-4 実装を移管）
+  useGlobalShortcuts(() => setPaletteOpen((v) => !v))
 
   if (!hydrated) {
     return (
@@ -186,6 +175,8 @@ export default function App() {
       )}
 
       {sceneReview && <SceneReviewModal />}
+
+      {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} />}
 
       <DialogHost />
 
