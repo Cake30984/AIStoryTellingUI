@@ -8,6 +8,7 @@ import CharacterLibrary from './components/library/CharacterLibrary'
 import WorldLibrary from './components/library/WorldLibrary'
 import PersonaLibrary from './components/library/PersonaLibrary'
 import SceneTypeLibrary from './components/library/SceneTypeLibrary'
+import LibraryBar from './components/LibraryBar'
 import SceneReviewModal from './components/SceneReviewModal'
 import SessionEditor from './components/SessionEditor'
 import DialogHost from './components/DialogHost'
@@ -142,13 +143,25 @@ export default function App() {
       {view !== 'system' && <Sidebar />}
 
       {view === 'characters' ? (
-        <CharacterLibrary />
+        <div className="main">
+          <LibraryBar />
+          <CharacterLibrary />
+        </div>
       ) : view === 'worlds' ? (
-        <WorldLibrary />
+        <div className="main">
+          <LibraryBar />
+          <WorldLibrary />
+        </div>
       ) : view === 'personas' ? (
-        <PersonaLibrary />
+        <div className="main">
+          <LibraryBar />
+          <PersonaLibrary />
+        </div>
       ) : view === 'sceneTypes' ? (
-        <SceneTypeLibrary />
+        <div className="main">
+          <LibraryBar />
+          <SceneTypeLibrary />
+        </div>
       ) : view === 'system' ? (
         <div className="library">
           <div className="page-narrow">

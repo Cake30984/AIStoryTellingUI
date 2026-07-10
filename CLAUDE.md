@@ -61,6 +61,7 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist`。storage は
 - `icons.tsx` — 自前 SVG アイコン（依存追加なし）。`<Icon name size? className? filled?/>`。`IconName` は機能ボタン用のみ（彩り用絵文字は対象外）
 - `MenuPopover.tsx` — 汎用ポップオーバー（親に `position:relative` 必要・外側クリック＋Escape で閉じる）
 - `ActivityIndicator.tsx` — 本編/選択肢/レビュー/画像生成/表情判定の進行状態を1チップに集約。クリックで内訳＋中止
+- `LibraryBar.tsx` — Library（作る）画面用の細いトップバー（`ActivityIndicator`＋ジョブボタン）。画像生成の進行/採用を Play に行かず確認できるよう App.tsx が各 Library ビューを `.main` でラップして表示（F6）。ジョブ一覧はドックが無いので `ModalShell`＋`ImageJobsBody`
 - `EntityAvatar.tsx` — 画像 or 色＋イニシャルの共通アバター（全画面で統一）
 
 Play 領域:
@@ -208,7 +209,7 @@ Play 領域:
 各フェーズの詳細・検証記録は対応する `docs/設計_*.md` を参照。
 
 ## 未着手・残タスク
-- **UI改善 F0〜F5（実装済み・2026-07-11 / 実機目視は未）**: UI再設計後のフィードバック対応。手順書 → `docs/設計_UI改善_フィードバック反映.md`。F0（没入グリッド崩壊・checkbox全幅化・System幅・文言）／F1（分岐ツリーgitログ風刷新＝主線をいまここで止める・章折りたたみ・⑂別の分岐/▷この先・行アクション⋯集約＋ドック幅リサイズ `ui.dockWidth`）／F2（リーダー設定を数値化＝`fontSize`/`lineHeight`/`contentWidth` を number 化・`normalizeUiPrefs`・没入案内 `infoNotice`）／F3（生成ボタンをコンポーザーへ・タイトル hover 鉛筆・セッション右クリックメニュー・`createSession` が id 返却→新規作成で設定自動オープン・サイドバーのブランド撤去）／F4（発見ログをタブ＋アイコン化・`DiscoveryScope` で編集をスコープ分割）／F5（`--bg-rail` で面の階層・余白の一括締め・レールにラベル）。**tsc/build は全フェーズ通過済み・見た目/UX の実機目視はユーザー未実施**
+- **UI改善 F0〜F5（実装済み・2026-07-11 / 実機目視は未）**: UI再設計後のフィードバック対応。手順書 → `docs/設計_UI改善_フィードバック反映.md`。F0（没入グリッド崩壊・checkbox全幅化・System幅・文言）／F1（分岐ツリーgitログ風刷新＝主線をいまここで止める・章折りたたみ・⑂別の分岐/▷この先・行アクション⋯集約＋ドック幅リサイズ `ui.dockWidth`）／F2（リーダー設定を数値化＝`fontSize`/`lineHeight`/`contentWidth` を number 化・`normalizeUiPrefs`・没入案内 `infoNotice`）／F3（生成ボタンをコンポーザーへ・タイトル hover 鉛筆・セッション右クリックメニュー・`createSession` が id 返却→新規作成で設定自動オープン・サイドバーのブランド撤去）／F4（発見ログをタブ＋アイコン化・`DiscoveryScope` で編集をスコープ分割）／F5（`--bg-rail` で面の階層・余白の一括締め・レールにラベル）／F6（追加フィードバック: 没入ホバー帯を28pxに拡大・Library画面に `LibraryBar` で進行状況/ジョブ確認導線）。**tsc/build は全フェーズ通過済み・分岐3つ以上のツリー表示不具合は別途検討として保留**
 - **Tauri 実機検証**（未実施のまま持ち越し）: `tsc`/`build`/`cargo check` は通過済みだが、`npm run tauri:dev` 手動起動でのデータ保持・`%APPDATA%` ファイル生成・旧 WebView データ移行・保存ダイアログでのカード PNG/JSON 保存の確認が必要
 - **T1 で判明した既知の問題（据え置き）**: ①選択肢生成中に本編生成が始まると選択肢側 AbortController が追従せず `Cannot read properties of null (reading 'signal')`（V5d で用途別分離したが要再確認）②ComfyUI が通常起動（`--enable-cors-header` なし）で接続できなかった＝設計通りでないバグ。appFetch 未置換経路や `isTauri()` 誤判定を疑い切り分けが必要（詳細は `docs/設計_Tauri化.md`）
 - **T4（配布）**: NSIS・GitHub Releases。ユーザー判断で当面見送り（まだ公開しない）

@@ -364,3 +364,24 @@ F0（必須先行: F2 が没入修正・range 保険の上に建つ）
 - メッセージ削除の confirm / undo（従来からの挙動のため。要望が出たら別途）。
 - ドックの複数タブ同時表示・タブのポップアウト。
 - オンボーディングウィザード（親ドキュメント §4.11。引き続き将来課題）。
+
+---
+
+## 11. F6 追加フィードバック（2026-07-11・実装済み）
+
+F0〜F5 実機確認後の追加報告への対応。**分岐が3つ以上のときの表示不具合はユーザー判断で別途検討（本フェーズ対象外）。**
+
+### F6-1: 没入モードの上端ホバー当たり判定が狭い
+
+- `.immersive .top-hover` の `height: 12px` → **`28px`**（layout.css）。バーを呼び戻すトリガー帯を広げるだけ。ロジック変更なし。
+
+### F6-2: Library（作る）画面にも進行状況バーを（画像生成タスクの確認導線）
+
+- **課題**: キャラ／ペルソナ等の画像生成は Library から起動できるが、進行状態（`ActivityIndicator`）とジョブの採用（`ImageJobsBody`）は Play 画面のトップバー／ドックにしか無く、Play へ移動しないと確認・採用できない。
+- **対応**: 新規 `components/LibraryBar.tsx`（`.topbar` を流用した細いバー）= `ActivityIndicator` ＋ 右端にジョブボタン（`hourglass`＋件数バッジ・`selecting` 時は `.on`）。ジョブ一覧はドックが無いので **`ModalShell` 内に `ImageJobsBody` を出す**（採用・破棄・キャンセルはそのまま動く）。
+- `App.tsx`: `characters/worlds/personas/sceneTypes` の各ビューを `<div className="main"><LibraryBar />…</div>` でラップ。System ページは対象外（生成導線が無いため）。
+- `.library` に `flex: 1; min-height: 0` を追加（`.main` 内で残り高さを占有しスクロール。System のように直接グリッド項目のときは flex:1 が無視され従来どおり）。`WorldEditor` ページ（`.library world-page` ルート）も同ラップ下で正しくスクロール（`.section-nav` の sticky はバー下に吸着）。
+- 没入モードは Play 専用（F0/A6）のため Library のバーは常時表示で消えない。
+
+**完了条件**: ユーザー確認: ①没入モードの上端バー復帰が余裕を持って反応する ②Library（キャラ等）で画像生成中に上部バーに進行状態が出る ③そのバーのジョブボタンから候補を採用できる（Play に行かずに完結）。
+コミット例: `F6: 没入ホバー帯の拡大・Library画面に進行状況バー（ジョブ確認導線）`

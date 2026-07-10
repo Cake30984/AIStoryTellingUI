@@ -459,7 +459,7 @@
   top: 0;
   left: 0;
   right: 0;
-  height: 12px;
+  height: 28px; /* バーを呼び戻すホバー当たり判定（12px では狭すぎたため拡大） */
   z-index: 21;
 }
 .immersive .topbar {
@@ -550,6 +550,14 @@
 .library {
   overflow-y: auto;
   padding: 22px 28px;
+  /* .main（LibraryBar 付き）内では flex 子として残り高さを占有しスクロールする。
+     System ページのように直接グリッド項目のときは flex:1 は無視され従来どおり（F6） */
+  flex: 1;
+  min-height: 0;
+}
+/* Library 画面のトップバー（進行状態・ジョブ確認を Play 以外でも。F6） */
+.library-topbar {
+  justify-content: flex-end;
 }
 /* System ページ等、全幅だと間延びする内容を中央寄せでまとめる（F0/R11） */
 .page-narrow {
