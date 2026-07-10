@@ -31,6 +31,10 @@ export default function WorldLibrary() {
   const q = query.trim().toLowerCase()
   const visible = worlds.filter((w) => !q || (w.name || '').toLowerCase().includes(q))
 
+  if (editing) {
+    return <WorldEditor world={editing} onClose={() => setEditing(null)} />
+  }
+
   return (
     <div className="library" {...dropProps}>
       <div className="library-head">
@@ -77,8 +81,6 @@ export default function WorldLibrary() {
           ))}
         </div>
       )}
-
-      {editing && <WorldEditor world={editing} onClose={() => setEditing(null)} />}
     </div>
   )
 }
