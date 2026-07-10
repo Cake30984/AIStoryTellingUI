@@ -25,9 +25,20 @@ import type {
 import CsvInput from '../CsvInput'
 import { exportWorldCard } from '../../lib/cards'
 import { appConfirm } from '../../lib/dialogs'
-import ModalShell from '../ModalShell'
 
 const OPS: Op[] = ['>=', '>', '<=', '<', '==', '!=']
+
+type Section = 'basic' | 'lore' | 'events' | 'aspects' | 'stats' | 'counters' | 'achievements'
+
+const SECTIONS: { id: Section; label: string }[] = [
+  { id: 'basic', label: '基本' },
+  { id: 'lore', label: 'ロア' },
+  { id: 'events', label: '特別イベント' },
+  { id: 'aspects', label: '関係性の次元' },
+  { id: 'stats', label: 'ステータス' },
+  { id: 'counters', label: 'カウンター' },
+  { id: 'achievements', label: '実績' },
+]
 
 /** Condition から節配列・モードを取り出す（all/any の判別） */
 const clausesOf = (cond: Condition): Clause[] => ('all' in cond ? cond.all : cond.any)
@@ -157,9 +168,15 @@ export default function WorldEditor({ world, onClose }: Props) {
   const [d, setD] = useState<World>(world)
   const [exporting, setExporting] = useState(false)
   const [dirty, setDirty] = useState(false)
+  const [section, setSection] = useState<Section>('basic')
   const patch = (p: Partial<World>) => {
     setD((w) => ({ ...w, ...p }))
     setDirty(true)
+  }
+
+  const back = async () => {
+    if (dirty && !(await appConfirm({ message: '編集内容を破棄しますか？', okLabel: '破棄', danger: true }))) return
+    onClose()
   }
 
   const exportCard = async () => {
@@ -290,59 +307,73 @@ export default function WorldEditor({ world, onClose }: Props) {
   }
 
   return (
-    <ModalShell
-      title="🌍 世界観（ロアブック）"
-      onClose={onClose}
-      dirty={dirty}
-      wide
-      footer={
-        <>
-          <button
-            className="btn danger"
-            onClick={async () => {
-              if (await appConfirm({ message: 'この世界観を削除しますか？', danger: true })) {
-                deleteWorld(d.id)
-                onClose()
-              }
-            }}
-          >
-            削除
-          </button>
-          <button className="btn" onClick={exportCard} disabled={exporting}>
-            {exporting ? '書き出し中…' : '🖼 カードとして保存'}
-          </button>
-          <div style={{ flex: 1 }} />
-          <button className="btn" onClick={onClose}>
-            キャンセル
-          </button>
-          <button className="btn primary" onClick={save}>
-            保存
-          </button>
-        </>
-      }
-    >
-          <p style={{ fontSize: 12, color: 'var(--text-faint)', marginTop: 0, marginBottom: 10 }}>
-            素材の編集・保存はすべてのセッション・すべての分岐に共有されます（分岐を戻しても巻き戻りません）。
-          </p>
-          <div className="field">
-            <label>名称</label>
-            <input
-              value={d.name}
-              placeholder="例: アルカディア王国"
-              onChange={(e) => patch({ name: e.target.value })}
-            />
-          </div>
-          <div className="field">
-            <label>概要（常時注入）</label>
-            <div className="desc">世界の基本設定。会話に常に添付されます。簡潔に。</div>
-            <textarea
-              rows={3}
-              value={d.description}
-              placeholder="例: 魔法が衰退した中世風世界。3つの大国が均衡を保っている。"
-              onChange={(e) => patch({ description: e.target.value })}
-            />
-          </div>
+    <div className="library world-page">
+      <div className="page-head">
+        <button className="btn" onClick={back}>
+          ← 戻る
+        </button>
+        <h2>{d.name || '無名の世界'}</h2>
+        <button
+          className="btn danger"
+          onClick={async () => {
+            if (await appConfirm({ message: 'この世界観を削除しますか？', danger: true })) {
+              deleteWorld(d.id)
+              onClose()
+            }
+          }}
+        >
+          削除
+        </button>
+        <button className="btn" onClick={exportCard} disabled={exporting}>
+          {exporting ? '書き出し中…' : '🖼 カードとして保存'}
+        </button>
+        <button className="btn primary" onClick={save}>
+          保存
+        </button>
+      </div>
+      <p style={{ fontSize: 12, color: 'var(--text-faint)', marginTop: 0, marginBottom: 16 }}>
+        素材の編集・保存はすべてのセッション・すべての分岐に共有されます（分岐を戻しても巻き戻りません）。
+      </p>
 
+      <div className="page-body">
+        <div className="section-nav nav-vertical">
+          {SECTIONS.map((s) => (
+            <button
+              key={s.id}
+              className={'nav-btn' + (section === s.id ? ' on' : '')}
+              onClick={() => setSection(s.id)}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="section-content">
+          {section === 'basic' && (
+            <>
+              <div className="field">
+                <label>名称</label>
+                <input
+                  value={d.name}
+                  placeholder="例: アルカディア王国"
+                  onChange={(e) => patch({ name: e.target.value })}
+                />
+              </div>
+              <div className="field">
+                <label>概要（常時注入）</label>
+                <div className="desc">世界の基本設定。会話に常に添付されます。簡潔に。</div>
+                <textarea
+                  rows={3}
+                  value={d.description}
+                  placeholder="例: 魔法が衰退した中世風世界。3つの大国が均衡を保っている。"
+                  onChange={(e) => patch({ description: e.target.value })}
+                />
+              </div>
+            </>
+          )}
+
+          {section === 'lore' && (
+            <>
           <div className="lore-head">
             <label>ロア項目</label>
             <div className="desc">
@@ -399,9 +430,11 @@ export default function WorldEditor({ world, onClose }: Props) {
           <button className="btn" style={{ marginTop: 8 }} onClick={addEntry}>
             ＋ ロア項目を追加
           </button>
+            </>
+          )}
 
-          <hr className="divider" />
-
+          {section === 'events' && (
+            <>
           <div className="lore-head">
             <label>特別イベント（日付指定）</label>
             <div className="desc">
@@ -484,9 +517,11 @@ export default function WorldEditor({ world, onClose }: Props) {
           <button className="btn" style={{ marginTop: 8 }} onClick={addEvent}>
             ＋ 特別イベントを追加
           </button>
+            </>
+          )}
 
-          <hr className="divider" />
-
+          {section === 'aspects' && (
+            <>
           <div className="lore-head">
             <label>状態システム（プリセット）</label>
             <div className="desc">
@@ -532,8 +567,12 @@ export default function WorldEditor({ world, onClose }: Props) {
           <button className="btn" style={{ marginTop: 8 }} onClick={addAspect}>
             ＋ 次元を追加
           </button>
+            </>
+          )}
 
-          <div className="lore-head" style={{ marginTop: 12 }}>
+          {section === 'stats' && (
+            <>
+          <div className="lore-head">
             <label>ステータス定義</label>
             <div className="desc">
               好感度・レベル・所持金など「事実の数」。イベント/行動で加減算され、条件にも使えます。
@@ -615,8 +654,12 @@ export default function WorldEditor({ world, onClose }: Props) {
           <button className="btn" style={{ marginTop: 8 }} onClick={addStat}>
             ＋ ステータスを追加
           </button>
+            </>
+          )}
 
-          <div className="lore-head" style={{ marginTop: 12 }}>
+          {section === 'counters' && (
+            <>
+          <div className="lore-head">
             <label>行動カウンター</label>
             <div className="desc">
               累計回数（例: デート回数 / 戦闘回数）。レビューで起きた行動を加算し、条件に使えます。
@@ -658,8 +701,12 @@ export default function WorldEditor({ world, onClose }: Props) {
           <button className="btn" style={{ marginTop: 8 }} onClick={addCounter}>
             ＋ カウンターを追加
           </button>
+            </>
+          )}
 
-          <div className="lore-head" style={{ marginTop: 12 }}>
+          {section === 'achievements' && (
+            <>
+          <div className="lore-head">
             <label>実績</label>
             <div className="desc">
               スタット・カウンター・関係フラグ・他の実績のしきい値を満たすと、承認なしで自動的に解除されます。
@@ -726,6 +773,10 @@ export default function WorldEditor({ world, onClose }: Props) {
           <button className="btn" style={{ marginTop: 8 }} onClick={addAchievement}>
             ＋ 実績を追加
           </button>
-    </ModalShell>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
   )
 }
