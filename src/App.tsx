@@ -9,6 +9,11 @@ import PersonaLibrary from './components/library/PersonaLibrary'
 import SceneTypeLibrary from './components/library/SceneTypeLibrary'
 import SceneReviewModal from './components/SceneReviewModal'
 import DialogHost from './components/DialogHost'
+import { modalStackSize } from './lib/modalStack'
+
+const FONT_SIZE_MAP = { s: '14px', m: '15.5px', l: '17px', xl: '18.5px' } as const
+const LINE_HEIGHT_MAP = { compact: '1.7', normal: '1.9', wide: '2.1' } as const
+const CONTENT_WIDTH_MAP = { narrow: '660px', normal: '760px', wide: '900px' } as const
 
 // 積層トーストの1件。autoCloseMs があれば一定時間後に自動で onClose を呼ぶ（UI-0）
 function ToastItem({
@@ -51,6 +56,8 @@ export default function App() {
     dismissNewAchievements,
     imageJobToasts,
     dismissImageJobToasts,
+    ui,
+    setUiPrefs,
   } = useStore()
   const [showSettings, setShowSettings] = useState(false)
   // storage は async 化済み（Web は同期 localStorage・Tauri は T3 のファイル backend）。
@@ -82,6 +89,39 @@ export default function App() {
     void useStore.getState().cleanupOrphanCheckpoints()
   }, [hydrated])
 
+  // リーダー設定を CSS 変数へ反映（UI-4）
+  useEffect(() => {
+    const root = document.documentElement.style
+    root.setProperty('--font-size-prose', FONT_SIZE_MAP[ui.fontScale])
+    root.setProperty('--line-height-prose', LINE_HEIGHT_MAP[ui.lineHeight])
+    root.setProperty('--content-width', CONTENT_WIDTH_MAP[ui.contentWidth])
+    root.setProperty('--dialogue', ui.dialogueTint ? '#cfe3ff' : 'var(--text)')
+    root.setProperty('--stage-bg-opacity', String(ui.stageBgOpacity))
+    root.setProperty('--stage-sprite-opacity', String(ui.stageSpriteOpacity))
+  }, [
+    ui.fontScale,
+    ui.lineHeight,
+    ui.contentWidth,
+    ui.dialogueTint,
+    ui.stageBgOpacity,
+    ui.stageSpriteOpacity,
+  ])
+
+  // 没入モードのショートカット（UI-4）: Ctrl+. でトグル、Escape はモーダルが何も開いていない時のみ解除
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.key === '.') {
+        e.preventDefault()
+        setUiPrefs({ immersive: !useStore.getState().ui.immersive })
+      } else if (e.key === 'Escape' && modalStackSize() === 0 && useStore.getState().ui.immersive) {
+        setUiPrefs({ immersive: false })
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   if (!hydrated) {
     return (
       <div className="app">
@@ -95,7 +135,7 @@ export default function App() {
   }
 
   return (
-    <div className="app">
+    <div className={'app' + (ui.immersive ? ' immersive' : '')}>
       <Sidebar onOpenSettings={() => setShowSettings(true)} />
 
       {view === 'characters' ? (

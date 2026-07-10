@@ -566,13 +566,36 @@ export interface BranchTree {
 
 export type DockTab = 'status' | 'discovery' | 'gallery' | 'branch' | 'jobs'
 
-/** 右コンテキストドック等の永続 UI 状態（UI-3 で導入。UI-4 でリーダー設定等を追加予定） */
+/** 右コンテキストドック・リーダー設定・没入モード等の永続 UI 状態（UI-3・UI-4） */
 export interface UiPrefs {
   /** null = ドック閉 */
   dockTab: DockTab | null
+  /** 本文の文字サイズ（--font-size-prose と連動。既定 'm'=現行見た目） */
+  fontScale: 's' | 'm' | 'l' | 'xl'
+  /** 本文の行間（--line-height-prose と連動） */
+  lineHeight: 'compact' | 'normal' | 'wide'
+  /** 本文の幅（--content-width と連動） */
+  contentWidth: 'narrow' | 'normal' | 'wide'
+  /** セリフ（「」）を色分け表示するか（false なら本文と同色） */
+  dialogueTint: boolean
+  /** ステージ背景の濃さ（0〜0.6。--stage-bg-opacity と連動） */
+  stageBgOpacity: number
+  /** ステージ立ち絵の濃さ（0〜0.9。--stage-sprite-opacity と連動） */
+  stageSpriteOpacity: number
+  /** 没入モード（サイドバー・ドックを隠し topbar をホバー表示に） */
+  immersive: boolean
 }
 
-export const DEFAULT_UI: UiPrefs = { dockTab: null }
+export const DEFAULT_UI: UiPrefs = {
+  dockTab: null,
+  fontScale: 'm',
+  lineHeight: 'normal',
+  contentWidth: 'normal',
+  dialogueTint: true,
+  stageBgOpacity: 0.25,
+  stageSpriteOpacity: 0.5,
+  immersive: false,
+}
 
 /** エクスポート/インポート用のデータ束 */
 export interface ExportBundle {
