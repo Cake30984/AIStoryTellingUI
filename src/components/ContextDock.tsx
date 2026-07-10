@@ -33,12 +33,12 @@ export default function ContextDock({ session, onEditStatus, onEditDiscovery }: 
         <span className="dock-head-title">{TITLES[tab]}</span>
         {tab === 'status' && (
           <button className="btn" onClick={onEditStatus}>
-            ✎ 編集
+            <Icon name="pencil" size={13} /> 編集
           </button>
         )}
         {tab === 'discovery' && (
           <button className="btn" onClick={onEditDiscovery}>
-            ✎ 編集
+            <Icon name="pencil" size={13} /> 編集
           </button>
         )}
         <button className="icon-btn" onClick={() => setUiPrefs({ dockTab: null })} title="閉じる">

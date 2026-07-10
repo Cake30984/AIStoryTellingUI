@@ -4,6 +4,7 @@ import type { Development, LoreEntry, Session, SessionOverlay } from '../types'
 import CsvInput from './CsvInput'
 import { appConfirm } from '../lib/dialogs'
 import ModalShell from './ModalShell'
+import { Icon } from './icons'
 
 interface Props {
   session: Session
@@ -158,10 +159,10 @@ export default function DiscoveryPanel({ session, onClose }: Props) {
                       disabled={!session.worldId}
                       title={session.worldId ? 'ワールドへ昇格' : 'ワールド未設定のため昇格できません'}
                     >
-                      ⬆
+                      <Icon name="arrow-up" size={13} />
                     </button>
                     <button className="icon-btn small" onClick={() => removeLore(e.id)} title="削除">
-                      ✕
+                      <Icon name="x" size={13} />
                     </button>
                   </div>
                   <textarea
@@ -201,14 +202,14 @@ export default function DiscoveryPanel({ session, onClose }: Props) {
                       onClick={() => promoteDev(x.characterId, dev)}
                       title="キャラへ昇格"
                     >
-                      ⬆
+                      <Icon name="arrow-up" size={13} />
                     </button>
                     <button
                       className="icon-btn small"
                       onClick={() => removeDev(x.characterId, dev.id)}
                       title="削除"
                     >
-                      ✕
+                      <Icon name="x" size={13} />
                     </button>
                   </div>
                 ))}

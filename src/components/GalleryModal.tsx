@@ -5,6 +5,7 @@ import { downloadBlob } from '../lib/io'
 import { appConfirm } from '../lib/dialogs'
 import type { Scene, SceneIllustration, Session } from '../types'
 import ZoomOverlay from './ZoomOverlay'
+import { Icon } from './icons'
 
 /** ギャラリー内の挿絵1枚（サムネイル→クリックで拡大・保存・削除） */
 function GalleryThumb({
@@ -29,7 +30,7 @@ function GalleryThumb({
             if (blob) downloadBlob(blob, `illustration_${ill.id}.png`)
           }}
         >
-          ⬇
+          <Icon name="download" size={14} />
         </button>
         <button
           className="icon-btn small"
@@ -38,7 +39,7 @@ function GalleryThumb({
             if (await appConfirm({ message: 'この挿絵を削除しますか？', danger: true })) onRemove()
           }}
         >
-          🗑
+          <Icon name="trash-2" size={14} />
         </button>
       </div>
       {zoom && (
@@ -91,7 +92,7 @@ function BackgroundThumb({ imageId, sceneId, onRemove }: { imageId: string; scen
             if (blob) downloadBlob(blob, `background_${sceneId}.png`)
           }}
         >
-          ⬇
+          <Icon name="download" size={14} />
         </button>
         <button
           className="icon-btn small"
@@ -100,7 +101,7 @@ function BackgroundThumb({ imageId, sceneId, onRemove }: { imageId: string; scen
             if (await appConfirm({ message: 'この場面の背景を外しますか？', danger: true })) onRemove()
           }}
         >
-          🗑
+          <Icon name="trash-2" size={14} />
         </button>
       </div>
       {zoom && <ZoomOverlay url={url} onClose={() => setZoom(false)} />}

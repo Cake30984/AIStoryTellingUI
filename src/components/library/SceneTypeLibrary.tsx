@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { newSceneType, useStore } from '../../store'
 import type { SceneType } from '../../types'
 import SceneTypeEditor from './SceneTypeEditor'
+import { Icon } from '../icons'
 
 export default function SceneTypeLibrary() {
   const sceneTypes = useStore((s) => s.sceneTypes)
@@ -16,7 +17,7 @@ export default function SceneTypeLibrary() {
       <div className="library-head">
         <h2>🎬 シーンの種類</h2>
         <button className="btn primary" onClick={() => setEditing(newSceneType())}>
-          ＋ 新規タイプ
+          <Icon name="plus" size={14} /> 新規タイプ
         </button>
       </div>
 

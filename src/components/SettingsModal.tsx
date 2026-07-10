@@ -6,6 +6,7 @@ import { PROVIDER_PRESETS, newProvider } from '../lib/providers'
 import ImageProviderSettings from './ImageProviderSettings'
 import { appConfirm } from '../lib/dialogs'
 import type { Provider } from '../types'
+import { Icon } from './icons'
 
 /** System ページ（設定・データ管理）の中身。UI-5でモーダルからページ化するため抽出。ロジックは無変更 */
 export function SettingsBody() {
@@ -167,7 +168,7 @@ export function SettingsBody() {
                     title={providers.length <= 1 ? '最後の接続先は削除できません' : '削除'}
                     style={{ flexShrink: 0 }}
                   >
-                    🗑
+                    <Icon name="trash-2" size={14} />
                   </button>
                 </div>
 
@@ -206,7 +207,13 @@ export function SettingsBody() {
                   }}
                   disabled={modelsLoadingFor === p.id}
                 >
-                  {modelsLoadingFor === p.id ? '読込中…' : '🔄 モデル一覧を読込'}
+                  {modelsLoadingFor === p.id ? (
+                    '読込中…'
+                  ) : (
+                    <>
+                      <Icon name="refresh-cw" size={12} /> モデル一覧を読込
+                    </>
+                  )}
                 </button>
               </div>
             ))}
@@ -271,7 +278,7 @@ export function SettingsBody() {
                 style={{ width: '100%' }}
                 onClick={() => setShowAddForm(true)}
               >
-                ＋ 接続先を追加
+                <Icon name="plus" size={14} /> 接続先を追加
               </button>
             )}
           </div>
@@ -302,10 +309,10 @@ export function SettingsBody() {
             </label>
             <div style={{ display: 'flex', gap: 8 }}>
               <button className="btn" onClick={onExport}>
-                ⬇ エクスポート
+                <Icon name="download" size={14} /> エクスポート
               </button>
               <button className="btn" onClick={() => fileRef.current?.click()}>
-                ⬆ インポート
+                <Icon name="upload" size={14} /> インポート
               </button>
               <input
                 ref={fileRef}
@@ -336,7 +343,7 @@ export function SettingsBody() {
                 setNotice(`未使用の画像を ${removed} 件削除しました。`)
               }}
             >
-              🧹 未使用画像を整理
+              <Icon name="broom" size={14} /> 未使用画像を整理
             </button>
           </div>
 

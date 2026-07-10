@@ -2,12 +2,13 @@ import { useState } from 'react'
 import { areaOf, useStore, type View } from '../store'
 import { parseCardPng } from '../lib/cards'
 import { useCardDrop } from '../lib/useCardDrop'
+import { Icon, type IconName } from './icons'
 
-const LIBRARY_NAV: { key: View; label: string; icon: string }[] = [
-  { key: 'characters', label: 'キャラ', icon: '🎭' },
-  { key: 'worlds', label: '世界観', icon: '🌍' },
-  { key: 'personas', label: 'ペルソナ', icon: '🙂' },
-  { key: 'sceneTypes', label: '演出', icon: '🎬' },
+const LIBRARY_NAV: { key: View; label: string; icon: IconName }[] = [
+  { key: 'characters', label: 'キャラ', icon: 'users' },
+  { key: 'worlds', label: '世界観', icon: 'globe' },
+  { key: 'personas', label: 'ペルソナ', icon: 'smile' },
+  { key: 'sceneTypes', label: '演出', icon: 'clapperboard' },
 ]
 
 export default function Sidebar() {
@@ -66,8 +67,12 @@ export default function Sidebar() {
           </div>
 
           <div className="new-buttons">
-            <button onClick={() => createSession('roleplay')}>＋ ロールプレイ</button>
-            <button onClick={() => createSession('story')}>＋ 物語</button>
+            <button onClick={() => createSession('roleplay')}>
+              <Icon name="plus" size={14} /> ロールプレイ
+            </button>
+            <button onClick={() => createSession('story')}>
+              <Icon name="plus" size={14} /> 物語
+            </button>
           </div>
 
           <div className="session-list">
@@ -126,7 +131,7 @@ export default function Sidebar() {
               className={'nav-btn' + (view === n.key ? ' on' : '')}
               onClick={() => setView(n.key)}
             >
-              <span>{n.icon}</span>
+              <Icon name={n.icon} size={16} />
               {n.label}
             </button>
           ))}
