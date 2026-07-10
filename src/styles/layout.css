@@ -522,6 +522,35 @@
   background: var(--accent-soft);
 }
 
+/* ---------- ページ化エディタ（WorldEditor。UI-6） ---------- */
+.page-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.page-head h2 {
+  flex: 1;
+  margin: 0;
+  font-size: 20px;
+}
+.page-body {
+  display: flex;
+  align-items: flex-start;
+  gap: 28px;
+}
+.section-nav {
+  position: sticky;
+  top: 0;
+  flex-shrink: 0;
+  width: 168px;
+}
+.section-content {
+  flex: 1;
+  min-width: 0;
+  max-width: 720px;
+}
+
 .card-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
