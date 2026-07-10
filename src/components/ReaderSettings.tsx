@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useStore } from '../store'
 import MenuPopover from './MenuPopover'
 import { DEFAULT_UI, UI_LIMITS, type Session } from '../types'
@@ -7,14 +7,16 @@ interface Props {
   session: Session
 }
 
-/** ラベル＋数値入力（上段）＋スライダー（下段）の共通行。数値入力・スライダーどちらでも変更できる（F2） */
+/**
+ * ラベル＋数値入力（上段）＋スライダー（下段）の共通行。数値入力・スライダーどちらでも変更できる（F2）。
+ * 数値入力はフォーカス中はローカル文字列で保持し blur/Enter で確定＋クランプする（「18」等を途中で丸めず打てる）。
+ */
 function RsField({
   label,
   value,
   min,
   max,
   step,
-  decimals = 0,
   onChange,
 }: {
   label: string
@@ -22,10 +24,23 @@ function RsField({
   min: number
   max: number
   step: number
-  decimals?: number
   onChange: (v: number) => void
 }) {
   const clamp = (n: number) => Math.min(max, Math.max(min, n))
+  const [text, setText] = useState(String(value))
+  const [editing, setEditing] = useState(false)
+  // 編集中でなければ外部変更（スライダー・リセット）を数値入力へ反映
+  useEffect(() => {
+    if (!editing) setText(String(value))
+  }, [value, editing])
+
+  const commit = () => {
+    const n = Number(text)
+    if (Number.isFinite(n)) onChange(clamp(n))
+    else setText(String(value))
+    setEditing(false)
+  }
+
   return (
     <div className="rs-field">
       <div className="rs-field-top">
@@ -36,10 +51,12 @@ function RsField({
           min={min}
           max={max}
           step={step}
-          value={value}
-          onChange={(e) => {
-            const n = Number(e.target.value)
-            if (Number.isFinite(n)) onChange(clamp(n))
+          value={text}
+          onFocus={() => setEditing(true)}
+          onChange={(e) => setText(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
           }}
         />
       </div>
@@ -52,7 +69,6 @@ function RsField({
         onChange={(e) => onChange(clamp(Number(e.target.value)))}
         aria-label={label}
       />
-      <span className="sr-only">{value.toFixed(decimals)}</span>
     </div>
   )
 }
@@ -89,14 +105,12 @@ export default function ReaderSettings({ session }: Props) {
               label="文字サイズ"
               value={ui.fontSize}
               {...UI_LIMITS.fontSize}
-              decimals={1}
               onChange={(fontSize) => setUiPrefs({ fontSize })}
             />
             <RsField
               label="行間"
               value={ui.lineHeight}
               {...UI_LIMITS.lineHeight}
-              decimals={2}
               onChange={(lineHeight) => setUiPrefs({ lineHeight })}
             />
             <RsField
@@ -128,14 +142,12 @@ export default function ReaderSettings({ session }: Props) {
               label="背景の濃さ"
               value={ui.stageBgOpacity}
               {...UI_LIMITS.stageBgOpacity}
-              decimals={2}
               onChange={(stageBgOpacity) => setUiPrefs({ stageBgOpacity })}
             />
             <RsField
               label="立ち絵の濃さ"
               value={ui.stageSpriteOpacity}
               {...UI_LIMITS.stageSpriteOpacity}
-              decimals={2}
               onChange={(stageSpriteOpacity) => setUiPrefs({ stageSpriteOpacity })}
             />
 
