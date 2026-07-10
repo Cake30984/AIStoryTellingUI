@@ -4,13 +4,7 @@ import { getImage, useImageUrl } from '../lib/imageStore'
 import { downloadBlob } from '../lib/io'
 import { appConfirm } from '../lib/dialogs'
 import type { Scene, SceneIllustration, Session } from '../types'
-import ModalShell from './ModalShell'
 import ZoomOverlay from './ZoomOverlay'
-
-interface Props {
-  session: Session
-  onClose: () => void
-}
 
 /** ギャラリー内の挿絵1枚（サムネイル→クリックで拡大・保存・削除） */
 function GalleryThumb({
@@ -114,8 +108,8 @@ function BackgroundThumb({ imageId, sceneId, onRemove }: { imageId: string; scen
   )
 }
 
-/** シーンごとに挿絵・背景をグリッド表示するギャラリー（V3・V5b） */
-export default function GalleryModal({ session, onClose }: Props) {
+/** シーンごとに挿絵・背景をグリッド表示するギャラリー本体（V3・V5b。UI-3 でコンテキストドックへ移設・モーダル版廃止） */
+export function GalleryBody({ session }: { session: Session }) {
   const { removeIllustration, removeSceneBackground } = useStore()
 
   const scenesWithImages = session.scenes.filter(
@@ -124,49 +118,33 @@ export default function GalleryModal({ session, onClose }: Props) {
 
   const sceneHeading = (sc: Scene) => [sc.timeLabel, sc.title].filter(Boolean).join('｜') || 'シーン'
 
-  return (
-    <ModalShell
-      title="🖼 画像ギャラリー"
-      onClose={onClose}
-      wide
-      footer={
-        <>
-          <div style={{ flex: 1 }} />
-          <button className="btn primary" onClick={onClose}>
-            閉じる
-          </button>
-        </>
-      }
-    >
-          {scenesWithImages.length === 0 ? (
-            <p className="desc">まだ画像がありません。</p>
-          ) : (
-            <div className="log-list">
-              {scenesWithImages.map((sc) => (
-                <div className="log-item" key={sc.id}>
-                  <div className="log-head">
-                    <span className="log-title">{sceneHeading(sc)}</span>
-                  </div>
-                  <div className="job-thumbs">
-                    {sc.backgroundImageId && (
-                      <BackgroundThumb
-                        imageId={sc.backgroundImageId}
-                        sceneId={sc.id}
-                        onRemove={() => removeSceneBackground(session.id, sc.id)}
-                      />
-                    )}
-                    {(sc.illustrations ?? []).map((ill) => (
-                      <GalleryThumb
-                        key={ill.id}
-                        ill={ill}
-                        onRemove={() => removeIllustration(session.id, sc.id, ill.id)}
-                      />
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-    </ModalShell>
+  return scenesWithImages.length === 0 ? (
+    <p className="desc">まだ画像がありません。</p>
+  ) : (
+    <div className="log-list">
+      {scenesWithImages.map((sc) => (
+        <div className="log-item" key={sc.id}>
+          <div className="log-head">
+            <span className="log-title">{sceneHeading(sc)}</span>
+          </div>
+          <div className="job-thumbs">
+            {sc.backgroundImageId && (
+              <BackgroundThumb
+                imageId={sc.backgroundImageId}
+                sceneId={sc.id}
+                onRemove={() => removeSceneBackground(session.id, sc.id)}
+              />
+            )}
+            {(sc.illustrations ?? []).map((ill) => (
+              <GalleryThumb
+                key={ill.id}
+                ill={ill}
+                onRemove={() => removeIllustration(session.id, sc.id, ill.id)}
+              />
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
   )
 }
