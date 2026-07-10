@@ -564,6 +564,16 @@ export interface BranchTree {
   nodes: BranchNode[]
 }
 
+export type DockTab = 'status' | 'discovery' | 'gallery' | 'branch' | 'jobs'
+
+/** 右コンテキストドック等の永続 UI 状態（UI-3 で導入。UI-4 でリーダー設定等を追加予定） */
+export interface UiPrefs {
+  /** null = ドック閉 */
+  dockTab: DockTab | null
+}
+
+export const DEFAULT_UI: UiPrefs = { dockTab: null }
+
 /** エクスポート/インポート用のデータ束 */
 export interface ExportBundle {
   type: 'ai-storytelling-studio'

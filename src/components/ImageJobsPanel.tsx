@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { useStore } from '../store'
 import { useBlobUrl } from '../lib/imageJobs'
-import ModalShell from './ModalShell'
 import ZoomOverlay from './ZoomOverlay'
 
 /** 選択待ちの生成候補1枚（クリックで拡大・採用） */
@@ -20,8 +19,8 @@ function Candidate({ blob, busy, onUse }: { blob: Blob; busy: boolean; onUse: ()
   )
 }
 
-/** 進行中・選択待ちの画像生成ジョブ一覧（モーダルを閉じても継続するジョブをここから採用/破棄する） */
-export default function ImageJobsPanel({ onClose }: { onClose: () => void }) {
+/** 進行中・選択待ちの画像生成ジョブ一覧本体（ドックを閉じても継続するジョブをここから採用/破棄する。UI-3でドックへ移設・モーダル版廃止） */
+export function ImageJobsBody() {
   const { imageJobs, cancelImageJob, dismissImageJob, applyImageJobResult } = useStore()
   const [busyId, setBusyId] = useState<string | null>(null)
   const [error, setError] = useState('')
@@ -39,66 +38,54 @@ export default function ImageJobsPanel({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <ModalShell
-      title="画像生成ジョブ"
-      onClose={onClose}
-      wide
-      footer={
-        <>
-          <div style={{ flex: 1 }} />
-          <button className="btn" onClick={onClose}>
-            閉じる
-          </button>
-        </>
-      }
-    >
-          {imageJobs.length === 0 ? (
-            <p className="desc">実行中のジョブはありません。</p>
-          ) : (
-            imageJobs.map((job) => (
-              <div className="field" key={job.id}>
-                <label>{job.label}</label>
-                {job.status === 'running' && (
-                  <div className="desc" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    生成中…（{job.results.length}/{job.count} 枚完了）
-                    <button className="btn" onClick={() => cancelImageJob(job.id)}>
-                      ✕ キャンセル
-                    </button>
-                  </div>
-                )}
-                {job.status === 'selecting' && (
-                  <>
-                    <div className="job-thumbs">
-                      {job.results.map((blob, i) => (
-                        <Candidate key={i} blob={blob} busy={busyId === job.id} onUse={() => apply(job.id, i)} />
-                      ))}
-                    </div>
-                    {job.error && <div className="desc">一部の生成に失敗しました: {job.error}</div>}
-                    <button className="btn" style={{ marginTop: 6 }} onClick={() => dismissImageJob(job.id)}>
-                      🗑 破棄
-                    </button>
-                  </>
-                )}
-                {job.status === 'error' && (
-                  <div className="desc" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    生成に失敗しました: {job.error}
-                    <button className="btn" onClick={() => dismissImageJob(job.id)}>
-                      🗑 閉じる
-                    </button>
-                  </div>
-                )}
-                {job.status === 'canceled' && (
-                  <div className="desc" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    キャンセルされました。
-                    <button className="btn" onClick={() => dismissImageJob(job.id)}>
-                      🗑 閉じる
-                    </button>
-                  </div>
-                )}
+    <>
+      {imageJobs.length === 0 ? (
+        <p className="desc">実行中のジョブはありません。</p>
+      ) : (
+        imageJobs.map((job) => (
+          <div className="field" key={job.id}>
+            <label>{job.label}</label>
+            {job.status === 'running' && (
+              <div className="desc" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                生成中…（{job.results.length}/{job.count} 枚完了）
+                <button className="btn" onClick={() => cancelImageJob(job.id)}>
+                  ✕ キャンセル
+                </button>
               </div>
-            ))
-          )}
-          {error && <p className="notice">{error}</p>}
-    </ModalShell>
+            )}
+            {job.status === 'selecting' && (
+              <>
+                <div className="job-thumbs">
+                  {job.results.map((blob, i) => (
+                    <Candidate key={i} blob={blob} busy={busyId === job.id} onUse={() => apply(job.id, i)} />
+                  ))}
+                </div>
+                {job.error && <div className="desc">一部の生成に失敗しました: {job.error}</div>}
+                <button className="btn" style={{ marginTop: 6 }} onClick={() => dismissImageJob(job.id)}>
+                  🗑 破棄
+                </button>
+              </>
+            )}
+            {job.status === 'error' && (
+              <div className="desc" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                生成に失敗しました: {job.error}
+                <button className="btn" onClick={() => dismissImageJob(job.id)}>
+                  🗑 閉じる
+                </button>
+              </div>
+            )}
+            {job.status === 'canceled' && (
+              <div className="desc" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                キャンセルされました。
+                <button className="btn" onClick={() => dismissImageJob(job.id)}>
+                  🗑 閉じる
+                </button>
+              </div>
+            )}
+          </div>
+        ))
+      )}
+      {error && <p className="notice">{error}</p>}
+    </>
   )
 }
