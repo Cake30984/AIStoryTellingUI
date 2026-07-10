@@ -177,6 +177,10 @@
 }
 
 .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   padding: 9px 18px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
@@ -335,6 +339,9 @@
   gap: 3px;
 }
 .seg button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   background: transparent;
   border: none;
   color: var(--text-dim);
@@ -822,4 +829,75 @@
 }
 .sprite-slot-actions .btn {
   width: 100%;
+}
+
+/* ---------- コマンドパレット（Ctrl+K。UI-7） ---------- */
+.cmdk-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 15vh;
+  z-index: var(--z-palette);
+  animation: fade 0.15s ease;
+}
+.cmdk-box {
+  width: 560px;
+  max-width: calc(100vw - 48px);
+  max-height: 60vh;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.cmdk-input {
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  padding: 16px 18px;
+  font-size: 15px;
+  outline: none;
+  border-radius: 0;
+}
+.cmdk-list {
+  overflow-y: auto;
+  padding: 6px;
+}
+.cmdk-empty {
+  padding: 14px 12px;
+  color: var(--text-faint);
+  font-size: 13px;
+}
+.cmdk-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--text);
+}
+.cmdk-item-label {
+  flex: 1;
+  font-size: 13.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cmdk-group {
+  font-size: 11.5px;
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+.cmdk-item.active {
+  background: var(--bg-elev2);
+}
+.cmdk-item.active .cmdk-group {
+  color: var(--text-dim);
 }
