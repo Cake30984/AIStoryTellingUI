@@ -557,7 +557,7 @@ export default function ChatPanel({ session }: Props) {
                   <div className="chat-hint">
                     {!isConfigured ? (
                       <p>
-                        右上の ⚙ から
+                        右上の ⋯ メニュー →「セッション設定」から
                         {session.mode === 'roleplay' ? '参加キャラ' : '物語の前提'}を設定しましょう。
                       </p>
                     ) : session.mode === 'roleplay' ? (
@@ -771,17 +771,20 @@ export default function ChatPanel({ session }: Props) {
                   </button>
                 ) : (
                   <button className="send-btn" onClick={submit} disabled={!text.trim()} title="送信">
-                    ↑
+                    <Icon name="arrow-up" size={16} />
                   </button>
                 )}
               </div>
-              <div className="hint">
-                {groupMode
-                  ? '「次に話す」で発言者を選べます。登場キャラはシーン編集で絞れます。'
-                  : session.mode === 'story'
-                    ? '入力ありで介入、空のまま「続ける」で自動進行します。'
-                    : 'キャラになりきって応答します。設定は右上の ⚙ から。'}
-              </div>
+              {/* ヒントは会話開始前のみ（常時表示だと本文を1行ぶん間延びさせる。F0/A2） */}
+              {session.messages.length === 0 && (
+                <div className="hint">
+                  {groupMode
+                    ? '「次に話す」で発言者を選べます。登場キャラはシーン編集で絞れます。'
+                    : session.mode === 'story'
+                      ? '入力ありで介入、空のまま「続ける」で自動進行します。'
+                      : 'キャラになりきって応答します。設定は右上の ⋯ メニューから。'}
+                </div>
+              )}
             </div>
           </div>
         </div>

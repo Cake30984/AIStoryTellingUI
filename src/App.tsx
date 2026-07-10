@@ -126,7 +126,12 @@ export default function App() {
 
   return (
     <div
-      className={'app' + (ui.immersive ? ' immersive' : '') + (view === 'system' ? ' no-side' : '')}
+      className={
+        'app' +
+        // 没入は Play（セッション）ビューでのみ有効。Library/System で効くとレールごと消えて戻れなくなる（F0/A6）
+        (ui.immersive && view === 'sessions' ? ' immersive' : '') +
+        (view === 'system' ? ' no-side' : '')
+      }
     >
       <Rail />
       {view !== 'system' && <Sidebar />}
@@ -141,10 +146,12 @@ export default function App() {
         <SceneTypeLibrary />
       ) : view === 'system' ? (
         <div className="library">
-          <div className="library-head">
-            <h2>⚙ 設定・データ管理</h2>
+          <div className="page-narrow">
+            <div className="library-head">
+              <h2>⚙ 設定・データ管理</h2>
+            </div>
+            <SettingsBody />
           </div>
-          <SettingsBody />
         </div>
       ) : active ? (
         <ChatPanel key={active.id} session={active} />

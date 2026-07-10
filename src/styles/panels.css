@@ -164,6 +164,11 @@
 .field select:focus {
   border-color: var(--accent);
 }
+/* チェックボックス・ラジオまで width:100% が効くとラベルを押し出して崩れる（F0/R10/R12/A1） */
+.field input[type='checkbox'],
+.field input[type='radio'] {
+  width: auto;
+}
 .field textarea {
   resize: vertical;
   min-height: 70px;
@@ -361,6 +366,7 @@
 }
 .range-row input[type='range'] {
   flex: 1;
+  min-width: 0; /* range の固有幅で flex がはみ出さないように（F0/R6） */
   accent-color: var(--accent);
 }
 .range-row .val {

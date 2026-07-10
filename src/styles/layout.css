@@ -391,8 +391,10 @@
 }
 
 /* ---------- 没入モード（レール・サイドバー・ドックを隠し topbar をホバー表示に。UI-4・UI-5でレール分の列を追加） ---------- */
+/* display:none のレール・サイドバーは grid item を生成しないため、単一カラム 1fr で本文を全幅にする
+   （0 0 1fr にすると唯一残る .main が幅0の第1カラムに自動配置されて潰れる＝F0/R7 の崩壊バグ） */
 .app.immersive {
-  grid-template-columns: 0 0 1fr;
+  grid-template-columns: 1fr;
 }
 .immersive .rail {
   display: none;
@@ -502,6 +504,11 @@
 .library {
   overflow-y: auto;
   padding: 28px 32px;
+}
+/* System ページ等、全幅だと間延びする内容を中央寄せでまとめる（F0/R11） */
+.page-narrow {
+  max-width: 720px;
+  margin: 0 auto;
 }
 .library-head {
   display: flex;

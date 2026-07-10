@@ -31,6 +31,8 @@ export default function Rail() {
       >
         <Icon name="library-big" size={20} />
       </button>
+      {/* 設定は最下段の定位置に（空状態の案内「レール最下段 ⚙」と一致させる。F0/A4） */}
+      <div style={{ flex: 1 }} />
       <button
         className={'rail-btn' + (area === 'system' ? ' on' : '')}
         title="設定・データ管理"

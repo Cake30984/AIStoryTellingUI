@@ -332,9 +332,10 @@ export function SettingsBody() {
 
           {/* 画像の整理 */}
           <div className="field">
-            <label>アバター画像の整理</label>
+            <label>未使用画像の整理</label>
             <div className="desc">
-              キャラ・ペルソナのどこからも参照されなくなった画像をブラウザ内のストレージから削除します。
+              どのキャラ・セッション・分岐チェックポイントからも参照されなくなった画像（アバター・立ち絵・挿絵・背景）を
+              ストレージから完全に削除し、容量を空けます。使用中の画像が消えることはありません。
             </div>
             <button
               className="btn"
@@ -343,7 +344,7 @@ export function SettingsBody() {
                 setNotice(`未使用の画像を ${removed} 件削除しました。`)
               }}
             >
-              <Icon name="broom" size={14} /> 未使用画像を整理
+              <Icon name="broom" size={14} /> 未使用画像を削除
             </button>
           </div>
 
