@@ -5,6 +5,7 @@ import PersonaEditor from './PersonaEditor'
 import EntityAvatar from '../EntityAvatar'
 import { parseCardPng, attachCardImage } from '../../lib/cards'
 import { useCardDrop } from '../../lib/useCardDrop'
+import { Icon } from '../icons'
 
 export default function PersonaLibrary() {
   const { personas, importPersonaCard } = useStore()
@@ -38,7 +39,7 @@ export default function PersonaLibrary() {
       <div className="library-head">
         <h2>🙂 ペルソナ</h2>
         <button className="btn primary" onClick={() => setEditing(newPersona())}>
-          ＋ 新規ペルソナ
+          <Icon name="plus" size={14} /> 新規ペルソナ
         </button>
       </div>
 

@@ -28,6 +28,20 @@ export type IconName =
   | 'message-circle'
   | 'library-big'
   | 'archive'
+  | 'plus'
+  | 'download'
+  | 'upload'
+  | 'square'
+  | 'star'
+  | 'corner-up-left'
+  | 'scissors'
+  | 'users'
+  | 'globe'
+  | 'smile'
+  | 'clapperboard'
+  | 'broom'
+  | 'arrow-up'
+  | 'maximize'
 
 const PATHS: Record<IconName, ReactNode> = {
   'more-horizontal': (
@@ -173,23 +187,119 @@ const PATHS: Record<IconName, ReactNode> = {
       <line x1="10" y1="12" x2="14" y2="12" />
     </>
   ),
+  plus: (
+    <>
+      <line x1="12" y1="5" x2="12" y2="19" />
+      <line x1="5" y1="12" x2="19" y2="12" />
+    </>
+  ),
+  download: (
+    <>
+      <path d="M12 3v12" />
+      <path d="M7 10l5 5 5-5" />
+      <path d="M5 21h14" />
+    </>
+  ),
+  upload: (
+    <>
+      <path d="M12 15V3" />
+      <path d="M7 8l5-5 5 5" />
+      <path d="M5 21h14" />
+    </>
+  ),
+  square: <rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" stroke="none" />,
+  star: (
+    <path d="M12 2.5l2.9 6.6 7.1.7-5.4 4.9 1.6 7-6.2-3.7-6.2 3.7 1.6-7-5.4-4.9 7.1-.7z" />
+  ),
+  'corner-up-left': (
+    <>
+      <path d="M9 14 4 9l5-5" />
+      <path d="M20 20v-7a4 4 0 0 0-4-4H4" />
+    </>
+  ),
+  scissors: (
+    <>
+      <circle cx="6" cy="6" r="3" />
+      <circle cx="6" cy="18" r="3" />
+      <line x1="8.5" y1="8.5" x2="19" y2="19" />
+      <line x1="8.5" y1="15.5" x2="19" y2="5" />
+    </>
+  ),
+  users: (
+    <>
+      <circle cx="9" cy="8" r="3.2" />
+      <path d="M4 20c0-3 2.5-5 5-5s5 2 5 5" />
+      <circle cx="17" cy="9" r="2.6" />
+      <path d="M15.2 20c.2-2.2 1.6-3.9 3.6-4.4" />
+    </>
+  ),
+  globe: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12h18" />
+      <path d="M12 3c3 3 3 15 0 18" />
+      <path d="M12 3c-3 3-3 15 0 18" />
+    </>
+  ),
+  smile: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M8 14s1.5 2 4 2 4-2 4-2" />
+      <circle cx="9" cy="9" r="1" fill="currentColor" stroke="none" />
+      <circle cx="15" cy="9" r="1" fill="currentColor" stroke="none" />
+    </>
+  ),
+  clapperboard: (
+    <>
+      <path d="M3 8l1.3-3.6h3.9L7 8z" />
+      <path d="M7 8l1.3-3.6h3.9L11 8z" />
+      <path d="M11 8l1.3-3.6h3.9L15 8z" />
+      <path d="M15 8l1.3-3.6H20L18.7 8z" />
+      <rect x="3" y="8" width="18" height="12" rx="1" />
+    </>
+  ),
+  broom: (
+    <>
+      <path d="M20 4 10.5 13.5" />
+      <path d="M10.5 13.5c-1.5.7-2.2 2.6-1.5 4.5" />
+      <path d="M10.5 13.5c-3-.3-5.3.6-6.5 3" />
+      <path d="M4 20l2.5-3" />
+    </>
+  ),
+  'arrow-up': (
+    <>
+      <path d="M12 19V5" />
+      <path d="M6 11l6-6 6 6" />
+    </>
+  ),
+  maximize: (
+    <>
+      <path d="M8 3H5a2 2 0 0 0-2 2v3" />
+      <path d="M16 3h3a2 2 0 0 1 2 2v3" />
+      <path d="M8 21H5a2 2 0 0 1-2-2v-3" />
+      <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
+    </>
+  ),
 }
 
 export function Icon({
   name,
   size = 16,
   className,
+  filled,
 }: {
   name: IconName
   size?: number
   className?: string
+  /** true でアウトラインでなく塗りつぶし表示にする（例: ☆→★のしおりトグル） */
+  filled?: boolean
 }) {
   return (
     <svg
       width={size}
       height={size}
       viewBox="0 0 24 24"
-      fill="none"
+      fill={filled ? 'currentColor' : 'none'}
       stroke="currentColor"
       strokeWidth="2"
       strokeLinecap="round"

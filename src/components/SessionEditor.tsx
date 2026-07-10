@@ -7,6 +7,7 @@ import ModelPicker from './ModelPicker'
 import EntityAvatar from './EntityAvatar'
 import SessionCardModal from './SessionCardModal'
 import ModalShell from './ModalShell'
+import { Icon } from './icons'
 
 type PickerTarget = 'review' | 'choices' | 'bulk'
 type Tab = 'basic' | 'progress' | 'model' | 'output'
@@ -91,7 +92,7 @@ export default function SessionEditor({ session, onClose }: Props) {
       footer={
         <>
           <button className="btn" onClick={() => setShowCardModal(true)} title="会話・状態・素材・画像を1枚のPNGに埋め込んで共有">
-            🖼 セッションをカード化
+            <Icon name="credit-card" size={14} /> セッションをカード化
           </button>
           <div style={{ flex: 1 }} />
           <button className="btn" onClick={onClose}>

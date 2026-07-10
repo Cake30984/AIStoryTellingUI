@@ -5,6 +5,7 @@ import CharacterEditor from './CharacterEditor'
 import EntityAvatar from '../EntityAvatar'
 import { parseCardPng, attachCardImage } from '../../lib/cards'
 import { useCardDrop } from '../../lib/useCardDrop'
+import { Icon } from '../icons'
 
 export default function CharacterLibrary() {
   const { characters, importCharacterCard } = useStore()
@@ -42,7 +43,7 @@ export default function CharacterLibrary() {
       <div className="library-head">
         <h2>🎭 キャラクター</h2>
         <button className="btn primary" onClick={() => setEditing(newCharacter())}>
-          ＋ 新規キャラ
+          <Icon name="plus" size={14} /> 新規キャラ
         </button>
       </div>
 

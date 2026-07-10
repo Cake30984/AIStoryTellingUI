@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useStore } from '../store'
 import { useBlobUrl } from '../lib/imageJobs'
 import ZoomOverlay from './ZoomOverlay'
+import { Icon } from './icons'
 
 /** 選択待ちの生成候補1枚（クリックで拡大・採用） */
 function Candidate({ blob, busy, onUse }: { blob: Blob; busy: boolean; onUse: () => void }) {
@@ -12,7 +13,7 @@ function Candidate({ blob, busy, onUse }: { blob: Blob; busy: boolean; onUse: ()
     <div className="job-thumb">
       <img src={url} alt="生成候補" onClick={() => setZoom(true)} />
       <button className="btn primary" style={{ fontSize: 12, padding: '4px 10px' }} onClick={onUse} disabled={busy}>
-        ✔ 採用
+        <Icon name="check" size={12} /> 採用
       </button>
       {zoom && <ZoomOverlay url={url} onClose={() => setZoom(false)} />}
     </div>
@@ -49,7 +50,7 @@ export function ImageJobsBody() {
               <div className="desc" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 生成中…（{job.results.length}/{job.count} 枚完了）
                 <button className="btn" onClick={() => cancelImageJob(job.id)}>
-                  ✕ キャンセル
+                  <Icon name="x" size={12} /> キャンセル
                 </button>
               </div>
             )}
@@ -62,7 +63,7 @@ export function ImageJobsBody() {
                 </div>
                 {job.error && <div className="desc">一部の生成に失敗しました: {job.error}</div>}
                 <button className="btn" style={{ marginTop: 6 }} onClick={() => dismissImageJob(job.id)}>
-                  🗑 破棄
+                  <Icon name="trash-2" size={12} /> 破棄
                 </button>
               </>
             )}
@@ -70,7 +71,7 @@ export function ImageJobsBody() {
               <div className="desc" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 生成に失敗しました: {job.error}
                 <button className="btn" onClick={() => dismissImageJob(job.id)}>
-                  🗑 閉じる
+                  <Icon name="trash-2" size={12} /> 閉じる
                 </button>
               </div>
             )}
@@ -78,7 +79,7 @@ export function ImageJobsBody() {
               <div className="desc" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 キャンセルされました。
                 <button className="btn" onClick={() => dismissImageJob(job.id)}>
-                  🗑 閉じる
+                  <Icon name="trash-2" size={12} /> 閉じる
                 </button>
               </div>
             )}
