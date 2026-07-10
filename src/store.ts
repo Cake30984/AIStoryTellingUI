@@ -30,9 +30,10 @@ import type {
   SessionMode,
   SessionState,
   StatDef,
+  UiPrefs,
   World,
 } from './types'
-import { EMOTIONS } from './types'
+import { DEFAULT_UI, EMOTIONS } from './types'
 import { fetchModels, streamChat } from './lib/openrouter'
 import { base64ToBlob, blobToBase64, gcImages, getImage, putImage, putImageAs } from './lib/imageStore'
 import { checkpointStore, PERSIST_KEY, stateStorage } from './lib/platform'
@@ -554,6 +555,8 @@ interface AppState {
   activeId: string | null
   /** セッションごとの分岐ツリー（軽量メタデータのみ。実体は checkpointStore。C1） */
   branchTrees: Record<string, BranchTree>
+  /** 右コンテキストドック等の永続 UI 状態（UI-3） */
+  ui: UiPrefs
 
   // ランタイム
   view: View
@@ -579,6 +582,8 @@ interface AppState {
   setView: (v: View) => void
   clearError: () => void
   dismissNewAchievements: () => void
+  /** 右コンテキストドック等の UI 設定を部分更新する（UI-3） */
+  setUiPrefs: (patch: Partial<UiPrefs>) => void
 
   // 接続先（プロバイダ）
   upsertProvider: (p: Provider) => void
@@ -1364,6 +1369,7 @@ export const useStore = create<AppState>()(
         sessions: [],
         activeId: null,
         branchTrees: {},
+        ui: DEFAULT_UI,
 
         view: 'sessions',
         modelsByProvider: {},
@@ -1382,6 +1388,7 @@ export const useStore = create<AppState>()(
         setView: (view) => set({ view }),
         clearError: () => set({ error: null }),
         dismissNewAchievements: () => set({ newlyUnlockedAchievements: [] }),
+        setUiPrefs: (patch) => set((s) => ({ ui: { ...s.ui, ...patch } })),
 
         upsertProvider: (p) =>
           set((st) => ({
@@ -3118,12 +3125,14 @@ export const useStore = create<AppState>()(
         sessions: st.sessions,
         activeId: st.activeId,
         branchTrees: st.branchTrees,
+        ui: st.ui,
       }),
       // 生成中にタブを閉じた/リロードした際の残骸を起動時に掃除する：
       // 空の pending メッセージは削除、内容があるものは途中で切れた可能性が高いため
       // truncated を立てて「⤵ 続きを生成」で復帰できるようにする。
       merge: (persisted, current) => {
-        const merged = { ...current, ...((persisted as Partial<AppState>) ?? {}) }
+        const p = (persisted as Partial<AppState>) ?? {}
+        const merged = { ...current, ...p, ui: { ...current.ui, ...(p.ui ?? {}) } }
         merged.sessions = (merged.sessions ?? []).map((s) => {
           if (!s.messages.some((m) => m.pending)) return s
           return {

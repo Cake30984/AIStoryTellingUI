@@ -3,12 +3,6 @@ import { useStore } from '../store'
 import type { BranchNode, BranchTree, Session } from '../types'
 import { useImageUrl } from '../lib/imageStore'
 import { appConfirm, appPrompt } from '../lib/dialogs'
-import ModalShell from './ModalShell'
-
-interface Props {
-  session: Session
-  onClose: () => void
-}
 
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`
@@ -274,8 +268,8 @@ function Chain({
   return <>{rows}</>
 }
 
-/** 分岐ツリーモーダル（C2）。シーン見出し＋action行の縦リスト・分岐展開・復元・剪定 */
-export default function BranchTreeModal({ session, onClose }: Props) {
+/** 分岐ツリー本体（C2。シーン見出し＋action行の縦リスト・分岐展開・復元・剪定。UI-3でドックへ移設・モーダル版廃止） */
+export function BranchTreeBody({ session }: { session: Session }) {
   const {
     branchTrees,
     restoreCheckpoint,
@@ -311,7 +305,6 @@ export default function BranchTreeModal({ session, onClose }: Props) {
     setBusyAction(true)
     try {
       await restoreCheckpoint(session.id, nodeId)
-      onClose()
     } catch (e) {
       useStore.setState({ error: (e as Error).message })
     } finally {
@@ -382,95 +375,83 @@ export default function BranchTreeModal({ session, onClose }: Props) {
   }
 
   return (
-    <ModalShell
-      title="🕘 分岐ツリー"
-      onClose={onClose}
-      wide
-      footer={
-        <>
-          {tree && (
-            <span className="desc">
-              合計 {tree.nodes.length} 件・{formatBytes(totalBytes)}
-            </span>
-          )}
-          <div style={{ flex: 1 }} />
-          {tree && pruneCount > 0 && (
-            <button className="btn danger" disabled={busy} onClick={doPrune}>
-              ✂ この分岐だけ残す
+    <>
+      {tree && (
+        <div className="dock-toolbar">
+          <div className="seg">
+            <button className={tab === 'tree' ? 'on' : ''} onClick={() => setTab('tree')}>
+              ツリー
             </button>
-          )}
-          <button className="btn primary" onClick={onClose}>
-            閉じる
-          </button>
-        </>
-      }
-    >
-          {tree && (
-            <div className="seg" style={{ marginBottom: 14 }}>
-              <button className={tab === 'tree' ? 'on' : ''} onClick={() => setTab('tree')}>
-                ツリー
-              </button>
-              <button className={tab === 'starred' ? 'on' : ''} onClick={() => setTab('starred')}>
-                ★ しおり{starred.length > 0 ? `（${starred.length}）` : ''}
-              </button>
-            </div>
-          )}
-          {!tree || !root ? (
-            <p className="desc">まだ記録がありません。物語を進めると、ここに時点が記録されていきます。</p>
-          ) : tab === 'starred' ? (
-            starred.length === 0 ? (
-              <p className="desc">まだしおりがありません。各ノードの ☆ から名前を付けて登録できます。</p>
-            ) : (
-              <div className="star-list">
-                {starred.map((n) => (
-                  <div className="star-row" key={n.id}>
-                    <StarThumb imageId={n.star?.thumbImageId} size={56} />
-                    <div className="star-row-info">
-                      <div className="star-row-name">★ {n.star?.name}</div>
-                      <div className="desc">
-                        {n.kind === 'scene' ? `📖 ${n.label}` : n.label}
-                        {n.timeLabel ? `（${n.timeLabel}）` : ''}
-                      </div>
-                      <div className="branch-time">{new Date(n.createdAt).toLocaleString()}</div>
-                    </div>
-                    {tree.currentId === n.id && <span className="badge">▶ いまここ</span>}
-                    <button
-                      className="btn"
-                      disabled={busy || tree.currentId === n.id}
-                      onClick={() => doRestore(n.id)}
-                    >
-                      ⏪ ここに戻る
-                    </button>
-                    <button
-                      className="icon-btn small"
-                      disabled={busy}
-                      title="しおりを外す"
-                      onClick={() => doRemoveStar(n)}
-                    >
-                      ✕
-                    </button>
+            <button className={tab === 'starred' ? 'on' : ''} onClick={() => setTab('starred')}>
+              ★ しおり{starred.length > 0 ? `（${starred.length}）` : ''}
+            </button>
+          </div>
+          <span className="desc">
+            合計 {tree.nodes.length} 件・{formatBytes(totalBytes)}
+          </span>
+        </div>
+      )}
+      {tree && pruneCount > 0 && (
+        <button className="btn danger" style={{ marginBottom: 10 }} disabled={busy} onClick={doPrune}>
+          ✂ この分岐だけ残す
+        </button>
+      )}
+      {!tree || !root ? (
+        <p className="desc">まだ記録がありません。物語を進めると、ここに時点が記録されていきます。</p>
+      ) : tab === 'starred' ? (
+        starred.length === 0 ? (
+          <p className="desc">まだしおりがありません。各ノードの ☆ から名前を付けて登録できます。</p>
+        ) : (
+          <div className="star-list">
+            {starred.map((n) => (
+              <div className="star-row" key={n.id}>
+                <StarThumb imageId={n.star?.thumbImageId} size={56} />
+                <div className="star-row-info">
+                  <div className="star-row-name">★ {n.star?.name}</div>
+                  <div className="desc">
+                    {n.kind === 'scene' ? `📖 ${n.label}` : n.label}
+                    {n.timeLabel ? `（${n.timeLabel}）` : ''}
                   </div>
-                ))}
+                  <div className="branch-time">{new Date(n.createdAt).toLocaleString()}</div>
+                </div>
+                {tree.currentId === n.id && <span className="badge">▶ いまここ</span>}
+                <button
+                  className="btn"
+                  disabled={busy || tree.currentId === n.id}
+                  onClick={() => doRestore(n.id)}
+                >
+                  ⏪ ここに戻る
+                </button>
+                <button
+                  className="icon-btn small"
+                  disabled={busy}
+                  title="しおりを外す"
+                  onClick={() => doRemoveStar(n)}
+                >
+                  ✕
+                </button>
               </div>
-            )
-          ) : (
-            <div className="branch-list">
-              <Chain
-                tree={tree}
-                startId={root.id}
-                pathIds={pathIds}
-                currentId={tree.currentId}
-                expanded={expanded}
-                toggle={toggle}
-                busy={busy}
-                onRestore={doRestore}
-                onDeleteSubtree={doDeleteSubtree}
-                onSetStar={doSetStar}
-                onRemoveStar={doRemoveStar}
-                depth={0}
-              />
-            </div>
-          )}
-    </ModalShell>
+            ))}
+          </div>
+        )
+      ) : (
+        <div className="branch-list">
+          <Chain
+            tree={tree}
+            startId={root.id}
+            pathIds={pathIds}
+            currentId={tree.currentId}
+            expanded={expanded}
+            toggle={toggle}
+            busy={busy}
+            onRestore={doRestore}
+            onDeleteSubtree={doDeleteSubtree}
+            onSetStar={doSetStar}
+            onRemoveStar={doRemoveStar}
+            depth={0}
+          />
+        </div>
+      )}
+    </>
   )
 }
