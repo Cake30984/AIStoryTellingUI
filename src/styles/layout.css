@@ -1,9 +1,43 @@
 /* ---------- レイアウト ---------- */
 .app {
   display: grid;
-  grid-template-columns: 280px 1fr;
+  grid-template-columns: 48px 240px 1fr;
   height: 100%;
   overflow: hidden;
+}
+/* System ページ表示中は文脈サイドバー列を潰す（UI-5） */
+.app.no-side {
+  grid-template-columns: 48px 1fr;
+}
+
+/* ---------- レール（Play/Library/System切替。UI-5） ---------- */
+.rail {
+  background: var(--bg-elev);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 14px 0;
+  gap: 8px;
+}
+.rail-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-dim);
+  display: grid;
+  place-items: center;
+}
+.rail-btn:hover {
+  color: var(--text);
+  border-color: var(--border);
+}
+.rail-btn.on {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--accent);
 }
 
 /* ---------- サイドバー ---------- */
@@ -120,23 +154,23 @@
   color: var(--badge-story);
 }
 
-.sidebar-foot {
-  padding: 12px;
-  border-top: 1px solid var(--border);
+.sidebar-search {
+  padding: 12px 12px 0;
+}
+.sidebar-search .model-search {
+  margin-bottom: 0;
 }
 
-.sidebar-foot button {
-  width: 100%;
-  background: transparent;
-  border: 1px solid var(--border);
-  color: var(--text-dim);
-  padding: 9px;
-  border-radius: var(--radius-sm);
-  font-size: 13px;
+.sidebar-archive-toggle {
+  padding: 8px 12px 12px;
+  border-top: 1px solid var(--border);
 }
-.sidebar-foot button:hover {
-  color: var(--text);
-  border-color: var(--accent);
+.sidebar-archive-toggle button {
+  width: 100%;
+}
+
+.session-item.archived {
+  opacity: 0.55;
 }
 
 /* ---------- メイン ---------- */
@@ -352,9 +386,12 @@
   gap: 6px;
 }
 
-/* ---------- 没入モード（サイドバー・ドックを隠し topbar をホバー表示に。UI-4） ---------- */
+/* ---------- 没入モード（レール・サイドバー・ドックを隠し topbar をホバー表示に。UI-4・UI-5でレール分の列を追加） ---------- */
 .app.immersive {
-  grid-template-columns: 0 1fr;
+  grid-template-columns: 0 0 1fr;
+}
+.immersive .rail {
+  display: none;
 }
 .immersive .sidebar {
   display: none;
@@ -420,28 +457,25 @@
   border: 1px solid var(--border);
 }
 
-/* ---------- ナビ ---------- */
-.nav {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+/* ---------- ナビ（文脈サイドバーの Library 縦ナビ。UI-5でセッション/レール分を分離） ---------- */
+.nav-vertical {
+  display: flex;
+  flex-direction: column;
   gap: 6px;
-  margin-top: 14px;
+  padding: 14px 12px;
 }
 .nav-btn {
   background: var(--bg-elev2);
   border: 1px solid var(--border);
   color: var(--text-dim);
-  padding: 8px 6px;
+  padding: 9px 10px;
   border-radius: var(--radius-sm);
-  font-size: 12px;
+  font-size: 13px;
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 5px;
+  justify-content: flex-start;
+  gap: 8px;
   transition: 0.12s;
-}
-.nav-btn:first-child {
-  grid-column: 1 / -1;
 }
 .nav-btn:hover {
   color: var(--text);

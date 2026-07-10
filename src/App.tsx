@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useStore } from './store'
+import Rail from './components/Rail'
 import Sidebar from './components/Sidebar'
 import ChatPanel from './components/ChatPanel'
-import SettingsModal from './components/SettingsModal'
+import { SettingsBody } from './components/SettingsModal'
 import CharacterLibrary from './components/library/CharacterLibrary'
 import WorldLibrary from './components/library/WorldLibrary'
 import PersonaLibrary from './components/library/PersonaLibrary'
@@ -47,6 +48,7 @@ export default function App() {
     sessions,
     activeId,
     view,
+    setView,
     providers,
     error,
     clearError,
@@ -59,7 +61,6 @@ export default function App() {
     ui,
     setUiPrefs,
   } = useStore()
-  const [showSettings, setShowSettings] = useState(false)
   // storage は async 化済み（Web は同期 localStorage・Tauri は T3 のファイル backend）。
   // ハイドレーション完了までスプラッシュを表示する。
   const [hydrated, setHydrated] = useState(() => useStore.persist.hasHydrated())
@@ -79,7 +80,7 @@ export default function App() {
 
   useEffect(() => {
     if (!hydrated) return
-    if (!hasApiKey) setShowSettings(true)
+    if (!hasApiKey) setView('system')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hydrated])
 
@@ -135,8 +136,11 @@ export default function App() {
   }
 
   return (
-    <div className={'app' + (ui.immersive ? ' immersive' : '')}>
-      <Sidebar onOpenSettings={() => setShowSettings(true)} />
+    <div
+      className={'app' + (ui.immersive ? ' immersive' : '') + (view === 'system' ? ' no-side' : '')}
+    >
+      <Rail />
+      {view !== 'system' && <Sidebar />}
 
       {view === 'characters' ? (
         <CharacterLibrary />
@@ -146,6 +150,13 @@ export default function App() {
         <PersonaLibrary />
       ) : view === 'sceneTypes' ? (
         <SceneTypeLibrary />
+      ) : view === 'system' ? (
+        <div className="library">
+          <div className="library-head">
+            <h2>⚙ 設定・データ管理</h2>
+          </div>
+          <SettingsBody />
+        </div>
       ) : active ? (
         <ChatPanel key={active.id} session={active} />
       ) : (
@@ -166,7 +177,7 @@ export default function App() {
               </div>
               {!hasApiKey && (
                 <p style={{ marginTop: 20, fontSize: 13, color: 'var(--text-faint)' }}>
-                  まず左下の設定から OpenRouter の API キーを登録してください。
+                  左のレール最下段 ⚙ から OpenRouter の API キーを登録してください。
                 </p>
               )}
             </div>
@@ -174,7 +185,6 @@ export default function App() {
         </div>
       )}
 
-      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
       {sceneReview && <SceneReviewModal />}
 
       <DialogHost />

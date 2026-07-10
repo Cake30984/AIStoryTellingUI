@@ -73,7 +73,14 @@ import { defaultOpenRouterProvider, parseModelRef } from './lib/providers'
 
 export const DEFAULT_MODEL = 'openrouter/auto'
 
-export type View = 'sessions' | 'characters' | 'worlds' | 'personas' | 'sceneTypes'
+export type View = 'sessions' | 'characters' | 'worlds' | 'personas' | 'sceneTypes' | 'system'
+
+/** View が属する領域（レール切替・グリッド制御用。UI-5） */
+export function areaOf(view: View): 'play' | 'library' | 'system' {
+  if (view === 'sessions') return 'play'
+  if (view === 'system') return 'system'
+  return 'library'
+}
 
 export function uid(): string {
   // セキュアコンテキスト（HTTPS/localhost）では衝突耐性の高い crypto.randomUUID を使う。
@@ -1637,6 +1644,7 @@ export const useStore = create<AppState>()(
             temperature: cur.temperature,
             maxTokens: cur.maxTokens,
             spritesEnabled: cur.spritesEnabled,
+            archived: cur.archived,
             updatedAt: Date.now(),
           }
           set((st) => ({
