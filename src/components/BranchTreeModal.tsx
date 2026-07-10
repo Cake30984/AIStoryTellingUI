@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { useStore } from '../store'
 import type { BranchNode, BranchTree, Session } from '../types'
 import { useImageUrl } from '../lib/imageStore'
 import { appConfirm, appPrompt } from '../lib/dialogs'
 import { Icon } from './icons'
+import MenuPopover from './MenuPopover'
 
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`
@@ -15,16 +16,22 @@ function childrenOf(tree: BranchTree, parentId: string): BranchNode[] {
   return tree.nodes.filter((n) => n.parentId === parentId).sort((a, b) => a.createdAt - b.createdAt)
 }
 
-/** 現在パス（ルート→currentId）のノード id 集合。削除保護・剪定の対象判定に使う */
-function currentPathIds(tree: BranchTree): Set<string> {
+/** 現在パス（ルート→currentId）のノードを ルート順に並べる。主線描画・削除保護・剪定に使う */
+function mainPath(tree: BranchTree): BranchNode[] {
   const byId = new Map(tree.nodes.map((n) => [n.id, n]))
-  const ids = new Set<string>()
+  const out: BranchNode[] = []
   let id: string | null = tree.currentId
   while (id) {
-    ids.add(id)
-    id = byId.get(id)?.parentId ?? null
+    const n = byId.get(id)
+    if (!n) break
+    out.unshift(n)
+    id = n.parentId
   }
-  return ids
+  return out
+}
+
+function currentPathIds(tree: BranchTree): Set<string> {
+  return new Set(mainPath(tree).map((n) => n.id))
 }
 
 /** しおり付きノードを新しい順に並べる（C3。★しおりタブ用） */
@@ -34,7 +41,6 @@ function starredNodesOf(tree: BranchTree): BranchNode[] {
 
 /** 指定ノード自身とその子孫すべて（削除confirmの件数・合計サイズ表示に使う） */
 function subtreeNodes(tree: BranchTree, rootId: string): BranchNode[] {
-  const byId = new Map(tree.nodes.map((n) => [n.id, n]))
   const childIds = new Map<string, string[]>()
   for (const n of tree.nodes) {
     if (n.parentId) {
@@ -43,6 +49,7 @@ function subtreeNodes(tree: BranchTree, rootId: string): BranchNode[] {
       childIds.set(n.parentId, arr)
     }
   }
+  const byId = new Map(tree.nodes.map((n) => [n.id, n]))
   const out: BranchNode[] = []
   const stack = [rootId]
   while (stack.length) {
@@ -52,6 +59,21 @@ function subtreeNodes(tree: BranchTree, rootId: string): BranchNode[] {
     for (const c of childIds.get(id) ?? []) stack.push(c)
   }
   return out
+}
+
+/** 主線を scene ノード（とルート）で章に区切る。各章 = 見出しノード＋続く action ノード列 */
+function chaptersOf(path: BranchNode[]): { head: BranchNode; rows: BranchNode[] }[] {
+  const chapters: { head: BranchNode; rows: BranchNode[] }[] = []
+  let cur: { head: BranchNode; rows: BranchNode[] } | null = null
+  for (const n of path) {
+    if (cur === null || n.kind === 'scene') {
+      cur = { head: n, rows: [] }
+      chapters.push(cur)
+    } else {
+      cur.rows.push(n)
+    }
+  }
+  return chapters
 }
 
 /** しおりのサムネイル（背景/挿絵があれば表示、無ければプレースホルダ） */
@@ -68,208 +90,11 @@ function StarThumb({ imageId, size = 28 }: { imageId?: string; size?: number }) 
   )
 }
 
-function StarButton({
-  node,
-  busy,
-  onSetStar,
-  onRemoveStar,
-}: {
-  node: BranchNode
-  busy: boolean
-  onSetStar: (node: BranchNode) => void
-  onRemoveStar: (node: BranchNode) => void
-}) {
-  if (node.star) {
-    return (
-      <button
-        className="icon-btn small"
-        disabled={busy}
-        title={`しおり: ${node.star.name}（クリックで外す）`}
-        onClick={() => onRemoveStar(node)}
-      >
-        <Icon name="star" size={14} filled />
-      </button>
-    )
-  }
-  return (
-    <button className="icon-btn small" disabled={busy} title="しおりを付ける" onClick={() => onSetStar(node)}>
-      <Icon name="star" size={14} />
-    </button>
-  )
-}
-
-function NodeRow({
-  node,
-  depth,
-  isCurrent,
-  canDelete,
-  busy,
-  onRestore,
-  onDeleteSubtree,
-  onSetStar,
-  onRemoveStar,
-}: {
-  node: BranchNode
-  depth: number
-  isCurrent: boolean
-  canDelete: boolean
-  busy: boolean
-  onRestore: (nodeId: string) => void
-  onDeleteSubtree: (node: BranchNode) => void
-  onSetStar: (node: BranchNode) => void
-  onRemoveStar: (node: BranchNode) => void
-}) {
-  const indent = depth * 16
-  const deleteBtn = (
-    <button
-      className="icon-btn small"
-      disabled={busy || !canDelete}
-      title={canDelete ? 'この分岐を削除' : '現在の分岐上のため削除できません'}
-      onClick={() => onDeleteSubtree(node)}
-    >
-      <Icon name="trash-2" size={14} />
-    </button>
-  )
-  const starBtn = <StarButton node={node} busy={busy} onSetStar={onSetStar} onRemoveStar={onRemoveStar} />
-  if (node.kind === 'scene') {
-    return (
-      <div className="branch-row branch-scene" style={{ marginLeft: indent }}>
-        <span className="log-title">
-          📖 {node.label}
-          {node.timeLabel ? `（${node.timeLabel}）` : ''}
-        </span>
-        {node.star && <span className="badge">★ {node.star.name}</span>}
-        {isCurrent && <span className="badge">▶ いまここ</span>}
-        <span className="branch-size">{formatBytes(node.bytes)}</span>
-        {node.parentId && (
-          <button className="btn" disabled={busy} onClick={() => onRestore(node.parentId!)}>
-            <Icon name="corner-up-left" size={13} /> レビュー前に戻る
-          </button>
-        )}
-        {starBtn}
-        {deleteBtn}
-      </div>
-    )
-  }
-  return (
-    <div className="branch-row branch-action" style={{ marginLeft: indent }}>
-      <span className="branch-label">{node.label}</span>
-      <span className="branch-time">{new Date(node.createdAt).toLocaleString()}</span>
-      {node.star && <span className="badge">★ {node.star.name}</span>}
-      {isCurrent && <span className="badge">▶ いまここ</span>}
-      <span className="branch-size">{formatBytes(node.bytes)}</span>
-      {!isCurrent && (
-        <button className="btn" disabled={busy} onClick={() => onRestore(node.id)}>
-          <Icon name="rotate-ccw" size={13} /> ここに戻る
-        </button>
-      )}
-      {starBtn}
-      {deleteBtn}
-    </div>
-  )
-}
-
 /**
- * ルートから辿れる「主系列」を1本描画する。分岐点（子が複数）では現在パス上の子だけ
- * そのまま続け、他の子は「⑂ 別の分岐」トグルの配下に再帰的に描画する（既定は折りたたみ）。
+ * 分岐ツリー本体（C2→F1で刷新）。git ログ風に「主線＝ルート→いまここ」を縦に描き、
+ * scene ノードで章に折りたたむ。主線上の分岐点は「⑂ 別の分岐」、現在ノードの子は「▷ この先」を
+ * 展開式で見せる。行アクション（しおり・削除・シーン開始前へ戻る）は ⋯ メニューに集約。
  */
-function Chain({
-  tree,
-  startId,
-  pathIds,
-  currentId,
-  expanded,
-  toggle,
-  busy,
-  onRestore,
-  onDeleteSubtree,
-  onSetStar,
-  onRemoveStar,
-  depth,
-}: {
-  tree: BranchTree
-  startId: string
-  pathIds: Set<string>
-  currentId: string | null
-  expanded: Set<string>
-  toggle: (id: string) => void
-  busy: boolean
-  onRestore: (nodeId: string) => void
-  onDeleteSubtree: (node: BranchNode) => void
-  onSetStar: (node: BranchNode) => void
-  onRemoveStar: (node: BranchNode) => void
-  depth: number
-}) {
-  const rows: JSX.Element[] = []
-  const byId = new Map(tree.nodes.map((n) => [n.id, n]))
-  let id: string | null = startId
-  while (id) {
-    const node = byId.get(id)
-    if (!node) break
-    const isCurrent = node.id === currentId
-    const canDelete = !pathIds.has(node.id)
-    rows.push(
-      <NodeRow
-        key={node.id}
-        node={node}
-        depth={depth}
-        isCurrent={isCurrent}
-        canDelete={canDelete}
-        busy={busy}
-        onRestore={onRestore}
-        onDeleteSubtree={onDeleteSubtree}
-        onSetStar={onSetStar}
-        onRemoveStar={onRemoveStar}
-      />,
-    )
-    const children = childrenOf(tree, node.id)
-    if (children.length === 0) {
-      id = null
-    } else if (children.length === 1) {
-      id = children[0].id
-    } else {
-      const mainChild = children.find((c) => pathIds.has(c.id))
-      const others = children.filter((c) => c.id !== mainChild?.id)
-      if (others.length > 0) {
-        const isOpen = expanded.has(node.id)
-        rows.push(
-          <div className="branch-toggle-row" key={`${node.id}-toggle`} style={{ marginLeft: (depth + 1) * 16 }}>
-            <button className="btn" onClick={() => toggle(node.id)}>
-              {isOpen ? '▾' : '⑂'} 別の分岐 ({others.length})
-            </button>
-          </div>,
-        )
-        if (isOpen) {
-          rows.push(
-            <div className="branch-alt-group" key={`${node.id}-alt`} style={{ marginLeft: (depth + 1) * 16 }}>
-              {others.map((o) => (
-                <Chain
-                  key={o.id}
-                  tree={tree}
-                  startId={o.id}
-                  pathIds={pathIds}
-                  currentId={currentId}
-                  expanded={expanded}
-                  toggle={toggle}
-                  busy={busy}
-                  onRestore={onRestore}
-                  onDeleteSubtree={onDeleteSubtree}
-                  onSetStar={onSetStar}
-                  onRemoveStar={onRemoveStar}
-                  depth={depth + 1}
-                />
-              ))}
-            </div>,
-          )
-        }
-      }
-      id = mainChild ? mainChild.id : null
-    }
-  }
-  return <>{rows}</>
-}
-
-/** 分岐ツリー本体（C2。シーン見出し＋action行の縦リスト・分岐展開・復元・剪定。UI-3でドックへ移設・モーダル版廃止） */
 export function BranchTreeBody({ session }: { session: Session }) {
   const {
     branchTrees,
@@ -284,13 +109,27 @@ export function BranchTreeBody({ session }: { session: Session }) {
   } = useStore()
   const tree = branchTrees[session.id]
   const generating = isStreaming || isGeneratingChoices || isReviewing
-  const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [busyAction, setBusyAction] = useState(false)
   const [tab, setTab] = useState<'tree' | 'starred'>('tree')
+  const [chapterState, setChapterState] = useState<Map<string, boolean>>(new Map())
+  const [openBranch, setOpenBranch] = useState<Set<string>>(new Set())
+  const [menuFor, setMenuFor] = useState<string | null>(null)
   const busy = generating || busyAction
+  const currentRef = useRef<HTMLDivElement>(null)
 
-  const toggle = (id: string) =>
-    setExpanded((prev) => {
+  // タブを開いた時／現在地が変わった時に「いまここ」を画面中央へ
+  useEffect(() => {
+    currentRef.current?.scrollIntoView({ block: 'center' })
+  }, [tree?.currentId, tab])
+
+  const toggleChapter = (headId: string, cur: boolean) =>
+    setChapterState((prev) => {
+      const next = new Map(prev)
+      next.set(headId, !cur)
+      return next
+    })
+  const toggleBranch = (id: string) =>
+    setOpenBranch((prev) => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)
       else next.add(id)
@@ -354,10 +193,6 @@ export function BranchTreeBody({ session }: { session: Session }) {
     }
   }
 
-  const root = tree?.nodes.find((n) => n.parentId === null)
-  const totalBytes = tree ? tree.nodes.reduce((sum, n) => sum + n.bytes, 0) : 0
-  const starred = tree ? starredNodesOf(tree) : []
-
   const doSetStar = async (node: BranchNode) => {
     if (busy) return
     const name = await appPrompt({
@@ -374,6 +209,166 @@ export function BranchTreeBody({ session }: { session: Session }) {
     if (busy || !node.star) return
     removeBranchStar(session.id, node.id)
   }
+
+  const root = tree?.nodes.find((n) => n.parentId === null)
+  const totalBytes = tree ? tree.nodes.reduce((sum, n) => sum + n.bytes, 0) : 0
+  const starred = tree ? starredNodesOf(tree) : []
+
+  // ---- 1ノードの行 ----
+  const renderRow = (
+    node: BranchNode,
+    opts: { head?: boolean; caret?: 'open' | 'closed' | null; onCaret?: () => void; hint?: string } = {},
+  ) => {
+    if (!tree) return null
+    const isCurrent = node.id === tree.currentId
+    const onPath = pathIds.has(node.id)
+    const isScene = node.kind === 'scene'
+    const subCount = subtreeNodes(tree, node.id).length
+    return (
+      <div
+        className={'bt-row' + (isCurrent ? ' current' : '') + (opts.head ? ' head' : '')}
+        key={node.id}
+        ref={isCurrent ? currentRef : undefined}
+      >
+        {opts.caret !== undefined ? (
+          <button
+            className="bt-caret"
+            onClick={opts.onCaret}
+            title={opts.caret === 'open' ? '折りたたむ' : '展開'}
+          >
+            {opts.caret === null ? '' : opts.caret === 'open' ? '▾' : '▸'}
+          </button>
+        ) : (
+          <span className="bt-caret" />
+        )}
+        <span className="bt-guide">
+          <span className={'bt-dot' + (isCurrent ? ' current' : node.star ? ' star' : '')} />
+        </span>
+        <span className="bt-label">
+          {isScene ? `📖 ${node.label}` : node.label}
+          {node.timeLabel ? `（${node.timeLabel}）` : ''}
+          {opts.hint && <span className="bt-hint">{opts.hint}</span>}
+          {node.star && <span className="badge">★ {node.star.name}</span>}
+          {isCurrent && <span className="badge accent">▶ いまここ</span>}
+        </span>
+        <span className="bt-meta">{formatBytes(node.bytes)}</span>
+        {!isCurrent && (
+          <button className="bt-back" disabled={busy} onClick={() => doRestore(node.id)} title="この地点に戻る">
+            <Icon name="rotate-ccw" size={13} />
+          </button>
+        )}
+        <div className="menu-anchor">
+          <button
+            className="icon-btn small"
+            onClick={() => setMenuFor(menuFor === node.id ? null : node.id)}
+            title="操作"
+          >
+            <Icon name="more-horizontal" size={14} />
+          </button>
+          {menuFor === node.id && (
+            <MenuPopover onClose={() => setMenuFor(null)}>
+              <button
+                className="menu-item"
+                disabled={busy}
+                onClick={() => {
+                  setMenuFor(null)
+                  node.star ? doRemoveStar(node) : doSetStar(node)
+                }}
+              >
+                <Icon name="star" size={14} filled={!!node.star} />{' '}
+                {node.star ? 'しおりを外す' : 'しおりを付ける'}
+              </button>
+              {isScene && node.parentId && (
+                <button
+                  className="menu-item"
+                  disabled={busy}
+                  onClick={() => {
+                    setMenuFor(null)
+                    doRestore(node.parentId!)
+                  }}
+                >
+                  <Icon name="corner-up-left" size={14} /> このシーンの開始前に戻る
+                </button>
+              )}
+              <button
+                className="menu-item danger"
+                disabled={busy || onPath}
+                title={onPath ? '現在の分岐上のため削除できません' : ''}
+                onClick={() => {
+                  setMenuFor(null)
+                  doDeleteSubtree(node)
+                }}
+              >
+                <Icon name="trash-2" size={14} /> この分岐を削除（{subCount}件）
+              </button>
+            </MenuPopover>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // ---- 主線外のサブツリー（枝）。単独子は同じ深さで続け、分岐点で子ごとに入れ子にする ----
+  const renderSubtree = (startId: string): JSX.Element[] => {
+    if (!tree) return []
+    const rows: JSX.Element[] = []
+    let id: string | null = startId
+    while (id) {
+      const node: BranchNode | undefined = tree.nodes.find((n) => n.id === id)
+      if (!node) break
+      rows.push(<Fragment key={node.id}>{renderRow(node)}</Fragment>)
+      const children = childrenOf(tree, node.id)
+      if (children.length === 0) {
+        id = null
+      } else if (children.length === 1) {
+        id = children[0].id
+      } else {
+        for (const c of children) {
+          rows.push(
+            <div className="bt-alt" key={`alt-${c.id}`}>
+              {renderSubtree(c.id)}
+            </div>,
+          )
+        }
+        id = null
+      }
+    }
+    return rows
+  }
+
+  // ---- 主線上の1ノード＋その分岐トグル ----
+  const renderMainNode = (node: BranchNode, headOpts?: Parameters<typeof renderRow>[1]): JSX.Element => {
+    if (!tree) return <Fragment key={node.id} />
+    const offChildren = childrenOf(tree, node.id).filter((c) => !pathIds.has(c.id))
+    const isCurrent = node.id === tree.currentId
+    const open = openBranch.has(node.id)
+    return (
+      <Fragment key={node.id}>
+        {renderRow(node, headOpts ?? {})}
+        {offChildren.length > 0 && (
+          <>
+            <button className="bt-toggle" onClick={() => toggleBranch(node.id)}>
+              {open ? '▾' : isCurrent ? '▷' : '⑂'} {isCurrent ? 'この先' : '別の分岐'} (
+              {offChildren.length})
+            </button>
+            {open && (
+              <div className="bt-alt">
+                {offChildren.map((c) => (
+                  <Fragment key={c.id}>{renderSubtree(c.id)}</Fragment>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </Fragment>
+    )
+  }
+
+  const path = tree ? mainPath(tree) : []
+  const chapters = chaptersOf(path)
+  const currentChapterId = chapters.length > 0 ? chapters[chapters.length - 1].head.id : null
+  const isChapterOpen = (headId: string) =>
+    chapterState.has(headId) ? chapterState.get(headId)! : headId === currentChapterId
 
   return (
     <>
@@ -393,16 +388,29 @@ export function BranchTreeBody({ session }: { session: Session }) {
           </span>
         </div>
       )}
-      {tree && pruneCount > 0 && (
+
+      {tree && tab === 'tree' && (
+        <div className="bt-legend">
+          <span>
+            <span className="bt-dot current" style={{ display: 'inline-block', verticalAlign: 'middle' }} />{' '}
+            いまここ
+          </span>
+          <span>⑂ 別の分岐</span>
+          <span>▷ この先</span>
+        </div>
+      )}
+
+      {tree && pruneCount > 0 && tab === 'tree' && (
         <button className="btn danger" style={{ marginBottom: 10 }} disabled={busy} onClick={doPrune}>
-          <Icon name="scissors" size={13} /> この分岐だけ残す
+          <Icon name="scissors" size={13} /> 現在の分岐だけ残す（他 {pruneCount} 件を削除）
         </button>
       )}
+
       {!tree || !root ? (
         <p className="desc">まだ記録がありません。物語を進めると、ここに時点が記録されていきます。</p>
       ) : tab === 'starred' ? (
         starred.length === 0 ? (
-          <p className="desc">まだしおりがありません。各ノードの ☆ から名前を付けて登録できます。</p>
+          <p className="desc">まだしおりがありません。各ノードの ⋯ から名前を付けて登録できます。</p>
         ) : (
           <div className="star-list">
             {starred.map((n) => (
@@ -416,7 +424,7 @@ export function BranchTreeBody({ session }: { session: Session }) {
                   </div>
                   <div className="branch-time">{new Date(n.createdAt).toLocaleString()}</div>
                 </div>
-                {tree.currentId === n.id && <span className="badge">▶ いまここ</span>}
+                {tree.currentId === n.id && <span className="badge accent">▶ いまここ</span>}
                 <button
                   className="btn"
                   disabled={busy || tree.currentId === n.id}
@@ -437,21 +445,27 @@ export function BranchTreeBody({ session }: { session: Session }) {
           </div>
         )
       ) : (
-        <div className="branch-list">
-          <Chain
-            tree={tree}
-            startId={root.id}
-            pathIds={pathIds}
-            currentId={tree.currentId}
-            expanded={expanded}
-            toggle={toggle}
-            busy={busy}
-            onRestore={doRestore}
-            onDeleteSubtree={doDeleteSubtree}
-            onSetStar={doSetStar}
-            onRemoveStar={doRemoveStar}
-            depth={0}
-          />
+        <div className="bt-list">
+          {chapters.map((ch) => {
+            const open = isChapterOpen(ch.head.id)
+            const multi = chapters.length > 1
+            return (
+              <div className="bt-main" key={ch.head.id}>
+                {renderMainNode(
+                  ch.head,
+                  multi
+                    ? {
+                        head: true,
+                        caret: open ? 'open' : 'closed',
+                        onCaret: () => toggleChapter(ch.head.id, open),
+                        hint: !open && ch.rows.length > 0 ? `（${ch.rows.length}手）` : undefined,
+                      }
+                    : { head: true },
+                )}
+                {open && ch.rows.map((n) => renderMainNode(n))}
+              </div>
+            )
+          })}
         </div>
       )}
     </>

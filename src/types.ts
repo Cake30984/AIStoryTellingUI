@@ -572,6 +572,8 @@ export type DockTab = 'status' | 'discovery' | 'gallery' | 'branch' | 'jobs'
 export interface UiPrefs {
   /** null = ドック閉 */
   dockTab: DockTab | null
+  /** 右コンテキストドックの幅（px。300〜560でクランプ。F1） */
+  dockWidth: number
   /** 本文の文字サイズ（--font-size-prose と連動。既定 'm'=現行見た目） */
   fontScale: 's' | 'm' | 'l' | 'xl'
   /** 本文の行間（--line-height-prose と連動） */
@@ -590,6 +592,7 @@ export interface UiPrefs {
 
 export const DEFAULT_UI: UiPrefs = {
   dockTab: null,
+  dockWidth: 360,
   fontScale: 'm',
   lineHeight: 'normal',
   contentWidth: 'normal',

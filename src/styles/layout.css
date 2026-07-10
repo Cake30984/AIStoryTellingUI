@@ -351,13 +351,27 @@
   position: relative; /* ステージ・バックドロップ（絶対配置）の基準 */
 }
 .dock {
-  width: 360px;
+  /* width は ui.dockWidth をインライン指定（F1）。ここでは既定の見た目だけ */
   flex-shrink: 0;
   border-left: 1px solid var(--border);
   background: var(--bg-elev);
   display: flex;
   flex-direction: column;
   min-height: 0;
+  position: relative;
+}
+/* 左端の幅リサイズ用ハンドル（F1/A9） */
+.dock-resizer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  cursor: col-resize;
+  z-index: 2;
+}
+.dock-resizer:hover {
+  background: var(--accent-soft);
 }
 .dock-head {
   display: flex;
