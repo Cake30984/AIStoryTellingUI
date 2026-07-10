@@ -1,34 +1,77 @@
 import { useState } from 'react'
 import { useStore } from '../store'
 import MenuPopover from './MenuPopover'
-import type { Session, UiPrefs } from '../types'
-
-const FONT_SCALES: { id: UiPrefs['fontScale']; label: string }[] = [
-  { id: 's', label: 'S' },
-  { id: 'm', label: 'M' },
-  { id: 'l', label: 'L' },
-  { id: 'xl', label: 'XL' },
-]
-const LINE_HEIGHTS: { id: UiPrefs['lineHeight']; label: string }[] = [
-  { id: 'compact', label: '狭' },
-  { id: 'normal', label: '標準' },
-  { id: 'wide', label: '広' },
-]
-const CONTENT_WIDTHS: { id: UiPrefs['contentWidth']; label: string }[] = [
-  { id: 'narrow', label: '狭' },
-  { id: 'normal', label: '標準' },
-  { id: 'wide', label: '広' },
-]
+import { DEFAULT_UI, UI_LIMITS, type Session } from '../types'
 
 interface Props {
   session: Session
 }
 
-/** topbar の Aa ボタン→ポップオーバー。文字サイズ・行間・本文幅・セリフ色分け・ステージ濃度・没入モード（UI-4） */
+/** ラベル＋数値入力（上段）＋スライダー（下段）の共通行。数値入力・スライダーどちらでも変更できる（F2） */
+function RsField({
+  label,
+  value,
+  min,
+  max,
+  step,
+  decimals = 0,
+  onChange,
+}: {
+  label: string
+  value: number
+  min: number
+  max: number
+  step: number
+  decimals?: number
+  onChange: (v: number) => void
+}) {
+  const clamp = (n: number) => Math.min(max, Math.max(min, n))
+  return (
+    <div className="rs-field">
+      <div className="rs-field-top">
+        <span className="rs-label">{label}</span>
+        <input
+          className="rs-num"
+          type="number"
+          min={min}
+          max={max}
+          step={step}
+          value={value}
+          onChange={(e) => {
+            const n = Number(e.target.value)
+            if (Number.isFinite(n)) onChange(clamp(n))
+          }}
+        />
+      </div>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(e) => onChange(clamp(Number(e.target.value)))}
+        aria-label={label}
+      />
+      <span className="sr-only">{value.toFixed(decimals)}</span>
+    </div>
+  )
+}
+
+/** topbar の Aa ボタン→ポップオーバー。文字サイズ・行間・本文幅・セリフ色分け・ステージ濃度・没入モード（UI-4・F2で数値化） */
 export default function ReaderSettings({ session }: Props) {
   const { ui, setUiPrefs, updateSession } = useStore()
   const [open, setOpen] = useState(false)
   const stageOn = session.spritesEnabled ?? true
+
+  const resetReader = () =>
+    setUiPrefs({
+      fontSize: DEFAULT_UI.fontSize,
+      lineHeight: DEFAULT_UI.lineHeight,
+      contentWidth: DEFAULT_UI.contentWidth,
+      dialogueTint: DEFAULT_UI.dialogueTint,
+      stageBgOpacity: DEFAULT_UI.stageBgOpacity,
+      stageSpriteOpacity: DEFAULT_UI.stageSpriteOpacity,
+    })
 
   return (
     <div className="menu-anchor">
@@ -42,48 +85,26 @@ export default function ReaderSettings({ session }: Props) {
       {open && (
         <MenuPopover onClose={() => setOpen(false)}>
           <div className="reader-settings">
-            <div className="rs-row">
-              <span className="rs-label">文字サイズ</span>
-              <div className="seg">
-                {FONT_SCALES.map((o) => (
-                  <button
-                    key={o.id}
-                    className={ui.fontScale === o.id ? 'on' : ''}
-                    onClick={() => setUiPrefs({ fontScale: o.id })}
-                  >
-                    {o.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="rs-row">
-              <span className="rs-label">行間</span>
-              <div className="seg">
-                {LINE_HEIGHTS.map((o) => (
-                  <button
-                    key={o.id}
-                    className={ui.lineHeight === o.id ? 'on' : ''}
-                    onClick={() => setUiPrefs({ lineHeight: o.id })}
-                  >
-                    {o.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="rs-row">
-              <span className="rs-label">本文幅</span>
-              <div className="seg">
-                {CONTENT_WIDTHS.map((o) => (
-                  <button
-                    key={o.id}
-                    className={ui.contentWidth === o.id ? 'on' : ''}
-                    onClick={() => setUiPrefs({ contentWidth: o.id })}
-                  >
-                    {o.label}
-                  </button>
-                ))}
-              </div>
-            </div>
+            <RsField
+              label="文字サイズ"
+              value={ui.fontSize}
+              {...UI_LIMITS.fontSize}
+              decimals={1}
+              onChange={(fontSize) => setUiPrefs({ fontSize })}
+            />
+            <RsField
+              label="行間"
+              value={ui.lineHeight}
+              {...UI_LIMITS.lineHeight}
+              decimals={2}
+              onChange={(lineHeight) => setUiPrefs({ lineHeight })}
+            />
+            <RsField
+              label="本文幅"
+              value={ui.contentWidth}
+              {...UI_LIMITS.contentWidth}
+              onChange={(contentWidth) => setUiPrefs({ contentWidth })}
+            />
             <label className="chk rs-chk">
               <input
                 type="checkbox"
@@ -103,34 +124,20 @@ export default function ReaderSettings({ session }: Props) {
               />
               背景・立ち絵を表示
             </label>
-            <div className="rs-row">
-              <span className="rs-label">背景の濃さ</span>
-              <div className="range-row">
-                <input
-                  type="range"
-                  min={0}
-                  max={0.6}
-                  step={0.05}
-                  value={ui.stageBgOpacity}
-                  onChange={(e) => setUiPrefs({ stageBgOpacity: Number(e.target.value) })}
-                />
-                <span className="val">{ui.stageBgOpacity.toFixed(2)}</span>
-              </div>
-            </div>
-            <div className="rs-row">
-              <span className="rs-label">立ち絵の濃さ</span>
-              <div className="range-row">
-                <input
-                  type="range"
-                  min={0}
-                  max={0.9}
-                  step={0.05}
-                  value={ui.stageSpriteOpacity}
-                  onChange={(e) => setUiPrefs({ stageSpriteOpacity: Number(e.target.value) })}
-                />
-                <span className="val">{ui.stageSpriteOpacity.toFixed(2)}</span>
-              </div>
-            </div>
+            <RsField
+              label="背景の濃さ"
+              value={ui.stageBgOpacity}
+              {...UI_LIMITS.stageBgOpacity}
+              decimals={2}
+              onChange={(stageBgOpacity) => setUiPrefs({ stageBgOpacity })}
+            />
+            <RsField
+              label="立ち絵の濃さ"
+              value={ui.stageSpriteOpacity}
+              {...UI_LIMITS.stageSpriteOpacity}
+              decimals={2}
+              onChange={(stageSpriteOpacity) => setUiPrefs({ stageSpriteOpacity })}
+            />
 
             <div className="menu-sep" />
 
@@ -138,10 +145,18 @@ export default function ReaderSettings({ session }: Props) {
               <input
                 type="checkbox"
                 checked={ui.immersive}
-                onChange={(e) => setUiPrefs({ immersive: e.target.checked })}
+                onChange={(e) => {
+                  // 没入 ON でバー・ポップオーバーが消えて戸惑わないよう、閉じる（案内トーストは store が出す。F2/A8）
+                  if (e.target.checked) setOpen(false)
+                  setUiPrefs({ immersive: e.target.checked })
+                }}
               />
-              没入モード（Ctrl+.）
+              没入モード（上端ホバーでバー / Esc解除）
             </label>
+
+            <button className="link rs-reset" onClick={resetReader}>
+              表示を既定に戻す
+            </button>
           </div>
         </MenuPopover>
       )}

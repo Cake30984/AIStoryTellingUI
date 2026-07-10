@@ -13,10 +13,6 @@ import DialogHost from './components/DialogHost'
 import CommandPalette from './components/CommandPalette'
 import { useGlobalShortcuts } from './lib/shortcuts'
 
-const FONT_SIZE_MAP = { s: '14px', m: '15.5px', l: '17px', xl: '18.5px' } as const
-const LINE_HEIGHT_MAP = { compact: '1.7', normal: '1.9', wide: '2.1' } as const
-const CONTENT_WIDTH_MAP = { narrow: '660px', normal: '760px', wide: '900px' } as const
-
 // 積層トーストの1件。autoCloseMs があれば一定時間後に自動で onClose を呼ぶ（UI-0）
 function ToastItem({
   className,
@@ -59,6 +55,8 @@ export default function App() {
     dismissNewAchievements,
     imageJobToasts,
     dismissImageJobToasts,
+    infoNotice,
+    setInfoNotice,
     ui,
   } = useStore()
   // storage は async 化済み（Web は同期 localStorage・Tauri は T3 のファイル backend）。
@@ -91,17 +89,19 @@ export default function App() {
     void useStore.getState().cleanupOrphanCheckpoints()
   }, [hydrated])
 
-  // リーダー設定を CSS 変数へ反映（UI-4）
+  // リーダー設定を CSS 変数へ反映（UI-4・F2で数値化）
   useEffect(() => {
     const root = document.documentElement.style
-    root.setProperty('--font-size-prose', FONT_SIZE_MAP[ui.fontScale])
-    root.setProperty('--line-height-prose', LINE_HEIGHT_MAP[ui.lineHeight])
-    root.setProperty('--content-width', CONTENT_WIDTH_MAP[ui.contentWidth])
-    root.setProperty('--dialogue', ui.dialogueTint ? '#cfe3ff' : 'var(--text)')
+    root.setProperty('--font-size-prose', `${ui.fontSize}px`)
+    root.setProperty('--line-height-prose', String(ui.lineHeight))
+    root.setProperty('--content-width', `${ui.contentWidth}px`)
+    // 色分けONは tokens.css の既定（--dialogue）に戻す。OFF のときだけ本文色で上書き（A7）
+    if (ui.dialogueTint) root.removeProperty('--dialogue')
+    else root.setProperty('--dialogue', 'var(--text)')
     root.setProperty('--stage-bg-opacity', String(ui.stageBgOpacity))
     root.setProperty('--stage-sprite-opacity', String(ui.stageSpriteOpacity))
   }, [
-    ui.fontScale,
+    ui.fontSize,
     ui.lineHeight,
     ui.contentWidth,
     ui.dialogueTint,
@@ -189,6 +189,15 @@ export default function App() {
 
       <div className="toast-stack">
         {error && <ToastItem className="toast" text={error} onClose={clearError} />}
+
+        {infoNotice && (
+          <ToastItem
+            className="toast info"
+            text={infoNotice}
+            onClose={() => setInfoNotice(null)}
+            autoCloseMs={4000}
+          />
+        )}
 
         {newlyUnlockedAchievements.length > 0 && (
           <ToastItem

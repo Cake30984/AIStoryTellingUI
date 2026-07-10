@@ -103,15 +103,20 @@
   margin: 4px 2px;
 }
 
-/* ---------- リーダー設定（Aa ポップオーバー。UI-4） ---------- */
+/* ---------- リーダー設定（Aa ポップオーバー。UI-4・F2で数値化） ---------- */
 .reader-settings {
   display: flex;
   flex-direction: column;
   gap: 10px;
   padding: 4px 6px;
-  min-width: 230px;
+  width: 300px;
 }
-.rs-row {
+.rs-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.rs-field-top {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -122,16 +127,43 @@
   color: var(--text-dim);
   flex-shrink: 0;
 }
-.rs-row .seg {
+.rs-num {
+  width: 68px;
   flex-shrink: 0;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  padding: 4px 8px;
+  font-size: 13px;
+  text-align: right;
+  outline: none;
+  font-variant-numeric: tabular-nums;
 }
-.rs-row .range-row {
-  flex: 1;
-  max-width: 150px;
+.rs-num:focus {
+  border-color: var(--accent);
+}
+.rs-field input[type='range'] {
+  width: 100%;
+  min-width: 0;
+  accent-color: var(--accent);
 }
 .rs-chk {
   justify-content: flex-start;
   padding: 2px 4px;
+}
+.rs-reset {
+  align-self: flex-start;
+  padding: 2px 4px;
+}
+/* スクリーンリーダー専用（数値の読み上げ用・視覚的には隠す） */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 
 .field {
@@ -311,6 +343,16 @@
 }
 .toast.image {
   background: linear-gradient(135deg, #5b8def, #4cc9a4);
+}
+/* 案内トースト（没入モード起動時など。控えめな面色。F2） */
+.toast.info {
+  background: var(--bg-elev2);
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+.toast.info button {
+  background: var(--bg-elev);
+  color: var(--text-dim);
 }
 
 /* ---------- 画像生成ジョブ（候補グリッド） ---------- */

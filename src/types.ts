@@ -574,12 +574,12 @@ export interface UiPrefs {
   dockTab: DockTab | null
   /** 右コンテキストドックの幅（px。300〜560でクランプ。F1） */
   dockWidth: number
-  /** 本文の文字サイズ（--font-size-prose と連動。既定 'm'=現行見た目） */
-  fontScale: 's' | 'm' | 'l' | 'xl'
-  /** 本文の行間（--line-height-prose と連動） */
-  lineHeight: 'compact' | 'normal' | 'wide'
-  /** 本文の幅（--content-width と連動） */
-  contentWidth: 'narrow' | 'normal' | 'wide'
+  /** 本文の文字サイズ（px。--font-size-prose と連動。既定 15.5。F2で数値化） */
+  fontSize: number
+  /** 本文の行間（--line-height-prose と連動。既定 1.9。F2で数値化） */
+  lineHeight: number
+  /** 本文の幅（px。--content-width と連動。既定 760。F2で数値化） */
+  contentWidth: number
   /** セリフ（「」）を色分け表示するか（false なら本文と同色） */
   dialogueTint: boolean
   /** ステージ背景の濃さ（0〜0.6。--stage-bg-opacity と連動） */
@@ -593,13 +593,64 @@ export interface UiPrefs {
 export const DEFAULT_UI: UiPrefs = {
   dockTab: null,
   dockWidth: 360,
-  fontScale: 'm',
-  lineHeight: 'normal',
-  contentWidth: 'normal',
+  fontSize: 15.5,
+  lineHeight: 1.9,
+  contentWidth: 760,
   dialogueTint: true,
   stageBgOpacity: 0.25,
   stageSpriteOpacity: 0.5,
   immersive: false,
+}
+
+/** リーダー設定の可変範囲（ReaderSettings のスライダー・数値入力と共有。F2） */
+export const UI_LIMITS = {
+  fontSize: { min: 12, max: 22, step: 0.5 },
+  lineHeight: { min: 1.4, max: 2.4, step: 0.05 },
+  contentWidth: { min: 560, max: 1200, step: 20 },
+  stageBgOpacity: { min: 0, max: 0.6, step: 0.05 },
+  stageSpriteOpacity: { min: 0, max: 0.9, step: 0.05 },
+  dockWidth: { min: 300, max: 560 },
+} as const
+
+/**
+ * 永続化された UiPrefs を現行スキーマへ正規化する（F2）。旧・段階式の文字列値
+ * （fontScale='m'・lineHeight='normal'・contentWidth='narrow' 等）を数値へ引き継ぎ、
+ * 範囲外をクランプ・欠落キーを既定値で補う。純関数（persist の merge から呼ぶ）。
+ */
+export function normalizeUiPrefs(raw: unknown): UiPrefs {
+  const r = (raw ?? {}) as Record<string, unknown>
+  const clamp = (v: unknown, min: number, max: number, def: number): number => {
+    const n = typeof v === 'number' ? v : Number(v)
+    if (!Number.isFinite(n)) return def
+    return Math.min(max, Math.max(min, n))
+  }
+  const fontFromScale: Record<string, number> = { s: 14, m: 15.5, l: 17, xl: 18.5 }
+  const lineFromScale: Record<string, number> = { compact: 1.7, normal: 1.9, wide: 2.1 }
+  const widthFromScale: Record<string, number> = { narrow: 660, normal: 760, wide: 900 }
+  const fontSize =
+    typeof r.fontSize === 'number'
+      ? clamp(r.fontSize, 12, 22, 15.5)
+      : (fontFromScale[String(r.fontScale)] ?? 15.5)
+  const lineHeight =
+    typeof r.lineHeight === 'number'
+      ? clamp(r.lineHeight, 1.4, 2.4, 1.9)
+      : (lineFromScale[String(r.lineHeight)] ?? 1.9)
+  const contentWidth =
+    typeof r.contentWidth === 'number'
+      ? clamp(r.contentWidth, 560, 1200, 760)
+      : (widthFromScale[String(r.contentWidth)] ?? 760)
+  const validTabs: DockTab[] = ['status', 'discovery', 'gallery', 'branch', 'jobs']
+  return {
+    dockTab: validTabs.includes(r.dockTab as DockTab) ? (r.dockTab as DockTab) : null,
+    dockWidth: clamp(r.dockWidth, 300, 560, 360),
+    fontSize,
+    lineHeight,
+    contentWidth,
+    dialogueTint: r.dialogueTint !== false,
+    stageBgOpacity: clamp(r.stageBgOpacity, 0, 0.6, 0.25),
+    stageSpriteOpacity: clamp(r.stageSpriteOpacity, 0, 0.9, 0.5),
+    immersive: r.immersive === true,
+  }
 }
 
 /** エクスポート/インポート用のデータ束 */

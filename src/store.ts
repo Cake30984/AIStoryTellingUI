@@ -33,7 +33,7 @@ import type {
   UiPrefs,
   World,
 } from './types'
-import { DEFAULT_UI, EMOTIONS } from './types'
+import { DEFAULT_UI, EMOTIONS, normalizeUiPrefs } from './types'
 import { fetchModels, streamChat } from './lib/openrouter'
 import { base64ToBlob, blobToBase64, gcImages, getImage, putImage, putImageAs } from './lib/imageStore'
 import { checkpointStore, PERSIST_KEY, stateStorage } from './lib/platform'
@@ -584,13 +584,17 @@ interface AppState {
   imageJobs: ImageJob[]
   /** 選択待ちに変わったジョブの通知（非永続） */
   imageJobToasts: { jobId: string; label: string }[]
+  /** 一時的な案内メッセージ（没入モード起動時など。非永続・info トーストで表示。F2） */
+  infoNotice: string | null
 
   // 共通
   setView: (v: View) => void
   clearError: () => void
   dismissNewAchievements: () => void
-  /** 右コンテキストドック等の UI 設定を部分更新する（UI-3） */
+  /** 右コンテキストドック等の UI 設定を部分更新する（UI-3）。没入 OFF→ON で案内を出す（F2） */
   setUiPrefs: (patch: Partial<UiPrefs>) => void
+  /** 一時案内メッセージのセット/クリア（F2） */
+  setInfoNotice: (msg: string | null) => void
 
   // 接続先（プロバイダ）
   upsertProvider: (p: Provider) => void
@@ -1391,11 +1395,23 @@ export const useStore = create<AppState>()(
         newlyUnlockedAchievements: [],
         imageJobs: [],
         imageJobToasts: [],
+        infoNotice: null,
 
         setView: (view) => set({ view }),
         clearError: () => set({ error: null }),
         dismissNewAchievements: () => set({ newlyUnlockedAchievements: [] }),
-        setUiPrefs: (patch) => set((s) => ({ ui: { ...s.ui, ...patch } })),
+        setUiPrefs: (patch) =>
+          set((s) => {
+            // 没入モードを OFF→ON にした瞬間だけ操作方法を案内する（バーが消えて戸惑うため。F2/A8）
+            const enteringImmersive = patch.immersive === true && !s.ui.immersive
+            return {
+              ui: { ...s.ui, ...patch },
+              infoNotice: enteringImmersive
+                ? '没入モード: 上端にマウスでバーを表示 / Esc で解除'
+                : s.infoNotice,
+            }
+          }),
+        setInfoNotice: (msg) => set({ infoNotice: msg }),
 
         upsertProvider: (p) =>
           set((st) => ({
@@ -3140,7 +3156,8 @@ export const useStore = create<AppState>()(
       // truncated を立てて「⤵ 続きを生成」で復帰できるようにする。
       merge: (persisted, current) => {
         const p = (persisted as Partial<AppState>) ?? {}
-        const merged = { ...current, ...p, ui: { ...current.ui, ...(p.ui ?? {}) } }
+        // ui は normalizeUiPrefs で現行スキーマへ正規化（旧・段階式の文字列値を数値へ引き継ぐ。F2）
+        const merged = { ...current, ...p, ui: normalizeUiPrefs({ ...current.ui, ...(p.ui ?? {}) }) }
         merged.sessions = (merged.sessions ?? []).map((s) => {
           if (!s.messages.some((m) => m.pending)) return s
           return {
