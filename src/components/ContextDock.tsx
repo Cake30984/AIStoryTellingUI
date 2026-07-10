@@ -4,6 +4,7 @@ import { useStore } from '../store'
 import { Icon } from './icons'
 import StatusView from './StatusView'
 import DiscoveryView from './DiscoveryView'
+import type { DiscoveryScope } from './DiscoveryPanel'
 import { GalleryBody } from './GalleryModal'
 import { BranchTreeBody } from './BranchTreeModal'
 import { ImageJobsBody } from './ImageJobsPanel'
@@ -11,7 +12,7 @@ import { ImageJobsBody } from './ImageJobsPanel'
 interface Props {
   session: Session
   onEditStatus: () => void
-  onEditDiscovery: () => void
+  onEditDiscovery: (scope: DiscoveryScope) => void
 }
 
 const TITLES: Record<DockTab, string> = {
@@ -64,18 +65,14 @@ export default function ContextDock({ session, onEditStatus, onEditDiscovery }: 
             <Icon name="pencil" size={13} /> 編集
           </button>
         )}
-        {tab === 'discovery' && (
-          <button className="btn" onClick={onEditDiscovery}>
-            <Icon name="pencil" size={13} /> 編集
-          </button>
-        )}
+        {/* 発見タブの編集は DiscoveryView 内のタブ横に置く（選択スコープと編集対象を一致させる。F4） */}
         <button className="icon-btn" onClick={() => setUiPrefs({ dockTab: null })} title="閉じる">
           <Icon name="x" />
         </button>
       </div>
       <div className="dock-body">
         {tab === 'status' && <StatusView session={session} />}
-        {tab === 'discovery' && <DiscoveryView session={session} />}
+        {tab === 'discovery' && <DiscoveryView session={session} onEdit={onEditDiscovery} />}
         {tab === 'gallery' && <GalleryBody session={session} />}
         {tab === 'branch' && <BranchTreeBody session={session} />}
         {tab === 'jobs' && <ImageJobsBody />}

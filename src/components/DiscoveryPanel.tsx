@@ -6,16 +6,22 @@ import { appConfirm } from '../lib/dialogs'
 import ModalShell from './ModalShell'
 import { Icon } from './icons'
 
+/** 発見ログ編集のスコープ（世界観ロア or 特定キャラの発見設定）。F4で編集画面を分割 */
+export type DiscoveryScope = 'lore' | { characterId: string }
+
 interface Props {
   session: Session
+  scope: DiscoveryScope
   onClose: () => void
 }
 
 /** セッションで発見・深化した設定（オーバーレイ）の閲覧・手動編集パネル。元 World/Character は不変。 */
-export default function DiscoveryPanel({ session, onClose }: Props) {
+export default function DiscoveryPanel({ session, scope, onClose }: Props) {
   const { characters, worlds, updateSession, promoteOverlayLore, promoteOverlayDev } = useStore()
   const charName = (id: string) => characters.find((c) => c.id === id)?.name || '無名'
   const worldName = worlds.find((w) => w.id === session.worldId)?.name
+  const isLore = scope === 'lore'
+  const scopeCharId = isLore ? null : scope.characterId
 
   const [ov, setOv] = useState<SessionOverlay>(() => ({
     lore: session.overlay.lore.map((e) => ({ ...e, keys: [...e.keys] })),
@@ -61,7 +67,6 @@ export default function DiscoveryPanel({ session, onClose }: Props) {
     }))
 
   // 昇格はローカル編集済みの内容（entry/dev）をそのまま store へ渡す。
-  // overlay 全体を書き戻さないため、他の未保存編集や2連続クリックの競合に影響されない。
   const promoteLore = async (entry: LoreEntry) => {
     if (!session.worldId) return
     if (
@@ -92,17 +97,36 @@ export default function DiscoveryPanel({ session, onClose }: Props) {
     }))
   }
 
-  const devGroups = ov.characterDevelopments.filter((x) => x.developments.length > 0)
-  const isEmpty = ov.lore.length === 0 && devGroups.length === 0
-
+  // 保存は「編集中に別スコープへレビュー追記が入っても巻き戻さない」ため、live 起点でスコープ分だけ差し替える
   const save = () => {
-    updateSession(session.id, { overlay: ov })
+    const live =
+      useStore.getState().sessions.find((x) => x.id === session.id)?.overlay ?? session.overlay
+    let merged: SessionOverlay
+    if (isLore) {
+      merged = { ...live, lore: ov.lore }
+    } else {
+      const cid = scopeCharId!
+      const draftEntry = ov.characterDevelopments.find((x) => x.characterId === cid)
+      const has = live.characterDevelopments.some((x) => x.characterId === cid)
+      const characterDevelopments = has
+        ? live.characterDevelopments.map((x) => (x.characterId === cid ? (draftEntry ?? x) : x))
+        : draftEntry
+          ? [...live.characterDevelopments, draftEntry]
+          : live.characterDevelopments
+      merged = { ...live, characterDevelopments }
+    }
+    updateSession(session.id, { overlay: merged })
     onClose()
   }
 
+  const scopeGroup = isLore
+    ? null
+    : ov.characterDevelopments.find((x) => x.characterId === scopeCharId)
+  const scopeEmpty = isLore ? ov.lore.length === 0 : (scopeGroup?.developments.length ?? 0) === 0
+
   return (
     <ModalShell
-      title="📖 発見ログ"
+      title={isLore ? '📖 発見ロア（世界観）' : `📖 「${charName(scopeCharId!)}」の発見設定`}
       onClose={onClose}
       dirty={dirty}
       footer={
@@ -116,110 +140,104 @@ export default function DiscoveryPanel({ session, onClose }: Props) {
         </>
       }
     >
-          {isEmpty && (
-            <p className="inline-empty">
-              まだ発見された設定はありません。シーンを終えるとレビューでここに追記されます。
-            </p>
-          )}
+      {scopeEmpty && (
+        <p className="inline-empty">
+          まだ発見された設定はありません。シーンを終えるとレビューでここに追記されます。
+        </p>
+      )}
 
-          {ov.lore.length > 0 && (
-            <div className="field">
-              <label>発見ロア（世界観）</label>
-              <div className="desc">
-                このセッションで発見された追加ロア。元のワールドは変更されません。
-              </div>
-              {ov.lore.map((e) => (
-                <div key={e.id} className={'lore-entry' + (e.enabled ? '' : ' disabled')}>
-                  <div className="lore-entry-top">
-                    <CsvInput
-                      className="lore-keys"
-                      value={e.keys}
-                      placeholder="トリガー語（カンマ区切り）"
-                      onChange={(keys) => updateLore(e.id, { keys })}
-                    />
-                    <label className="chk" title="常に注入">
-                      <input
-                        type="checkbox"
-                        checked={e.alwaysOn}
-                        onChange={(ev) => updateLore(e.id, { alwaysOn: ev.target.checked })}
-                      />
-                      常時
-                    </label>
-                    <label className="chk" title="有効/無効">
-                      <input
-                        type="checkbox"
-                        checked={e.enabled}
-                        onChange={(ev) => updateLore(e.id, { enabled: ev.target.checked })}
-                      />
-                      有効
-                    </label>
-                    <button
-                      className="icon-btn small"
-                      onClick={() => promoteLore(e)}
-                      disabled={!session.worldId}
-                      title={session.worldId ? 'ワールドへ昇格' : 'ワールド未設定のため昇格できません'}
-                    >
-                      <Icon name="arrow-up" size={13} />
-                    </button>
-                    <button className="icon-btn small" onClick={() => removeLore(e.id)} title="削除">
-                      <Icon name="x" size={13} />
-                    </button>
-                  </div>
-                  <textarea
-                    rows={2}
-                    className="lore-content"
-                    value={e.content}
-                    onChange={(ev) => updateLore(e.id, { content: ev.target.value })}
+      {isLore && ov.lore.length > 0 && (
+        <div className="field">
+          <div className="desc">
+            このセッションで発見された追加ロア。元のワールドは変更されません。
+          </div>
+          {ov.lore.map((e) => (
+            <div key={e.id} className={'lore-entry' + (e.enabled ? '' : ' disabled')}>
+              <div className="lore-entry-top">
+                <CsvInput
+                  className="lore-keys"
+                  value={e.keys}
+                  placeholder="トリガー語（カンマ区切り）"
+                  onChange={(keys) => updateLore(e.id, { keys })}
+                />
+                <label className="chk" title="常に注入">
+                  <input
+                    type="checkbox"
+                    checked={e.alwaysOn}
+                    onChange={(ev) => updateLore(e.id, { alwaysOn: ev.target.checked })}
                   />
-                </div>
-              ))}
-            </div>
-          )}
-
-          {devGroups.map((x) => (
-            <div key={x.characterId} className="field">
-              <label>{charName(x.characterId)} の発見設定</label>
-              <div className="desc">
-                このセッションで判明・深化した設定。チェックを外すとプロンプトに含めません。
+                  常時
+                </label>
+                <label className="chk" title="有効/無効">
+                  <input
+                    type="checkbox"
+                    checked={e.enabled}
+                    onChange={(ev) => updateLore(e.id, { enabled: ev.target.checked })}
+                  />
+                  有効
+                </label>
+                <button
+                  className="icon-btn small"
+                  onClick={() => promoteLore(e)}
+                  disabled={!session.worldId}
+                  title={session.worldId ? 'ワールドへ昇格' : 'ワールド未設定のため昇格できません'}
+                >
+                  <Icon name="arrow-up" size={13} />
+                </button>
+                <button className="icon-btn small" onClick={() => removeLore(e.id)} title="削除">
+                  <Icon name="x" size={13} />
+                </button>
               </div>
-              <div className="growth-list">
-                {x.developments.map((dev) => (
-                  <div key={dev.id} className="growth-edit">
-                    <input
-                      type="checkbox"
-                      checked={dev.enabled}
-                      title="適用/不適用"
-                      onChange={(e) => updateDev(x.characterId, dev.id, { enabled: e.target.checked })}
-                    />
-                    <textarea
-                      rows={2}
-                      value={dev.text}
-                      className={dev.enabled ? '' : 'dimmed'}
-                      onChange={(e) => updateDev(x.characterId, dev.id, { text: e.target.value })}
-                    />
-                    <button
-                      className="icon-btn small"
-                      onClick={() => promoteDev(x.characterId, dev)}
-                      title="キャラへ昇格"
-                    >
-                      <Icon name="arrow-up" size={13} />
-                    </button>
-                    <button
-                      className="icon-btn small"
-                      onClick={() => removeDev(x.characterId, dev.id)}
-                      title="削除"
-                    >
-                      <Icon name="x" size={13} />
-                    </button>
-                  </div>
-                ))}
-              </div>
+              <textarea
+                rows={2}
+                className="lore-content"
+                value={e.content}
+                onChange={(ev) => updateLore(e.id, { content: ev.target.value })}
+              />
             </div>
           ))}
+        </div>
+      )}
 
-          <p className="desc" style={{ marginTop: 4 }}>
-            関係性・気分・実績は 📊 状態パネルをご覧ください。
-          </p>
+      {!isLore && scopeGroup && scopeGroup.developments.length > 0 && (
+        <div className="field">
+          <div className="desc">
+            このセッションで判明・深化した設定。チェックを外すとプロンプトに含めません。
+          </div>
+          <div className="growth-list">
+            {scopeGroup.developments.map((dev) => (
+              <div key={dev.id} className="growth-edit">
+                <input
+                  type="checkbox"
+                  checked={dev.enabled}
+                  title="適用/不適用"
+                  onChange={(e) => updateDev(scopeCharId!, dev.id, { enabled: e.target.checked })}
+                />
+                <textarea
+                  rows={2}
+                  value={dev.text}
+                  className={dev.enabled ? '' : 'dimmed'}
+                  onChange={(e) => updateDev(scopeCharId!, dev.id, { text: e.target.value })}
+                />
+                <button
+                  className="icon-btn small"
+                  onClick={() => promoteDev(scopeCharId!, dev)}
+                  title="キャラへ昇格"
+                >
+                  <Icon name="arrow-up" size={13} />
+                </button>
+                <button
+                  className="icon-btn small"
+                  onClick={() => removeDev(scopeCharId!, dev.id)}
+                  title="削除"
+                >
+                  <Icon name="x" size={13} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </ModalShell>
   )
 }

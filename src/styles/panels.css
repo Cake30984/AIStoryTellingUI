@@ -563,6 +563,33 @@
   font-size: 13px;
 }
 
+/* ---------- 発見ログ（ドックのタブ切替。F4） ---------- */
+.disc-tabbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.disc-tabbar .dock-chip-row {
+  flex: 1;
+}
+.disc-edit {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  font-size: 12.5px;
+}
+.disc-count {
+  font-size: 10px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0 5px;
+  margin-left: 2px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
 /* ---------- レビューモーダル ---------- */
 .review-cards {
   display: grid;

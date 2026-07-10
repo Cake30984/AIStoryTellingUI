@@ -21,7 +21,7 @@ import SessionEditor from './SessionEditor'
 import SceneEditor from './SceneEditor'
 import StoryLogModal from './StoryLogModal'
 import StatusPanel from './StatusPanel'
-import DiscoveryPanel from './DiscoveryPanel'
+import DiscoveryPanel, { type DiscoveryScope } from './DiscoveryPanel'
 import SessionCardModal from './SessionCardModal'
 import EntityAvatar from './EntityAvatar'
 import StageBackdrop from './StageBackdrop'
@@ -109,7 +109,7 @@ export default function ChatPanel({ session }: Props) {
   const [showSceneEditor, setShowSceneEditor] = useState(false)
   const [showLog, setShowLog] = useState(false)
   const [showStatus, setShowStatus] = useState(false)
-  const [showDiscovery, setShowDiscovery] = useState(false)
+  const [discoveryScope, setDiscoveryScope] = useState<DiscoveryScope | null>(null)
   const [showImageGen, setShowImageGen] = useState(false)
   const [showBgGen, setShowBgGen] = useState(false)
   const [showSessionCard, setShowSessionCard] = useState(false)
@@ -812,7 +812,7 @@ export default function ChatPanel({ session }: Props) {
         <ContextDock
           session={session}
           onEditStatus={() => setShowStatus(true)}
-          onEditDiscovery={() => setShowDiscovery(true)}
+          onEditDiscovery={(scope) => setDiscoveryScope(scope)}
         />
       </div>
 
@@ -829,8 +829,12 @@ export default function ChatPanel({ session }: Props) {
       )}
       {showLog && <StoryLogModal session={session} onClose={() => setShowLog(false)} />}
       {showStatus && <StatusPanel session={session} onClose={() => setShowStatus(false)} />}
-      {showDiscovery && (
-        <DiscoveryPanel session={session} onClose={() => setShowDiscovery(false)} />
+      {discoveryScope && (
+        <DiscoveryPanel
+          session={session}
+          scope={discoveryScope}
+          onClose={() => setDiscoveryScope(null)}
+        />
       )}
       {showImageGen && scene && (
         <ImageGenModal
