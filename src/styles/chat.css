@@ -122,6 +122,9 @@
   opacity: 1;
 }
 .msg-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   background: transparent;
   border: none;
   color: var(--text-faint);

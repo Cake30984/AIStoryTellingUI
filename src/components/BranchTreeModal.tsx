@@ -3,6 +3,7 @@ import { useStore } from '../store'
 import type { BranchNode, BranchTree, Session } from '../types'
 import { useImageUrl } from '../lib/imageStore'
 import { appConfirm, appPrompt } from '../lib/dialogs'
+import { Icon } from './icons'
 
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`
@@ -86,13 +87,13 @@ function StarButton({
         title={`しおり: ${node.star.name}（クリックで外す）`}
         onClick={() => onRemoveStar(node)}
       >
-        ★
+        <Icon name="star" size={14} filled />
       </button>
     )
   }
   return (
     <button className="icon-btn small" disabled={busy} title="しおりを付ける" onClick={() => onSetStar(node)}>
-      ☆
+      <Icon name="star" size={14} />
     </button>
   )
 }
@@ -126,7 +127,7 @@ function NodeRow({
       title={canDelete ? 'この分岐を削除' : '現在の分岐上のため削除できません'}
       onClick={() => onDeleteSubtree(node)}
     >
-      🗑
+      <Icon name="trash-2" size={14} />
     </button>
   )
   const starBtn = <StarButton node={node} busy={busy} onSetStar={onSetStar} onRemoveStar={onRemoveStar} />
@@ -142,7 +143,7 @@ function NodeRow({
         <span className="branch-size">{formatBytes(node.bytes)}</span>
         {node.parentId && (
           <button className="btn" disabled={busy} onClick={() => onRestore(node.parentId!)}>
-            ↩ レビュー前に戻る
+            <Icon name="corner-up-left" size={13} /> レビュー前に戻る
           </button>
         )}
         {starBtn}
@@ -159,7 +160,7 @@ function NodeRow({
       <span className="branch-size">{formatBytes(node.bytes)}</span>
       {!isCurrent && (
         <button className="btn" disabled={busy} onClick={() => onRestore(node.id)}>
-          ⏪ ここに戻る
+          <Icon name="rotate-ccw" size={13} /> ここに戻る
         </button>
       )}
       {starBtn}
@@ -383,7 +384,8 @@ export function BranchTreeBody({ session }: { session: Session }) {
               ツリー
             </button>
             <button className={tab === 'starred' ? 'on' : ''} onClick={() => setTab('starred')}>
-              ★ しおり{starred.length > 0 ? `（${starred.length}）` : ''}
+              <Icon name="star" size={13} filled={tab === 'starred'} /> しおり
+              {starred.length > 0 ? `（${starred.length}）` : ''}
             </button>
           </div>
           <span className="desc">
@@ -393,7 +395,7 @@ export function BranchTreeBody({ session }: { session: Session }) {
       )}
       {tree && pruneCount > 0 && (
         <button className="btn danger" style={{ marginBottom: 10 }} disabled={busy} onClick={doPrune}>
-          ✂ この分岐だけ残す
+          <Icon name="scissors" size={13} /> この分岐だけ残す
         </button>
       )}
       {!tree || !root ? (
@@ -420,7 +422,7 @@ export function BranchTreeBody({ session }: { session: Session }) {
                   disabled={busy || tree.currentId === n.id}
                   onClick={() => doRestore(n.id)}
                 >
-                  ⏪ ここに戻る
+                  <Icon name="rotate-ccw" size={13} /> ここに戻る
                 </button>
                 <button
                   className="icon-btn small"
@@ -428,7 +430,7 @@ export function BranchTreeBody({ session }: { session: Session }) {
                   title="しおりを外す"
                   onClick={() => doRemoveStar(n)}
                 >
-                  ✕
+                  <Icon name="x" size={13} />
                 </button>
               </div>
             ))}

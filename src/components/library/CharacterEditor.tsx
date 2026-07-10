@@ -9,6 +9,7 @@ import ModelPicker from '../ModelPicker'
 import { exportCharacterCard } from '../../lib/cards'
 import { appConfirm } from '../../lib/dialogs'
 import ModalShell from '../ModalShell'
+import { Icon } from '../icons'
 
 interface Props {
   character: Character
@@ -62,7 +63,13 @@ export default function CharacterEditor({ character, onClose }: Props) {
             削除
           </button>
           <button className="btn" onClick={exportCard} disabled={exporting}>
-            {exporting ? '書き出し中…' : '🖼 カードとして保存'}
+            {exporting ? (
+              '書き出し中…'
+            ) : (
+              <>
+                <Icon name="credit-card" size={14} /> カードとして保存
+              </>
+            )}
           </button>
           <div style={{ flex: 1 }} />
           <button className="btn" onClick={onClose}>

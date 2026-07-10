@@ -54,7 +54,7 @@ function IllustrationView({ ill, onRemove }: { ill: SceneIllustration; onRemove:
             if (blob) downloadBlob(blob, `illustration_${ill.id}.png`)
           }}
         >
-          ⬇
+          <Icon name="download" size={14} />
         </button>
         <button
           className="icon-btn small"
@@ -63,7 +63,7 @@ function IllustrationView({ ill, onRemove }: { ill: SceneIllustration; onRemove:
             if (await appConfirm({ message: 'この挿絵を削除しますか？', danger: true })) onRemove()
           }}
         >
-          🗑
+          <Icon name="trash-2" size={14} />
         </button>
       </div>
       {zoom && <ZoomOverlay url={url} onClose={() => setZoom(false)} />}
@@ -270,11 +270,17 @@ export default function ChatPanel({ session }: Props) {
     if (isStreaming || m.pending) return null
     return (
       <div className="msg-actions">
-        {!isMarker(m) && <button onClick={() => startEdit(m)}>✎ 編集</button>}
+        {!isMarker(m) && (
+          <button onClick={() => startEdit(m)}>
+            <Icon name="pencil" size={13} /> 編集
+          </button>
+        )}
         <button onClick={() => regenerateFrom(m.id)} title="この発言以降を作り直す">
-          ↻ ここから
+          <Icon name="rotate-ccw" size={13} /> ここから
         </button>
-        <button onClick={() => deleteMessage(m.id)}>🗑 削除</button>
+        <button onClick={() => deleteMessage(m.id)}>
+          <Icon name="trash-2" size={13} /> 削除
+        </button>
       </div>
     )
   }
@@ -599,7 +605,7 @@ export default function ChatPanel({ session }: Props) {
                               disabled={isStreaming || isReviewing}
                               title="このシーンの要約と次シーンの方針を再生成する"
                             >
-                              🔄 再生成
+                              <Icon name="refresh-cw" size={12} /> 再生成
                             </button>
                           </div>
                           <div className="scene-summary-body">{sc.summary}</div>
@@ -732,7 +738,9 @@ export default function ChatPanel({ session }: Props) {
                   title={isReviewing ? 'レビュー生成を中止' : 'このシーンを振り返って次のシーンへ'}
                 >
                   {isReviewing ? (
-                    '◼ レビュー作成中…（中止）'
+                    <>
+                      <Icon name="square" size={14} /> レビュー作成中…（中止）
+                    </>
                   ) : (
                     <>
                       <Icon name="check" size={14} /> このシーンを終える
@@ -759,7 +767,7 @@ export default function ChatPanel({ session }: Props) {
                 />
                 {isStreaming ? (
                   <button className="send-btn stop" onClick={stop} title="停止">
-                    ◼
+                    <Icon name="square" size={13} />
                   </button>
                 ) : (
                   <button className="send-btn" onClick={submit} disabled={!text.trim()} title="送信">

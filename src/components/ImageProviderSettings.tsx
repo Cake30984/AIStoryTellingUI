@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useStore } from '../store'
 import { newImageProvider, testImageProvider } from '../lib/imageGen'
 import type { ImageProvider } from '../types'
+import { Icon } from './icons'
 
 const inputStyle = {
   width: '100%',
@@ -58,7 +59,7 @@ export default function ImageProviderSettings() {
               title="削除"
               style={{ flexShrink: 0 }}
             >
-              🗑
+              <Icon name="trash-2" size={14} />
             </button>
           </div>
 
@@ -148,14 +149,14 @@ export default function ImageProviderSettings() {
 
       <div style={{ display: 'flex', gap: 8 }}>
         <button className="btn" style={{ flex: 1 }} onClick={() => upsertImageProvider(newImageProvider('comfyui'))}>
-          ＋ ComfyUI を追加
+          <Icon name="plus" size={14} /> ComfyUI を追加
         </button>
         <button
           className="btn"
           style={{ flex: 1 }}
           onClick={() => upsertImageProvider(newImageProvider('openai-image'))}
         >
-          ＋ 画像 API を追加
+          <Icon name="plus" size={14} /> 画像 API を追加
         </button>
       </div>
     </div>

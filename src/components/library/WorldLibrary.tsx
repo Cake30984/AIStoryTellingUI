@@ -4,6 +4,7 @@ import type { World } from '../../types'
 import WorldEditor from './WorldEditor'
 import { parseCardPng } from '../../lib/cards'
 import { useCardDrop } from '../../lib/useCardDrop'
+import { Icon } from '../icons'
 
 export default function WorldLibrary() {
   const { worlds, importWorldCard } = useStore()
@@ -40,7 +41,7 @@ export default function WorldLibrary() {
       <div className="library-head">
         <h2>🌍 世界観</h2>
         <button className="btn primary" onClick={() => setEditing(newWorld())}>
-          ＋ 新規世界観
+          <Icon name="plus" size={14} /> 新規世界観
         </button>
       </div>
 

@@ -1,6 +1,7 @@
 import type { MouseEvent, ReactNode } from 'react'
 import { appConfirm } from '../lib/dialogs'
 import { useModalEscape } from '../lib/modalStack'
+import { Icon } from './icons'
 
 interface Props {
   title: ReactNode
@@ -40,7 +41,7 @@ export default function ModalShell({
         <div className="modal-head">
           <h3>{title}</h3>
           <button className="icon-btn" onClick={requestClose}>
-            ✕
+            <Icon name="x" size={15} />
           </button>
         </div>
         <div className="modal-body">{children}</div>

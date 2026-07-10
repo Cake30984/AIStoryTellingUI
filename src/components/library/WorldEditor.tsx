@@ -25,6 +25,7 @@ import type {
 import CsvInput from '../CsvInput'
 import { exportWorldCard } from '../../lib/cards'
 import { appConfirm } from '../../lib/dialogs'
+import { Icon } from '../icons'
 
 const OPS: Op[] = ['>=', '>', '<=', '<', '==', '!=']
 
@@ -325,7 +326,13 @@ export default function WorldEditor({ world, onClose }: Props) {
           削除
         </button>
         <button className="btn" onClick={exportCard} disabled={exporting}>
-          {exporting ? '書き出し中…' : '🖼 カードとして保存'}
+          {exporting ? (
+            '書き出し中…'
+          ) : (
+            <>
+              <Icon name="credit-card" size={14} /> カードとして保存
+            </>
+          )}
         </button>
         <button className="btn primary" onClick={save}>
           保存

@@ -5,6 +5,7 @@ import { getImage, useImageUrl } from '../lib/imageStore'
 import { generateDefaultAvatar } from '../lib/avatarGen'
 import type { SceneIllustration, Session } from '../types'
 import ModalShell from './ModalShell'
+import { Icon } from './icons'
 
 interface Props {
   session: Session
@@ -76,7 +77,13 @@ export default function SessionCardModal({ session, onClose }: Props) {
             キャンセル
           </button>
           <button className="btn primary" onClick={exportCard} disabled={busy}>
-            {busy ? '書き出し中…' : '🖼 カードとして保存'}
+            {busy ? (
+              '書き出し中…'
+            ) : (
+              <>
+                <Icon name="credit-card" size={14} /> カードとして保存
+              </>
+            )}
           </button>
         </>
       }
