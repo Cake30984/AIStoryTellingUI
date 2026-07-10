@@ -25,6 +25,9 @@ export type IconName =
   | 'rotate-ccw'
   | 'corner-down-right'
   | 'refresh-cw'
+  | 'message-circle'
+  | 'library-big'
+  | 'archive'
 
 const PATHS: Record<IconName, ReactNode> = {
   'more-horizontal': (
@@ -153,6 +156,21 @@ const PATHS: Record<IconName, ReactNode> = {
       <path d="M21 3v5h-5" />
       <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
       <path d="M3 21v-5h5" />
+    </>
+  ),
+  'message-circle': <path d="M21 12a8.5 8.5 0 0 1-8.5 8.5c-1.4 0-2.7-.3-3.9-.9L3 21l1.4-5.6A8.5 8.5 0 1 1 21 12z" />,
+  'library-big': (
+    <>
+      <rect x="3" y="4" width="6" height="16" rx="1" />
+      <rect x="11" y="4" width="6" height="16" rx="1" />
+      <path d="M19.5 5.5 22 19a1 1 0 0 1-.8 1.2L19 20.5" />
+    </>
+  ),
+  archive: (
+    <>
+      <rect x="3" y="4" width="18" height="4" rx="1" />
+      <path d="M5 8v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8" />
+      <line x1="10" y1="12" x2="14" y2="12" />
     </>
   ),
 }

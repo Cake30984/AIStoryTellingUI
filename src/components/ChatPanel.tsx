@@ -511,6 +511,15 @@ export default function ChatPanel({ session }: Props) {
                 className="menu-item"
                 onClick={() => {
                   setShowMenu(false)
+                  updateSession(session.id, { archived: !session.archived })
+                }}
+              >
+                <Icon name="archive" size={15} /> {session.archived ? 'アーカイブから戻す' : 'アーカイブする'}
+              </button>
+              <button
+                className="menu-item"
+                onClick={() => {
+                  setShowMenu(false)
                   setShowEditor(true)
                 }}
               >

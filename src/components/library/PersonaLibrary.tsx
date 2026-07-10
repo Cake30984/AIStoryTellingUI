@@ -10,6 +10,7 @@ export default function PersonaLibrary() {
   const { personas, importPersonaCard } = useStore()
   const [editing, setEditing] = useState<Persona | null>(null)
   const [notice, setNotice] = useState('')
+  const [query, setQuery] = useState('')
 
   const handleFiles = async (files: FileList) => {
     for (const file of Array.from(files)) {
@@ -29,6 +30,9 @@ export default function PersonaLibrary() {
 
   const { dragOver, dropProps } = useCardDrop(handleFiles)
 
+  const q = query.trim().toLowerCase()
+  const visible = personas.filter((p) => !q || (p.name || '').toLowerCase().includes(q))
+
   return (
     <div className="library" {...dropProps}>
       <div className="library-head">
@@ -39,15 +43,27 @@ export default function PersonaLibrary() {
       </div>
 
       <div className="desc">ペルソナカード（PNG）をここにドラッグ＆ドロップするとインポートできます。</div>
+      {personas.length > 0 && (
+        <input
+          className="model-search"
+          placeholder="名前で検索"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+      )}
       {notice && <p className="notice">{notice}</p>}
 
       {personas.length === 0 ? (
         <div className={'library-empty' + (dragOver ? ' drag-over' : '')}>
           <p>「自分が演じる人物」を登録すると、各セッションで切り替えて使えます。</p>
         </div>
+      ) : visible.length === 0 ? (
+        <div className="library-empty">
+          <p>見つかりません。</p>
+        </div>
       ) : (
         <div className={'card-grid' + (dragOver ? ' drag-over' : '')}>
-          {personas.map((p) => (
+          {visible.map((p) => (
             <div key={p.id} className="entity-card" onClick={() => setEditing(p)}>
               <EntityAvatar className="entity-avatar" avatar={p.avatar} name={p.name || '🙂'} />
               <div className="entity-body">

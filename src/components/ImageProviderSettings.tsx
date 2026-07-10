@@ -15,7 +15,7 @@ const inputStyle = {
   marginBottom: 6,
 } as const
 
-/** SettingsModal 内の「画像生成の接続先」管理セクション */
+/** SettingsBody（System ページ）内の「画像生成の接続先」管理セクション */
 export default function ImageProviderSettings() {
   const { imageProviders, upsertImageProvider, deleteImageProvider } = useStore()
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({})

@@ -6,13 +6,9 @@ import { PROVIDER_PRESETS, newProvider } from '../lib/providers'
 import ImageProviderSettings from './ImageProviderSettings'
 import { appConfirm } from '../lib/dialogs'
 import type { Provider } from '../types'
-import ModalShell from './ModalShell'
 
-interface Props {
-  onClose: () => void
-}
-
-export default function SettingsModal({ onClose }: Props) {
+/** System ページ（設定・データ管理）の中身。UI-5でモーダルからページ化するため抽出。ロジックは無変更 */
+export function SettingsBody() {
   const {
     providers,
     upsertProvider,
@@ -133,15 +129,7 @@ export default function SettingsModal({ onClose }: Props) {
   } as const
 
   return (
-    <ModalShell
-      title="設定・データ管理"
-      onClose={onClose}
-      footer={
-        <button className="btn primary" onClick={onClose}>
-          閉じる
-        </button>
-      }
-    >
+    <>
           {/* 接続先（プロバイダ）管理 */}
           <div className="field">
             <label>接続先（API プロバイダ）</label>
@@ -353,6 +341,6 @@ export default function SettingsModal({ onClose }: Props) {
           </div>
 
           {notice && <p className="notice">{notice}</p>}
-    </ModalShell>
+    </>
   )
 }

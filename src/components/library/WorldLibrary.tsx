@@ -9,6 +9,7 @@ export default function WorldLibrary() {
   const { worlds, importWorldCard } = useStore()
   const [editing, setEditing] = useState<World | null>(null)
   const [notice, setNotice] = useState('')
+  const [query, setQuery] = useState('')
 
   const handleFiles = async (files: FileList) => {
     for (const file of Array.from(files)) {
@@ -27,6 +28,9 @@ export default function WorldLibrary() {
 
   const { dragOver, dropProps } = useCardDrop(handleFiles)
 
+  const q = query.trim().toLowerCase()
+  const visible = worlds.filter((w) => !q || (w.name || '').toLowerCase().includes(q))
+
   return (
     <div className="library" {...dropProps}>
       <div className="library-head">
@@ -37,15 +41,27 @@ export default function WorldLibrary() {
       </div>
 
       <div className="desc">世界観カード（PNG）をここにドラッグ＆ドロップするとインポートできます。</div>
+      {worlds.length > 0 && (
+        <input
+          className="model-search"
+          placeholder="名前で検索"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+      )}
       {notice && <p className="notice">{notice}</p>}
 
       {worlds.length === 0 ? (
         <div className={'library-empty' + (dragOver ? ' drag-over' : '')}>
           <p>世界観（ロアブック）を作ると、複数のセッションで共有できます。</p>
         </div>
+      ) : visible.length === 0 ? (
+        <div className="library-empty">
+          <p>見つかりません。</p>
+        </div>
       ) : (
         <div className={'card-grid' + (dragOver ? ' drag-over' : '')}>
-          {worlds.map((w) => (
+          {visible.map((w) => (
             <div key={w.id} className="entity-card" onClick={() => setEditing(w)}>
               <div className="entity-avatar" style={{ background: '#2f3346' }}>
                 🌍

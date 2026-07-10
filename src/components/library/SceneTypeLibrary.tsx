@@ -6,6 +6,10 @@ import SceneTypeEditor from './SceneTypeEditor'
 export default function SceneTypeLibrary() {
   const sceneTypes = useStore((s) => s.sceneTypes)
   const [editing, setEditing] = useState<SceneType | null>(null)
+  const [query, setQuery] = useState('')
+
+  const q = query.trim().toLowerCase()
+  const visible = sceneTypes.filter((t) => !q || (t.name || '').toLowerCase().includes(q))
 
   return (
     <div className="library">
@@ -22,8 +26,23 @@ export default function SceneTypeLibrary() {
       </div>
 
       {sceneTypes.length > 0 && (
+        <input
+          className="model-search"
+          placeholder="名前で検索"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+      )}
+
+      {sceneTypes.length > 0 && visible.length === 0 && (
+        <div className="library-empty">
+          <p>見つかりません。</p>
+        </div>
+      )}
+
+      {visible.length > 0 && (
         <div className="card-grid">
-          {sceneTypes.map((t) => (
+          {visible.map((t) => (
             <div key={t.id} className="entity-card" onClick={() => setEditing(t)}>
               <div className="entity-avatar" style={{ background: t.color }}>
                 🎬
