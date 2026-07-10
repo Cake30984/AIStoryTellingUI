@@ -87,6 +87,8 @@
 .bubble .content {
   white-space: pre-wrap;
   word-break: break-word;
+  font-size: var(--font-size-prose);
+  line-height: var(--line-height-prose);
 }
 
 .bubble.continue .content {
@@ -314,6 +316,8 @@
   color: var(--text-dim);
   font-style: italic;
   white-space: pre-wrap;
+  font-size: var(--font-size-prose);
+  line-height: var(--line-height-prose);
 }
 .st-narration.st-tail {
   color: var(--text-faint);

@@ -103,6 +103,37 @@
   margin: 4px 2px;
 }
 
+/* ---------- リーダー設定（Aa ポップオーバー。UI-4） ---------- */
+.reader-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 6px;
+  min-width: 230px;
+}
+.rs-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.rs-label {
+  font-size: 12px;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+.rs-row .seg {
+  flex-shrink: 0;
+}
+.rs-row .range-row {
+  flex: 1;
+  max-width: 150px;
+}
+.rs-chk {
+  justify-content: flex-start;
+  padding: 2px 4px;
+}
+
 .field {
   margin-bottom: 18px;
 }

@@ -26,6 +26,7 @@ import SessionCardModal from './SessionCardModal'
 import EntityAvatar from './EntityAvatar'
 import StageBackdrop from './StageBackdrop'
 import ContextDock from './ContextDock'
+import ReaderSettings from './ReaderSettings'
 import { StructuredChatBody, StructuredNovelBody } from './StructuredMessage'
 import ZoomOverlay from './ZoomOverlay'
 import { Icon } from './icons'
@@ -386,6 +387,8 @@ export default function ChatPanel({ session }: Props) {
 
   return (
     <div className={'main' + (stageOn ? ' stage-on' : '')}>
+      {/* 没入モードで topbar を隠した際、上端ホバーで呼び戻すための当たり判定（UI-4）。~ セレクタのため topbar の直前に置く */}
+      {ui.immersive && <div className="top-hover" />}
       <div className="topbar">
         <input
           className="session-title"
@@ -447,6 +450,8 @@ export default function ChatPanel({ session }: Props) {
           </button>
         </div>
 
+        <ReaderSettings session={session} />
+
         <div className="menu-anchor">
           <button className="icon-btn" onClick={() => setShowMenu((v) => !v)} title="メニュー">
             <Icon name="more-horizontal" />
@@ -500,14 +505,6 @@ export default function ChatPanel({ session }: Props) {
                 }}
               >
                 <Icon name="credit-card" size={15} /> セッションをカード化
-              </button>
-              <button
-                className={'menu-item' + (stageOn ? ' checked' : '')}
-                onClick={() => updateSession(session.id, { spritesEnabled: !stageOn })}
-                title="背景・立ち絵の表示（立ち絵はキャラクター編集の「立ち絵セット」で生成できます）"
-              >
-                <Icon name="layers" size={15} /> ステージ表示
-                <Icon name="check" size={14} className="menu-check" />
               </button>
               <div className="menu-sep" />
               <button
