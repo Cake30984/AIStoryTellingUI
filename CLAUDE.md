@@ -77,7 +77,7 @@ Play 領域:
 
 モーダル・パネル:
 - `SessionEditor.tsx` — セッション設定。「基本／進行／モデル／出力」4タブ（同一 draft を共有）。フッターに「セッションをカード化」。「構造化出力」チェックボックスあり。世界観選択時に開始テンプレートを空欄項目のみ自動コピー（`startPresetPatch`・W1）＋「開始テンプレートを読み込む」リンクで全上書き（確認つき）。story モードは主人公像（`story.protagonist`）欄あり
-- `SessionCardModal.tsx` — セッションカード／ゲームカセット書き出し（モード切替＝続きから／最初から。カセット時は紹介文入力）。読み込みは Sidebar D&D と System ページのファイル入力（`importSessionCard`/`importCassette`。両所でカセットを 🎮 表示で分岐）
+- `SessionCardModal.tsx` — セッションカード／ゲームカセット書き出し（モード切替＝続きから／最初から。カセット時は紹介文入力）。カード画像は「タイトルから自動」のプレビュー付きサムネ＋挿絵から選択（FB2-A3）。読み込みは Sidebar D&D と System ページのファイル入力（`importSessionCard`/`importCassette`。両所でカセットを 🎮 表示で分岐）
 - `SettingsModal.tsx` — `export function SettingsBody()`（System ページ本体）。プロバイダ管理・データ入出力（「画像も含める」チェックボックス）・未使用画像 GC。App.tsx が `view==='system'` で描画
 - `ImageProviderSettings.tsx` — 画像生成接続先の管理（ComfyUI/画像API の追加・編集・削除・接続テスト・デフォルトタグ入力）。`SettingsBody` に組み込み
 - `ImageGenModal.tsx` — 画像生成モーダル（アバター/挿絵/ペルソナ/立ち絵/背景で共用）。接続先・サイズ・枚数選択、「プロンプトを起案」、`target: ImageJobTarget`＋`label` で `store.startImageJob` を呼びジョブ購読。接続先/起案モデルは記憶（`lastImageProviderId`/`lastDraftModel`）

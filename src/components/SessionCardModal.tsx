@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useStore } from '../store'
 import { exportCassetteCard, exportSessionCard } from '../lib/cards'
 import { getImage, useImageUrl } from '../lib/imageStore'
@@ -44,6 +44,23 @@ export default function SessionCardModal({ session, onClose }: Props) {
   const [description, setDescription] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  // 「自動生成」はタイトルから作るプレースホルダ画像の選択肢。押しても何も見えないと
+  // 反応しないボタンに見えるため、開いた時点で実際に生成してプレビュー表示する（FB2-A3）
+  const [autoUrl, setAutoUrl] = useState('')
+
+  useEffect(() => {
+    let disposed = false
+    let url = ''
+    void generateDefaultAvatar(session.title || '物語', '#7c5cff').then((blob) => {
+      if (disposed) return
+      url = URL.createObjectURL(blob)
+      setAutoUrl(url)
+    })
+    return () => {
+      disposed = true
+      if (url) URL.revokeObjectURL(url)
+    }
+  }, [session.title])
 
   const illustrations = session.scenes.flatMap((sc) => sc.illustrations ?? [])
 
@@ -132,21 +149,52 @@ export default function SessionCardModal({ session, onClose }: Props) {
 
           <div className="field">
             <label>カードの画像</label>
-            {illustrations.length === 0 ? (
-              <div className="desc">挿絵が無いため、タイトルから自動生成した画像を使います。</div>
-            ) : (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                <button
-                  type="button"
-                  className={'btn' + (selectedId === null ? ' primary' : '')}
-                  style={{ width: 96, height: 96 }}
-                  onClick={() => setSelectedId(null)}
-                >
-                  自動生成
-                </button>
-                {illustrations.map((ill) => (
-                  <Thumb key={ill.id} ill={ill} selected={selectedId === ill.id} onSelect={() => setSelectedId(ill.id)} />
-                ))}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'flex-start' }}>
+              <button
+                type="button"
+                onClick={() => setSelectedId(null)}
+                title="タイトルの頭文字から自動生成した画像を使う"
+                style={{
+                  padding: 0,
+                  border: selectedId === null ? '3px solid var(--accent)' : '3px solid transparent',
+                  borderRadius: 'var(--radius-sm)',
+                  background: 'none',
+                  cursor: 'pointer',
+                  display: 'grid',
+                  gap: 2,
+                  justifyItems: 'center',
+                }}
+              >
+                {autoUrl ? (
+                  <img
+                    src={autoUrl}
+                    alt="タイトルから自動生成"
+                    style={{ width: 96, height: 96, objectFit: 'cover', borderRadius: 6 }}
+                  />
+                ) : (
+                  <span
+                    style={{
+                      width: 96,
+                      height: 96,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: 12,
+                      color: 'var(--text-dim)',
+                    }}
+                  >
+                    生成中…
+                  </span>
+                )}
+                <span style={{ fontSize: 10.5, color: 'var(--text-dim)' }}>タイトルから自動</span>
+              </button>
+              {illustrations.map((ill) => (
+                <Thumb key={ill.id} ill={ill} selected={selectedId === ill.id} onSelect={() => setSelectedId(ill.id)} />
+              ))}
+            </div>
+            {illustrations.length === 0 && (
+              <div className="desc" style={{ marginTop: 6 }}>
+                挿絵を生成しているセッションでは、ここに挿絵も候補として並びます。
               </div>
             )}
           </div>
