@@ -776,7 +776,7 @@
   color: var(--text-faint);
 }
 
-/* ---------- 分岐ツリー（C2→F1で git ログ風に刷新） ---------- */
+/* ---------- 分岐ツリー（C2→F1→FB3-B2 で SourceTree 風コミットグラフに再設計） ---------- */
 .branch-time {
   font-size: 11px;
   color: var(--text-faint);
@@ -787,147 +787,78 @@
   border-color: color-mix(in srgb, var(--accent) 45%, transparent);
   background: var(--accent-soft);
 }
-.bt-legend {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-  font-size: 11px;
-  color: var(--text-faint);
-  margin-bottom: 8px;
-}
-.bt-list {
+.bg-list {
   display: flex;
   flex-direction: column;
 }
-/* 主線（トランク）: 各章のドット列の背後に縦線を1本通す */
-.bt-main {
-  position: relative;
-}
-.bt-main::before {
-  content: '';
-  position: absolute;
-  left: 27px; /* 行 padding 6 + caret 14 + guide 半分 7 = ドット中心 */
-  top: 10px;
-  bottom: 10px;
-  width: 2px;
-  background: color-mix(in srgb, var(--accent) 22%, transparent);
-}
-.bt-row {
+.bg-row {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 6px;
+  align-items: stretch;
+  height: var(--bg-row-h, 36px);
   border-radius: var(--radius-sm);
-  position: relative;
 }
-.bt-row:hover {
-  background: var(--bg-elev2);
-}
-.bt-row.current {
+.bg-row.current {
   background: var(--accent-soft);
 }
-.bt-caret {
-  width: 14px;
+.bg-row:hover:not(.current) {
+  background: var(--bg-elev2);
+}
+/* グラフのセル（レーン縦線・分岐カーブ・ドットを SVG で描く） */
+.bg-graph {
   flex-shrink: 0;
-  background: transparent;
-  border: none;
-  color: var(--text-dim);
-  font-size: 11px;
-  padding: 0;
-  text-align: center;
 }
-.bt-guide {
-  width: 14px;
-  flex-shrink: 0;
-  display: flex;
-  justify-content: center;
-  z-index: 1;
+.bg-svg {
+  display: block;
 }
-.bt-dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  background: var(--text-faint);
-  box-shadow: 0 0 0 3px var(--bg); /* ドック読み面（--bg）に合わせてトランク線に穴を開ける */
-}
-.bt-dot.current {
-  background: var(--accent);
-  box-shadow: 0 0 0 3px var(--bg), 0 0 8px var(--accent);
-}
-.bt-dot.star {
-  background: var(--star);
-  box-shadow: 0 0 0 3px var(--bg);
-}
-.bt-label {
+.bg-body {
   flex: 1;
   min-width: 0;
-  font-size: 13px;
   display: flex;
   align-items: center;
   gap: 6px;
+  padding-right: 4px;
+}
+.bg-label {
+  flex-shrink: 1;
+  min-width: 0;
+  font-size: 13px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.bt-row.current .bt-label,
-.bt-row.head .bt-label {
+.bg-label.scene {
   font-weight: 600;
 }
-.bt-hint {
-  font-size: 11px;
-  color: var(--text-faint);
-  font-weight: 400;
+.bg-row.current .bg-label {
+  font-weight: 600;
 }
-.bt-meta {
+.bg-bytes {
+  margin-left: auto;
   font-size: 10.5px;
   color: var(--text-faint);
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;
 }
-.bt-back {
+.bg-back {
   flex-shrink: 0;
-  width: 26px;
-  height: 26px;
-  display: grid;
-  place-items: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   background: transparent;
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: 999px;
   color: var(--text-dim);
+  font-size: 11.5px;
+  padding: 2px 8px;
   opacity: 0;
   transition: 0.12s;
 }
-.bt-row:hover .bt-back {
+.bg-row:hover .bg-back {
   opacity: 1;
 }
-.bt-back:hover:not(:disabled) {
+.bg-back:hover:not(:disabled) {
   border-color: var(--accent);
   color: var(--text);
-}
-.bt-toggle {
-  align-self: flex-start;
-  margin: 3px 0 5px 34px;
-  background: transparent;
-  border: 1px dashed var(--border);
-  color: var(--text-dim);
-  font-size: 11.5px;
-  padding: 3px 10px;
-  border-radius: 999px;
-}
-.bt-toggle:hover {
-  border-color: var(--accent);
-  color: var(--text);
-}
-/* 主線外の枝: 破線の縦ガイドで字下げ */
-.bt-alt {
-  border-left: 2px dashed var(--border);
-  margin-left: 20px;
-  padding-left: 6px;
-}
-/* 同じ分岐点から出る枝どうしは間隔を空け、別の筋だと分かるようにする（FB2-A4） */
-.bt-alt + .bt-alt {
-  margin-top: 8px;
 }
 
 /* ---------- しおり（C3） ---------- */

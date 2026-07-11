@@ -895,6 +895,11 @@ function headOf(text: string, max = 24): string {
   return t.length > max ? `${t.slice(0, max)}…` : t
 }
 
+/** スナップショット末尾のメッセージ id（分岐 anchor 用。FB3-B1） */
+function lastMessageId(session: Session): string | undefined {
+  return session.messages.length ? session.messages[session.messages.length - 1].id : undefined
+}
+
 /**
  * 小ポイント（action）のラベルを、生成された本文の冒頭から決める（FB3-A4）。
  * 「⏩ 続き」等の固定ラベルは中身が分からないので、末尾アシスタント本文の頭を採る。
@@ -1082,6 +1087,7 @@ export const useStore = create<AppState>()(
               createdAt: Date.now(),
               imageIds: sessionImageIds(rootSession),
               bytes,
+              anchorMessageId: lastMessageId(rootSession),
             }
             tree = { currentId: rootId, nodes: [rootNode] }
             set((st) => ({ branchTrees: { ...st.branchTrees, [sessionId]: tree! } }))
@@ -1098,12 +1104,40 @@ export const useStore = create<AppState>()(
             createdAt: Date.now(),
             imageIds: sessionImageIds(session),
             bytes,
+            anchorMessageId: lastMessageId(session),
           }
           set((st) => {
             const cur = st.branchTrees[sessionId] ?? tree!
             return { branchTrees: { ...st.branchTrees, [sessionId]: { currentId: nodeId, nodes: [...cur.nodes, node] } } }
           })
         })
+      }
+
+      /**
+       * 巻き戻し操作の直前に currentId を「切り詰め後も残る地点」の祖先へ戻す（FB3-B1）。
+       * currentId から親をたどり、anchorMessageId が keptIds に含まれる最初（＝最も深い）のノードへ移す。
+       * 以降の recordCheckpoint はそのノードの子として積まれ、元の続きと兄弟分岐になる（git の checkout→commit 相当）。
+       * 一致なし（anchor 無しの旧データ等）なら動かさない＝従来の直列動作にフォールバック。
+       */
+      function reanchorBranch(sessionId: string, keptIds: Set<string>): void {
+        const tree = get().branchTrees[sessionId]
+        if (!tree || tree.currentId === null) return
+        const byId = new Map(tree.nodes.map((n) => [n.id, n]))
+        let id: string | null = tree.currentId
+        while (id) {
+          const n = byId.get(id)
+          if (!n) break
+          if (n.anchorMessageId && keptIds.has(n.anchorMessageId)) {
+            if (id !== tree.currentId) {
+              const target = id
+              set((st) => ({
+                branchTrees: { ...st.branchTrees, [sessionId]: { ...st.branchTrees[sessionId], currentId: target } },
+              }))
+            }
+            return
+          }
+          id = n.parentId
+        }
       }
 
       /** 素材（World/Character）にセッションのオーバーレイ（発見ロア・キャラ成長）を合成した実効ビューを返す */
@@ -2705,6 +2739,8 @@ export const useStore = create<AppState>()(
           ) {
             msgs.pop()
           }
+          // 切り詰め後に残る地点へ戻してから生成＝元の続きと兄弟分岐にする（FB3-B1）
+          reanchorBranch(s.id, new Set(msgs.map((m) => m.id)))
           patchActive({ messages: msgs })
           await runCompletion(speakerId)
         },
@@ -2805,18 +2841,21 @@ export const useStore = create<AppState>()(
         editMessage: (messageId, content) => {
           const s = active()
           if (!s) return
+          const idx = s.messages.findIndex((m) => m.id === messageId)
           get().updateSession(s.id, {
             messages: s.messages.map((m) => (m.id === messageId ? { ...m, content } : m)),
           })
+          // 編集で内容が変わるので、編集対象より前を残す地点へ戻して兄弟分岐にする（FB3-B1）
+          if (idx >= 0) reanchorBranch(s.id, new Set(s.messages.slice(0, idx).map((m) => m.id)))
           void recordCheckpoint(s.id, 'action', `✏ 編集: ${headOf(content)}`, s)
         },
 
         deleteMessage: (messageId) => {
           const s = active()
           if (!s || get().isStreaming) return
-          get().updateSession(s.id, {
-            messages: s.messages.filter((m) => m.id !== messageId),
-          })
+          const remaining = s.messages.filter((m) => m.id !== messageId)
+          get().updateSession(s.id, { messages: remaining })
+          reanchorBranch(s.id, new Set(remaining.map((m) => m.id)))
           void recordCheckpoint(s.id, 'action', '🗑 削除', s)
         },
 
@@ -2830,7 +2869,10 @@ export const useStore = create<AppState>()(
           // ユーザー発言: その発言は残し、以降を破棄して応答を作り直す
           const keepUpto = target.role === 'assistant' ? idx : idx + 1
           const speaker = target.role === 'assistant' ? target.characterId : undefined
-          patchActive({ messages: s.messages.slice(0, keepUpto) })
+          const kept = s.messages.slice(0, keepUpto)
+          // 切り詰め後に残る地点へ戻してから生成＝元の続きと兄弟分岐にする（FB3-B1）
+          reanchorBranch(s.id, new Set(kept.map((m) => m.id)))
+          patchActive({ messages: kept })
           await runCompletion(speaker)
         },
 

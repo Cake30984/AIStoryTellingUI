@@ -84,7 +84,7 @@ Play 領域:
 - `ImageGenModal.tsx` — 画像生成モーダル（アバター/挿絵/ペルソナ/立ち絵/背景で共用）。接続先・サイズ・枚数選択、「プロンプトを起案」、`target: ImageJobTarget`＋`label` で `store.startImageJob` を呼びジョブ購読。接続先/起案モデルは記憶（`lastImageProviderId`/`lastDraftModel`）
 - `ImageJobsPanel.tsx` — `ImageJobsBody()`（ドックの jobs タブ）。running=進捗＋キャンセル、selecting=候補サムネ＋採用/破棄
 - `GalleryModal.tsx` — `GalleryBody({session})`（ドックの gallery タブ）。挿絵・背景をシーン見出し付きグリッド表示。保存・削除
-- `BranchTreeModal.tsx` — `BranchTreeBody({session})`（ドックの branch タブ）。git ログ風表示（F1）: 主線＝ルート→いまここ（現在ノードで止める）をドット＋トランク縦線で描き、scene ノードで章に折りたたみ（現在章のみ既定展開）。主線上の分岐点は「⑂ 別の分岐」、現在ノードの子は「▷ この先」を展開式（`.bt-*` クラス）。各行の ⋯ メニューにアクション集約（しおり `setBranchStar`/`removeBranchStar`・シーン開始前へ戻る・この分岐を削除 `deleteBranchSubtree`＝現在パス上は無効）＋行 hover の「↩ ここに戻る」`restoreCheckpoint`。「✂ 現在の分岐だけ残す（他n件を削除）」`pruneToCurrentPath`・「★ しおり」タブ・currentId 変化で自動スクロール
+- `BranchTreeModal.tsx` — `BranchTreeBody({session})`（ドックの branch タブ）。**SourceTree 風コミットグラフ**（FB3-B2・`.bg-*` クラス）: 全ノードを pre-order（現在パスの子を最優先＝現在パスをレーン0の直線に保つ）で縦1列に並べ、`buildGraph` がレーン割り当て＋各行の通過縦線／分岐カーブを計算し SVG で描画。最初の子は親と同じレーンを継ぎ2番目以降は新レーンへ（木なので merge 無し＝分岐カーブは親行の下半分のみ）。レーン色は `--graph-lane-0..5`。行＝色ドット＋ラベル＋timeLabel＋★＋いまここ、hover の「↩ 戻る」`restoreCheckpoint`＋⋯メニュー（しおり `setBranchStar`/`removeBranchStar`・シーン開始前へ戻る・この分岐を削除 `deleteBranchSubtree`＝現在パス上は無効）。「✂ 現在の分岐だけ残す（他n件を削除）」`pruneToCurrentPath`・「★ しおり」タブ・currentId 変化で自動スクロール
 - `ModelPicker.tsx` — プロバイダ切替・モデル一覧・お気に入り。`onPick` は `"providerId::modelId"`
 - `SceneEditor.tsx`/`SceneReviewModal.tsx`/`StoryLogModal.tsx`/`StatusPanel.tsx`/`DiscoveryPanel.tsx`/`CsvInput.tsx` — 各種閲覧・編集モーダル。StatusPanel/DiscoveryPanel はドックの「✎ 編集」経由で開く。`DiscoveryPanel` は `scope`（`'lore' | {characterId}`・F4）で世界観/キャラ別に編集画面を分割し、保存は live 起点でスコープ分だけ差し替え（編集中の他スコープ追記を巻き戻さない）
 - `library/` — 各素材の一覧＋エディタ（Character/World/Persona/SceneType）と `CassetteLibrary`（🎮カセット棚＝表紙/紹介文/▶遊ぶ/PNG書き出し/削除・D&D取込。FB2-E）と `AvatarField`/`SpriteSetField`。各 Library は PNG カード D&D 受付＋検索＋複数選択（`useMultiSelect`・右クリックメニュー＝`LibraryMultiSelect.tsx` の `SelectionBar`/`CardContextMenu`。Ctrl/Shift 選択→一括削除。FB2-D）。CharacterEditor/PersonaEditor は draft を保存ボタンで反映、`AvatarField`/`SpriteSetField` は store 直管理フィールド（avatar.imageId/sprites）を live 購読して同期。WorldEditor はフルページ（`.section-nav`＋`.section-content` の8セクション。「開始テンプレート」= `World.startPreset` の編集・W1）
@@ -159,7 +159,7 @@ Play 領域:
 - **次シーン候補の再生成** `regenerateSuggestions`: レビューで方向性を変えると候補を作り直す（`nextSceneSystem()`）
 - **文体**: novel=地の文＋「」混在（話者プレフィックスなし）/ chat=キャラ別吹き出し（「名前:」先頭をパースして characterId 判定）
 - **出力停止対策**: `finish_reason==='length'` で `message.truncated`→「続きを生成」（`continueLast`＝appendToId で同一メッセージへ追記）。開始の一時エラーは最大3回自動リトライ。**中断は用途別に独立**: `stop`（本編）/`stopChoices`（選択肢）/`stopReview`（レビュー）でモジュールレベル AbortController を分離
-- **メッセージ操作**: 編集/削除/「ここから」（`regenerateFrom`＝以降を切り詰め再生成）
+- **メッセージ操作**: 編集/削除/「ここから」（`regenerateFrom`＝以降を切り詰め再生成）。**巻き戻し系（`regenerate`/`regenerateFrom`/`editMessage`/`deleteMessage`）は冒頭で `reanchorBranch(sessionId, keptIds)` を呼び、`BranchNode.anchorMessageId`（スナップショット末尾メッセージ id）を辿って「切り詰め後も残る地点」の祖先へ currentId を戻す**＝以降の記録が元の続きと兄弟分岐になる（git の checkout→commit 相当。FB3-B1）。anchor 無しの旧木は動かさず従来の直列動作
 - **`runCompletion(speakerId?, appendToId?)`**: novel 時は speaker 無効。chat 時は speaker 確定→`mainModelOf`→`parseModelRef`→`streamChat`
 - **画像生成ジョブ**（store の `imageJobs`）: `startImageJob(args)`→`runImageJobLoop`（fire-and-forget）で `count` 枚を**直列**生成（ComfyUI は並列に弱い）。全滅で `error`、1枚以上で `selecting`（自動採用しない）。`cancelImageJob`/`dismissImageJob`（除去前に `abortJobController` で実行中 fetch も中断）/`applyImageJobResult(jobId, index)`（target で分岐・**旧 imageId は削除せず参照を外すだけ**）。一括生成 `startSpriteBatch` は6感情ジョブを前を await して順次
 - **表情判定**（方式A・`Session.spriteEmotions`）: `classifyEmotions(sessionId)` を `runCompletion` 正常完了後に fire-and-forget。`spritesEnabled` かつ参加キャラが sprites 保有時のみ実行。`extractJson`→`resolveEmotionUpdates`（`matchCharacterByName` 経由）で upsert。**構造化出力 ON 時**は `runCompletion` がストリーミング中の確定行から `emotionUpdatesOf` で直接抽出しリアルタイム upsert、この経路で取れたら方式A をスキップ（フォーマット無視/感情括弧なしのみフォールバック）。`store.isClassifyingEmotions`（非永続）を `ActivityIndicator` が購読
@@ -215,7 +215,7 @@ Play 領域:
 各フェーズの詳細・検証記録は対応する `docs/設計_*.md` を参照。
 
 ## 未着手・残タスク
-- **フィードバック反映3（FB3・A済／B〜D未着手）**: 手順書 → `docs/設計_フィードバック反映3.md`。**A=本文表示の即効改善（実装済み・2026-07-11）**＝開始シーン見出し・マーカーの罫線化（`.gen-divider`）・自動スクロール停止・分岐ラベルを本文冒頭化・一覧選択UX（Esc解除／バーは2件以上／activeは控えめ）・末尾本文に「選択肢を生成」。B=分岐チェックポイントの分岐化＋フルグラフUI（「やり直しが枝にならない」データ不具合の修正含む）／C=演出ディレクター廃止／D=セッションカード全廃＋カセット専用エディタ。推奨順 A→B→C→D
+- **フィードバック反映3（FB3・A済／B〜D未着手）**: 手順書 → `docs/設計_フィードバック反映3.md`。**A=本文表示の即効改善（実装済み・2026-07-11）**＝開始シーン見出し・マーカーの罫線化（`.gen-divider`）・自動スクロール停止・分岐ラベルを本文冒頭化・一覧選択UX（Esc解除／バーは2件以上／activeは控えめ）・末尾本文に「選択肢を生成」。**B=分岐チェックポイントの分岐化＋フルグラフUI（実装済み・2026-07-12）**＝`anchorMessageId`＋`reanchorBranch` で巻き戻しを兄弟分岐化・`BranchTreeBody` を SourceTree 風コミットグラフに再設計。C=演出ディレクター廃止／D=セッションカード全廃＋カセット専用エディタ。残り推奨順 C→D
 - **T1 で判明した既知の問題**: ①選択肢生成中に本編生成が始まると選択肢側 AbortController が追従せず `Cannot read properties of null (reading 'signal')`（再現手順が不明で切り分け未着手のまま据え置き）②ComfyUI が通常起動（`--enable-cors-header` なし）で接続できない＝設計通りでないバグ。**未解決・現在も再現する**。appFetch 未置換経路や `isTauri()` 誤判定を疑い切り分けが必要（詳細は `docs/設計_Tauri化.md`）
 - **T4（配布）**: NSIS・GitHub Releases。ユーザー判断で当面見送り（まだ公開しない）
 - **ComfyUI 実機動作確認・ワークフローテンプレ拡充**（SDXL 以外・LoRA ノード入り）

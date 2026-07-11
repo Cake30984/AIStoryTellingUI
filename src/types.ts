@@ -616,6 +616,12 @@ export interface BranchNode {
   imageIds: string[]
   /** 圧縮後バイト数（剪定 UI のサイズ表示用） */
   bytes: number
+  /**
+   * スナップショット末尾のメッセージ id（FB3-B1）。巻き戻し操作（やり直し・編集・削除）時に
+   * 「切り詰め後も残る地点」の祖先ノードへ currentId を戻して兄弟分岐にするための錨。
+   * 旧データ（未設定）は従来どおり直列に積む。
+   */
+  anchorMessageId?: string
   /** しおり（C3） */
   star?: { name: string; thumbImageId?: string }
 }

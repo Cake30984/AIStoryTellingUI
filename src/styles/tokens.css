@@ -26,6 +26,13 @@
   --dialogue: #cfe3ff; /* 小説セリフの色。UI-4 でリーダー設定と接続 */
   --badge-rp: #f0a76b;
   --badge-story: #6bd6f0;
+  /* 分岐グラフのレーン色（FB3-B2。lane0=現在パス=accent） */
+  --graph-lane-0: #7c5cff;
+  --graph-lane-1: #3aa0ff;
+  --graph-lane-2: #26c281;
+  --graph-lane-3: #f0a020;
+  --graph-lane-4: #e5606a;
+  --graph-lane-5: #14b8c4;
   /* z-index スケール */
   --z-dock: 40;
   --z-modal: 50;
