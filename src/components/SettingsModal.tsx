@@ -22,6 +22,7 @@ export function SettingsBody() {
     importWorldCard,
     importPersonaCard,
     importSessionCard,
+    importCassette,
     gcUnusedImages,
   } = useStore()
 
@@ -102,6 +103,9 @@ export function SettingsBody() {
         } else if (parsed.kind === 'session') {
           await importSessionCard(parsed.bundle)
           setNotice(`セッション「${parsed.bundle.session.title || '無題'}」を復元しました。`)
+        } else if (parsed.kind === 'cassette') {
+          await importCassette(parsed.bundle)
+          setNotice(`🎮 ゲームカセット「${parsed.bundle.session.title || '無題'}」を読み込みました（最初から）。`)
         } else {
           importWorldCard(parsed.world)
           setNotice(`カードから「${parsed.world.name || '無名の世界'}」を追加しました。`)
@@ -297,7 +301,7 @@ export function SettingsBody() {
               キャラ・世界観・ペルソナ・セッションをまとめて JSON で保存／復元します。
               localStorage はブラウザ消去で失われるため、定期的なエクスポートを推奨します。
               キャラ・世界観・ペルソナは単体を PNG カード（画像1枚に情報を埋め込み）でも入出力できます
-              （キャラクターは SillyTavern 互換）。
+              （キャラクターは SillyTavern 互換）。インポートはセッションカード・🎮ゲームカセットの PNG も受け付けます。
             </div>
             <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, fontSize: 13 }}>
               <input

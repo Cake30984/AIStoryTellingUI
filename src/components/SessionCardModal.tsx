@@ -1,11 +1,13 @@
 import { useState } from 'react'
 import { useStore } from '../store'
-import { exportSessionCard } from '../lib/cards'
+import { exportCassetteCard, exportSessionCard } from '../lib/cards'
 import { getImage, useImageUrl } from '../lib/imageStore'
 import { generateDefaultAvatar } from '../lib/avatarGen'
 import type { SceneIllustration, Session } from '../types'
 import ModalShell from './ModalShell'
 import { Icon } from './icons'
+
+type CardMode = 'session' | 'cassette'
 
 interface Props {
   session: Session
@@ -34,10 +36,12 @@ function Thumb({ ill, selected, onSelect }: { ill: SceneIllustration; selected: 
   )
 }
 
-/** セッションを1枚のPNGカードに書き出す（カード画像は挿絵から選択 or 自動生成） */
+/** セッションを1枚のPNGカードに書き出す（続きから＝セッションカード / 最初から＝ゲームカセット） */
 export default function SessionCardModal({ session, onClose }: Props) {
   const { characters, worlds, personas } = useStore()
+  const [mode, setMode] = useState<CardMode>('session')
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [description, setDescription] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
@@ -58,7 +62,11 @@ export default function SessionCardModal({ session, onClose }: Props) {
       const cardImage = selected
         ? (await getImage(selected.imageId)) ?? (await generateDefaultAvatar(session.title || '物語', '#7c5cff'))
         : await generateDefaultAvatar(session.title || '物語', '#7c5cff')
-      await exportSessionCard(session, refs, cardImage)
+      if (mode === 'cassette') {
+        await exportCassetteCard(session, refs, cardImage, description)
+      } else {
+        await exportSessionCard(session, refs, cardImage)
+      }
       onClose()
     } catch (e) {
       setError((e as Error).message)
@@ -68,7 +76,7 @@ export default function SessionCardModal({ session, onClose }: Props) {
 
   return (
     <ModalShell
-      title="セッションをカード化"
+      title="カードとして書き出す"
       onClose={onClose}
       footer={
         <>
@@ -81,16 +89,47 @@ export default function SessionCardModal({ session, onClose }: Props) {
               '書き出し中…'
             ) : (
               <>
-                <Icon name="credit-card" size={14} /> カードとして保存
+                <Icon name="credit-card" size={14} />{' '}
+                {mode === 'cassette' ? 'ゲームカセットとして保存' : 'カードとして保存'}
               </>
             )}
           </button>
         </>
       }
     >
-          <div className="desc">
-            会話・状態・参照素材・画像をすべて1枚の PNG に埋め込みます。読み込むと物語がまるごと復元されます。
+          {/* 書き出し種別の切替 */}
+          <div className="seg" style={{ marginBottom: 12 }}>
+            <button className={mode === 'session' ? 'on' : ''} onClick={() => setMode('session')}>
+              続きから（セッションカード）
+            </button>
+            <button className={mode === 'cassette' ? 'on' : ''} onClick={() => setMode('cassette')}>
+              最初から（ゲームカセット）
+            </button>
           </div>
+
+          {mode === 'session' ? (
+            <div className="desc">
+              会話・状態・参照素材・画像をすべて1枚の PNG に埋め込みます。読み込むと物語がまるごと（続きから）復元されます。
+            </div>
+          ) : (
+            <div className="desc">
+              世界観・登場キャラ・ペルソナ・開始設定・画像を1枚に同梱した「ゲームカセット」を書き出します。
+              会話などのプレイ記録は含まず、読み込むと誰でも最初から遊べます（世界観・キャラは自動でライブラリに登録され、個別に再利用・コピーもできます）。
+            </div>
+          )}
+
+          {mode === 'cassette' && (
+            <div className="field">
+              <label>紹介文（任意）</label>
+              <textarea
+                rows={2}
+                value={description}
+                placeholder="例: 記憶を失った剣士として、滅びかけた王国を巡る物語。"
+                onChange={(e) => setDescription(e.target.value)}
+              />
+            </div>
+          )}
+
           <div className="field">
             <label>カードの画像</label>
             {illustrations.length === 0 ? (

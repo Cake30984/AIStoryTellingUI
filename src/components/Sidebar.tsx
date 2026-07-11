@@ -27,6 +27,7 @@ export default function Sidebar() {
     deleteSession,
     characters,
     importSessionCard,
+    importCassette,
   } = useStore()
   const [notice, setNotice] = useState('')
   const [query, setQuery] = useState('')
@@ -43,9 +44,15 @@ export default function Sidebar() {
       try {
         const bytes = new Uint8Array(await file.arrayBuffer())
         const parsed = parseCardPng(bytes)
-        if (!parsed || parsed.kind !== 'session') throw new Error('セッションカードではありません。')
-        await importSessionCard(parsed.bundle)
-        setNotice(`セッション「${parsed.bundle.session.title || '無題'}」を復元しました。`)
+        if (parsed?.kind === 'cassette') {
+          await importCassette(parsed.bundle)
+          setNotice(`🎮 ゲームカセット「${parsed.bundle.session.title || '無題'}」を読み込みました（最初から）。`)
+        } else if (parsed?.kind === 'session') {
+          await importSessionCard(parsed.bundle)
+          setNotice(`セッション「${parsed.bundle.session.title || '無題'}」を復元しました。`)
+        } else {
+          throw new Error('セッションカード／ゲームカセットではありません。')
+        }
       } catch (e) {
         setNotice(`読み込み失敗：${(e as Error).message}`)
       }

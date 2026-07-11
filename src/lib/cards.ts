@@ -1,4 +1,4 @@
-import type { Character, EmotionId, Persona, Session, World, WorldStartPreset } from '../types'
+import type { Character, EmotionId, Persona, Scene, Session, World, WorldStartPreset } from '../types'
 import { readTextChunks, writeTextChunk } from './png'
 import { getImage, putImage } from './imageStore'
 import { generateDefaultAvatar, normalizeImage } from './avatarGen'
@@ -52,11 +52,22 @@ export interface SessionCardBundle {
   images: { id: string; b64: string }[]
 }
 
+/**
+ * ゲームカセット（W2）の中身。セッションカードと同構造だが、session は開始状態に初期化済み
+ * （プレイ記録なし）＋カセット固有の紹介文を持つ。1枚で世界観・キャラ・ペルソナ・画像が揃い、
+ * 読み込めばすぐ最初から遊べる（設計は docs/設計_開始テンプレートとゲームカセット.md）。
+ */
+export interface CassetteBundle extends SessionCardBundle {
+  /** カセットの紹介文（読み込み確認・一覧表示用） */
+  description?: string
+}
+
 export type ParsedCard =
   | { kind: 'character'; character: Character }
   | { kind: 'world'; world: World }
   | { kind: 'persona'; persona: Persona }
   | { kind: 'session'; bundle: SessionCardBundle }
+  | { kind: 'cassette'; bundle: CassetteBundle }
 
 /** キャラクターの extensions に格納する独自拡張（model・avatar.imageId・sprites は環境固有のため除外） */
 interface CharacterExtension {
@@ -290,16 +301,14 @@ function normalizePersonaFromData(raw: any): Persona {
 // ---------- セッションカード（独自形式。aist_session チャンク。G4） ----------
 
 /**
- * セッションを PNG カードとして書き出す。参照素材（キャラ/世界/ペルソナ）と
- * 参照画像（アバター＋挿絵）を base64 で同梱し、1ファイルで完全共有できる。
- * cardImageBlob がカードの見た目（挿絵から選択 or 自動生成）。
+ * セッション/カセットが参照する画像を収集し base64 同梱用に変換する（セッションカード・ゲームカセット共通）。
+ * 対象＝キャラのアバター＋立ち絵、ペルソナのアバター、各シーンの挿絵＋背景。
+ * 消失画像はスキップ（インポート側でフォールバック表示）。合計バイト数も返す（サイズ警告用）。
  */
-export async function exportSessionCard(
+async function collectCardImages(
   session: Session,
-  refs: { characters: Character[]; world?: World; persona?: Persona },
-  cardImageBlob: Blob,
-): Promise<void> {
-  // 参照している画像 id を収集（アバター＋立ち絵＋挿絵＋背景）
+  refs: { characters: Character[]; persona?: Persona },
+): Promise<{ images: { id: string; b64: string }[]; totalBytes: number }> {
   const imageIds = new Set<string>()
   for (const c of refs.characters) {
     if (c.avatar.imageId) imageIds.add(c.avatar.imageId)
@@ -315,24 +324,47 @@ export async function exportSessionCard(
   let totalBytes = 0
   for (const id of imageIds) {
     const blob = await getImage(id)
-    if (!blob) continue // 消失画像はスキップ（インポート側でフォールバック表示）
+    if (!blob) continue
     totalBytes += blob.size
     images.push({ id, b64: await blobToB64(blob) })
   }
+  return { images, totalBytes }
+}
 
+/** 同梱画像の合計が閾値を超える時に確認する。続行不可なら false */
+async function confirmImageSize(totalBytes: number): Promise<boolean> {
   if (totalBytes > 30 * 1024 * 1024) {
     const mb = Math.round(totalBytes / 1024 / 1024)
-    if (!(await appConfirm(`同梱画像の合計が約 ${mb}MB あり、カードファイルが大きくなります。続行しますか？`))) return
+    return appConfirm(`同梱画像の合計が約 ${mb}MB あり、カードファイルが大きくなります。続行しますか？`)
   }
+  return true
+}
 
-  // キャラの model（ModelRef）は環境固有のため除外。session 側の ModelRef は
-  // 文字列として無害（解決不能なら providers[0] にフォールバック）なので残す
+/** キャラの model（ModelRef）は環境固有のため除外する（受け手側で providers[0] にフォールバック） */
+function stripCharacterModels(characters: Character[]): Character[] {
+  return characters.map((c) => {
+    const { model, ...rest } = c
+    return rest as Character
+  })
+}
+
+/**
+ * セッションを PNG カードとして書き出す。参照素材（キャラ/世界/ペルソナ）と
+ * 参照画像（アバター＋挿絵）を base64 で同梱し、1ファイルで完全共有できる。
+ * cardImageBlob がカードの見た目（挿絵から選択 or 自動生成）。
+ */
+export async function exportSessionCard(
+  session: Session,
+  refs: { characters: Character[]; world?: World; persona?: Persona },
+  cardImageBlob: Blob,
+): Promise<void> {
+  const { images, totalBytes } = await collectCardImages(session, refs)
+  if (!(await confirmImageSize(totalBytes))) return
+
+  // session 側の ModelRef は文字列として無害（解決不能なら providers[0] にフォールバック）なので残す
   const bundle: SessionCardBundle = {
     session,
-    characters: refs.characters.map((c) => {
-      const { model, ...rest } = c
-      return rest as Character
-    }),
+    characters: stripCharacterModels(refs.characters),
     world: refs.world,
     persona: refs.persona,
     images,
@@ -344,6 +376,72 @@ export async function exportSessionCard(
   const withChunk = writeTextChunk(pngBytes, 'aist_session', b64encode(JSON.stringify(card)))
   const outBlob = new Blob([withChunk as BlobPart], { type: 'image/png' })
   downloadBlob(outBlob, `session_${session.title || 'story'}.png`)
+}
+
+/**
+ * セッションを「開始状態」に初期化する（ゲームカセット書き出し用。W2）。
+ * プレイ記録（会話・シーン・状態・オーバーレイ・消化イベント・表情）を全て空にし、
+ * タイムラインは1日目へ戻す。モデル参照は環境固有のため空へ（受け手側でフォールバック）。
+ * 残すのは設定（title/story/authorNote/顔ぶれ/世界/ペルソナ/進行設定/文体/timeline 定義 等）。
+ */
+function freshSessionOf(session: Session): Session {
+  const now = Date.now()
+  const scene: Scene = {
+    id: uid(),
+    title: 'シーン 1',
+    activeCharacterIds: session.characterIds,
+    note: '',
+    summary: '',
+    createdAt: now,
+  }
+  return {
+    ...session,
+    model: '',
+    reviewModel: '',
+    choicesModel: '',
+    messages: [],
+    scenes: [scene],
+    currentSceneId: scene.id,
+    state: { relations: [], moods: [], stats: [], counters: [], achievements: [] },
+    overlay: { lore: [], characterDevelopments: [] },
+    usedEventIds: [],
+    spriteEmotions: [],
+    timeline: { ...session.timeline, currentDay: 1, currentSlot: 0 },
+    archived: false,
+    updatedAt: now,
+  }
+}
+
+/**
+ * ゲームカセット（W2）を PNG カードとして書き出す。世界観・登場キャラ・ペルソナ・設定・
+ * アバター/立ち絵画像を1枚に同梱し、読み込めば最初から遊べる状態を配布できる。
+ * セッションカードとの違いは「開始状態に初期化して同梱する」点（挿絵/背景は初期化で自然に対象外）。
+ */
+export async function exportCassetteCard(
+  session: Session,
+  refs: { characters: Character[]; world?: World; persona?: Persona },
+  cardImageBlob: Blob,
+  description: string,
+): Promise<void> {
+  const fresh = freshSessionOf(session)
+  const { images, totalBytes } = await collectCardImages(fresh, refs)
+  if (!(await confirmImageSize(totalBytes))) return
+
+  const bundle: CassetteBundle = {
+    session: fresh,
+    characters: stripCharacterModels(refs.characters),
+    world: refs.world,
+    persona: refs.persona,
+    images,
+    ...(description.trim() ? { description: description.trim() } : {}),
+  }
+
+  const normalized = await normalizeImage(cardImageBlob, 1024)
+  const pngBytes = new Uint8Array(await normalized.arrayBuffer())
+  const card = { spec: 'aist_cassette', spec_version: '1.0', data: bundle }
+  const withChunk = writeTextChunk(pngBytes, 'aist_cassette', b64encode(JSON.stringify(card)))
+  const outBlob = new Blob([withChunk as BlobPart], { type: 'image/png' })
+  downloadBlob(outBlob, `cassette_${session.title || 'story'}.png`)
 }
 
 /** セッションカードの images 内 blob を取り出す（インポート側で putImage する用） */
@@ -374,6 +472,19 @@ function normalizeSessionBundle(raw: any): SessionCardBundle | null {
 /** PNG バイト列からカード情報を解釈する。カードチャンクが無ければ null */
 export function parseCardPng(bytes: Uint8Array): ParsedCard | null {
   const chunks = readTextChunks(bytes)
+
+  // ゲームカセット（W2）はセッションカードより先に判定する
+  const cassetteChunk = chunks.find((c) => c.keyword === 'aist_cassette')
+  if (cassetteChunk) {
+    const json = JSON.parse(b64decode(cassetteChunk.text))
+    const raw = json.data ?? json
+    const bundle = normalizeSessionBundle(raw)
+    if (bundle) {
+      const description = typeof raw.description === 'string' ? raw.description : undefined
+      return { kind: 'cassette', bundle: { ...bundle, ...(description ? { description } : {}) } }
+    }
+    return null
+  }
 
   const sessionChunk = chunks.find((c) => c.keyword === 'aist_session')
   if (sessionChunk) {

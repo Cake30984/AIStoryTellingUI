@@ -47,7 +47,7 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist`。storage は
 - `imageGen.ts` — 画像生成抽象層。`generateImage`（comfyui: /prompt→/history→/view、openai-image: b64_json）/`testImageProvider`/`fillWorkflow`/`DEFAULT_COMFY_WORKFLOW`。**接続先の `defaultPositive`/`defaultNegative` の結合はここ1箇所のみ**（`combineWithDefaults`）
 - `promptTags.ts` — `ensureTags`（pins のタグ欠け補完）＋`combineWithDefaults`（接続先デフォルトタグの先頭結合・重複除去）
 - `imageJobs.ts` — バックグラウンド画像生成ジョブの型（`ImageJobTarget`/`ImageJob`）とヘルパ。Blob を含むため **partialize から除外**。AbortController はモジュールレベル `Map`（`registerJobAbort`/`clearJobAbort`/`abortJobController`）。`useBlobUrl` フック
-- `cards.ts` — キャラカード（`chara_card_v2` 互換）／世界カード（`aist_world`）／ペルソナカード（`aist_persona`）／セッションカード（`aist_session`・画像 base64 同梱の自己完結バンドル）の組み立て・解釈。`exportCharacterCard`/`exportWorldCard`/`exportPersonaCard`/`exportSessionCard`/`parseCardPng`/`attachCardImage`。`model`/`avatar.imageId`/`sprites` は通常カードから除外（セッションカードのみ同梱）
+- `cards.ts` — キャラカード（`chara_card_v2` 互換）／世界カード（`aist_world`）／ペルソナカード（`aist_persona`）／セッションカード（`aist_session`・画像 base64 同梱の自己完結バンドル）／ゲームカセット（`aist_cassette`・W2＝開始状態に初期化したセッション＋素材＋画像の全部入り＋紹介文メタ）の組み立て・解釈。`exportCharacterCard`/`exportWorldCard`/`exportPersonaCard`/`exportSessionCard`/`exportCassetteCard`/`parseCardPng`/`attachCardImage`。カセット書き出しは `freshSessionOf`（プレイ記録・モデル参照を初期化）を通す。画像収集/サイズ確認/model 除去は `collectCardImages`/`confirmImageSize`/`stripCharacterModels` に共通化しセッションカードと共用。`model`/`avatar.imageId`/`sprites` は通常カードから除外（セッションカード・カセットのみ同梱）。`parseCardPng` はカセットを `aist_session` より先に判定
 - `useCardDrop.ts` — PNG カード D&D 受付フック（`dragOver`＋`dropProps`）
 - `modalStack.ts` — `useModalEscape`（最前面モーダルだけ Escape で閉じる）/`modalStackSize`
 - `dialogs.ts` — ネイティブ `confirm`/`prompt` の置き換え。`appConfirm`/`appPrompt`（Promise ベース・React 非依存。lib からも呼べる）。`DialogHost.tsx` が描画・解決
@@ -77,7 +77,7 @@ Play 領域:
 
 モーダル・パネル:
 - `SessionEditor.tsx` — セッション設定。「基本／進行／モデル／出力」4タブ（同一 draft を共有）。フッターに「セッションをカード化」。「構造化出力」チェックボックスあり。世界観選択時に開始テンプレートを空欄項目のみ自動コピー（`startPresetPatch`・W1）＋「開始テンプレートを読み込む」リンクで全上書き（確認つき）。story モードは主人公像（`story.protagonist`）欄あり
-- `SessionCardModal.tsx` — セッションカード書き出し（読み込みは Sidebar D&D と System ページのファイル入力＝`importSessionCard`）
+- `SessionCardModal.tsx` — セッションカード／ゲームカセット書き出し（モード切替＝続きから／最初から。カセット時は紹介文入力）。読み込みは Sidebar D&D と System ページのファイル入力（`importSessionCard`/`importCassette`。両所でカセットを 🎮 表示で分岐）
 - `SettingsModal.tsx` — `export function SettingsBody()`（System ページ本体）。プロバイダ管理・データ入出力（「画像も含める」チェックボックス）・未使用画像 GC。App.tsx が `view==='system'` で描画
 - `ImageProviderSettings.tsx` — 画像生成接続先の管理（ComfyUI/画像API の追加・編集・削除・接続テスト・デフォルトタグ入力）。`SettingsBody` に組み込み
 - `ImageGenModal.tsx` — 画像生成モーダル（アバター/挿絵/ペルソナ/立ち絵/背景で共用）。接続先・サイズ・枚数選択、「プロンプトを起案」、`target: ImageJobTarget`＋`label` で `store.startImageJob` を呼びジョブ購読。接続先/起案モデルは記憶（`lastImageProviderId`/`lastDraftModel`）
@@ -206,11 +206,11 @@ Play 領域:
 - 品質プロンプトのユーザー定義化（スタイルプリセット廃止・接続先ごとのデフォルトタグ。Q1〜Q5）
 - 構造化出力（行タグパーサ・構造化レンダラ・プロンプト形式指示・ストリーミング表情切替・裏方文脈整流・`@地の文` ラベル非表示。ST1〜ST5）
 - UI 再設計（3領域IA＋右コンテキストドック・トップバー4要素化・リーダー設定＋没入モード・ショートカット/コマンドパレット・SVG アイコン一掃。UI-0〜UI-7）
+- 世界観の開始テンプレート＋ゲームカセット（世界からセッションへ推奨初期設定をコピー／1枚で最初から遊べる `aist_cassette` 配布カード。W1〜W2。**実機目視は未**）
 
 各フェーズの詳細・検証記録は対応する `docs/設計_*.md` を参照。
 
 ## 未着手・残タスク
-- **W2: ゲームカセット専用カード（未着手・設計合意済み）**: `aist_cassette` チャンクの第5カード種。開始状態に初期化したセッション（`freshSessionOf`）＋素材＋アバター/立ち絵画像の全部入り PNG＋カセット説明文メタ。読み込みは `importSessionCard` と共通化。手順書 → `docs/設計_開始テンプレートとゲームカセット.md`
 - **UI改善 F0〜F5（実装済み・2026-07-11 / 実機目視は未）**: UI再設計後のフィードバック対応。手順書 → `docs/設計_UI改善_フィードバック反映.md`。F0（没入グリッド崩壊・checkbox全幅化・System幅・文言）／F1（分岐ツリーgitログ風刷新＝主線をいまここで止める・章折りたたみ・⑂別の分岐/▷この先・行アクション⋯集約＋ドック幅リサイズ `ui.dockWidth`）／F2（リーダー設定を数値化＝`fontSize`/`lineHeight`/`contentWidth` を number 化・`normalizeUiPrefs`・没入案内 `infoNotice`）／F3（生成ボタンをコンポーザーへ・タイトル hover 鉛筆・セッション右クリックメニュー・`createSession` が id 返却→新規作成で設定自動オープン・サイドバーのブランド撤去）／F4（発見ログをタブ＋アイコン化・`DiscoveryScope` で編集をスコープ分割）／F5（`--bg-rail` で面の階層・余白の一括締め・レールにラベル）／F6（追加フィードバック: 没入ホバー帯を28pxに拡大・Library画面に `LibraryBar` で進行状況/ジョブ確認導線）。**tsc/build は全フェーズ通過済み・分岐3つ以上のツリー表示不具合は別途検討として保留**
 - **Tauri 実機検証**（未実施のまま持ち越し）: `tsc`/`build`/`cargo check` は通過済みだが、`npm run tauri:dev` 手動起動でのデータ保持・`%APPDATA%` ファイル生成・旧 WebView データ移行・保存ダイアログでのカード PNG/JSON 保存の確認が必要
 - **T1 で判明した既知の問題（据え置き）**: ①選択肢生成中に本編生成が始まると選択肢側 AbortController が追従せず `Cannot read properties of null (reading 'signal')`（V5d で用途別分離したが要再確認）②ComfyUI が通常起動（`--enable-cors-header` なし）で接続できなかった＝設計通りでないバグ。appFetch 未置換経路や `isTauri()` 誤判定を疑い切り分けが必要（詳細は `docs/設計_Tauri化.md`）

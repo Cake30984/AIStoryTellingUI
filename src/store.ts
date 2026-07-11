@@ -48,7 +48,7 @@ import {
   type ImageJob,
   type ImageJobTarget,
 } from './lib/imageJobs'
-import { sessionCardImageBlob, type SessionCardBundle } from './lib/cards'
+import { sessionCardImageBlob, type CassetteBundle, type SessionCardBundle } from './lib/cards'
 import {
   buildMessages,
   choicesSystem,
@@ -805,6 +805,8 @@ interface AppState {
   importBundle: (bundle: ExportBundle) => Promise<{ added: number }>
   /** セッションカード（aist_session）の取り込み。同梱画像を putImage し直して参照を remap する */
   importSessionCard: (bundle: SessionCardBundle) => Promise<void>
+  /** ゲームカセット（aist_cassette）の取り込み。中身は開始状態のセッション＝importSessionCard に委譲（W2） */
+  importCassette: (bundle: CassetteBundle) => Promise<void>
   /** 未使用のアバター・挿絵画像（IndexedDB）を削除し、削除件数を返す */
   gcUnusedImages: () => Promise<number>
 }
@@ -2977,6 +2979,13 @@ export const useStore = create<AppState>()(
               view: 'sessions' as View,
             }
           })
+        },
+
+        // ゲームカセットの中身は「開始状態に初期化済みのセッション＋素材」で、取り込み処理は
+        // セッションカードと完全に同じ（画像 remap・素材 id マージ・新規セッション追加・アクティブ化）。
+        // 差分は書き出し時の初期化と紹介文メタのみなので、取り込みは importSessionCard に委譲する。
+        importCassette: async (bundle) => {
+          await get().importSessionCard(bundle)
         },
 
         addIllustration: (sessionId, sceneId, ill) =>
