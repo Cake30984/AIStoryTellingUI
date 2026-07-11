@@ -1062,6 +1062,7 @@ export const useStore = create<AppState>()(
         label: string,
         beforeSession: Session | undefined,
         timeLabel?: string,
+        rootLabel?: string,
       ): Promise<void> {
         await serializeCheckpointWrite(sessionId, async () => {
           const session = get().sessions.find((s) => s.id === sessionId)
@@ -1071,11 +1072,13 @@ export const useStore = create<AppState>()(
             const rootSession = beforeSession ?? session
             const rootId = uid()
             const bytes = await writeCheckpointNode(sessionId, rootId, rootSession)
+            // rootLabel 指定時はルート自体を意味のある地点として名付ける（導入をルート1つに畳む用。FB3追補）
             const rootNode: BranchNode = {
               id: rootId,
               parentId: null,
               kind: 'scene',
-              label: '開始時点',
+              label: rootLabel ?? '開始時点',
+              timeLabel: rootLabel ? timeLabel : undefined,
               createdAt: Date.now(),
               imageIds: sessionImageIds(rootSession),
               bytes,
@@ -2763,8 +2766,10 @@ export const useStore = create<AppState>()(
             if (after && after.choiceMode !== 'off') {
               await genChoices(after, assistantId)
             }
-            // チェックポイント（導入時点）。木が空ならルートを遅延生成してから積む
-            void recordCheckpoint(s.id, 'action', '🎬 導入', s, label)
+            // チェックポイント（導入時点）。導入は決め打ちの本文なので「空の開始時点＋導入」の2ノードに割らず、
+            // 導入後の状態を「シーンのタイトル」を持つルート1つとして記録する（beforeSession=導入後 で子はdedupe）
+            const afterOpening = get().sessions.find((x) => x.id === s.id)
+            void recordCheckpoint(s.id, 'scene', title, afterOpening, label, title)
             return
           }
 
