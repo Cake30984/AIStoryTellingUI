@@ -925,6 +925,10 @@
   margin-left: 20px;
   padding-left: 6px;
 }
+/* 同じ分岐点から出る枝どうしは間隔を空け、別の筋だと分かるようにする（FB2-A4） */
+.bt-alt + .bt-alt {
+  margin-top: 8px;
+}
 
 /* ---------- しおり（C3） ---------- */
 .star-thumb {

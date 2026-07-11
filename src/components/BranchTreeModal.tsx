@@ -351,13 +351,13 @@ export function BranchTreeBody({ session }: { session: Session }) {
               {open ? '▾' : isCurrent ? '▷' : '⑂'} {isCurrent ? 'この先' : '別の分岐'} (
               {offChildren.length})
             </button>
-            {open && (
-              <div className="bt-alt">
-                {offChildren.map((c) => (
-                  <Fragment key={c.id}>{renderSubtree(c.id)}</Fragment>
-                ))}
-              </div>
-            )}
+            {/* 枝ごとに独立した囲みで描画する（1つの囲みに連結すると複数の枝が1本に見える） */}
+            {open &&
+              offChildren.map((c) => (
+                <div className="bt-alt" key={c.id}>
+                  {renderSubtree(c.id)}
+                </div>
+              ))}
           </>
         )}
       </Fragment>
