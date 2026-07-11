@@ -546,8 +546,9 @@ function newSession(mode: SessionMode): Session {
     structuredOutput: true,
     messages: [],
     temperature: 0.9,
-    // max_tokens は打ち切り上限（書き終われば自然に止まる）。途中切れ防止を優先して余裕を持たせる
-    maxTokens: 4096,
+    // max_tokens は打ち切り上限（書き終われば自然に止まる＝大きくてもコスト増なし）。
+    // 途中切れ防止を優先し、既定はスライダー最大値（FB2-A1）
+    maxTokens: 32768,
     createdAt: now,
     updatedAt: now,
   }
