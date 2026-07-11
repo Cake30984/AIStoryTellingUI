@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { areaOf, useStore, type View } from '../store'
 import { parseCardPng } from '../lib/cards'
 import { useCardDrop } from '../lib/useCardDrop'
+import { useMultiSelect } from '../lib/useMultiSelect'
 import { appConfirm } from '../lib/dialogs'
 import { Icon, type IconName } from './icons'
 import MenuPopover from './MenuPopover'
@@ -77,7 +78,26 @@ export default function Sidebar() {
   const archivedCount = sessions.filter((s) => s.archived).length
   const visible = sessions.filter((s) => (showArchived || !s.archived) && matchesQuery(s))
 
+  const { selected, clear, handleClick, selectForContext } = useMultiSelect(visible.map((s) => s.id))
+
+  const bulkDelete = async (ids: string[]) => {
+    if (
+      !(await appConfirm({
+        message: `選択した${ids.length}件のセッションを削除しますか？\nこの操作は元に戻せません。`,
+        danger: true,
+      }))
+    )
+      return
+    ids.forEach((id) => deleteSession(id))
+    clear()
+  }
+  const bulkArchive = (ids: string[], archived: boolean) => {
+    ids.forEach((id) => updateSession(id, { archived }))
+    clear()
+  }
+
   const ctxSession = ctxMenu ? sessions.find((s) => s.id === ctxMenu.id) : undefined
+  const ctxMulti = ctxMenu ? selected.has(ctxMenu.id) && selected.size > 1 : false
   const editingSession = editingId ? sessions.find((s) => s.id === editingId) : undefined
   const cardSession = cardId ? sessions.find((s) => s.id === cardId) : undefined
 
@@ -103,6 +123,19 @@ export default function Sidebar() {
             </button>
           </div>
 
+          {selected.size > 0 && (
+            <div className="sidebar-sel-bar">
+              <span>{selected.size} 件選択</span>
+              <div style={{ flex: 1 }} />
+              <button className="btn danger" onClick={() => bulkDelete([...selected])}>
+                <Icon name="trash-2" size={12} /> 削除
+              </button>
+              <button className="icon-btn small" title="選択を解除" onClick={clear}>
+                <Icon name="x" size={13} />
+              </button>
+            </div>
+          )}
+
           <div className="session-list">
             {notice && (
               <p style={{ color: 'var(--accent)', fontSize: 12, padding: '4px 12px' }}>{notice}</p>
@@ -127,11 +160,16 @@ export default function Sidebar() {
                   className={
                     'session-item' +
                     (s.id === activeId && view === 'sessions' ? ' active' : '') +
-                    (s.archived ? ' archived' : '')
+                    (s.archived ? ' archived' : '') +
+                    (selected.has(s.id) ? ' selected' : '')
                   }
-                  onClick={() => setActive(s.id)}
+                  onClick={(e) => {
+                    if (handleClick(e, s.id)) return
+                    setActive(s.id)
+                  }}
                   onContextMenu={(e) => {
                     e.preventDefault()
+                    selectForContext(s.id)
                     setCtxMenu({ id: s.id, x: e.clientX, y: e.clientY })
                   }}
                 >
@@ -170,8 +208,33 @@ export default function Sidebar() {
         </nav>
       )}
 
+      {/* 複数選択時の一括メニュー（FB2-D） */}
+      {ctxMenu && ctxSession && ctxMulti && (
+        <MenuPopover position={{ x: ctxMenu.x, y: ctxMenu.y }} onClose={() => setCtxMenu(null)}>
+          <button
+            className="menu-item"
+            onClick={() => {
+              bulkArchive([...selected], true)
+              setCtxMenu(null)
+            }}
+          >
+            <Icon name="archive" size={15} /> 選択した {selected.size} 件をアーカイブ
+          </button>
+          <button
+            className="menu-item danger"
+            onClick={() => {
+              const ids = [...selected]
+              setCtxMenu(null)
+              void bulkDelete(ids)
+            }}
+          >
+            <Icon name="trash-2" size={15} /> 選択した {selected.size} 件を削除
+          </button>
+        </MenuPopover>
+      )}
+
       {/* セッションの右クリックメニュー（F3/R14）。⋯メニュー（ChatPanel）と両導線 */}
-      {ctxMenu && ctxSession && (
+      {ctxMenu && ctxSession && !ctxMulti && (
         <MenuPopover position={{ x: ctxMenu.x, y: ctxMenu.y }} onClose={() => setCtxMenu(null)}>
           <button
             className="menu-item"

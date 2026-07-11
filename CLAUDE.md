@@ -49,6 +49,7 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist`。storage は
 - `imageJobs.ts` — バックグラウンド画像生成ジョブの型（`ImageJobTarget`/`ImageJob`）とヘルパ。Blob を含むため **partialize から除外**。AbortController はモジュールレベル `Map`（`registerJobAbort`/`clearJobAbort`/`abortJobController`）。`useBlobUrl` フック
 - `cards.ts` — キャラカード（`chara_card_v2` 互換）／世界カード（`aist_world`）／ペルソナカード（`aist_persona`）／セッションカード（`aist_session`・画像 base64 同梱の自己完結バンドル）／ゲームカセット（`aist_cassette`・W2＝開始状態に初期化したセッション＋素材＋画像の全部入り＋紹介文メタ）の組み立て・解釈。`exportCharacterCard`/`exportWorldCard`/`exportPersonaCard`/`exportSessionCard`/`exportCassetteCard`/`parseCardPng`/`attachCardImage`。カセット書き出しは `freshSessionOf`（プレイ記録・モデル参照を初期化）を通す。画像収集/サイズ確認/model 除去は `collectCardImages`/`confirmImageSize`/`stripCharacterModels` に共通化しセッションカードと共用。`model`/`avatar.imageId`/`sprites` は通常カードから除外（セッションカード・カセットのみ同梱）。`parseCardPng` はカセットを `aist_session` より先に判定
 - `useCardDrop.ts` — PNG カード D&D 受付フック（`dragOver`＋`dropProps`）
+- `useMultiSelect.ts` — カード/セッション一覧の複数選択フック（Ctrl/Cmd=個別トグル・Shift=範囲・右クリック選択）。`handleClick` は修飾キー付きのみ true（＝開かない）。FB2-D
 - `modalStack.ts` — `useModalEscape`（最前面モーダルだけ Escape で閉じる）/`modalStackSize`
 - `dialogs.ts` — ネイティブ `confirm`/`prompt` の置き換え。`appConfirm`/`appPrompt`（Promise ベース・React 非依存。lib からも呼べる）。`DialogHost.tsx` が描画・解決
 - `shortcuts.ts` — `useGlobalShortcuts(onTogglePalette)`。App.tsx から1回だけ登録する単一 keydown リスナ。`Escape`=没入解除専用 → フィールドフォーカス中は Ctrl 系のみ → モーダル中は無効 → `Ctrl+K`=パレット・`Ctrl+1/2/3`=Play/Library/System・`Ctrl+G`=続ける・`Ctrl+.`=没入トグル
@@ -72,7 +73,7 @@ Play 領域:
 - `StatusView.tsx`/`DiscoveryView.tsx` — ドック専用の**読み取り専用**ビュー（編集 UI・保存処理を持たない）。`DiscoveryView` は「🌍世界観／キャラ（アバター＋件数）」のタブ切替（F4）
 - `ReaderSettings.tsx` — Aa ボタン→ポップオーバー。文字サイズ/行間/本文幅（`RsField`＝スライダー＋数値入力・数値で自由設定。F2）/セリフ色分け/ステージ表示ON/OFF（`spritesEnabled`）/背景・立ち絵の濃さ/没入モード/「表示を既定に戻す」を `store.ui` へ即時反映（保存ボタンなし）
 - `Rail.tsx` — 左端48px の領域スイッチ（Play/Library/System・アイコン＋日本語ラベル。設定は最下段固定。F0/F5）。Library は直前の素材ビューをローカル state で記憶
-- `Sidebar.tsx` — 文脈サイドバー。`areaOf(view)` で出し分け（play=検索＋新規＋セッション一覧＋アーカイブトグル／library=キャラ/世界観/ペルソナ/演出の縦ナビ）。ブランド表示なし（F3で撤去）。セッション右クリックで `MenuPopover`（開く/設定/カード化/アーカイブ/削除）。＋新規作成は `createSession` の返す id で設定モーダルを自動オープン。セッションカード PNG の D&D 受付
+- `Sidebar.tsx` — 文脈サイドバー。`areaOf(view)` で出し分け（play=検索＋新規＋セッション一覧＋アーカイブトグル／library=キャラ/世界観/ペルソナ/演出の縦ナビ）。ブランド表示なし（F3で撤去）。セッション右クリックで `MenuPopover`（開く/設定/カード化/アーカイブ/削除）。Ctrl/Shift で複数選択→選択バー・右クリックで一括削除/アーカイブ（`useMultiSelect`・FB2-D）。＋新規作成は `createSession` の返す id で設定モーダルを自動オープン。セッションカード PNG の D&D 受付
 - `CommandPalette.tsx` — `Ctrl+K` で開くパレット。セッション/素材の名前検索→移動＋固定コマンド。実行は既存 store アクション／`setUiPrefs` のみ
 
 モーダル・パネル:
@@ -86,7 +87,7 @@ Play 領域:
 - `BranchTreeModal.tsx` — `BranchTreeBody({session})`（ドックの branch タブ）。git ログ風表示（F1）: 主線＝ルート→いまここ（現在ノードで止める）をドット＋トランク縦線で描き、scene ノードで章に折りたたみ（現在章のみ既定展開）。主線上の分岐点は「⑂ 別の分岐」、現在ノードの子は「▷ この先」を展開式（`.bt-*` クラス）。各行の ⋯ メニューにアクション集約（しおり `setBranchStar`/`removeBranchStar`・シーン開始前へ戻る・この分岐を削除 `deleteBranchSubtree`＝現在パス上は無効）＋行 hover の「↩ ここに戻る」`restoreCheckpoint`。「✂ 現在の分岐だけ残す（他n件を削除）」`pruneToCurrentPath`・「★ しおり」タブ・currentId 変化で自動スクロール
 - `ModelPicker.tsx` — プロバイダ切替・モデル一覧・お気に入り。`onPick` は `"providerId::modelId"`
 - `SceneEditor.tsx`/`SceneReviewModal.tsx`/`StoryLogModal.tsx`/`StatusPanel.tsx`/`DiscoveryPanel.tsx`/`CsvInput.tsx` — 各種閲覧・編集モーダル。StatusPanel/DiscoveryPanel はドックの「✎ 編集」経由で開く。`DiscoveryPanel` は `scope`（`'lore' | {characterId}`・F4）で世界観/キャラ別に編集画面を分割し、保存は live 起点でスコープ分だけ差し替え（編集中の他スコープ追記を巻き戻さない）
-- `library/` — 各素材の一覧＋エディタ（Character/World/Persona/SceneType）と `AvatarField`/`SpriteSetField`。各 Library は PNG カード D&D 受付＋検索。CharacterEditor/PersonaEditor は draft を保存ボタンで反映、`AvatarField`/`SpriteSetField` は store 直管理フィールド（avatar.imageId/sprites）を live 購読して同期。WorldEditor はフルページ（`.section-nav`＋`.section-content` の8セクション。「開始テンプレート」= `World.startPreset` の編集・W1）
+- `library/` — 各素材の一覧＋エディタ（Character/World/Persona/SceneType）と `AvatarField`/`SpriteSetField`。各 Library は PNG カード D&D 受付＋検索＋複数選択（`useMultiSelect`・右クリックメニュー＝`LibraryMultiSelect.tsx` の `SelectionBar`/`CardContextMenu`。Ctrl/Shift 選択→一括削除。FB2-D）。CharacterEditor/PersonaEditor は draft を保存ボタンで反映、`AvatarField`/`SpriteSetField` は store 直管理フィールド（avatar.imageId/sprites）を live 購読して同期。WorldEditor はフルページ（`.section-nav`＋`.section-content` の8セクション。「開始テンプレート」= `World.startPreset` の編集・W1）
 
 ## 設計ドキュメント（`docs/`）
 実装の詳細設計・意思決定の経緯はここに集約。CLAUDE.md で疑問が残ったら該当ドキュメントを読む。
@@ -212,7 +213,7 @@ Play 領域:
 各フェーズの詳細・検証記録は対応する `docs/設計_*.md` を参照。
 
 ## 未着手・残タスク
-- **フィードバック反映2 FB2-C〜E（未着手）**: 手順書 → `docs/設計_フィードバック反映2.md`。C=セッション設定UIの3案ブランチ試作（タブ強調・縦1ページ・左セクションナビ→実機比較で採用）／D=セッション/ライブラリカードの右クリック＋Ctrl/Shift 複数選択→一括削除／E=カセット棚（`cassettes` 素材化・取込は棚登録のみに変更・▶遊ぶで複製起動・Library ナビ＋新規導線。**画像GC集合への追加を忘れない**）。FB2-A（即効修正4件）・FB2-B（導入文そのまま掲載・主人公像廃止・開始時間帯）は実装済み・実機目視は未
+- **フィードバック反映2 FB2-E（未着手）＋C 採用待ち**: 手順書 → `docs/設計_フィードバック反映2.md`。C=セッション設定UIの3案を各ブランチで試作済み（`fb2c-tabs-emphasis`＝タブ強調／`fb2c-single-page`＝縦1ページ／`fb2c-section-nav`＝左セクションナビ。実機比較で1案を選び main へマージ・残り削除）／E=カセット棚（`cassettes` 素材化・取込は棚登録のみに変更・▶遊ぶで複製起動・Library ナビ＋新規導線。**画像GC集合への追加を忘れない**）。FB2-A（即効修正4件）・FB2-B（導入文そのまま掲載・主人公像廃止・開始時間帯）・FB2-D（一覧の複数選択＋一括削除）は実装済み・実機目視は未
 - **UI改善 F0〜F5（実装済み・2026-07-11 / 実機目視は未）**: UI再設計後のフィードバック対応。手順書 → `docs/設計_UI改善_フィードバック反映.md`。F0（没入グリッド崩壊・checkbox全幅化・System幅・文言）／F1（分岐ツリーgitログ風刷新＝主線をいまここで止める・章折りたたみ・⑂別の分岐/▷この先・行アクション⋯集約＋ドック幅リサイズ `ui.dockWidth`）／F2（リーダー設定を数値化＝`fontSize`/`lineHeight`/`contentWidth` を number 化・`normalizeUiPrefs`・没入案内 `infoNotice`）／F3（生成ボタンをコンポーザーへ・タイトル hover 鉛筆・セッション右クリックメニュー・`createSession` が id 返却→新規作成で設定自動オープン・サイドバーのブランド撤去）／F4（発見ログをタブ＋アイコン化・`DiscoveryScope` で編集をスコープ分割）／F5（`--bg-rail` で面の階層・余白の一括締め・レールにラベル）／F6（追加フィードバック: 没入ホバー帯を28pxに拡大・Library画面に `LibraryBar` で進行状況/ジョブ確認導線）。**tsc/build は全フェーズ通過済み**（分岐3つ以上で枝が1本に連結表示される不具合は FB2-A4 で修正済み → `docs/設計_フィードバック反映2.md`）
 - **Tauri 実機検証**（未実施のまま持ち越し）: `tsc`/`build`/`cargo check` は通過済みだが、`npm run tauri:dev` 手動起動でのデータ保持・`%APPDATA%` ファイル生成・旧 WebView データ移行・保存ダイアログでのカード PNG/JSON 保存の確認が必要
 - **T1 で判明した既知の問題（据え置き）**: ①選択肢生成中に本編生成が始まると選択肢側 AbortController が追従せず `Cannot read properties of null (reading 'signal')`（V5d で用途別分離したが要再確認）②ComfyUI が通常起動（`--enable-cors-header` なし）で接続できなかった＝設計通りでないバグ。appFetch 未置換経路や `isTauri()` 誤判定を疑い切り分けが必要（詳細は `docs/設計_Tauri化.md`）

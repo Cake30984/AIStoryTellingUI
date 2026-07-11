@@ -2,15 +2,39 @@ import { useState } from 'react'
 import { newSceneType, useStore } from '../../store'
 import type { SceneType } from '../../types'
 import SceneTypeEditor from './SceneTypeEditor'
+import { useMultiSelect } from '../../lib/useMultiSelect'
+import { appConfirm } from '../../lib/dialogs'
+import { SelectionBar, CardContextMenu } from './LibraryMultiSelect'
 import { Icon } from '../icons'
 
 export default function SceneTypeLibrary() {
   const sceneTypes = useStore((s) => s.sceneTypes)
+  const deleteSceneType = useStore((s) => s.deleteSceneType)
   const [editing, setEditing] = useState<SceneType | null>(null)
   const [query, setQuery] = useState('')
+  const [ctxMenu, setCtxMenu] = useState<{ id: string; x: number; y: number } | null>(null)
 
   const q = query.trim().toLowerCase()
   const visible = sceneTypes.filter((t) => !q || (t.name || '').toLowerCase().includes(q))
+
+  const { selected, clear, handleClick, selectForContext } = useMultiSelect(visible.map((t) => t.id))
+
+  const doDelete = async (ids: string[]) => {
+    const names = ids
+      .map((id) => sceneTypes.find((t) => t.id === id)?.name || '無名')
+      .slice(0, 5)
+      .join('・')
+    const more = ids.length > 5 ? ` ほか${ids.length - 5}件` : ''
+    if (
+      !(await appConfirm({
+        message: `シーンの種類${ids.length}件（${names}${more}）を削除しますか？\nこの操作は元に戻せません。`,
+        danger: true,
+      }))
+    )
+      return
+    ids.forEach((id) => deleteSceneType(id))
+    clear()
+  }
 
   return (
     <div className="library">
@@ -41,10 +65,29 @@ export default function SceneTypeLibrary() {
         </div>
       )}
 
+      <SelectionBar
+        count={selected.size}
+        noun="種類"
+        onDelete={() => doDelete([...selected])}
+        onClear={clear}
+      />
+
       {visible.length > 0 && (
         <div className="card-grid">
           {visible.map((t) => (
-            <div key={t.id} className="entity-card" onClick={() => setEditing(t)}>
+            <div
+              key={t.id}
+              className={'entity-card' + (selected.has(t.id) ? ' selected' : '')}
+              onClick={(e) => {
+                if (handleClick(e, t.id)) return
+                setEditing(t)
+              }}
+              onContextMenu={(e) => {
+                e.preventDefault()
+                selectForContext(t.id)
+                setCtxMenu({ id: t.id, x: e.clientX, y: e.clientY })
+              }}
+            >
               <div className="entity-avatar" style={{ background: t.color }}>
                 🎬
               </div>
@@ -60,6 +103,22 @@ export default function SceneTypeLibrary() {
             </div>
           ))}
         </div>
+      )}
+
+      {ctxMenu && (
+        <CardContextMenu
+          pos={{ x: ctxMenu.x, y: ctxMenu.y }}
+          count={selected.has(ctxMenu.id) ? selected.size : 1}
+          noun="種類"
+          onEdit={() => {
+            const t = sceneTypes.find((x) => x.id === ctxMenu.id)
+            if (t) setEditing(t)
+          }}
+          onDelete={() =>
+            doDelete(selected.has(ctxMenu.id) && selected.size > 0 ? [...selected] : [ctxMenu.id])
+          }
+          onClose={() => setCtxMenu(null)}
+        />
       )}
 
       {editing && <SceneTypeEditor sceneType={editing} onClose={() => setEditing(null)} />}

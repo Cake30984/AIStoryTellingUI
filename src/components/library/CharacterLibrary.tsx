@@ -5,13 +5,17 @@ import CharacterEditor from './CharacterEditor'
 import EntityAvatar from '../EntityAvatar'
 import { parseCardPng, attachCardImage } from '../../lib/cards'
 import { useCardDrop } from '../../lib/useCardDrop'
+import { useMultiSelect } from '../../lib/useMultiSelect'
+import { appConfirm } from '../../lib/dialogs'
+import { SelectionBar, CardContextMenu } from './LibraryMultiSelect'
 import { Icon } from '../icons'
 
 export default function CharacterLibrary() {
-  const { characters, importCharacterCard } = useStore()
+  const { characters, importCharacterCard, deleteCharacter } = useStore()
   const [editing, setEditing] = useState<Character | null>(null)
   const [notice, setNotice] = useState('')
   const [query, setQuery] = useState('')
+  const [ctxMenu, setCtxMenu] = useState<{ id: string; x: number; y: number } | null>(null)
 
   const handleFiles = async (files: FileList) => {
     for (const file of Array.from(files)) {
@@ -38,6 +42,25 @@ export default function CharacterLibrary() {
     return c.tags.some((t) => t.toLowerCase().includes(q))
   })
 
+  const { selected, clear, handleClick, selectForContext } = useMultiSelect(visible.map((c) => c.id))
+
+  const doDelete = async (ids: string[]) => {
+    const names = ids
+      .map((id) => characters.find((c) => c.id === id)?.name || '無名')
+      .slice(0, 5)
+      .join('・')
+    const more = ids.length > 5 ? ` ほか${ids.length - 5}件` : ''
+    if (
+      !(await appConfirm({
+        message: `キャラクター${ids.length}件（${names}${more}）を削除しますか？\nこの操作は元に戻せません。`,
+        danger: true,
+      }))
+    )
+      return
+    ids.forEach((id) => deleteCharacter(id))
+    clear()
+  }
+
   return (
     <div className={'library' + (dragOver ? ' drag-over' : '')} {...dropProps}>
       <div className="library-head">
@@ -58,6 +81,13 @@ export default function CharacterLibrary() {
       )}
       {notice && <p className="notice">{notice}</p>}
 
+      <SelectionBar
+        count={selected.size}
+        noun="キャラ"
+        onDelete={() => doDelete([...selected])}
+        onClear={clear}
+      />
+
       {characters.length === 0 ? (
         <div className="library-empty">
           <p>まだキャラクターがいません。「＋ 新規キャラ」から作成、またはカード画像をドロップしましょう。</p>
@@ -69,7 +99,19 @@ export default function CharacterLibrary() {
       ) : (
         <div className="card-grid">
           {visible.map((c) => (
-            <div key={c.id} className="entity-card" onClick={() => setEditing(c)}>
+            <div
+              key={c.id}
+              className={'entity-card' + (selected.has(c.id) ? ' selected' : '')}
+              onClick={(e) => {
+                if (handleClick(e, c.id)) return
+                setEditing(c)
+              }}
+              onContextMenu={(e) => {
+                e.preventDefault()
+                selectForContext(c.id)
+                setCtxMenu({ id: c.id, x: e.clientX, y: e.clientY })
+              }}
+            >
               <EntityAvatar className="entity-avatar" avatar={c.avatar} name={c.name || '✦'} />
               <div className="entity-body">
                 <div className="entity-name">{c.name || '無名'}</div>
@@ -87,6 +129,22 @@ export default function CharacterLibrary() {
             </div>
           ))}
         </div>
+      )}
+
+      {ctxMenu && (
+        <CardContextMenu
+          pos={{ x: ctxMenu.x, y: ctxMenu.y }}
+          count={selected.has(ctxMenu.id) ? selected.size : 1}
+          noun="キャラ"
+          onEdit={() => {
+            const c = characters.find((x) => x.id === ctxMenu.id)
+            if (c) setEditing(c)
+          }}
+          onDelete={() =>
+            doDelete(selected.has(ctxMenu.id) && selected.size > 0 ? [...selected] : [ctxMenu.id])
+          }
+          onClose={() => setCtxMenu(null)}
+        />
       )}
 
       {editing && <CharacterEditor character={editing} onClose={() => setEditing(null)} />}
