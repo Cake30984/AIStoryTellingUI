@@ -582,8 +582,10 @@
   padding: 40px;
   text-align: center;
 }
-.library-empty.drag-over {
-  border-color: var(--accent);
+/* カードのドロップ受付はページ全体で効くため、枠もグリッド範囲でなくライブラリ全面に出す（FB2-A2） */
+.library.drag-over {
+  outline: 2px dashed var(--accent);
+  outline-offset: -6px;
   background: var(--accent-soft);
 }
 
@@ -620,11 +622,6 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: 14px;
-}
-.card-grid.drag-over {
-  outline: 2px dashed var(--accent);
-  outline-offset: 6px;
-  border-radius: var(--radius);
 }
 .entity-card {
   display: flex;

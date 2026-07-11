@@ -35,7 +35,7 @@ export default function PersonaLibrary() {
   const visible = personas.filter((p) => !q || (p.name || '').toLowerCase().includes(q))
 
   return (
-    <div className="library" {...dropProps}>
+    <div className={'library' + (dragOver ? ' drag-over' : '')} {...dropProps}>
       <div className="library-head">
         <h2>🙂 ペルソナ</h2>
         <button className="btn primary" onClick={() => setEditing(newPersona())}>
@@ -55,7 +55,7 @@ export default function PersonaLibrary() {
       {notice && <p className="notice">{notice}</p>}
 
       {personas.length === 0 ? (
-        <div className={'library-empty' + (dragOver ? ' drag-over' : '')}>
+        <div className="library-empty">
           <p>「自分が演じる人物」を登録すると、各セッションで切り替えて使えます。</p>
         </div>
       ) : visible.length === 0 ? (
@@ -63,7 +63,7 @@ export default function PersonaLibrary() {
           <p>見つかりません。</p>
         </div>
       ) : (
-        <div className={'card-grid' + (dragOver ? ' drag-over' : '')}>
+        <div className="card-grid">
           {visible.map((p) => (
             <div key={p.id} className="entity-card" onClick={() => setEditing(p)}>
               <EntityAvatar className="entity-avatar" avatar={p.avatar} name={p.name || '🙂'} />

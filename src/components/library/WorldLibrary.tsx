@@ -37,7 +37,7 @@ export default function WorldLibrary() {
   }
 
   return (
-    <div className="library" {...dropProps}>
+    <div className={'library' + (dragOver ? ' drag-over' : '')} {...dropProps}>
       <div className="library-head">
         <h2>🌍 世界観</h2>
         <button className="btn primary" onClick={() => setEditing(newWorld())}>
@@ -57,7 +57,7 @@ export default function WorldLibrary() {
       {notice && <p className="notice">{notice}</p>}
 
       {worlds.length === 0 ? (
-        <div className={'library-empty' + (dragOver ? ' drag-over' : '')}>
+        <div className="library-empty">
           <p>世界観（ロアブック）を作ると、複数のセッションで共有できます。</p>
         </div>
       ) : visible.length === 0 ? (
@@ -65,7 +65,7 @@ export default function WorldLibrary() {
           <p>見つかりません。</p>
         </div>
       ) : (
-        <div className={'card-grid' + (dragOver ? ' drag-over' : '')}>
+        <div className="card-grid">
           {visible.map((w) => (
             <div key={w.id} className="entity-card" onClick={() => setEditing(w)}>
               <div className="entity-avatar" style={{ background: '#2f3346' }}>

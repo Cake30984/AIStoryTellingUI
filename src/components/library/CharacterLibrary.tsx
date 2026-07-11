@@ -39,7 +39,7 @@ export default function CharacterLibrary() {
   })
 
   return (
-    <div className="library" {...dropProps}>
+    <div className={'library' + (dragOver ? ' drag-over' : '')} {...dropProps}>
       <div className="library-head">
         <h2>🎭 キャラクター</h2>
         <button className="btn primary" onClick={() => setEditing(newCharacter())}>
@@ -59,7 +59,7 @@ export default function CharacterLibrary() {
       {notice && <p className="notice">{notice}</p>}
 
       {characters.length === 0 ? (
-        <div className={'library-empty' + (dragOver ? ' drag-over' : '')}>
+        <div className="library-empty">
           <p>まだキャラクターがいません。「＋ 新規キャラ」から作成、またはカード画像をドロップしましょう。</p>
         </div>
       ) : visible.length === 0 ? (
@@ -67,7 +67,7 @@ export default function CharacterLibrary() {
           <p>見つかりません。</p>
         </div>
       ) : (
-        <div className={'card-grid' + (dragOver ? ' drag-over' : '')}>
+        <div className="card-grid">
           {visible.map((c) => (
             <div key={c.id} className="entity-card" onClick={() => setEditing(c)}>
               <EntityAvatar className="entity-avatar" avatar={c.avatar} name={c.name || '✦'} />
