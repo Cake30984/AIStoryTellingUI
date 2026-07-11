@@ -125,11 +125,13 @@
   background: var(--bg-elev2);
 }
 
+/* 表示中のセッション（「いまここ」）は控えめに＝左に細いアクセント帯だけ（FB3-A5） */
 .session-item.active {
-  background: var(--accent-soft);
-  border-color: var(--accent);
+  background: var(--bg-elev2);
+  border-color: var(--border);
+  box-shadow: inset 2px 0 0 0 var(--accent);
 }
-/* 複数選択中のセッション（FB2-D） */
+/* 複数選択中のセッションははっきり強調（アクセント面＋内側リング。FB2-D / FB3-A5） */
 .session-item.selected {
   background: var(--accent-soft);
   border-color: var(--accent);

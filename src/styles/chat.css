@@ -91,9 +91,12 @@
   line-height: var(--line-height-prose);
 }
 
-.bubble.continue .content {
-  color: var(--text-faint);
-  font-style: italic;
+/* 生成単位の境目に引く薄い水平線（続ける・選択肢・プロンプト等のターン境界。FB3-A2） */
+.gen-divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  opacity: 0.7;
+  margin: 6px 0 20px;
 }
 
 .cursor {
@@ -259,11 +262,6 @@
   white-space: pre-wrap;
   animation: fade 0.25s ease;
 }
-.prose-action.continue {
-  color: var(--text-faint);
-  border-color: var(--border);
-}
-
 /* 小説形式でも操作ボタンをホバー表示 */
 .prose-block,
 .prose-action {

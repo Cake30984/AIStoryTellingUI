@@ -13,8 +13,10 @@ export function useGlobalShortcuts(onTogglePalette: () => void) {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.isComposing) return
 
-      // Ctrl+. の没入トグルと違い、Escape での没入解除はモーダルが無い時だけ・フィールド内でも有効
+      // Ctrl+. の没入トグルと違い、Escape での没入解除はモーダルが無い時だけ・フィールド内でも有効。
+      // ただし一覧の選択解除（useMultiSelect）が先に処理していたら何もしない（FB3-A5）
       if (e.key === 'Escape') {
+        if (e.defaultPrevented) return
         if (modalStackSize() === 0 && useStore.getState().ui.immersive) {
           useStore.getState().setUiPrefs({ immersive: false })
         }

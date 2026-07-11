@@ -165,7 +165,7 @@ Play 領域:
 - **表情判定**（方式A・`Session.spriteEmotions`）: `classifyEmotions(sessionId)` を `runCompletion` 正常完了後に fire-and-forget。`spritesEnabled` かつ参加キャラが sprites 保有時のみ実行。`extractJson`→`resolveEmotionUpdates`（`matchCharacterByName` 経由）で upsert。**構造化出力 ON 時**は `runCompletion` がストリーミング中の確定行から `emotionUpdatesOf` で直接抽出しリアルタイム upsert、この経路で取れたら方式A をスキップ（フォーマット無視/感情括弧なしのみフォールバック）。`store.isClassifyingEmotions`（非永続）を `ActivityIndicator` が購読
 - **構造化出力の裏方文脈整流**（`plainTextOf`）: 裏方 LLM への文脈・UI ラベルには自然表記で渡す。適用は5箇所のみ——①`prepareSceneReview` transcript（assistant 行）②`actionCheckpointLabel`③`classifyEmotions` recent④挿絵起案 recentMessages⑤背景起案 recentMessages。**`buildMessages` 履歴・`estimateTokens`・編集UI・エクスポート・チェックポイント本体は対象外**（生テキストのまま）
 - **ステージ・バックドロップ**（`StageBackdrop.tsx`）: `stageOn = spritesEnabled ?? true`。背景＝`scene.backgroundImageId`、立ち絵＝参加キャラの sprites を現在感情→neutral→先頭で解決し等分セル横並び。濃さは `ui.stageBgOpacity`/`ui.stageSpriteOpacity`
-- **チェックポイント記録**（`recordCheckpoint`・UIなし）: 3契機——①`runCompletion` 正常完了後（kind:action・`finishReason===null` は積まない）②`editMessage`/`deleteMessage` 直後（kind:action）③`confirmSceneReview` 直後（kind:scene）。木が空ならルート（label「開始時点」）を遅延生成。dedupe＝`stableSessionJson`（updatedAt 除外）一致なら積まない。書込は `serializeCheckpointWrite` で sessionId ごと直列化
+- **チェックポイント記録**（`recordCheckpoint`・UIなし）: 3契機——①`runCompletion` 正常完了後（kind:action・`finishReason===null` は積まない）②`editMessage`/`deleteMessage` 直後（kind:action）③`confirmSceneReview` 直後（kind:scene）。木が空ならルート（label「開始時点」）を遅延生成。action ノードのラベルは末尾アシスタント本文の冒頭（`actionCheckpointLabel`・「⏩ 続き」等の固定ラベルは廃止＝中身が分かるように。FB3-A4）。dedupe＝`stableSessionJson`（updatedAt 除外）一致なら積まない。書込は `serializeCheckpointWrite` で sessionId ごと直列化
 - **復元** `restoreCheckpoint(sessionId, nodeId)`: streaming/choices/review 中は例外。スナップショットで全置換するが**プレイ用ノブだけ現在値維持**（passthrough: title/model/reviewModel/choicesModel/temperature/maxTokens/spritesEnabled/archived）。何も削除しない＝次の物語操作で子が積まれ自然に兄弟分岐
 - **GC 一本化**: 立ち絵・背景置換等の**即時 `deleteImage` は全廃**、参照除去のみ。回収は `gcUnusedImages` に一本化。使用中集合＝`collectUsedImageIds`（characters/personas/sessions＋`cassettes`＝表紙・同梱セッション画像。FB2-E）∪`branchTrees` 全ノードの `imageIds`∪`star.thumbImageId`。セッション1件分の抽出は `sessionImageIds(session)`。`deleteSession` は木も削除し `checkpointStore.deleteSession`
 - **剪定**: `deleteBranchSubtree`（サブツリー削除・**現在パス上は例外で拒否**）/`pruneToCurrentPath`（現在パス以外を一括削除）。書込は `Promise.all` 並列（削除は順序非依存）
@@ -174,7 +174,7 @@ Play 領域:
 
 ## 規約・落とし穴
 - **カンマ区切り入力は必ず `CsvInput`**（タグ・ロアのキーワード・timeline slots）。生の `value=arr.join`＋split はカンマが消えるバグの原因
-- マーカー疑似メッセージ（`CONTINUE_PROMPT`/`SCENE_START_PROMPT`）は user として積むが UI では控えめ表示。`isMarker` で判定
+- マーカー疑似メッセージ（`CONTINUE_PROMPT`/`SCENE_START_PROMPT`）は user として積むが、UI では本文を描かず**ターン境界の薄い水平線 `.gen-divider`** で表現（続ける＝線、シーン導入＝見出しが担うので線なし）。小説形式ではユーザー入力の前にも `.gen-divider` を1本入れる（`renderSceneContent` の `seenContent` 判定・FB3-A2）。`isMarker` で判定
 - API キーは localStorage のみ。エクスポートバンドルに providers は含めない
 - **画像 id を持つフィールドを増やしたら `sessionImageIds`（store.ts）に追加する**。入れ忘れると GC で使用中画像が消える／チェックポイント参照画像が誤回収される。セッションカードの画像収集・remap にも追加が必要
 - **画像の即時 `deleteImage` を新規に書かない**。分岐チェックポイントが imageId を参照しうるため、削除は常に「参照除去のみ＋`gcUnusedImages` 回収」
@@ -215,7 +215,7 @@ Play 領域:
 各フェーズの詳細・検証記録は対応する `docs/設計_*.md` を参照。
 
 ## 未着手・残タスク
-- **フィードバック反映3（FB3-A〜D・全フェーズ未着手）**: 手順書 → `docs/設計_フィードバック反映3.md`。A=本文表示の即効改善／B=分岐チェックポイントの分岐化＋フルグラフUI（「やり直しが枝にならない」データ不具合の修正含む）／C=演出ディレクター廃止／D=セッションカード全廃＋カセット専用エディタ。推奨順 A→B→C→D
+- **フィードバック反映3（FB3・A済／B〜D未着手）**: 手順書 → `docs/設計_フィードバック反映3.md`。**A=本文表示の即効改善（実装済み・2026-07-11）**＝開始シーン見出し・マーカーの罫線化（`.gen-divider`）・自動スクロール停止・分岐ラベルを本文冒頭化・一覧選択UX（Esc解除／バーは2件以上／activeは控えめ）・末尾本文に「選択肢を生成」。B=分岐チェックポイントの分岐化＋フルグラフUI（「やり直しが枝にならない」データ不具合の修正含む）／C=演出ディレクター廃止／D=セッションカード全廃＋カセット専用エディタ。推奨順 A→B→C→D
 - **T1 で判明した既知の問題**: ①選択肢生成中に本編生成が始まると選択肢側 AbortController が追従せず `Cannot read properties of null (reading 'signal')`（再現手順が不明で切り分け未着手のまま据え置き）②ComfyUI が通常起動（`--enable-cors-header` なし）で接続できない＝設計通りでないバグ。**未解決・現在も再現する**。appFetch 未置換経路や `isTauri()` 誤判定を疑い切り分けが必要（詳細は `docs/設計_Tauri化.md`）
 - **T4（配布）**: NSIS・GitHub Releases。ユーザー判断で当面見送り（まだ公開しない）
 - **ComfyUI 実機動作確認・ワークフローテンプレ拡充**（SDXL 以外・LoRA ノード入り）

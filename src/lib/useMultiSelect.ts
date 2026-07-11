@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { MouseEvent } from 'react'
 
 /**
@@ -14,6 +14,20 @@ export function useMultiSelect(orderedIds: string[]) {
     setSelected(new Set())
     setAnchor(null)
   }, [])
+
+  // Escape で選択解除（FB3-A5）。選択がある時だけ capture 段で先取りし preventDefault →
+  // shortcuts.ts の没入解除 Escape とは defaultPrevented で衝突回避
+  useEffect(() => {
+    if (selected.size === 0) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !e.isComposing) {
+        e.preventDefault()
+        clear()
+      }
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [selected, clear])
 
   /** カードクリック。修飾キー付き＝選択操作（true を返す＝開かない）。素のクリック＝選択解除して false */
   const handleClick = useCallback(

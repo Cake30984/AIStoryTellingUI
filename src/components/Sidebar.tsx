@@ -129,7 +129,7 @@ export default function Sidebar() {
             </button>
           </div>
 
-          {selected.size > 0 && (
+          {selected.size >= 2 && (
             <div className="sidebar-sel-bar">
               <span>{selected.size} 件選択</span>
               <div style={{ flex: 1 }} />

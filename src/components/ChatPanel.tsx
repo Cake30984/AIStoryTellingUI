@@ -120,6 +120,8 @@ export default function ChatPanel({ session }: Props) {
   const [editText, setEditText] = useState('')
   const taRef = useRef<HTMLTextAreaElement>(null)
   const anchorRef = useRef<HTMLDivElement>(null)
+  // 自動スクロールは「自分の操作直後の1回」だけ（生成中は追従しない。FB3-A3）
+  const lastScrolledRef = useRef<string | null>(null)
   // 選択肢の連打による二重加点を防ぐ（適用済みメッセージ id を同期的に記録）
   const choiceLockRef = useRef<string | null>(null)
   // ドックタブのトグル（同じタブを再クリックで閉じる。UI-3）
@@ -155,9 +157,15 @@ export default function ChatPanel({ session }: Props) {
   )
   const tokLvl = tokenLevel(sceneTokens)
 
+  // ストリーミングの毎チャンクでは追従しない。末尾がユーザー発言（送信・続ける・選択肢クリック）に
+  // 変わった直後にだけ1回スクロールする（FB3-A3）
   useEffect(() => {
-    anchorRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [session.messages, isStreaming])
+    const last = session.messages[session.messages.length - 1]
+    if (last && last.role === 'user' && lastScrolledRef.current !== last.id) {
+      lastScrolledRef.current = last.id
+      anchorRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [session.messages])
 
   // メッセージ列が変わって再レンダーされたらロック解除（削除して選び直す等の正当な再選択を許す）
   useEffect(() => {
@@ -168,6 +176,9 @@ export default function ChatPanel({ session }: Props) {
     startSession()
     setSpeaker(undefined)
     setExpanded(new Set())
+    // セッションを開いた直後は最新地点を表示（自分でセッションを開く操作の直後の1回）
+    lastScrolledRef.current = null
+    anchorRef.current?.scrollIntoView()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.id])
 
@@ -204,6 +215,14 @@ export default function ChatPanel({ session }: Props) {
     participants.length > 0 || (session.mode === 'story' && !!session.story.premise)
 
   const lastMsg = session.messages[session.messages.length - 1]
+  // 「選択肢を生成」を出す対象＝末尾のアシスタント本文（FB3-A6）
+  const lastAssistantId = useMemo(() => {
+    for (let i = session.messages.length - 1; i >= 0; i--) {
+      const m = session.messages[i]
+      if (m.role === 'assistant' && m.content.trim()) return m.id
+    }
+    return null
+  }, [session.messages])
   const storyStarted = session.messages.filter((m) => m.sceneId === scene?.id).length > 0
   const hasAssistantMsg = session.messages.some((m) => m.role === 'assistant')
   const showRegen = (session.mode === 'story' && hasAssistantMsg) || (groupMode && hasAssistantMsg)
@@ -261,8 +280,6 @@ export default function ChatPanel({ session }: Props) {
     </div>
   )
 
-  const markerText = (content: string) =>
-    content === SCENE_START_PROMPT ? '— 新しい場面 —' : '— 物語を進める —'
   const isMarker = (m: Message) =>
     m.role === 'user' && (m.content === CONTINUE_PROMPT || m.content === SCENE_START_PROMPT)
 
@@ -270,24 +287,31 @@ export default function ChatPanel({ session }: Props) {
     if (isStreaming || m.pending) return null
     return (
       <div className="msg-actions">
-        {!isMarker(m) && (
-          <button onClick={() => startEdit(m)}>
-            <Icon name="pencil" size={13} /> 編集
-          </button>
-        )}
+        <button onClick={() => startEdit(m)}>
+          <Icon name="pencil" size={13} /> 編集
+        </button>
         <button onClick={() => regenerateFrom(m.id)} title="この発言以降を作り直す">
           <Icon name="rotate-ccw" size={13} /> ここから
         </button>
         <button onClick={() => deleteMessage(m.id)}>
           <Icon name="trash-2" size={13} /> 削除
         </button>
+        {/* 末尾のアシスタント本文にだけ「選択肢を生成」（FB3-A6） */}
+        {m.id === lastAssistantId && session.choiceMode !== 'off' && (
+          <button
+            onClick={() => regenChoices()}
+            disabled={isGeneratingChoices}
+            title="この応答の選択肢を生成する"
+          >
+            <Icon name="refresh-cw" size={13} /> 選択肢を生成
+          </button>
+        )}
       </div>
     )
   }
 
   const renderNovelMessage = (m: Message) => {
     if (editingId === m.id) return <div className="prose-block" key={m.id}>{editBox()}</div>
-    const marker = isMarker(m)
     if (m.role === 'assistant') {
       const structured = hasStructuredLines(m.content, participants)
       return (
@@ -310,8 +334,8 @@ export default function ChatPanel({ session }: Props) {
       )
     }
     return (
-      <div className={'prose-action' + (marker ? ' continue' : '')} key={m.id}>
-        {marker ? markerText(m.content) : m.content}
+      <div className="prose-action" key={m.id}>
+        {m.content}
         {msgActions(m)}
       </div>
     )
@@ -319,7 +343,6 @@ export default function ChatPanel({ session }: Props) {
 
   const renderMessage = (m: Message) => {
     if (novel) return renderNovelMessage(m)
-    const marker = isMarker(m)
     if (m.role === 'assistant' && editingId !== m.id && hasStructuredLines(m.content, participants)) {
       return (
         <div className="st-message" key={m.id}>
@@ -342,14 +365,14 @@ export default function ChatPanel({ session }: Props) {
         ) : (
           <EntityAvatar className="avatar" avatar={persona?.avatar} name={persona?.name || 'あなた'} />
         )}
-        <div className={'bubble' + (marker ? ' continue' : '')}>
+        <div className="bubble">
           <div className="name">{name}</div>
           {editingId === m.id ? (
             editBox()
           ) : (
             <>
               <div className="content">
-                {marker ? markerText(m.content) : m.content}
+                {m.content}
                 {m.pending && isStreaming && <span className="cursor" />}
               </div>
               {msgActions(m)}
@@ -378,14 +401,30 @@ export default function ChatPanel({ session }: Props) {
     const illView = (ill: SceneIllustration) => (
       <IllustrationView key={ill.id} ill={ill} onRemove={() => removeIllustration(session.id, sc.id, ill.id)} />
     )
+    // マーカーは本文を持たず、ターンの境目に薄い水平線（.gen-divider）だけを描く。
+    // 小説形式ではユーザー入力の前にも線を1本入れる。シーン先頭（＝直前に本文が無い）では線を出さない（A2）
+    let seenContent = false
+    const out: JSX.Element[] = []
+    for (const m of msgs) {
+      const marker = isMarker(m)
+      const isSceneStart = m.content === SCENE_START_PROMPT
+      const boundary = seenContent && !isSceneStart && (marker || (novel && m.role === 'user'))
+      if (boundary) out.push(<div className="gen-divider" key={m.id + '-div'} />)
+      if (marker) {
+        seenContent = true
+        continue
+      }
+      out.push(
+        <Fragment key={m.id}>
+          {renderMessage(m)}
+          {(byMessage.get(m.id) ?? []).map(illView)}
+        </Fragment>,
+      )
+      seenContent = true
+    }
     return (
       <>
-        {msgs.map((m) => (
-          <Fragment key={m.id}>
-            {renderMessage(m)}
-            {(byMessage.get(m.id) ?? []).map(illView)}
-          </Fragment>
-        ))}
+        {out}
         {orphans.map(illView)}
       </>
     )
@@ -582,8 +621,9 @@ export default function ChatPanel({ session }: Props) {
                   const castNames = sc.activeCharacterIds
                     .map((id) => characters.find((c) => c.id === id)?.name)
                     .filter(Boolean)
-                  // 複数シーンがある時だけ仕切りを表示
-                  const showDivider = session.scenes.length > 1
+                  // シーンに本文（マーカー以外）か要約があれば1シーン目でも見出しを表示（FB3-A1）
+                  const hasRealContent = msgs.some((m) => m.content.trim() && m.content !== CONTINUE_PROMPT && m.content !== SCENE_START_PROMPT)
+                  const showDivider = hasRealContent || !!sc.summary || session.scenes.length > 1
                   return (
                     <Fragment key={sc.id}>
                       {showDivider && (

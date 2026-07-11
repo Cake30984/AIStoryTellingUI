@@ -13,7 +13,7 @@ export function SelectionBar({
   onDelete: () => void
   onClear: () => void
 }) {
-  if (count === 0) return null
+  if (count < 2) return null
   return (
     <div className="sel-bar">
       <span className="sel-bar-count">{count} 件の{noun}を選択中</span>

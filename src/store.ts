@@ -895,16 +895,26 @@ function headOf(text: string, max = 24): string {
   return t.length > max ? `${t.slice(0, max)}…` : t
 }
 
-/** 小ポイント（action）のラベルを、現在のセッション末尾の発言から決める */
+/**
+ * 小ポイント（action）のラベルを、生成された本文の冒頭から決める（FB3-A4）。
+ * 「⏩ 続き」等の固定ラベルは中身が分からないので、末尾アシスタント本文の頭を採る。
+ */
 function actionCheckpointLabel(session: Session): string {
-  const lastUser = [...session.messages].reverse().find((m) => m.role === 'user')
-  if (lastUser) {
-    if (lastUser.content === SCENE_START_PROMPT) return '🎬 シーン導入'
-    if (lastUser.content === CONTINUE_PROMPT) return '⏩ 続き'
-    if (lastUser.content.trim()) return headOf(plainTextOf(lastUser.content))
-  }
-  const lastAssistant = [...session.messages].reverse().find((m) => m.role === 'assistant')
-  if (lastAssistant?.content.trim()) return headOf(plainTextOf(lastAssistant.content))
+  const lastAssistant = [...session.messages]
+    .reverse()
+    .find((m) => m.role === 'assistant' && m.content.trim())
+  if (lastAssistant) return headOf(plainTextOf(lastAssistant.content), 16)
+  // 本文がまだ無い場合はユーザー入力（マーカーを除く）から
+  const lastUser = [...session.messages]
+    .reverse()
+    .find(
+      (m) =>
+        m.role === 'user' &&
+        m.content.trim() &&
+        m.content !== SCENE_START_PROMPT &&
+        m.content !== CONTINUE_PROMPT,
+    )
+  if (lastUser) return headOf(plainTextOf(lastUser.content), 16)
   return '（無題）'
 }
 
