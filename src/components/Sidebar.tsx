@@ -13,7 +13,6 @@ const LIBRARY_NAV: { key: View; label: string; icon: IconName }[] = [
   { key: 'characters', label: 'キャラ', icon: 'users' },
   { key: 'worlds', label: '世界観', icon: 'globe' },
   { key: 'personas', label: 'ペルソナ', icon: 'smile' },
-  { key: 'sceneTypes', label: '演出', icon: 'clapperboard' },
   { key: 'cassettes', label: 'カセット', icon: 'library-big' },
 ]
 

@@ -26,7 +26,6 @@ import type {
   Scene,
   SceneIllustration,
   SceneReview,
-  SceneType,
   Session,
   SessionMode,
   SessionState,
@@ -74,7 +73,7 @@ import { defaultOpenRouterProvider, parseModelRef } from './lib/providers'
 
 export const DEFAULT_MODEL = 'openrouter/auto'
 
-export type View = 'sessions' | 'characters' | 'worlds' | 'personas' | 'sceneTypes' | 'cassettes' | 'system'
+export type View = 'sessions' | 'characters' | 'worlds' | 'personas' | 'cassettes' | 'system'
 
 /** View が属する領域（レール切替・グリッド制御用。UI-5） */
 export function areaOf(view: View): 'play' | 'library' | 'system' {
@@ -496,23 +495,6 @@ export const WORLD_PRESETS: {
   },
 ]
 
-export function newSceneType(): SceneType {
-  return { id: uid(), name: '', guidance: '', weight: 1, minGap: 0, color: pickColor() }
-}
-
-/** 既定のシーンタイプ（初回シード用） */
-export function defaultSceneTypes(): SceneType[] {
-  const base: Omit<SceneType, 'id'>[] = [
-    { name: '日常の幸福', guidance: '登場人物たちの和やかで幸福な日常の一場面。関係性の温かさを描く。', weight: 3, minGap: 0, color: '#4cc9a4', builtin: true },
-    { name: '穏やかな時間', guidance: '静かで落ち着いた内省的な時間。情景と心情を丁寧に描く。', weight: 2, minGap: 0, color: '#5b8def', builtin: true },
-    { name: 'バトルへの伏線', guidance: '今後の戦い・対立の予兆や違和感をさりげなく忍ばせる。', weight: 1, minGap: 2, color: '#f0a76b', builtin: true },
-    { name: 'バトル', guidance: '緊迫した戦闘・対決の場面。手に汗握る攻防と決着を描く。', weight: 1, minGap: 3, color: '#ef6f6c', builtin: true },
-    { name: '過去回想', guidance: '登場人物の過去を掘り下げる回想。背景や動機を明かす。', weight: 1, minGap: 3, color: '#d77ad8', builtin: true },
-    { name: '特別イベント', guidance: '季節行事や特別な催し。非日常の高揚を描く。', weight: 1, minGap: 4, color: '#e0b341', builtin: true },
-  ]
-  return base.map((b) => ({ ...b, id: uid() }))
-}
-
 export function newScene(
   title: string,
   activeCharacterIds: string[] = [],
@@ -549,7 +531,7 @@ function newSession(mode: SessionMode): Session {
     timeline: defaultTimeline(),
     choiceMode: 'off',
     narrativeStyle: mode === 'story' ? 'novel' : 'chat',
-    director: { enabled: false, typeIds: [] },
+    eventAutoFire: true,
     usedEventIds: [],
     state: { relations: [], moods: [], stats: [], counters: [], achievements: [] },
     overlay: { lore: [], characterDevelopments: [] },
@@ -635,7 +617,6 @@ interface AppState {
   characters: Character[]
   worlds: World[]
   personas: Persona[]
-  sceneTypes: SceneType[]
   sessions: Session[]
   /** ゲームカセット棚（配布物の素材化。FB2-E） */
   cassettes: Cassette[]
@@ -702,8 +683,6 @@ interface AppState {
   /** カードからのインポート専用。id が既存と衝突する場合は振り直して常に新規追加する */
   importWorldCard: (w: World) => void
   deleteWorld: (id: string) => void
-  upsertSceneType: (t: SceneType) => void
-  deleteSceneType: (id: string) => void
   upsertPersona: (p: Persona) => void
   /** カードからのインポート専用。id が既存と衝突する場合は振り直して常に新規追加する */
   importPersonaCard: (p: Persona) => void
@@ -756,8 +735,6 @@ interface AppState {
     counterEventIdx: number[]
     moodChangeIdx: number[]
   }) => void
-  setReviewNextType: (typeId: string | null) => void
-  rerollReviewType: () => Promise<void>
   /** 現在の方向性で次シーン候補だけを再生成する */
   regenerateSuggestions: () => Promise<void>
   cancelReview: () => void
@@ -978,60 +955,26 @@ function buildStateInfo(session: Session, characters: Character[], world?: World
 }
 
 /**
- * ディレクター：次シーンの方向を決める。
- * ①特別イベント（未消化かつ day 到来かつ条件成立）を最優先 → ②重み＋クールダウンで抽選。
- * イベントは人の承認なしでコードが自動判定して発火する（ADR-1）。
+ * 次シーンの特別イベントを決める（FB3-C。演出タイプ抽選は廃止し、世界観イベントに一本化）。
+ * 未消化かつ day 到来かつ条件成立のイベントを day 順で1つ返す。人の承認なしでコードが自動判定して
+ * 発火する（ADR-1）。`session.eventAutoFire === false` なら発火しない。
  */
-function directNextScene(
+function nextScheduledEvent(
   session: Session,
   world: World | undefined,
-  sceneTypes: SceneType[],
   nextDay: number | null,
-  skipEvents = false,
-): { typeId?: string; eventId?: string; eventName?: string } {
-  // ① 特別イベント（day 未指定は日付条件なし。条件式は数・フラグ・実績のみで判定）
-  //    skipEvents=true は「種類のみ抽選」（引き直し用。イベント判定を行わない）
-  if (world && !skipEvents) {
-    const ev = (world.scheduledEvents ?? [])
-      .filter((e) => {
-        if (session.usedEventIds.includes(e.id)) return false
-        if (e.day != null && (nextDay == null || e.day > nextDay)) return false
-        if (e.condition && !evalCondition(e.condition, session.state, world, session.characterIds))
-          return false
-        return true
-      })
-      .sort((a, b) => (a.day ?? Infinity) - (b.day ?? Infinity))[0]
-    if (ev) return { eventId: ev.id, eventName: ev.name }
-  }
-
-  // ② ディレクター無効なら抽選しない
-  if (!session.director.enabled) return {}
-  const pool = session.director.typeIds
-    .map((id) => sceneTypes.find((t) => t.id === id))
-    .filter((t): t is SceneType => !!t)
-  if (pool.length === 0) return {}
-
-  // クールダウン：直近シーンで使われた種類を除外
-  const recent = [...session.scenes].reverse()
-  const eligible = pool.filter((t) => {
-    if (!t.minGap) return true
-    let gap = Infinity
-    for (let i = 0; i < recent.length; i++) {
-      if (recent[i].sceneTypeId === t.id) {
-        gap = i
-        break
-      }
-    }
-    return gap >= t.minGap
-  })
-  const cands = eligible.length ? eligible : pool
-  const total = cands.reduce((s, t) => s + Math.max(1, t.weight), 0)
-  let r = Math.random() * total
-  for (const t of cands) {
-    r -= Math.max(1, t.weight)
-    if (r <= 0) return { typeId: t.id }
-  }
-  return { typeId: cands[cands.length - 1].id }
+): { eventId?: string; eventName?: string } {
+  if (!world || session.eventAutoFire === false) return {}
+  const ev = (world.scheduledEvents ?? [])
+    .filter((e) => {
+      if (session.usedEventIds.includes(e.id)) return false
+      if (e.day != null && (nextDay == null || e.day > nextDay)) return false
+      if (e.condition && !evalCondition(e.condition, session.state, world, session.characterIds))
+        return false
+      return true
+    })
+    .sort((a, b) => (a.day ?? Infinity) - (b.day ?? Infinity))[0]
+  return ev ? { eventId: ev.id, eventName: ev.name } : {}
 }
 
 export const useStore = create<AppState>()(
@@ -1179,9 +1122,6 @@ export const useStore = create<AppState>()(
           currentSceneId: scene?.id ?? null,
           timelineInfo: timelinePromptInfo(session.timeline),
           nearEnd: isNearEnd(session.timeline),
-          sceneTypeGuidance: scene?.sceneTypeId
-            ? (get().sceneTypes.find((t) => t.id === scene.sceneTypeId)?.guidance ?? '')
-            : '',
           stateInfo: buildStateInfo(session, characters, effWorld),
         }
       }
@@ -1509,7 +1449,6 @@ export const useStore = create<AppState>()(
         characters: [],
         worlds: [],
         personas: [],
-        sceneTypes: defaultSceneTypes(),
         sessions: [],
         cassettes: [],
         activeId: null,
@@ -1700,25 +1639,6 @@ export const useStore = create<AppState>()(
             sessions: st.sessions.map((s) =>
               s.worldId === id ? { ...s, worldId: null } : s,
             ),
-          })),
-
-        upsertSceneType: (t) =>
-          set((st) => {
-            const exists = st.sceneTypes.some((x) => x.id === t.id)
-            return {
-              sceneTypes: exists
-                ? st.sceneTypes.map((x) => (x.id === t.id ? t : x))
-                : [...st.sceneTypes, t],
-            }
-          }),
-
-        deleteSceneType: (id) =>
-          set((st) => ({
-            sceneTypes: st.sceneTypes.filter((t) => t.id !== id),
-            sessions: st.sessions.map((s) => ({
-              ...s,
-              director: { ...s.director, typeIds: s.director.typeIds.filter((x) => x !== id) },
-            })),
           })),
 
         upsertPersona: (p) =>
@@ -2038,24 +1958,16 @@ export const useStore = create<AppState>()(
               )
             }
 
-            // ディレクター：次シーンの方向を決定（イベント優先→抽選）。
-            // 過去シーンの再レビューでは実際の履歴上の日付・状態が分からないため、
-            // ライブの現在日での日付/条件付きイベント判定は行わず種類のみ抽選する。
+            // 次シーンの特別イベント判定（FB3-C。演出タイプ抽選は廃止）。
+            // 過去シーンの再レビューではライブの現在日での日付/条件付き判定を行わない。
             const nextDay = !isPastScene && nextTimeline ? nextTimeline.currentDay : null
-            const pick = directNextScene(s, refs.world, get().sceneTypes, nextDay, isPastScene)
-            const pickedType = pick.typeId
-              ? get().sceneTypes.find((t) => t.id === pick.typeId)
-              : undefined
+            const pick = isPastScene ? {} : nextScheduledEvent(s, refs.world, nextDay)
             const event = pick.eventId
               ? refs.world?.scheduledEvents.find((e) => e.id === pick.eventId)
               : undefined
             if (event) {
               ctxParts.push(
                 `【次のシーンの方向性】特別イベント「${event.name}」が発生します。${event.note}\nsuggestions はこのイベントに沿った内容にしてください。`,
-              )
-            } else if (pickedType) {
-              ctxParts.push(
-                `【次のシーンの方向性】次シーンの種類は「${pickedType.name}」です。${pickedType.guidance}\nsuggestions はこの方向性に沿った内容にしてください。`,
               )
             }
             const context = ctxParts.join('\n')
@@ -2258,8 +2170,6 @@ export const useStore = create<AppState>()(
                     }))
                     .filter((m: any) => m.characterId && m.mood)
                 : [],
-              nextTypeId: pickedType?.id,
-              nextTypeName: pickedType?.name,
               scheduledEventId: event?.id,
               scheduledEventName: event?.name,
             }
@@ -2423,12 +2333,11 @@ export const useStore = create<AppState>()(
                         if (sc.id === scene.id)
                           return { ...sc, summary: opts.summary.trim() }
                         if (nextScene && sc.id === nextScene.id && (sug || event)) {
-                          const base = event?.name || sug?.title || review.nextTypeName || sc.title
+                          const base = event?.name || sug?.title || sc.title
                           return {
                             ...sc,
                             title: base || sc.title,
                             note: sug?.note || event?.note || sc.note,
-                            sceneTypeId: review.nextTypeId ?? sc.sceneTypeId,
                           }
                         }
                         return sc
@@ -2454,13 +2363,12 @@ export const useStore = create<AppState>()(
                 .find((w) => w.id === s.worldId)
                 ?.scheduledEvents.find((e) => e.id === review.scheduledEventId)
             : undefined
-          const base = event?.name || sug?.title || review.nextTypeName || ''
+          const base = event?.name || sug?.title || ''
           const title =
             [nextLabel, base].filter(Boolean).join('：') ||
             `シーン ${s.scenes.length + 1}`
           const next = newScene(title, scene.activeCharacterIds, nextLabel)
           next.note = sug?.note || event?.note || ''
-          next.sceneTypeId = review.nextTypeId
           const usedEventIds = event
             ? [...s.usedEventIds, event.id]
             : s.usedEventIds
@@ -2496,49 +2404,6 @@ export const useStore = create<AppState>()(
           void get().beginScene()
         },
 
-        setReviewNextType: (typeId) => {
-          const review = get().sceneReview
-          if (!review) return
-          const t = typeId ? get().sceneTypes.find((x) => x.id === typeId) : undefined
-          set({
-            sceneReview: {
-              ...review,
-              nextTypeId: t?.id,
-              nextTypeName: t?.name,
-              // 手動指定時は特別イベントを解除
-              scheduledEventId: undefined,
-              scheduledEventName: undefined,
-            },
-          })
-          // 方向性が変わったので次シーン候補を作り直す
-          void get().regenerateSuggestions()
-        },
-
-        rerollReviewType: async () => {
-          const review = get().sceneReview
-          const s = active()
-          if (!review || !s) return
-          const pick = directNextScene(
-            s,
-            get().worlds.find((w) => w.id === s.worldId),
-            get().sceneTypes,
-            null,
-            true, // イベント判定をスキップして種類のみ抽選（day 無し条件イベントに横取りされないように）
-          )
-          const t = pick.typeId ? get().sceneTypes.find((x) => x.id === pick.typeId) : undefined
-          set({
-            sceneReview: {
-              ...review,
-              nextTypeId: t?.id,
-              nextTypeName: t?.name,
-              scheduledEventId: undefined,
-              scheduledEventName: undefined,
-            },
-          })
-          // 引き直した方向性に合わせて次シーン候補を再生成
-          await get().regenerateSuggestions()
-        },
-
         regenerateSuggestions: async () => {
           const review = get().sceneReview
           const s = active()
@@ -2555,15 +2420,10 @@ export const useStore = create<AppState>()(
           set({ isRegenSuggestions: true, error: null })
           try {
             const refs = resolveRefs(s)
-            // 方向性テキスト（イベント優先→種類→自由）
-            const guidance = review.nextTypeId
-              ? (get().sceneTypes.find((t) => t.id === review.nextTypeId)?.guidance ?? '')
-              : ''
+            // 方向性テキスト（イベント有無のみ。FB3-C で演出タイプは廃止）
             const dirText = review.scheduledEventName
               ? `特別イベント「${review.scheduledEventName}」が発生します。`
-              : review.nextTypeName
-                ? `次シーンの種類は「${review.nextTypeName}」。${guidance}`
-                : '特に指定なし（自由に提案）。'
+              : '特に指定なし（自由に提案）。'
             const sceneIdxForCtx = s.scenes.findIndex((sc) => sc.id === scene.id)
             const existingNextScene = isPastScene ? s.scenes[sceneIdxForCtx + 1] : undefined
             const nextTimeline = !isPastScene && s.timeline.enabled ? advanceTimeline(s.timeline) : null
@@ -2751,15 +2611,15 @@ export const useStore = create<AppState>()(
           const scene = currentScene(s)
           if (!scene) return
 
-          // 開始時のシーン選出：世界イベント確認＋タイプ抽選＋時間帯決定
+          // 開始時のシーン選出：世界イベント確認＋時間帯決定（FB3-C で演出タイプ抽選は廃止）
           const refs = resolveRefs(s)
           const day = s.timeline.enabled ? s.timeline.currentDay : null
-          const pick = directNextScene(s, refs.world, get().sceneTypes, day)
+          const pick = nextScheduledEvent(s, refs.world, day)
           const event = pick.eventId
             ? refs.world?.scheduledEvents.find((e) => e.id === pick.eventId)
             : undefined
           const label = s.timeline.enabled ? timeLabelOf(s.timeline) : undefined
-          const baseName = event?.name || (pick.typeId ? get().sceneTypes.find((t) => t.id === pick.typeId)?.name : '')
+          const baseName = event?.name || ''
           const drafted = [label, baseName].filter(Boolean).join('：') || scene.title
           // 導入（そのまま掲載）モードでは見出しを openingTitle 優先に（FB2-B）
           const opening = s.mode === 'story' ? s.story.opening.trim() : ''
@@ -2773,7 +2633,6 @@ export const useStore = create<AppState>()(
                     ...sc,
                     title,
                     timeLabel: label ?? sc.timeLabel,
-                    sceneTypeId: pick.typeId,
                     note: sc.note || event?.note || '',
                   }
                 : sc,
@@ -2945,7 +2804,7 @@ export const useStore = create<AppState>()(
         },
 
         exportBundle: async (includeImages) => {
-          const { characters, worlds, personas, sceneTypes, sessions, cassettes } = get()
+          const { characters, worlds, personas, sessions, cassettes } = get()
           // providers（API キー）は localStorage のみに保持し、エクスポートには含めない（共有時の漏洩防止）
           const bundle: ExportBundle = {
             type: 'ai-storytelling-studio',
@@ -2954,7 +2813,6 @@ export const useStore = create<AppState>()(
             characters,
             worlds,
             personas,
-            sceneTypes,
             sessions,
             cassettes,
           }
@@ -3018,7 +2876,6 @@ export const useStore = create<AppState>()(
               characters: mergeById(st.characters, incomingCharacters),
               worlds: mergeById(st.worlds, incomingWorlds),
               personas: mergeById(st.personas, incomingPersonas),
-              sceneTypes: mergeById(st.sceneTypes, bundle.sceneTypes ?? []),
               sessions: mergeById(st.sessions, incomingSessions),
               cassettes: mergeById(st.cassettes, bundle.cassettes ?? []),
               // providers はユーザー固有の設定のためインポート対象外
@@ -3405,7 +3262,6 @@ export const useStore = create<AppState>()(
         characters: st.characters,
         worlds: st.worlds,
         personas: st.personas,
-        sceneTypes: st.sceneTypes,
         sessions: st.sessions,
         cassettes: st.cassettes,
         activeId: st.activeId,

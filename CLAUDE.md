@@ -25,7 +25,7 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist`。storage は
 各ファイルの「現在の責務」を1行で。深い経緯は `docs/設計_*.md` を参照。
 
 - `src/types.ts` — 全データ型（**最初に読む**）
-- `src/store.ts` — zustand ストア。状態・全アクション・永続化（クリーンブレイク・移行なし）・状態エンジン（関係性 prose／事実の数）・ディレクター抽選・チェックポイント記録/復元など中核ロジック
+- `src/store.ts` — zustand ストア。状態・全アクション・永続化（クリーンブレイク・移行なし）・状態エンジン（関係性 prose／事実の数）・世界観イベント自動発火・チェックポイント記録/復元など中核ロジック
 - `src/styles/` — `index.css` の分割先6ファイル（`tokens`/`base`/`layout`/`chat`/`composer`/`panels`.css。`index.css` は順に `@import` するだけ）。意味色・z-index・spacing・リーダー設定用の CSS 変数は `tokens.css` の `:root` に集約
 - `src-tauri/` — Tauri シェル（Rust）。設定・権限のみで独自ロジックはほぼ無し。`tauri.conf.json`・`capabilities/default.json`（`http`/`fs`/`dialog` 権限。fs は `$APPDATA/**` 再帰読み書きにスコープ）・`src/lib.rs`（plugin 登録のみ）
 
@@ -73,7 +73,7 @@ Play 領域:
 - `StatusView.tsx`/`DiscoveryView.tsx` — ドック専用の**読み取り専用**ビュー（編集 UI・保存処理を持たない）。`DiscoveryView` は「🌍世界観／キャラ（アバター＋件数）」のタブ切替（F4）
 - `ReaderSettings.tsx` — Aa ボタン→ポップオーバー。文字サイズ/行間/本文幅（`RsField`＝スライダー＋数値入力・数値で自由設定。F2）/セリフ色分け/ステージ表示ON/OFF（`spritesEnabled`）/背景・立ち絵の濃さ/没入モード/「表示を既定に戻す」を `store.ui` へ即時反映（保存ボタンなし）
 - `Rail.tsx` — 左端48px の領域スイッチ（Play/Library/System・アイコン＋日本語ラベル。設定は最下段固定。F0/F5）。Library は直前の素材ビューをローカル state で記憶
-- `Sidebar.tsx` — 文脈サイドバー。`areaOf(view)` で出し分け（play=検索＋新規＋セッション一覧＋アーカイブトグル／library=キャラ/世界観/ペルソナ/演出の縦ナビ）。ブランド表示なし（F3で撤去）。セッション右クリックで `MenuPopover`（開く/設定/カード化/アーカイブ/削除）。Ctrl/Shift で複数選択→選択バー・右クリックで一括削除/アーカイブ（`useMultiSelect`・FB2-D）。＋新規作成は `createSession` の返す id で設定モーダルを自動オープン。セッションカード PNG の D&D 受付
+- `Sidebar.tsx` — 文脈サイドバー。`areaOf(view)` で出し分け（play=検索＋新規＋セッション一覧＋アーカイブトグル／library=キャラ/世界観/ペルソナ/カセットの縦ナビ）。ブランド表示なし（F3で撤去）。セッション右クリックで `MenuPopover`（開く/設定/カード化/アーカイブ/削除）。Ctrl/Shift で複数選択→選択バー・右クリックで一括削除/アーカイブ（`useMultiSelect`・FB2-D）。＋新規作成は `createSession` の返す id で設定モーダルを自動オープン。セッションカード PNG の D&D 受付
 - `CommandPalette.tsx` — `Ctrl+K` で開くパレット。セッション/素材の名前検索→移動＋固定コマンド。実行は既存 store アクション／`setUiPrefs` のみ
 
 モーダル・パネル:
@@ -87,7 +87,7 @@ Play 領域:
 - `BranchTreeModal.tsx` — `BranchTreeBody({session})`（ドックの branch タブ）。**SourceTree 風コミットグラフ**（FB3-B2・`.bg-*` クラス）: 全ノードを pre-order（現在パスの子を最優先＝現在パスをレーン0の直線に保つ）で縦1列に並べ、`buildGraph` がレーン割り当て＋各行の通過縦線／分岐カーブを計算し SVG で描画。最初の子は親と同じレーンを継ぎ2番目以降は新レーンへ（木なので merge 無し＝分岐カーブは親行の下半分のみ）。レーン色は `--graph-lane-0..5`。行＝色ドット＋ラベル＋timeLabel＋★＋いまここ、hover の「↩ 戻る」`restoreCheckpoint`＋⋯メニュー（しおり `setBranchStar`/`removeBranchStar`・シーン開始前へ戻る・この分岐を削除 `deleteBranchSubtree`＝現在パス上は無効）。「✂ 現在の分岐だけ残す（他n件を削除）」`pruneToCurrentPath`・「★ しおり」タブ・currentId 変化で自動スクロール
 - `ModelPicker.tsx` — プロバイダ切替・モデル一覧・お気に入り。`onPick` は `"providerId::modelId"`
 - `SceneEditor.tsx`/`SceneReviewModal.tsx`/`StoryLogModal.tsx`/`StatusPanel.tsx`/`DiscoveryPanel.tsx`/`CsvInput.tsx` — 各種閲覧・編集モーダル。StatusPanel/DiscoveryPanel はドックの「✎ 編集」経由で開く。`DiscoveryPanel` は `scope`（`'lore' | {characterId}`・F4）で世界観/キャラ別に編集画面を分割し、保存は live 起点でスコープ分だけ差し替え（編集中の他スコープ追記を巻き戻さない）
-- `library/` — 各素材の一覧＋エディタ（Character/World/Persona/SceneType）と `CassetteLibrary`（🎮カセット棚＝表紙/紹介文/▶遊ぶ/PNG書き出し/削除・D&D取込。FB2-E）と `AvatarField`/`SpriteSetField`。各 Library は PNG カード D&D 受付＋検索＋複数選択（`useMultiSelect`・右クリックメニュー＝`LibraryMultiSelect.tsx` の `SelectionBar`/`CardContextMenu`。Ctrl/Shift 選択→一括削除。FB2-D）。CharacterEditor/PersonaEditor は draft を保存ボタンで反映、`AvatarField`/`SpriteSetField` は store 直管理フィールド（avatar.imageId/sprites）を live 購読して同期。WorldEditor はフルページ（`.section-nav`＋`.section-content` の8セクション。「開始テンプレート」= `World.startPreset` の編集・W1）
+- `library/` — 各素材の一覧＋エディタ（Character/World/Persona）と `CassetteLibrary`（🎮カセット棚＝表紙/紹介文/▶遊ぶ/PNG書き出し/削除・D&D取込。FB2-E）と `AvatarField`/`SpriteSetField`。各 Library は PNG カード D&D 受付＋検索＋複数選択（`useMultiSelect`・右クリックメニュー＝`LibraryMultiSelect.tsx` の `SelectionBar`/`CardContextMenu`。Ctrl/Shift 選択→一括削除。FB2-D）。CharacterEditor/PersonaEditor は draft を保存ボタンで反映、`AvatarField`/`SpriteSetField` は store 直管理フィールド（avatar.imageId/sprites）を live 購読して同期。WorldEditor はフルページ（`.section-nav`＋`.section-content` の8セクション。「開始テンプレート」= `World.startPreset` の編集・W1）
 
 ## 設計ドキュメント（`docs/`）
 実装の詳細設計・意思決定の経緯はここに集約。CLAUDE.md で疑問が残ったら該当ドキュメントを読む。
@@ -120,14 +120,13 @@ Play 領域:
 - **EMOTIONS**（`types.ts`）— 固定セット `neutral/joy/anger/sadness/shy/surprise`（`EmotionId`）。各 `{id,label,tags}`
 - **World** — description＋`entries: LoreEntry[]`＋`scheduledEvents: ScheduledEvent[]`＋`relationAspects: RelationAspectDef[]`（関係性 prose の次元・ワールド固定）＋`stats: StatDef[]`＋`counters: CounterDef[]`＋`achievements: AchievementDef[]`＋`startPreset?: WorldStartPreset`（セッション開始テンプレート＝genre/premise/opening/openingTitle/authorNote/timeline〔開始日・開始時間帯含む〕定義。世界選択時にセッションへ**コピー**され素材側は不変。反映は `startPresetPatch`/`hasStartPreset`（store.ts の純関数）・W1）。プリセット `WORLD_PRESETS`（恋愛/RPG/経営）
 - **Persona** — 利用者が演じる人物。`imagePrompt?` あり
-- **SceneType**（グローバル素材）— `{name,guidance,weight,minGap,color,builtin}`。既定6種を初回シード
-- **Session** — characterIds/worldId/personaId/authorNote/story/`scenes: Scene[]`/currentSceneId/timeline/choiceMode（off|always|auto）/narrativeStyle（novel|chat）/`reviewModel`/`choicesModel`/director/usedEventIds/`state: SessionState`/`overlay: SessionOverlay`/messages/model/temperature/maxTokens＋`spritesEnabled?`（ステージ表示）＋`spriteEmotions?: {characterId,emotion}[]`（表情判定結果）＋`structuredOutput?`（本編を行タグ形式で書かせる。`newSession` は既定 true・既存は `?? false`）＋`archived?`（一覧から既定除外）
+- **Session** — characterIds/worldId/personaId/authorNote/story/`scenes: Scene[]`/currentSceneId/timeline/choiceMode（off|always|auto）/narrativeStyle（novel|chat）/`reviewModel`/`choicesModel`/`eventAutoFire?`（世界観イベント自動発火＝undefined/true で有効・FB3-C）/usedEventIds/`state: SessionState`/`overlay: SessionOverlay`/messages/model/temperature/maxTokens＋`spritesEnabled?`（ステージ表示）＋`spriteEmotions?: {characterId,emotion}[]`（表情判定結果）＋`structuredOutput?`（本編を行タグ形式で書かせる。`newSession` は既定 true・既存は `?? false`）＋`archived?`（一覧から既定除外）
 - **SessionState**（セッション固有・素材化しない）— `{relations, moods, stats, counters, achievements}`（「事実は数、判断は言葉」＝ADR-1）
 - **SessionOverlay**（セッション固有）— `{lore: LoreEntry[], characterDevelopments: {characterId,developments}[]}`。物語中の発見の上乗せ。**元 Character/World は不変**、レビュー承認の追記先はここ。本編には素材＋オーバーレイの実効ビュー（`resolveRefs` の `effectiveWorld`/`effectiveCharacter`）で注入。`promoteOverlayLore`/`promoteOverlayDev` で元素材へ move 昇格可
 - **Relation** — `{fromId,toId,stance,aspects:{aspectId,note}[],flags,updatedAt}`。キャラ→主人公（toId='hero'）の prose。数値ティア（band）は持たない
 - **StatDef/StatValue** — `StatDef{name,scope,default,min?,max?,inject}` は World 定義、`StatValue{defId,characterId?,value}` は SessionState。`inject:true` のみ本編注入
 - **CounterDef/CounterValue** — 累計カウンター。レビューの `counterEvents` で単調増加加算
-- **Scene** — `{title,activeCharacterIds,note,summary,timeLabel?,sceneTypeId?,illustrations?,backgroundImageId?,endedAt?}`。読む側は `illustrations ?? []`
+- **Scene** — `{title,activeCharacterIds,note,summary,timeLabel?,illustrations?,backgroundImageId?,endedAt?}`。読む側は `illustrations ?? []`
 - **SceneIllustration** — `{id,imageId,prompt,messageId?,createdAt}`。`messageId` 直後に表示（消失時はシーン末尾）
 - **Message** — role/characterId?/sceneId?/content/choices?/truncated?/pending?
 - **ImageJob**（`imageJobs.ts`・store の `imageJobs`・**非永続**）— `{id,label,target,providerId,prompt,negative?,width,height,count,status:'running'|'selecting'|'error'|'canceled',results:Blob[],error?,createdAt}`。`target`＝`scene-illustration`/`character-avatar`/`persona-avatar`/`character-sprite`/`scene-background`。1枚でも自動採用せず、採用は常にユーザー選択（`applyImageJobResult`）。`store.imageJobToasts`（選択待ち通知・非永続）
@@ -151,12 +150,12 @@ Play 領域:
 **スキーマ変更時の手順: 型更新 → 初期state/factory更新 → exportBundle/importBundle 反映 → partialize に新フィールド。**（破壊的なら persist キーも更新）
 
 ## 主要な振る舞い
-- **シーン進行**: `このシーンを終える` → `prepareSceneReview`（要約＋`directNextScene`＋成長案＋関係値差分。max_tokens 途中切れ対策＝拡大＋`finish_reason==='length'` で最大2回再試行、失敗時は明示エラー）→ レビュー確認 → `confirmSceneReview`（成長/イベント反映・関係値加算/気分更新・タイムライン前進・新シーン作成）→ `beginScene()` → 選択肢。物語開始は `startStory()`。**導入（`story.opening`）が非空なら AI 生成せずその文章を最初の assistant メッセージとして掲載**（`openingTitle` があれば見出しに採用）→ 選択肢生成＋チェックポイント（FB2-B）
+- **シーン進行**: `このシーンを終える` → `prepareSceneReview`（要約＋`nextScheduledEvent`＋成長案＋関係値差分。max_tokens 途中切れ対策＝拡大＋`finish_reason==='length'` で最大2回再試行、失敗時は明示エラー）→ レビュー確認 → `confirmSceneReview`（成長/イベント反映・関係値加算/気分更新・タイムライン前進・新シーン作成）→ `beginScene()` → 選択肢。物語開始は `startStory()`。**導入（`story.opening`）が非空なら AI 生成せずその文章を最初の assistant メッセージとして掲載**（`openingTitle` があれば見出しに採用）→ 選択肢生成＋チェックポイント（FB2-B）
 - **セッション・オーバーレイ**: 素材（Character/World）は再利用資産なので**レビューは書き換えない**。採用された発見は `confirmSceneReview`（`applyDiscovery`）で `overlay` に追記。本編・レビュー文脈は必ず実効ビュー（`effectiveWorld`/`effectiveCharacter`）を読む（片方だけ素材素を読むと発見が消えて見える）。閲覧/編集は `DiscoveryPanel`、昇格は `promoteOverlayLore`/`promoteOverlayDev`（**move**。copy だと実効合成で二重注入）
-- **ディレクター** `directNextScene`: ①特別イベント（未消化・day 到来・condition 成立）最優先 → ②`director.typeIds` から重み＋クールダウン（`minGap`）抽選。人の承認なしでコードが自動判定発火
+- **世界観イベント自動発火** `nextScheduledEvent`: 未消化・day 到来・condition 成立の特別イベントを day 順で1つ選び、人の承認なしでコードが自動発火（`session.eventAutoFire===false` で無効化）。**演出タイプ抽選（旧ディレクター・SceneType）は FB3-C で全廃**し、世界観イベントに一本化
 - **状態エンジン**（`Session.state`／ADR-1）: 関係性は prose、進捗は数（`StatValue`）。`reviewSystem` がレビュー時に `relationUpdates`（stance/aspects 全文書き直し・flagsAdd）／`statChanges`（delta）／`counterEvents`／`moods` を出力。**prose は全文置換・数値の加算はコードが行う**。現在値は `buildStateInfo`→本編 system の【状態（現在）】に注入。条件エンジン: `evalCondition`/`evalClause` が `Clause`（stat/counter/relationFlag/achievement・省略時「参加キャラのいずれか」）を判定し、実績の反復評価は `unlockAchievements()` に共通化（`confirmSceneReview` と選択肢加点の両方から呼ぶ）
 - **選択肢** `genChoices`: choiceMode≠off で各応答後に生成。`choicesModelOf` 使用、`extractJson`→`coerceChoices`。ワールドにスタット定義があれば `{"text":...,"effects":[{"stat":名称,"delta":数値}]}` 形式も受理し `Choice.effects` にする。手動再生成は `regenChoices()`。選択肢ボタンは `effects` があれば加点バッジ表示＋クリックで `applyChoiceEffects()`→`unlockAchievements()`
-- **次シーン候補の再生成** `regenerateSuggestions`: レビューで方向性を変えると候補を作り直す（`nextSceneSystem()`）
+- **次シーン候補の再生成** `regenerateSuggestions`: レビュー画面で候補を作り直す（`nextSceneSystem()`。方向性は発火中の特別イベント有無のみ）
 - **文体**: novel=地の文＋「」混在（話者プレフィックスなし）/ chat=キャラ別吹き出し（「名前:」先頭をパースして characterId 判定）
 - **出力停止対策**: `finish_reason==='length'` で `message.truncated`→「続きを生成」（`continueLast`＝appendToId で同一メッセージへ追記）。開始の一時エラーは最大3回自動リトライ。**中断は用途別に独立**: `stop`（本編）/`stopChoices`（選択肢）/`stopReview`（レビュー）でモジュールレベル AbortController を分離
 - **メッセージ操作**: 編集/削除/「ここから」（`regenerateFrom`＝以降を切り詰め再生成）。**巻き戻し系（`regenerate`/`regenerateFrom`/`editMessage`/`deleteMessage`）は冒頭で `reanchorBranch(sessionId, keptIds)` を呼び、`BranchNode.anchorMessageId`（スナップショット末尾メッセージ id）を辿って「切り詰め後も残る地点」の祖先へ currentId を戻す**＝以降の記録が元の続きと兄弟分岐になる（git の checkout→commit 相当。FB3-B1）。anchor 無しの旧木は動かさず従来の直列動作
@@ -199,7 +198,7 @@ Play 領域:
 4. **Tauri 固有部**（appFetch/saveBlob/ファイルストレージ）を触った時は `npm run tauri:dev` の手動チェックリストを上記3の形式で提示（本編ストリーミング＋停止／ComfyUI 生成→採用／保存ダイアログでカード PNG・JSON 保存／再起動でデータ保持＝`%APPDATA%\com.cake30984.aistorytelling\data\` の state.json・images/／旧 WebView データの自動移行）
 
 ## 実装状況
-**主要機能はすべて実装済み**。セッション(RP/物語)・素材ライブラリ（キャラ/世界観/ペルソナ/シーンタイプ）・ロアブック・グループ会話・シーン管理・タイムライン・選択肢進行・統合レビュー・シーン演出エンジン・文体切替・マルチプロバイダ・会話編集/削除/作り直し・エクスポート/インポート・出力停止対策、および以下の大型フェーズが完了:
+**主要機能はすべて実装済み**。セッション(RP/物語)・素材ライブラリ（キャラ/世界観/ペルソナ）・ロアブック・グループ会話・シーン管理・タイムライン・選択肢進行・統合レビュー・世界観イベント自動発火・文体切替・マルチプロバイダ・会話編集/削除/作り直し・エクスポート/インポート・出力停止対策、および以下の大型フェーズが完了:
 
 - 状態エンジン（関係性 prose＋事実の数＋条件エンジン＋実績＋選択肢連動加点。ADR-1 / P1〜P5）
 - セッション・オーバーレイ（発見の素材↔セッション分離・実効ビュー注入・昇格。B1〜B4）
@@ -215,7 +214,7 @@ Play 領域:
 各フェーズの詳細・検証記録は対応する `docs/設計_*.md` を参照。
 
 ## 未着手・残タスク
-- **フィードバック反映3（FB3・A済／B〜D未着手）**: 手順書 → `docs/設計_フィードバック反映3.md`。**A=本文表示の即効改善（実装済み・2026-07-11）**＝開始シーン見出し・マーカーの罫線化（`.gen-divider`）・自動スクロール停止・分岐ラベルを本文冒頭化・一覧選択UX（Esc解除／バーは2件以上／activeは控えめ）・末尾本文に「選択肢を生成」。**B=分岐チェックポイントの分岐化＋フルグラフUI（実装済み・2026-07-12）**＝`anchorMessageId`＋`reanchorBranch` で巻き戻しを兄弟分岐化・`BranchTreeBody` を SourceTree 風コミットグラフに再設計。C=演出ディレクター廃止／D=セッションカード全廃＋カセット専用エディタ。残り推奨順 C→D
+- **フィードバック反映3（FB3・A/B/C済／D未着手）**: 手順書 → `docs/設計_フィードバック反映3.md`。**A=本文表示の即効改善（実装済み・2026-07-11）**＝開始シーン見出し・マーカーの罫線化（`.gen-divider`）・自動スクロール停止・分岐ラベルを本文冒頭化・一覧選択UX（Esc解除／バーは2件以上／activeは控えめ）・末尾本文に「選択肢を生成」。**B=分岐チェックポイントの分岐化＋フルグラフUI（実装済み・2026-07-12）**＝`anchorMessageId`＋`reanchorBranch` で巻き戻しを兄弟分岐化・`BranchTreeBody` を SourceTree 風コミットグラフに再設計。**C=演出ディレクター廃止（実装済み・2026-07-12）**＝SceneType/director/sceneTypeId を全廃し `nextScheduledEvent` で世界観イベントに一本化・進行タブに `eventAutoFire` トグル。D=セッションカード全廃＋カセット専用エディタ（残り）
 - **T1 で判明した既知の問題**: ①選択肢生成中に本編生成が始まると選択肢側 AbortController が追従せず `Cannot read properties of null (reading 'signal')`（再現手順が不明で切り分け未着手のまま据え置き）②ComfyUI が通常起動（`--enable-cors-header` なし）で接続できない＝設計通りでないバグ。**未解決・現在も再現する**。appFetch 未置換経路や `isTauri()` 誤判定を疑い切り分けが必要（詳細は `docs/設計_Tauri化.md`）
 - **T4（配布）**: NSIS・GitHub Releases。ユーザー判断で当面見送り（まだ公開しない）
 - **ComfyUI 実機動作確認・ワークフローテンプレ拡充**（SDXL 以外・LoRA ノード入り）

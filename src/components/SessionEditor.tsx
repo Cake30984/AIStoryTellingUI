@@ -19,7 +19,7 @@ interface Props {
 }
 
 export default function SessionEditor({ session, onClose }: Props) {
-  const { updateSession, characters, worlds, personas, sceneTypes, setView, bulkSetCharacterModel } = useStore()
+  const { updateSession, characters, worlds, personas, setView, bulkSetCharacterModel } = useStore()
   const [d, setD] = useState<Session>(session)
   const [tab, setTab] = useState<Tab>('basic')
   const [pickerTarget, setPickerTarget] = useState<PickerTarget | null>(null)
@@ -29,16 +29,6 @@ export default function SessionEditor({ session, onClose }: Props) {
     setD((s) => ({ ...s, ...p }))
     setDirty(true)
   }
-
-  const toggleDirectorType = (id: string) =>
-    patch({
-      director: {
-        ...d.director,
-        typeIds: d.director.typeIds.includes(id)
-          ? d.director.typeIds.filter((t) => t !== id)
-          : [...d.director.typeIds, id],
-      },
-    })
 
   const toggleCharacter = (id: string) =>
     patch({
@@ -83,7 +73,7 @@ export default function SessionEditor({ session, onClose }: Props) {
       structuredOutput: d.structuredOutput,
       reviewModel: d.reviewModel,
       choicesModel: d.choicesModel,
-      director: d.director,
+      eventAutoFire: d.eventAutoFire,
       temperature: d.temperature,
       maxTokens: d.maxTokens,
     })
@@ -431,46 +421,20 @@ export default function SessionEditor({ session, onClose }: Props) {
                 </div>
               </div>
 
-              {/* シーン演出ディレクター */}
+              {/* 世界観イベントの自動発生（FB3-C。演出ディレクターは廃止し、世界観に定義した特別イベントに一本化） */}
               <div className="field">
                 <label>
                   <input
                     type="checkbox"
-                    checked={d.director.enabled}
-                    onChange={(e) => patch({ director: { ...d.director, enabled: e.target.checked } })}
+                    checked={d.eventAutoFire !== false}
+                    onChange={(e) => patch({ eventAutoFire: e.target.checked })}
                     style={{ width: 'auto', marginRight: 8 }}
                   />
-                  シーン演出ディレクター（次シーンの種類を自動抽選）
+                  世界観の特別イベントを自動的に発生させる
                 </label>
-                {d.director.enabled && (
-                  <div className="timeline-box">
-                    <div className="desc" style={{ marginBottom: 8 }}>
-                      抽選対象のシーン種類を選んでください（
-                      <button className="link" onClick={() => { onClose(); setView('sceneTypes') }}>
-                        演出で編集
-                      </button>
-                      ）。
-                    </div>
-                    {sceneTypes.length === 0 ? (
-                      <p className="inline-empty">「演出」でシーン種類を作成してください。</p>
-                    ) : (
-                      <div className="pick-grid">
-                        {sceneTypes.map((t) => (
-                          <button
-                            key={t.id}
-                            className={'pick-chip' + (d.director.typeIds.includes(t.id) ? ' on' : '')}
-                            onClick={() => toggleDirectorType(t.id)}
-                          >
-                            <span className="dot-avatar" style={{ background: t.color }}>
-                              🎬
-                            </span>
-                            {t.name || '無名'}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
+                <div className="desc" style={{ marginTop: 4 }}>
+                  世界観に定義した特別イベント（日付・条件つき）を、シーンの切り替わり時にコードが自動判定して発生させます。オフにすると自動発生しません。
+                </div>
               </div>
             </>
           )}

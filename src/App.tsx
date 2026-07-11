@@ -7,7 +7,6 @@ import { SettingsBody } from './components/SettingsModal'
 import CharacterLibrary from './components/library/CharacterLibrary'
 import WorldLibrary from './components/library/WorldLibrary'
 import PersonaLibrary from './components/library/PersonaLibrary'
-import SceneTypeLibrary from './components/library/SceneTypeLibrary'
 import CassetteLibrary from './components/library/CassetteLibrary'
 import LibraryBar from './components/LibraryBar'
 import SceneReviewModal from './components/SceneReviewModal'
@@ -157,11 +156,6 @@ export default function App() {
         <div className="main">
           <LibraryBar />
           <PersonaLibrary />
-        </div>
-      ) : view === 'sceneTypes' ? (
-        <div className="main">
-          <LibraryBar />
-          <SceneTypeLibrary />
         </div>
       ) : view === 'cassettes' ? (
         <div className="main">

@@ -17,8 +17,6 @@ export interface ResolvedRefs {
   timelineInfo: string
   /** 終盤が近いか（クライマックス促し） */
   nearEnd: boolean
-  /** 現在シーンの種類ガイド（演出エンジン） */
-  sceneTypeGuidance: string
   /** 関係性 prose・気分・注入対象スタットの現在値（空なら無効） */
   stateInfo: string
 }
@@ -78,11 +76,6 @@ export function buildSystemPrompt(
     let t = `【時間】\n${refs.timelineInfo}`
     if (refs.nearEnd) t += `\n物語は終盤です。クライマックスに向けて収束させてください。`
     parts.push(t)
-  }
-
-  // 1.8 今回のシーンの方向性（演出エンジン）
-  if (refs.sceneTypeGuidance.trim()) {
-    parts.push(`【今回のシーンの方向性】\n${refs.sceneTypeGuidance.trim()}`)
   }
 
   // 1.9 状態（関係性 prose・気分・注入対象スタット）

@@ -8,11 +8,8 @@ export default function SceneReviewModal() {
     sceneReview,
     confirmSceneReview,
     cancelReview,
-    setReviewNextType,
-    rerollReviewType,
     isReviewing,
     isRegenSuggestions,
-    sceneTypes,
     sessions,
     activeId,
     stopReview,
@@ -20,9 +17,6 @@ export default function SceneReviewModal() {
   const review = sceneReview!
   const session = sessions.find((s) => s.id === activeId)
   const isPastScene = !!session && review.sceneId !== session.currentSceneId
-  const pool = (session?.director.typeIds ?? [])
-    .map((id) => sceneTypes.find((t) => t.id === id))
-    .filter((t): t is NonNullable<typeof t> => !!t)
 
   // 次シーンで進む時間帯（現在シーン確定時のみ。タイムライン有効時）
   const nextTimeLabel =
@@ -120,47 +114,13 @@ export default function SceneReviewModal() {
                 <textarea rows={6} value={summary} onChange={(e) => setSummary(e.target.value)} />
               </div>
 
-              {/* 次シーンの方向（ディレクター） */}
-              {(review.scheduledEventName || review.nextTypeName || pool.length > 0) && (
+              {/* 特別イベントの発生（FB3-C。世界観イベントに一本化・自動発生の告知のみ） */}
+              {review.scheduledEventName && (
                 <div className="field">
                   <label>🎬 次シーンの方向</label>
-                  {review.scheduledEventName ? (
-                    <div className="director-row">
-                      <span className="event-badge">特別イベント: {review.scheduledEventName}</span>
-                      <button
-                        className="btn"
-                        onClick={() => setReviewNextType(null)}
-                        disabled={isRegenSuggestions}
-                      >
-                        解除
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="director-row">
-                      <select
-                        value={review.nextTypeId ?? ''}
-                        onChange={(e) => setReviewNextType(e.target.value || null)}
-                        disabled={isRegenSuggestions}
-                      >
-                        <option value="">指定なし（自由）</option>
-                        {pool.map((t) => (
-                          <option key={t.id} value={t.id}>
-                            {t.name}
-                          </option>
-                        ))}
-                      </select>
-                      {pool.length > 0 && (
-                        <button
-                          className="btn"
-                          onClick={rerollReviewType}
-                          disabled={isRegenSuggestions}
-                          title="抽選し直して候補も作り直す"
-                        >
-                          🎲 引き直す
-                        </button>
-                      )}
-                    </div>
-                  )}
+                  <div className="director-row">
+                    <span className="event-badge">特別イベント: {review.scheduledEventName}</span>
+                  </div>
                 </div>
               )}
 

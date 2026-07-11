@@ -216,21 +216,6 @@ export interface World {
   updatedAt: number
 }
 
-/** シーンの種類（グローバル素材。抽選で次シーンの方向が決まる） */
-export interface SceneType {
-  id: string
-  name: string
-  /** 演出ガイド（プロンプトに渡す指示） */
-  guidance: string
-  /** 抽選の重み（大きいほど出やすい） */
-  weight: number
-  /** クールダウン：前回使用からの最低シーン間隔（0=制限なし） */
-  minGap: number
-  color: string
-  /** 既定タイプ */
-  builtin?: boolean
-}
-
 /** 選択肢に紐づく小刻み加点（P5）。選んだ瞬間にコードが加算する事実（LLM は delta を提案するだけ） */
 export interface ChoiceEffect {
   defId: string
@@ -288,8 +273,6 @@ export interface Scene {
   summary: string
   /** タイムライン上の時刻ラベル（例: 3日目 夜） */
   timeLabel?: string
-  /** このシーンの種類（演出エンジンの抽選結果） */
-  sceneTypeId?: string
   /** 挿絵（手動生成のみ。任意＝旧データには無い） */
   illustrations?: SceneIllustration[]
   /** シーン背景画像（V4。手動生成・シーンごとに1枚） */
@@ -429,8 +412,8 @@ export interface Session {
   choiceMode: ChoiceMode
   /** 文体スタイル */
   narrativeStyle: NarrativeStyle
-  /** シーン演出ディレクター設定 */
-  director: { enabled: boolean; typeIds: string[] }
+  /** 世界観の特別イベントを自動発火させるか（FB3-C。undefined=有効） */
+  eventAutoFire?: boolean
   /** 消化済みの特別イベント ID */
   usedEventIds: string[]
   /** 感情・関係値の状態（セッション固有） */
@@ -592,9 +575,6 @@ export interface SceneReview {
   counterEvents: CounterEvent[]
   /** 各キャラの気分の更新案 */
   moodChanges: MoodChange[]
-  /** ディレクターが選んだ次シーンの種類 */
-  nextTypeId?: string
-  nextTypeName?: string
   /** 発火する特別イベント */
   scheduledEventId?: string
   scheduledEventName?: string
@@ -729,7 +709,6 @@ export interface ExportBundle {
   worlds: World[]
   personas: Persona[]
   sessions: Session[]
-  sceneTypes?: SceneType[]
   /** ゲームカセット棚（FB2-E） */
   cassettes?: Cassette[]
   providers?: Provider[]
