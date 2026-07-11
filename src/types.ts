@@ -174,12 +174,23 @@ export interface WorldStartPreset {
   genre?: string
   /** あらすじ・前提（→ session.story.premise） */
   premise?: string
-  /** 主人公像（→ session.story.protagonist） */
-  protagonist?: string
+  /** 導入＝開始時に一度だけ掲載される最初の本文（→ session.story.opening。FB2-B） */
+  opening?: string
+  /** 導入シーンの見出し（→ session.story.openingTitle。FB2-B） */
+  openingTitle?: string
   /** 固定メモ（→ session.authorNote） */
   authorNote?: string
-  /** タイムライン定義（→ session.timeline。反映時は enabled=true・1日目から） */
-  timeline?: { slots: string[]; totalDays: number | null; spanLabel: string }
+  /**
+   * タイムライン定義（→ session.timeline。反映時は enabled=true）。
+   * startDay/startSlot があれば開始時点も指定できる（省略時は1日目・先頭スロット）。
+   */
+  timeline?: {
+    slots: string[]
+    totalDays: number | null
+    spanLabel: string
+    startDay?: number
+    startSlot?: number
+  }
 }
 
 /** 世界観（ロアブック＋ゲームシステム定義） */
@@ -301,6 +312,13 @@ export interface Timeline {
   currentDay: number
   /** 現在のスロット番号（slots のインデックス） */
   currentSlot: number
+  /**
+   * 開始時点の日（1始まり・省略時は1。FB2-B）。物語を「前日の夜から」等、任意の時点から
+   * 始められるようにするための初期値。カセット初期化（freshSessionOf）はここへ戻す。
+   */
+  startDay?: number
+  /** 開始時点のスロット番号（省略時は0＝先頭スロット。FB2-B） */
+  startSlot?: number
 }
 
 /** 物語モードの選択肢進行の方式 */
@@ -313,7 +331,14 @@ export type NarrativeStyle = 'novel' | 'chat'
 export interface StorySetup {
   premise: string
   genre: string
-  protagonist: string
+  /**
+   * 導入（開始時に一度だけ「そのまま掲載」される最初の本文。FB2-B）。
+   * 非空なら startStory は AI 生成せず、この文章を最初の assistant メッセージとして表示する。
+   * あらすじ・前提（premise）が毎回注入される背景情報なのに対し、これは開始時の1回きり。
+   */
+  opening: string
+  /** 導入シーンの見出し（空なら従来のタイトル抽選にフォールバック） */
+  openingTitle: string
 }
 
 /**

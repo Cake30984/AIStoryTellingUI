@@ -136,7 +136,6 @@ export function buildSystemPrompt(
     const sParts: string[] = []
     if (s.genre.trim()) sParts.push(`ジャンル・トーン: ${s.genre.trim()}`)
     if (s.premise.trim()) sParts.push(`あらすじ・前提: ${s.premise.trim()}`)
-    if (s.protagonist.trim()) sParts.push(`主人公: ${s.protagonist.trim()}`)
     if (sParts.length) parts.push(`【物語設定】\n${sParts.join('\n')}`)
   }
 

@@ -222,13 +222,17 @@ function normalizeStartPreset(raw: any): WorldStartPreset | undefined {
   const p: WorldStartPreset = {}
   if (typeof raw.genre === 'string') p.genre = raw.genre
   if (typeof raw.premise === 'string') p.premise = raw.premise
-  if (typeof raw.protagonist === 'string') p.protagonist = raw.protagonist
+  // 導入（FB2-B）。旧カードの protagonist は廃止フィールドのため読み捨てる
+  if (typeof raw.opening === 'string') p.opening = raw.opening
+  if (typeof raw.openingTitle === 'string') p.openingTitle = raw.openingTitle
   if (typeof raw.authorNote === 'string') p.authorNote = raw.authorNote
   if (raw.timeline && Array.isArray(raw.timeline.slots)) {
     p.timeline = {
       slots: raw.timeline.slots.filter((s: any) => typeof s === 'string'),
       totalDays: typeof raw.timeline.totalDays === 'number' ? raw.timeline.totalDays : null,
       spanLabel: typeof raw.timeline.spanLabel === 'string' ? raw.timeline.spanLabel : '',
+      ...(typeof raw.timeline.startDay === 'number' ? { startDay: raw.timeline.startDay } : {}),
+      ...(typeof raw.timeline.startSlot === 'number' ? { startSlot: raw.timeline.startSlot } : {}),
     }
   }
   return Object.keys(p).length > 0 ? p : undefined
@@ -406,7 +410,12 @@ function freshSessionOf(session: Session): Session {
     overlay: { lore: [], characterDevelopments: [] },
     usedEventIds: [],
     spriteEmotions: [],
-    timeline: { ...session.timeline, currentDay: 1, currentSlot: 0 },
+    // 開始時点（startDay/startSlot）へ巻き戻す。指定が無ければ従来どおり1日目・先頭スロット（FB2-B）
+    timeline: {
+      ...session.timeline,
+      currentDay: session.timeline.startDay ?? 1,
+      currentSlot: session.timeline.startSlot ?? 0,
+    },
     archived: false,
     updatedAt: now,
   }

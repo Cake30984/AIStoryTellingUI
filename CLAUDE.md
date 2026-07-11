@@ -76,7 +76,7 @@ Play 領域:
 - `CommandPalette.tsx` — `Ctrl+K` で開くパレット。セッション/素材の名前検索→移動＋固定コマンド。実行は既存 store アクション／`setUiPrefs` のみ
 
 モーダル・パネル:
-- `SessionEditor.tsx` — セッション設定。「基本／進行／モデル／出力」4タブ（同一 draft を共有）。フッターに「セッションをカード化」。「構造化出力」チェックボックスあり。世界観選択時に開始テンプレートを空欄項目のみ自動コピー（`startPresetPatch`・W1）＋「開始テンプレートを読み込む」リンクで全上書き（確認つき）。story モードは主人公像（`story.protagonist`）欄あり
+- `SessionEditor.tsx` — セッション設定。「基本／進行／モデル／出力」4タブ（同一 draft を共有）。フッターに「セッションをカード化」。「構造化出力」チェックボックスあり。世界観選択時に開始テンプレートを空欄項目のみ自動コピー（`startPresetPatch`・W1）＋「開始テンプレートを読み込む」リンクで全上書き（確認つき）。story モードは導入（`story.opening`/`openingTitle`・そのまま掲載）欄あり（主人公像はペルソナで代替のため廃止）。進行タブに開始時間帯（`timeline.currentSlot`／未開始時は `startDay`/`startSlot` として記録）
 - `SessionCardModal.tsx` — セッションカード／ゲームカセット書き出し（モード切替＝続きから／最初から。カセット時は紹介文入力）。カード画像は「タイトルから自動」のプレビュー付きサムネ＋挿絵から選択（FB2-A3）。読み込みは Sidebar D&D と System ページのファイル入力（`importSessionCard`/`importCassette`。両所でカセットを 🎮 表示で分岐）
 - `SettingsModal.tsx` — `export function SettingsBody()`（System ページ本体）。プロバイダ管理・データ入出力（「画像も含める」チェックボックス）・未使用画像 GC。App.tsx が `view==='system'` で描画
 - `ImageProviderSettings.tsx` — 画像生成接続先の管理（ComfyUI/画像API の追加・編集・削除・接続テスト・デフォルトタグ入力）。`SettingsBody` に組み込み
@@ -116,7 +116,7 @@ Play 領域:
 - **Avatar** — `{imageId?, color}`。`imageId` は画像ストア id（未設定なら色＋イニシャル。表示は `EntityAvatar`）
 - **Character** — name/persona/speechStyle/appearance/exampleDialogues/greeting/avatar/tags＋`developments: Development[]`＋`model?`（chat 群像で話者確定時のみ）＋`imagePrompt?`（画像生成用固定英語タグ）＋`sprites?: {emotion:EmotionId,imageId}[]`（表情つき立ち絵。通常カードには含めずセッションカードのみ）
 - **EMOTIONS**（`types.ts`）— 固定セット `neutral/joy/anger/sadness/shy/surprise`（`EmotionId`）。各 `{id,label,tags}`
-- **World** — description＋`entries: LoreEntry[]`＋`scheduledEvents: ScheduledEvent[]`＋`relationAspects: RelationAspectDef[]`（関係性 prose の次元・ワールド固定）＋`stats: StatDef[]`＋`counters: CounterDef[]`＋`achievements: AchievementDef[]`＋`startPreset?: WorldStartPreset`（セッション開始テンプレート＝genre/premise/protagonist/authorNote/timeline 定義。世界選択時にセッションへ**コピー**され素材側は不変。反映は `startPresetPatch`/`hasStartPreset`（store.ts の純関数）・W1）。プリセット `WORLD_PRESETS`（恋愛/RPG/経営）
+- **World** — description＋`entries: LoreEntry[]`＋`scheduledEvents: ScheduledEvent[]`＋`relationAspects: RelationAspectDef[]`（関係性 prose の次元・ワールド固定）＋`stats: StatDef[]`＋`counters: CounterDef[]`＋`achievements: AchievementDef[]`＋`startPreset?: WorldStartPreset`（セッション開始テンプレート＝genre/premise/opening/openingTitle/authorNote/timeline〔開始日・開始時間帯含む〕定義。世界選択時にセッションへ**コピー**され素材側は不変。反映は `startPresetPatch`/`hasStartPreset`（store.ts の純関数）・W1）。プリセット `WORLD_PRESETS`（恋愛/RPG/経営）
 - **Persona** — 利用者が演じる人物。`imagePrompt?` あり
 - **SceneType**（グローバル素材）— `{name,guidance,weight,minGap,color,builtin}`。既定6種を初回シード
 - **Session** — characterIds/worldId/personaId/authorNote/story/`scenes: Scene[]`/currentSceneId/timeline/choiceMode（off|always|auto）/narrativeStyle（novel|chat）/`reviewModel`/`choicesModel`/director/usedEventIds/`state: SessionState`/`overlay: SessionOverlay`/messages/model/temperature/maxTokens＋`spritesEnabled?`（ステージ表示）＋`spriteEmotions?: {characterId,emotion}[]`（表情判定結果）＋`structuredOutput?`（本編を行タグ形式で書かせる。`newSession` は既定 true・既存は `?? false`）＋`archived?`（一覧から既定除外）
@@ -148,7 +148,7 @@ Play 領域:
 **スキーマ変更時の手順: 型更新 → 初期state/factory更新 → exportBundle/importBundle 反映 → partialize に新フィールド。**（破壊的なら persist キーも更新）
 
 ## 主要な振る舞い
-- **シーン進行**: `このシーンを終える` → `prepareSceneReview`（要約＋`directNextScene`＋成長案＋関係値差分。max_tokens 途中切れ対策＝拡大＋`finish_reason==='length'` で最大2回再試行、失敗時は明示エラー）→ レビュー確認 → `confirmSceneReview`（成長/イベント反映・関係値加算/気分更新・タイムライン前進・新シーン作成）→ `beginScene()` → 選択肢。物語開始は `startStory()`
+- **シーン進行**: `このシーンを終える` → `prepareSceneReview`（要約＋`directNextScene`＋成長案＋関係値差分。max_tokens 途中切れ対策＝拡大＋`finish_reason==='length'` で最大2回再試行、失敗時は明示エラー）→ レビュー確認 → `confirmSceneReview`（成長/イベント反映・関係値加算/気分更新・タイムライン前進・新シーン作成）→ `beginScene()` → 選択肢。物語開始は `startStory()`。**導入（`story.opening`）が非空なら AI 生成せずその文章を最初の assistant メッセージとして掲載**（`openingTitle` があれば見出しに採用）→ 選択肢生成＋チェックポイント（FB2-B）
 - **セッション・オーバーレイ**: 素材（Character/World）は再利用資産なので**レビューは書き換えない**。採用された発見は `confirmSceneReview`（`applyDiscovery`）で `overlay` に追記。本編・レビュー文脈は必ず実効ビュー（`effectiveWorld`/`effectiveCharacter`）を読む（片方だけ素材素を読むと発見が消えて見える）。閲覧/編集は `DiscoveryPanel`、昇格は `promoteOverlayLore`/`promoteOverlayDev`（**move**。copy だと実効合成で二重注入）
 - **ディレクター** `directNextScene`: ①特別イベント（未消化・day 到来・condition 成立）最優先 → ②`director.typeIds` から重み＋クールダウン（`minGap`）抽選。人の承認なしでコードが自動判定発火
 - **状態エンジン**（`Session.state`／ADR-1）: 関係性は prose、進捗は数（`StatValue`）。`reviewSystem` がレビュー時に `relationUpdates`（stance/aspects 全文書き直し・flagsAdd）／`statChanges`（delta）／`counterEvents`／`moods` を出力。**prose は全文置換・数値の加算はコードが行う**。現在値は `buildStateInfo`→本編 system の【状態（現在）】に注入。条件エンジン: `evalCondition`/`evalClause` が `Clause`（stat/counter/relationFlag/achievement・省略時「参加キャラのいずれか」）を判定し、実績の反復評価は `unlockAchievements()` に共通化（`confirmSceneReview` と選択肢加点の両方から呼ぶ）
@@ -212,7 +212,7 @@ Play 領域:
 各フェーズの詳細・検証記録は対応する `docs/設計_*.md` を参照。
 
 ## 未着手・残タスク
-- **フィードバック反映2 FB2-B〜E（未着手）**: 手順書 → `docs/設計_フィードバック反映2.md`。B=導入文（`story.opening`/`openingTitle`・そのまま掲載方式・主人公像 `protagonist` 削除・タイムライン開始時間帯 `startDay`/`startSlot`）／C=セッション設定UIの3案ブランチ試作（タブ強調・縦1ページ・左セクションナビ→実機比較で採用）／D=セッション/ライブラリカードの右クリック＋Ctrl/Shift 複数選択→一括削除／E=カセット棚（`cassettes` 素材化・取込は棚登録のみに変更・▶遊ぶで複製起動・Library ナビ＋新規導線。**画像GC集合への追加を忘れない**）。FB2-A（即効修正4件）は実装済み・実機目視は未
+- **フィードバック反映2 FB2-C〜E（未着手）**: 手順書 → `docs/設計_フィードバック反映2.md`。C=セッション設定UIの3案ブランチ試作（タブ強調・縦1ページ・左セクションナビ→実機比較で採用）／D=セッション/ライブラリカードの右クリック＋Ctrl/Shift 複数選択→一括削除／E=カセット棚（`cassettes` 素材化・取込は棚登録のみに変更・▶遊ぶで複製起動・Library ナビ＋新規導線。**画像GC集合への追加を忘れない**）。FB2-A（即効修正4件）・FB2-B（導入文そのまま掲載・主人公像廃止・開始時間帯）は実装済み・実機目視は未
 - **UI改善 F0〜F5（実装済み・2026-07-11 / 実機目視は未）**: UI再設計後のフィードバック対応。手順書 → `docs/設計_UI改善_フィードバック反映.md`。F0（没入グリッド崩壊・checkbox全幅化・System幅・文言）／F1（分岐ツリーgitログ風刷新＝主線をいまここで止める・章折りたたみ・⑂別の分岐/▷この先・行アクション⋯集約＋ドック幅リサイズ `ui.dockWidth`）／F2（リーダー設定を数値化＝`fontSize`/`lineHeight`/`contentWidth` を number 化・`normalizeUiPrefs`・没入案内 `infoNotice`）／F3（生成ボタンをコンポーザーへ・タイトル hover 鉛筆・セッション右クリックメニュー・`createSession` が id 返却→新規作成で設定自動オープン・サイドバーのブランド撤去）／F4（発見ログをタブ＋アイコン化・`DiscoveryScope` で編集をスコープ分割）／F5（`--bg-rail` で面の階層・余白の一括締め・レールにラベル）／F6（追加フィードバック: 没入ホバー帯を28pxに拡大・Library画面に `LibraryBar` で進行状況/ジョブ確認導線）。**tsc/build は全フェーズ通過済み**（分岐3つ以上で枝が1本に連結表示される不具合は FB2-A4 で修正済み → `docs/設計_フィードバック反映2.md`）
 - **Tauri 実機検証**（未実施のまま持ち越し）: `tsc`/`build`/`cargo check` は通過済みだが、`npm run tauri:dev` 手動起動でのデータ保持・`%APPDATA%` ファイル生成・旧 WebView データ移行・保存ダイアログでのカード PNG/JSON 保存の確認が必要
 - **T1 で判明した既知の問題（据え置き）**: ①選択肢生成中に本編生成が始まると選択肢側 AbortController が追従せず `Cannot read properties of null (reading 'signal')`（V5d で用途別分離したが要再確認）②ComfyUI が通常起動（`--enable-cors-header` なし）で接続できなかった＝設計通りでないバグ。appFetch 未置換経路や `isTauri()` 誤判定を疑い切り分けが必要（詳細は `docs/設計_Tauri化.md`）

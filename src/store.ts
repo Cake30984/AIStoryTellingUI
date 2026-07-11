@@ -369,7 +369,8 @@ export function hasStartPreset(world: World | undefined | null): boolean {
   return !!(
     p.genre?.trim() ||
     p.premise?.trim() ||
-    p.protagonist?.trim() ||
+    p.opening?.trim() ||
+    p.openingTitle?.trim() ||
     p.authorNote?.trim() ||
     (p.timeline && p.timeline.slots.length > 0)
   )
@@ -399,21 +400,29 @@ export function startPresetPatch(d: Session, world: World, overwrite: boolean): 
       story.premise = p.premise
       changed = true
     }
-    if (p.protagonist?.trim() && (overwrite || !d.story.protagonist.trim())) {
-      story.protagonist = p.protagonist
+    if (p.opening?.trim() && (overwrite || !d.story.opening.trim())) {
+      story.opening = p.opening
+      changed = true
+    }
+    if (p.openingTitle?.trim() && (overwrite || !d.story.openingTitle.trim())) {
+      story.openingTitle = p.openingTitle
       changed = true
     }
     if (changed) patch.story = story
   }
   if (p.authorNote?.trim() && (overwrite || !d.authorNote.trim())) patch.authorNote = p.authorNote
   if (p.timeline && p.timeline.slots.length > 0 && (overwrite || !d.timeline.enabled)) {
+    const startDay = p.timeline.startDay ?? 1
+    const startSlot = p.timeline.startSlot ?? 0
     patch.timeline = {
       enabled: true,
       slots: p.timeline.slots,
       totalDays: p.timeline.totalDays,
       spanLabel: p.timeline.spanLabel,
-      currentDay: 1,
-      currentSlot: 0,
+      currentDay: startDay,
+      currentSlot: startSlot,
+      startDay,
+      startSlot,
     }
   }
   return patch
@@ -533,7 +542,7 @@ function newSession(mode: SessionMode): Session {
     worldId: null,
     personaId: null,
     authorNote: '',
-    story: { premise: '', genre: '', protagonist: '' },
+    story: { premise: '', genre: '', opening: '', openingTitle: '' },
     scenes: [scene],
     currentSceneId: scene.id,
     timeline: defaultTimeline(),
@@ -2684,7 +2693,11 @@ export const useStore = create<AppState>()(
             : undefined
           const label = s.timeline.enabled ? timeLabelOf(s.timeline) : undefined
           const baseName = event?.name || (pick.typeId ? get().sceneTypes.find((t) => t.id === pick.typeId)?.name : '')
-          const title = [label, baseName].filter(Boolean).join('：') || scene.title
+          const drafted = [label, baseName].filter(Boolean).join('：') || scene.title
+          // 導入（そのまま掲載）モードでは見出しを openingTitle 優先に（FB2-B）
+          const opening = s.mode === 'story' ? s.story.opening.trim() : ''
+          const openingTitle = s.mode === 'story' ? s.story.openingTitle.trim() : ''
+          const title = opening && openingTitle ? openingTitle : drafted
 
           get().updateSession(s.id, {
             scenes: s.scenes.map((sc) =>
@@ -2700,6 +2713,32 @@ export const useStore = create<AppState>()(
             ),
             usedEventIds: event ? [...s.usedEventIds, event.id] : s.usedEventIds,
           })
+
+          // 導入文があれば AI 生成せず、そのまま最初の本文（assistant メッセージ）として掲載する（FB2-B）
+          if (opening) {
+            const assistantId = uid()
+            const live = active()
+            patchActive({
+              messages: [
+                ...(live?.messages ?? []),
+                {
+                  id: assistantId,
+                  role: 'assistant',
+                  sceneId: s.currentSceneId ?? undefined,
+                  content: opening,
+                  createdAt: Date.now(),
+                },
+              ],
+            })
+            // 選択肢（off 以外）を導入文に対して生成
+            const after = get().sessions.find((x) => x.id === s.id)
+            if (after && after.choiceMode !== 'off') {
+              await genChoices(after, assistantId)
+            }
+            // チェックポイント（導入時点）。木が空ならルートを遅延生成してから積む
+            void recordCheckpoint(s.id, 'action', '🎬 導入', s, label)
+            return
+          }
 
           await get().beginScene()
         },
@@ -3227,13 +3266,19 @@ export const useStore = create<AppState>()(
         // ui は normalizeUiPrefs で現行スキーマへ正規化（旧・段階式の文字列値を数値へ引き継ぐ。F2）
         const merged = { ...current, ...p, ui: normalizeUiPrefs({ ...current.ui, ...(p.ui ?? {}) }) }
         merged.sessions = (merged.sessions ?? []).map((s) => {
-          if (!s.messages.some((m) => m.pending)) return s
-          return {
-            ...s,
-            messages: s.messages
-              .filter((m) => !(m.pending && !m.content.trim()))
-              .map((m) => (m.pending ? { ...m, pending: false, truncated: true } : m)),
+          // story に opening/openingTitle を後方補完（旧セッションは undefined のため .trim() が例外になる。FB2-B）
+          const story = {
+            premise: s.story?.premise ?? '',
+            genre: s.story?.genre ?? '',
+            opening: s.story?.opening ?? '',
+            openingTitle: s.story?.openingTitle ?? '',
           }
+          const messages = s.messages.some((m) => m.pending)
+            ? s.messages
+                .filter((m) => !(m.pending && !m.content.trim()))
+                .map((m) => (m.pending ? { ...m, pending: false, truncated: true } : m))
+            : s.messages
+          return { ...s, story, messages }
         })
         return merged
       },

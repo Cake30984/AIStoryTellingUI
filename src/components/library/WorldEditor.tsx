@@ -392,7 +392,7 @@ export default function WorldEditor({ world, onClose }: Props) {
                 <div className="desc">
                   セッション設定でこの世界を選んだ時、空欄の項目へ自動でコピーされる推奨初期設定です（入力済みの項目は壊しません）。
                   コピー後はセッション側で自由に書き換えられ、この世界観素材は変更されません。
-                  ジャンル・あらすじ・主人公像は物語モードのセッションでのみ使われます。
+                  ジャンル・あらすじ・導入は物語モードのセッションでのみ使われます。
                 </div>
               </div>
               <div className="field">
@@ -413,12 +413,21 @@ export default function WorldEditor({ world, onClose }: Props) {
                 />
               </div>
               <div className="field">
-                <label>主人公像</label>
+                <label>導入（最初のシーン）</label>
+                <div className="desc">
+                  入力すると、この世界で始める物語の書き出しをそのまま掲載します（開始の1回きり・AI 生成なし）。
+                </div>
+                <input
+                  value={sp.openingTitle ?? ''}
+                  placeholder="導入シーンの見出し（例: 前夜の凶報）"
+                  style={{ marginBottom: 6 }}
+                  onChange={(e) => patchPreset({ openingTitle: e.target.value })}
+                />
                 <textarea
-                  rows={2}
-                  value={sp.protagonist ?? ''}
-                  placeholder="例: 王都の学院に編入した平民出身の少年"
-                  onChange={(e) => patchPreset({ protagonist: e.target.value })}
+                  rows={3}
+                  value={sp.opening ?? ''}
+                  placeholder="例: 城が焼け落ちた前夜のことだった——"
+                  onChange={(e) => patchPreset({ opening: e.target.value })}
                 />
               </div>
               <div className="field">
@@ -444,7 +453,7 @@ export default function WorldEditor({ world, onClose }: Props) {
                     }
                     style={{ width: 'auto', marginRight: 8 }}
                   />
-                  タイムライン定義を含める（期間・区切り。開始は常に1日目から）
+                  タイムライン定義を含める（期間・区切り・開始時点）
                 </label>
                 {sp.timeline && (
                   <div className="timeline-box">
@@ -482,6 +491,40 @@ export default function WorldEditor({ world, onClose }: Props) {
                         placeholder="例: 朝, 昼, 夜"
                         onChange={(slots) => patchPreset({ timeline: { ...sp.timeline!, slots } })}
                       />
+                    </div>
+                    <div className="row2">
+                      <div className="sub-field">
+                        <span className="sub-label">開始する日</span>
+                        <input
+                          type="number"
+                          min={1}
+                          value={sp.timeline.startDay ?? 1}
+                          onChange={(e) =>
+                            patchPreset({
+                              timeline: { ...sp.timeline!, startDay: Math.max(1, Number(e.target.value)) },
+                            })
+                          }
+                        />
+                      </div>
+                      {sp.timeline.slots.length > 1 && (
+                        <div className="sub-field">
+                          <span className="sub-label">開始する時間帯</span>
+                          <select
+                            value={sp.timeline.startSlot ?? 0}
+                            onChange={(e) =>
+                              patchPreset({
+                                timeline: { ...sp.timeline!, startSlot: Number(e.target.value) },
+                              })
+                            }
+                          >
+                            {sp.timeline.slots.map((slot, i) => (
+                              <option key={i} value={i}>
+                                {slot}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}

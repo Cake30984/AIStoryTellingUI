@@ -63,6 +63,12 @@ export default function SessionEditor({ session, onClose }: Props) {
             : sc,
         )
       : liveScenes
+    // 未開始（メッセージ0件）なら、現在位置を「開始時点」として記録する。
+    // カセット初期化（freshSessionOf）やチェックポイントのルートがここへ戻れるようにするため（FB2-B）
+    const notStarted = (live?.messages.length ?? d.messages.length) === 0
+    const timeline = notStarted
+      ? { ...d.timeline, startDay: d.timeline.currentDay, startSlot: d.timeline.currentSlot }
+      : d.timeline
     updateSession(session.id, {
       title: d.title,
       characterIds: d.characterIds,
@@ -71,7 +77,7 @@ export default function SessionEditor({ session, onClose }: Props) {
       authorNote: d.authorNote,
       story: d.story,
       scenes,
-      timeline: d.timeline,
+      timeline,
       choiceMode: d.choiceMode,
       narrativeStyle: d.narrativeStyle,
       structuredOutput: d.structuredOutput,
@@ -191,7 +197,7 @@ export default function SessionEditor({ session, onClose }: Props) {
                         onClick={async () => {
                           if (
                             !(await appConfirm(
-                              'この世界の開始テンプレートで、ジャンル・あらすじ・主人公像・固定メモ・タイムラインを上書きしますか？（テンプレートに値がある項目のみ）',
+                              'この世界の開始テンプレートで、ジャンル・あらすじ・導入・固定メモ・タイムラインを上書きしますか？（テンプレートに値がある項目のみ）',
                             ))
                           )
                             return
@@ -234,6 +240,9 @@ export default function SessionEditor({ session, onClose }: Props) {
                   </div>
                   <div className="field">
                     <label>あらすじ・前提</label>
+                    <div className="desc">
+                      物語の背景・世界の状況。毎ターン AI に注入され続ける前提情報です。
+                    </div>
                     <textarea
                       rows={3}
                       value={d.story.premise}
@@ -242,12 +251,22 @@ export default function SessionEditor({ session, onClose }: Props) {
                     />
                   </div>
                   <div className="field">
-                    <label>主人公像（任意）</label>
+                    <label>導入（最初のシーン・任意）</label>
+                    <div className="desc">
+                      物語の書き出しをこちらで用意します。入力すると「物語をはじめる」で AI に生成させず、
+                      この文章がそのまま最初の本文として表示されます（開始の1回きり。空なら従来どおり AI が導入を生成）。
+                    </div>
+                    <input
+                      value={d.story.openingTitle}
+                      placeholder="導入シーンの見出し（例: 前夜の凶報）"
+                      style={{ marginBottom: 6 }}
+                      onChange={(e) => patch({ story: { ...d.story, openingTitle: e.target.value } })}
+                    />
                     <textarea
-                      rows={2}
-                      value={d.story.protagonist}
-                      placeholder="例: 記憶を失った剣士。過去を求めて王都を目指す。"
-                      onChange={(e) => patch({ story: { ...d.story, protagonist: e.target.value } })}
+                      rows={4}
+                      value={d.story.opening}
+                      placeholder="例: 城が焼け落ちた前夜のことだった。あなたは血の匂いの残る廊下で目を覚ます——"
+                      onChange={(e) => patch({ story: { ...d.story, opening: e.target.value } })}
                     />
                   </div>
                 </>
@@ -310,7 +329,7 @@ export default function SessionEditor({ session, onClose }: Props) {
                         />
                       </div>
                       <div className="sub-field">
-                        <span className="sub-label">現在の日</span>
+                        <span className="sub-label">{d.messages.length === 0 ? '開始する日' : '現在の日'}</span>
                         <input
                           type="number"
                           min={1}
@@ -323,6 +342,30 @@ export default function SessionEditor({ session, onClose }: Props) {
                         />
                       </div>
                     </div>
+                    {d.timeline.slots.length > 1 && (
+                      <div className="sub-field">
+                        <span className="sub-label">
+                          {d.messages.length === 0 ? '開始する時間帯' : '現在の時間帯'}
+                        </span>
+                        <select
+                          value={d.timeline.currentSlot}
+                          onChange={(e) =>
+                            patch({ timeline: { ...d.timeline, currentSlot: Number(e.target.value) } })
+                          }
+                        >
+                          {d.timeline.slots.map((slot, i) => (
+                            <option key={i} value={i}>
+                              {slot}
+                            </option>
+                          ))}
+                        </select>
+                        {d.messages.length === 0 && (
+                          <div className="desc" style={{ marginTop: 4 }}>
+                            物語をこの時間帯から始められます（例: 前日の夜から）。
+                          </div>
+                        )}
+                      </div>
+                    )}
                     <div className="sub-field">
                       <span className="sub-label">区切り単位</span>
                       <div className="pick-grid">
