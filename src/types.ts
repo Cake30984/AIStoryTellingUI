@@ -163,6 +163,25 @@ export interface AchievementDef {
   hidden?: boolean
 }
 
+/**
+ * セッション開始テンプレート（World に付属する推奨初期設定。W1）。
+ * セッション設定で世界を選んだ時に「コピー」で流し込む（参照ではない）。
+ * 以後の編集はセッション側の値だけを変えるため、素材（World）側は不変に保たれる。
+ * timeline は定義のみ（currentDay/currentSlot は持たない＝常に1日目から開始）。
+ */
+export interface WorldStartPreset {
+  /** ジャンル・トーン（→ session.story.genre） */
+  genre?: string
+  /** あらすじ・前提（→ session.story.premise） */
+  premise?: string
+  /** 主人公像（→ session.story.protagonist） */
+  protagonist?: string
+  /** 固定メモ（→ session.authorNote） */
+  authorNote?: string
+  /** タイムライン定義（→ session.timeline。反映時は enabled=true・1日目から） */
+  timeline?: { slots: string[]; totalDays: number | null; spanLabel: string }
+}
+
 /** 世界観（ロアブック＋ゲームシステム定義） */
 export interface World {
   id: string
@@ -180,6 +199,8 @@ export interface World {
   counters: CounterDef[]
   /** 実績の定義（達成条件はコードが自動判定） */
   achievements: AchievementDef[]
+  /** セッション開始テンプレート（世界を選んだ時にセッションへコピーされる推奨初期設定。素材側は不変） */
+  startPreset?: WorldStartPreset
   createdAt: number
   updatedAt: number
 }

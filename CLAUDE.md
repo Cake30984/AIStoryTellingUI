@@ -76,7 +76,7 @@ Play 領域:
 - `CommandPalette.tsx` — `Ctrl+K` で開くパレット。セッション/素材の名前検索→移動＋固定コマンド。実行は既存 store アクション／`setUiPrefs` のみ
 
 モーダル・パネル:
-- `SessionEditor.tsx` — セッション設定。「基本／進行／モデル／出力」4タブ（同一 draft を共有）。フッターに「セッションをカード化」。「構造化出力」チェックボックスあり
+- `SessionEditor.tsx` — セッション設定。「基本／進行／モデル／出力」4タブ（同一 draft を共有）。フッターに「セッションをカード化」。「構造化出力」チェックボックスあり。世界観選択時に開始テンプレートを空欄項目のみ自動コピー（`startPresetPatch`・W1）＋「開始テンプレートを読み込む」リンクで全上書き（確認つき）。story モードは主人公像（`story.protagonist`）欄あり
 - `SessionCardModal.tsx` — セッションカード書き出し（読み込みは Sidebar D&D と System ページのファイル入力＝`importSessionCard`）
 - `SettingsModal.tsx` — `export function SettingsBody()`（System ページ本体）。プロバイダ管理・データ入出力（「画像も含める」チェックボックス）・未使用画像 GC。App.tsx が `view==='system'` で描画
 - `ImageProviderSettings.tsx` — 画像生成接続先の管理（ComfyUI/画像API の追加・編集・削除・接続テスト・デフォルトタグ入力）。`SettingsBody` に組み込み
@@ -86,7 +86,7 @@ Play 領域:
 - `BranchTreeModal.tsx` — `BranchTreeBody({session})`（ドックの branch タブ）。git ログ風表示（F1）: 主線＝ルート→いまここ（現在ノードで止める）をドット＋トランク縦線で描き、scene ノードで章に折りたたみ（現在章のみ既定展開）。主線上の分岐点は「⑂ 別の分岐」、現在ノードの子は「▷ この先」を展開式（`.bt-*` クラス）。各行の ⋯ メニューにアクション集約（しおり `setBranchStar`/`removeBranchStar`・シーン開始前へ戻る・この分岐を削除 `deleteBranchSubtree`＝現在パス上は無効）＋行 hover の「↩ ここに戻る」`restoreCheckpoint`。「✂ 現在の分岐だけ残す（他n件を削除）」`pruneToCurrentPath`・「★ しおり」タブ・currentId 変化で自動スクロール
 - `ModelPicker.tsx` — プロバイダ切替・モデル一覧・お気に入り。`onPick` は `"providerId::modelId"`
 - `SceneEditor.tsx`/`SceneReviewModal.tsx`/`StoryLogModal.tsx`/`StatusPanel.tsx`/`DiscoveryPanel.tsx`/`CsvInput.tsx` — 各種閲覧・編集モーダル。StatusPanel/DiscoveryPanel はドックの「✎ 編集」経由で開く。`DiscoveryPanel` は `scope`（`'lore' | {characterId}`・F4）で世界観/キャラ別に編集画面を分割し、保存は live 起点でスコープ分だけ差し替え（編集中の他スコープ追記を巻き戻さない）
-- `library/` — 各素材の一覧＋エディタ（Character/World/Persona/SceneType）と `AvatarField`/`SpriteSetField`。各 Library は PNG カード D&D 受付＋検索。CharacterEditor/PersonaEditor は draft を保存ボタンで反映、`AvatarField`/`SpriteSetField` は store 直管理フィールド（avatar.imageId/sprites）を live 購読して同期。WorldEditor はフルページ（`.section-nav`＋`.section-content` の7セクション）
+- `library/` — 各素材の一覧＋エディタ（Character/World/Persona/SceneType）と `AvatarField`/`SpriteSetField`。各 Library は PNG カード D&D 受付＋検索。CharacterEditor/PersonaEditor は draft を保存ボタンで反映、`AvatarField`/`SpriteSetField` は store 直管理フィールド（avatar.imageId/sprites）を live 購読して同期。WorldEditor はフルページ（`.section-nav`＋`.section-content` の8セクション。「開始テンプレート」= `World.startPreset` の編集・W1）
 
 ## 設計ドキュメント（`docs/`）
 実装の詳細設計・意思決定の経緯はここに集約。CLAUDE.md で疑問が残ったら該当ドキュメントを読む。
@@ -104,6 +104,7 @@ Play 領域:
 - `設計_構造化出力.md` — `@名前(感情)「セリフ」`行タグ・graceful degradation（D-1〜D-6）。ST1〜ST5
 - `設計_UI全体再検討.md` — UI 全体の0ベース再検討・ADR-UI・ロードマップ UI-0〜UI-7
 - `設計_UI再設計_実装詳細.md` — UI-0〜UI-7 の実装者向けフェーズ別手順書。**UI 周りを触る時は該当節を読み直し、乖離が出たら本書も同コミットで修正**
+- `設計_開始テンプレートとゲームカセット.md` — 世界観の開始テンプレート（W1=実装済み・コピー方式）とゲームカセット専用カード `aist_cassette`（W2=未着手）。検討経緯・却下案（フォルダ方式・閉じたカセット等）含む
 - `設計_UI改善_フィードバック反映.md` — UI-0〜UI-7 実装後の実使用フィードバック＋コード再監査（2026-07-10）に基づく修正フェーズ F0〜F5 の実装手順書。問題インベントリ（報告 R1〜R19・監査発見 A1〜A13、根本原因の診断付き）→ F0=即効バグ修正（没入グリッド崩壊・checkbox全幅化・System幅等）／F1=分岐ツリー刷新（主線を現在で止める・章折りたたみ・⑂/▷展開・行アクション⋯集約・ドック幅リサイズ `ui.dockWidth`）／F2=リーダー設定の数値化（UiPrefs を number 化・`normalizeUiPrefs`）＋没入案内トースト（`infoNotice`）／F3=動線（生成ボタンをコンポーザーへ・タイトル鉛筆・セッション右クリックメニュー・新規作成→設定自動オープン・ブランド撤去）／F4=発見ログのタブ化＋編集スコープ分割／F5=密度・面の階層（`--bg-rail`・余白締め・railラベル）
 
 ## データモデル（要点）
@@ -114,7 +115,7 @@ Play 領域:
 - **Avatar** — `{imageId?, color}`。`imageId` は画像ストア id（未設定なら色＋イニシャル。表示は `EntityAvatar`）
 - **Character** — name/persona/speechStyle/appearance/exampleDialogues/greeting/avatar/tags＋`developments: Development[]`＋`model?`（chat 群像で話者確定時のみ）＋`imagePrompt?`（画像生成用固定英語タグ）＋`sprites?: {emotion:EmotionId,imageId}[]`（表情つき立ち絵。通常カードには含めずセッションカードのみ）
 - **EMOTIONS**（`types.ts`）— 固定セット `neutral/joy/anger/sadness/shy/surprise`（`EmotionId`）。各 `{id,label,tags}`
-- **World** — description＋`entries: LoreEntry[]`＋`scheduledEvents: ScheduledEvent[]`＋`relationAspects: RelationAspectDef[]`（関係性 prose の次元・ワールド固定）＋`stats: StatDef[]`＋`counters: CounterDef[]`＋`achievements: AchievementDef[]`。プリセット `WORLD_PRESETS`（恋愛/RPG/経営）
+- **World** — description＋`entries: LoreEntry[]`＋`scheduledEvents: ScheduledEvent[]`＋`relationAspects: RelationAspectDef[]`（関係性 prose の次元・ワールド固定）＋`stats: StatDef[]`＋`counters: CounterDef[]`＋`achievements: AchievementDef[]`＋`startPreset?: WorldStartPreset`（セッション開始テンプレート＝genre/premise/protagonist/authorNote/timeline 定義。世界選択時にセッションへ**コピー**され素材側は不変。反映は `startPresetPatch`/`hasStartPreset`（store.ts の純関数）・W1）。プリセット `WORLD_PRESETS`（恋愛/RPG/経営）
 - **Persona** — 利用者が演じる人物。`imagePrompt?` あり
 - **SceneType**（グローバル素材）— `{name,guidance,weight,minGap,color,builtin}`。既定6種を初回シード
 - **Session** — characterIds/worldId/personaId/authorNote/story/`scenes: Scene[]`/currentSceneId/timeline/choiceMode（off|always|auto）/narrativeStyle（novel|chat）/`reviewModel`/`choicesModel`/director/usedEventIds/`state: SessionState`/`overlay: SessionOverlay`/messages/model/temperature/maxTokens＋`spritesEnabled?`（ステージ表示）＋`spriteEmotions?: {characterId,emotion}[]`（表情判定結果）＋`structuredOutput?`（本編を行タグ形式で書かせる。`newSession` は既定 true・既存は `?? false`）＋`archived?`（一覧から既定除外）
@@ -209,6 +210,7 @@ Play 領域:
 各フェーズの詳細・検証記録は対応する `docs/設計_*.md` を参照。
 
 ## 未着手・残タスク
+- **W2: ゲームカセット専用カード（未着手・設計合意済み）**: `aist_cassette` チャンクの第5カード種。開始状態に初期化したセッション（`freshSessionOf`）＋素材＋アバター/立ち絵画像の全部入り PNG＋カセット説明文メタ。読み込みは `importSessionCard` と共通化。手順書 → `docs/設計_開始テンプレートとゲームカセット.md`
 - **UI改善 F0〜F5（実装済み・2026-07-11 / 実機目視は未）**: UI再設計後のフィードバック対応。手順書 → `docs/設計_UI改善_フィードバック反映.md`。F0（没入グリッド崩壊・checkbox全幅化・System幅・文言）／F1（分岐ツリーgitログ風刷新＝主線をいまここで止める・章折りたたみ・⑂別の分岐/▷この先・行アクション⋯集約＋ドック幅リサイズ `ui.dockWidth`）／F2（リーダー設定を数値化＝`fontSize`/`lineHeight`/`contentWidth` を number 化・`normalizeUiPrefs`・没入案内 `infoNotice`）／F3（生成ボタンをコンポーザーへ・タイトル hover 鉛筆・セッション右クリックメニュー・`createSession` が id 返却→新規作成で設定自動オープン・サイドバーのブランド撤去）／F4（発見ログをタブ＋アイコン化・`DiscoveryScope` で編集をスコープ分割）／F5（`--bg-rail` で面の階層・余白の一括締め・レールにラベル）／F6（追加フィードバック: 没入ホバー帯を28pxに拡大・Library画面に `LibraryBar` で進行状況/ジョブ確認導線）。**tsc/build は全フェーズ通過済み・分岐3つ以上のツリー表示不具合は別途検討として保留**
 - **Tauri 実機検証**（未実施のまま持ち越し）: `tsc`/`build`/`cargo check` は通過済みだが、`npm run tauri:dev` 手動起動でのデータ保持・`%APPDATA%` ファイル生成・旧 WebView データ移行・保存ダイアログでのカード PNG/JSON 保存の確認が必要
 - **T1 で判明した既知の問題（据え置き）**: ①選択肢生成中に本編生成が始まると選択肢側 AbortController が追従せず `Cannot read properties of null (reading 'signal')`（V5d で用途別分離したが要再確認）②ComfyUI が通常起動（`--enable-cors-header` なし）で接続できなかった＝設計通りでないバグ。appFetch 未置換経路や `isTauri()` 誤判定を疑い切り分けが必要（詳細は `docs/設計_Tauri化.md`）

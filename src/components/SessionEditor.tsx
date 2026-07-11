@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { currentScene, useStore } from '../store'
+import { currentScene, hasStartPreset, startPresetPatch, useStore } from '../store'
 import { timeLabelOf } from '../lib/timeline'
+import { appConfirm } from '../lib/dialogs'
 import type { Session } from '../types'
 import CsvInput from './CsvInput'
 import ModelPicker from './ModelPicker'
@@ -166,7 +167,12 @@ export default function SessionEditor({ session, onClose }: Props) {
                 <label>世界観</label>
                 <select
                   value={d.worldId ?? ''}
-                  onChange={(e) => patch({ worldId: e.target.value || null })}
+                  onChange={(e) => {
+                    const worldId = e.target.value || null
+                    const world = worlds.find((w) => w.id === worldId)
+                    // 世界を選んだら開始テンプレートを空欄の項目のみへコピー（入力済みは壊さない。W1）
+                    patch({ worldId, ...(world ? startPresetPatch(d, world, false) : {}) })
+                  }}
                 >
                   <option value="">なし</option>
                   {worlds.map((w) => (
@@ -175,6 +181,28 @@ export default function SessionEditor({ session, onClose }: Props) {
                     </option>
                   ))}
                 </select>
+                {(() => {
+                  const world = worlds.find((w) => w.id === d.worldId)
+                  if (!world || !hasStartPreset(world)) return null
+                  return (
+                    <div className="desc" style={{ marginTop: 6 }}>
+                      <button
+                        className="link"
+                        onClick={async () => {
+                          if (
+                            !(await appConfirm(
+                              'この世界の開始テンプレートで、ジャンル・あらすじ・主人公像・固定メモ・タイムラインを上書きしますか？（テンプレートに値がある項目のみ）',
+                            ))
+                          )
+                            return
+                          patch(startPresetPatch(d, world, true))
+                        }}
+                      >
+                        開始テンプレートを読み込む（入力済みの項目も上書き）
+                      </button>
+                    </div>
+                  )
+                })()}
               </div>
 
               {/* ペルソナ */}
@@ -211,6 +239,15 @@ export default function SessionEditor({ session, onClose }: Props) {
                       value={d.story.premise}
                       placeholder="例: 滅びかけた王国。記憶を失った剣士が..."
                       onChange={(e) => patch({ story: { ...d.story, premise: e.target.value } })}
+                    />
+                  </div>
+                  <div className="field">
+                    <label>主人公像（任意）</label>
+                    <textarea
+                      rows={2}
+                      value={d.story.protagonist}
+                      placeholder="例: 記憶を失った剣士。過去を求めて王都を目指す。"
+                      onChange={(e) => patch({ story: { ...d.story, protagonist: e.target.value } })}
                     />
                   </div>
                 </>

@@ -21,6 +21,7 @@ import type {
   ScheduledEvent,
   StatDef,
   World,
+  WorldStartPreset,
 } from '../../types'
 import CsvInput from '../CsvInput'
 import { exportWorldCard } from '../../lib/cards'
@@ -29,10 +30,11 @@ import { Icon } from '../icons'
 
 const OPS: Op[] = ['>=', '>', '<=', '<', '==', '!=']
 
-type Section = 'basic' | 'lore' | 'events' | 'aspects' | 'stats' | 'counters' | 'achievements'
+type Section = 'basic' | 'start' | 'lore' | 'events' | 'aspects' | 'stats' | 'counters' | 'achievements'
 
 const SECTIONS: { id: Section; label: string }[] = [
   { id: 'basic', label: '基本' },
+  { id: 'start', label: '開始テンプレート' },
   { id: 'lore', label: 'ロア' },
   { id: 'events', label: '特別イベント' },
   { id: 'aspects', label: '関係性の次元' },
@@ -188,6 +190,10 @@ export default function WorldEditor({ world, onClose }: Props) {
       setExporting(false)
     }
   }
+
+  // 開始テンプレート（W1）。セッション設定で世界を選んだ時にコピーされる推奨初期設定
+  const sp = d.startPreset ?? {}
+  const patchPreset = (p: Partial<WorldStartPreset>) => patch({ startPreset: { ...sp, ...p } })
 
   const updateEntry = (id: string, p: Partial<LoreEntry>) =>
     patch({ entries: d.entries.map((e) => (e.id === id ? { ...e, ...p } : e)) })
@@ -375,6 +381,110 @@ export default function WorldEditor({ world, onClose }: Props) {
                   placeholder="例: 魔法が衰退した中世風世界。3つの大国が均衡を保っている。"
                   onChange={(e) => patch({ description: e.target.value })}
                 />
+              </div>
+            </>
+          )}
+
+          {section === 'start' && (
+            <>
+              <div className="lore-head">
+                <label>セッション開始テンプレート</label>
+                <div className="desc">
+                  セッション設定でこの世界を選んだ時、空欄の項目へ自動でコピーされる推奨初期設定です（入力済みの項目は壊しません）。
+                  コピー後はセッション側で自由に書き換えられ、この世界観素材は変更されません。
+                  ジャンル・あらすじ・主人公像は物語モードのセッションでのみ使われます。
+                </div>
+              </div>
+              <div className="field">
+                <label>ジャンル・トーン</label>
+                <input
+                  value={sp.genre ?? ''}
+                  placeholder="例: ダークファンタジー"
+                  onChange={(e) => patchPreset({ genre: e.target.value })}
+                />
+              </div>
+              <div className="field">
+                <label>あらすじ・前提</label>
+                <textarea
+                  rows={3}
+                  value={sp.premise ?? ''}
+                  placeholder="例: 滅びかけた王国。記憶を失った剣士が..."
+                  onChange={(e) => patchPreset({ premise: e.target.value })}
+                />
+              </div>
+              <div className="field">
+                <label>主人公像</label>
+                <textarea
+                  rows={2}
+                  value={sp.protagonist ?? ''}
+                  placeholder="例: 王都の学院に編入した平民出身の少年"
+                  onChange={(e) => patchPreset({ protagonist: e.target.value })}
+                />
+              </div>
+              <div className="field">
+                <label>固定メモ（常に踏まえる重要事項）</label>
+                <textarea
+                  rows={2}
+                  value={sp.authorNote ?? ''}
+                  placeholder="例: 二人は幼馴染。物語は入学式の朝から始まる。"
+                  onChange={(e) => patchPreset({ authorNote: e.target.value })}
+                />
+              </div>
+              <div className="field">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={!!sp.timeline}
+                    onChange={(e) =>
+                      patchPreset({
+                        timeline: e.target.checked
+                          ? { slots: ['朝', '昼', '夜'], totalDays: null, spanLabel: '' }
+                          : undefined,
+                      })
+                    }
+                    style={{ width: 'auto', marginRight: 8 }}
+                  />
+                  タイムライン定義を含める（期間・区切り。開始は常に1日目から）
+                </label>
+                {sp.timeline && (
+                  <div className="timeline-box">
+                    <div className="sub-field">
+                      <span className="sub-label">期間の呼称</span>
+                      <input
+                        value={sp.timeline.spanLabel}
+                        placeholder="例: 1学年（入学〜卒業）"
+                        onChange={(e) =>
+                          patchPreset({ timeline: { ...sp.timeline!, spanLabel: e.target.value } })
+                        }
+                      />
+                    </div>
+                    <div className="sub-field">
+                      <span className="sub-label">総日数（任意）</span>
+                      <input
+                        type="number"
+                        min={0}
+                        value={sp.timeline.totalDays ?? ''}
+                        placeholder="例: 90"
+                        onChange={(e) =>
+                          patchPreset({
+                            timeline: {
+                              ...sp.timeline!,
+                              totalDays: e.target.value ? Number(e.target.value) : null,
+                            },
+                          })
+                        }
+                      />
+                    </div>
+                    <div className="sub-field">
+                      <span className="sub-label">区切り単位（カンマ区切り）</span>
+                      <CsvInput
+                        value={sp.timeline.slots}
+                        placeholder="例: 朝, 昼, 夜"
+                        onChange={(slots) => patchPreset({ timeline: { ...sp.timeline!, slots } })}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             </>
           )}

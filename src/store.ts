@@ -362,6 +362,63 @@ export function newWorld(): World {
   }
 }
 
+/** 開始テンプレートに中身が1項目でもあるか（読み込みボタンの表示・反映要否の判定。W1） */
+export function hasStartPreset(world: World | undefined | null): boolean {
+  const p = world?.startPreset
+  if (!p) return false
+  return !!(
+    p.genre?.trim() ||
+    p.premise?.trim() ||
+    p.protagonist?.trim() ||
+    p.authorNote?.trim() ||
+    (p.timeline && p.timeline.slots.length > 0)
+  )
+}
+
+/**
+ * 世界の開始テンプレートをセッションへ流し込む差分を作る純関数（W1）。
+ * overwrite=false（世界選択時の自動反映）は空欄の項目のみ埋め、入力済みを壊さない。
+ * overwrite=true（手動ボタン）はテンプレートに値がある項目を全上書きする。
+ * コピー方式＝以後の編集はセッション側だけを変え、World 素材は不変
+ * （設計は docs/設計_開始テンプレートとゲームカセット.md）。
+ * story 系は mode==='story' のみ反映（roleplay では注入も UI も無いため不可視データを作らない）。
+ * timeline の「空欄」= enabled が false（一度も有効化していない）。反映は常に1日目から。
+ */
+export function startPresetPatch(d: Session, world: World, overwrite: boolean): Partial<Session> {
+  const p = world.startPreset
+  if (!p) return {}
+  const patch: Partial<Session> = {}
+  if (d.mode === 'story') {
+    const story = { ...d.story }
+    let changed = false
+    if (p.genre?.trim() && (overwrite || !d.story.genre.trim())) {
+      story.genre = p.genre
+      changed = true
+    }
+    if (p.premise?.trim() && (overwrite || !d.story.premise.trim())) {
+      story.premise = p.premise
+      changed = true
+    }
+    if (p.protagonist?.trim() && (overwrite || !d.story.protagonist.trim())) {
+      story.protagonist = p.protagonist
+      changed = true
+    }
+    if (changed) patch.story = story
+  }
+  if (p.authorNote?.trim() && (overwrite || !d.authorNote.trim())) patch.authorNote = p.authorNote
+  if (p.timeline && p.timeline.slots.length > 0 && (overwrite || !d.timeline.enabled)) {
+    patch.timeline = {
+      enabled: true,
+      slots: p.timeline.slots,
+      totalDays: p.timeline.totalDays,
+      spanLabel: p.timeline.spanLabel,
+      currentDay: 1,
+      currentSlot: 0,
+    }
+  }
+  return patch
+}
+
 export function newRelationAspect(name = ''): RelationAspectDef {
   return { id: uid(), name, guidance: '' }
 }

@@ -1,4 +1,4 @@
-import type { Character, EmotionId, Persona, Session, World } from '../types'
+import type { Character, EmotionId, Persona, Session, World, WorldStartPreset } from '../types'
 import { readTextChunks, writeTextChunk } from './png'
 import { getImage, putImage } from './imageStore'
 import { generateDefaultAvatar, normalizeImage } from './avatarGen'
@@ -205,8 +205,27 @@ export async function exportWorldCard(world: World): Promise<void> {
   downloadBlob(outBlob, `card_${world.name || 'world'}.png`)
 }
 
+/** 開始テンプレート（W1）の正規化。文字列項目と timeline 定義のみ受け付け、空なら undefined */
+function normalizeStartPreset(raw: any): WorldStartPreset | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const p: WorldStartPreset = {}
+  if (typeof raw.genre === 'string') p.genre = raw.genre
+  if (typeof raw.premise === 'string') p.premise = raw.premise
+  if (typeof raw.protagonist === 'string') p.protagonist = raw.protagonist
+  if (typeof raw.authorNote === 'string') p.authorNote = raw.authorNote
+  if (raw.timeline && Array.isArray(raw.timeline.slots)) {
+    p.timeline = {
+      slots: raw.timeline.slots.filter((s: any) => typeof s === 'string'),
+      totalDays: typeof raw.timeline.totalDays === 'number' ? raw.timeline.totalDays : null,
+      spanLabel: typeof raw.timeline.spanLabel === 'string' ? raw.timeline.spanLabel : '',
+    }
+  }
+  return Object.keys(p).length > 0 ? p : undefined
+}
+
 function normalizeWorldFromData(raw: any): World {
   const now = Date.now()
+  const startPreset = normalizeStartPreset(raw.startPreset)
   return {
     id: typeof raw.id === 'string' ? raw.id : uid(),
     name: typeof raw.name === 'string' ? raw.name : '',
@@ -217,6 +236,7 @@ function normalizeWorldFromData(raw: any): World {
     stats: Array.isArray(raw.stats) ? raw.stats : [],
     counters: Array.isArray(raw.counters) ? raw.counters : [],
     achievements: Array.isArray(raw.achievements) ? raw.achievements : [],
+    ...(startPreset ? { startPreset } : {}),
     createdAt: typeof raw.createdAt === 'number' ? raw.createdAt : now,
     updatedAt: typeof raw.updatedAt === 'number' ? raw.updatedAt : now,
   }
