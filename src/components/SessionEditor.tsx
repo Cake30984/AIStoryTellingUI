@@ -96,6 +96,7 @@ export default function SessionEditor({ session, onClose }: Props) {
       title="セッション設定"
       onClose={onClose}
       dirty={dirty}
+      wide
       footer={
         <>
           <button className="btn" onClick={() => setShowCardModal(true)} title="会話・状態・素材・画像を1枚のPNGに埋め込んで共有">
@@ -111,20 +112,28 @@ export default function SessionEditor({ session, onClose }: Props) {
         </>
       }
     >
-          <div className="seg" style={{ marginBottom: 14 }}>
-            {(
-              [
-                ['basic', '基本'],
-                ['progress', '進行'],
-                ['model', 'モデル'],
-                ['output', '出力'],
-              ] as const
-            ).map(([t, label]) => (
-              <button key={t} className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>
-                {label}
-              </button>
-            ))}
-          </div>
+          {/* FB2-C案: 左セクションナビ＋右パネル（WorldEditor と同じ操作感） */}
+          <div className="se-navlayout">
+            <nav className="se-nav">
+              {(
+                [
+                  ['basic', '基本', 'settings'],
+                  ['progress', '進行', 'hourglass'],
+                  ['model', 'モデル', 'layers'],
+                  ['output', '出力', 'scroll-text'],
+                ] as const
+              ).map(([t, label, icon]) => (
+                <button
+                  key={t}
+                  className={'se-nav-btn' + (tab === t ? ' on' : '')}
+                  onClick={() => setTab(t)}
+                >
+                  <Icon name={icon} size={16} />
+                  {label}
+                </button>
+              ))}
+            </nav>
+            <div className="se-panel">
 
           {tab === 'basic' && (
             <>
@@ -588,6 +597,8 @@ export default function SessionEditor({ session, onClose }: Props) {
               </div>
             </>
           )}
+            </div>
+          </div>
     </ModalShell>
       {showCardModal && <SessionCardModal session={session} onClose={() => setShowCardModal(false)} />}
       {pickerTarget === 'review' && (

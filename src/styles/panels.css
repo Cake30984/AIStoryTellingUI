@@ -1083,3 +1083,57 @@
 .cmdk-item.active .cmdk-group {
   color: var(--text-dim);
 }
+
+/* ---------- セッション設定（FB2-C案: 左セクションナビ） ---------- */
+.se-navlayout {
+  display: flex;
+  align-items: flex-start;
+  gap: 18px;
+}
+.se-nav {
+  flex-shrink: 0;
+  width: 132px;
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.se-nav-btn {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 12px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  font-size: 13.5px;
+  text-align: left;
+  cursor: pointer;
+  transition: 0.12s;
+}
+.se-nav-btn:hover {
+  background: var(--bg-elev2);
+  color: var(--text);
+}
+.se-nav-btn.on {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--text);
+  font-weight: 600;
+}
+.se-panel {
+  flex: 1;
+  min-width: 0;
+}
+@media (max-width: 560px) {
+  .se-navlayout {
+    flex-direction: column;
+  }
+  .se-nav {
+    flex-direction: row;
+    width: 100%;
+    overflow-x: auto;
+  }
+}
