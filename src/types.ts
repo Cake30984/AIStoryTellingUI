@@ -452,6 +452,21 @@ export interface Session {
   updatedAt: number
 }
 
+/**
+ * ゲームカセット（棚に並ぶ配布物。FB2-E）。読み込んだ `aist_cassette` を素材化して保持する。
+ * `session` は開始状態に初期化済み（`freshSessionOf`）で、参照素材は取り込み時にライブラリへマージ済み。
+ * 「▶ 遊ぶ」で `session` を新しい id に複製してセッション化する（何度でも最初から遊べる）。
+ */
+export interface Cassette {
+  id: string
+  title: string
+  description: string
+  /** 表紙画像（画像ストア id。取り込んだカード PNG そのもの） */
+  coverImageId?: string
+  session: Session
+  createdAt: number
+}
+
 export interface OpenRouterModel {
   id: string
   name: string
@@ -709,7 +724,9 @@ export interface ExportBundle {
   personas: Persona[]
   sessions: Session[]
   sceneTypes?: SceneType[]
+  /** ゲームカセット棚（FB2-E） */
+  cassettes?: Cassette[]
   providers?: Provider[]
-  /** 画像込みエクスポート時のみ同梱（アバター・立ち絵・挿絵・背景の実体。T0） */
+  /** 画像込みエクスポート時のみ同梱（アバター・立ち絵・挿絵・背景・カセット表紙の実体。T0/FB2-E） */
   images?: { id: string; mime: string; dataBase64: string }[]
 }

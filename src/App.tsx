@@ -8,6 +8,7 @@ import CharacterLibrary from './components/library/CharacterLibrary'
 import WorldLibrary from './components/library/WorldLibrary'
 import PersonaLibrary from './components/library/PersonaLibrary'
 import SceneTypeLibrary from './components/library/SceneTypeLibrary'
+import CassetteLibrary from './components/library/CassetteLibrary'
 import LibraryBar from './components/LibraryBar'
 import SceneReviewModal from './components/SceneReviewModal'
 import SessionEditor from './components/SessionEditor'
@@ -161,6 +162,11 @@ export default function App() {
         <div className="main">
           <LibraryBar />
           <SceneTypeLibrary />
+        </div>
+      ) : view === 'cassettes' ? (
+        <div className="main">
+          <LibraryBar />
+          <CassetteLibrary />
         </div>
       ) : view === 'system' ? (
         <div className="library">

@@ -5,6 +5,7 @@ import type {
   Avatar,
   BranchNode,
   BranchTree,
+  Cassette,
   Character,
   Choice,
   ChoiceEffect,
@@ -73,7 +74,7 @@ import { defaultOpenRouterProvider, parseModelRef } from './lib/providers'
 
 export const DEFAULT_MODEL = 'openrouter/auto'
 
-export type View = 'sessions' | 'characters' | 'worlds' | 'personas' | 'sceneTypes' | 'system'
+export type View = 'sessions' | 'characters' | 'worlds' | 'personas' | 'sceneTypes' | 'cassettes' | 'system'
 
 /** View が属する領域（レール切替・グリッド制御用。UI-5） */
 export function areaOf(view: View): 'play' | 'library' | 'system' {
@@ -600,7 +601,12 @@ function pickThumbFromSnapshot(session: Session): string | undefined {
  * 使用中の画像 id を収集する（GC・エクスポートの両方から呼ぶ。片方だけ更新される事故を防ぐため
  * 「画像 id を増やしたら GC に追加」の規約はこの関数 1 箇所への追加に集約する＝T0）
  */
-export function collectUsedImageIds(characters: Character[], personas: Persona[], sessions: Session[]): Set<string> {
+export function collectUsedImageIds(
+  characters: Character[],
+  personas: Persona[],
+  sessions: Session[],
+  cassettes: Cassette[] = [],
+): Set<string> {
   const used = new Set<string>()
   for (const c of characters) {
     if (c.avatar.imageId) used.add(c.avatar.imageId)
@@ -608,6 +614,11 @@ export function collectUsedImageIds(characters: Character[], personas: Persona[]
   }
   for (const p of personas) if (p.avatar.imageId) used.add(p.avatar.imageId)
   for (const s of sessions) for (const id of sessionImageIds(s)) used.add(id)
+  // カセット棚（FB2-E）: 表紙＋同梱セッションが参照する画像も使用中扱い
+  for (const cas of cassettes) {
+    if (cas.coverImageId) used.add(cas.coverImageId)
+    for (const id of sessionImageIds(cas.session)) used.add(id)
+  }
   return used
 }
 
@@ -626,6 +637,8 @@ interface AppState {
   personas: Persona[]
   sceneTypes: SceneType[]
   sessions: Session[]
+  /** ゲームカセット棚（配布物の素材化。FB2-E） */
+  cassettes: Cassette[]
   activeId: string | null
   /** セッションごとの分岐ツリー（軽量メタデータのみ。実体は checkpointStore。C1） */
   branchTrees: Record<string, BranchTree>
@@ -815,8 +828,12 @@ interface AppState {
   importBundle: (bundle: ExportBundle) => Promise<{ added: number }>
   /** セッションカード（aist_session）の取り込み。同梱画像を putImage し直して参照を remap する */
   importSessionCard: (bundle: SessionCardBundle) => Promise<void>
-  /** ゲームカセット（aist_cassette）の取り込み。中身は開始状態のセッション＝importSessionCard に委譲（W2） */
-  importCassette: (bundle: CassetteBundle) => Promise<void>
+  /** ゲームカセット（aist_cassette）を「棚に登録」する（素材はマージ・画像 remap・セッションは作らない。FB2-E） */
+  importCassette: (bundle: CassetteBundle, cover?: Blob) => Promise<void>
+  /** カセットを新しいセッションに複製して開始する（何度でも最初から遊べる。FB2-E） */
+  playCassette: (cassetteId: string) => void
+  /** カセットを棚から削除する（表紙・同梱画像は gcUnusedImages で回収。FB2-E） */
+  deleteCassette: (cassetteId: string) => void
   /** 未使用のアバター・挿絵画像（IndexedDB）を削除し、削除件数を返す */
   gcUnusedImages: () => Promise<number>
 }
@@ -1447,6 +1464,7 @@ export const useStore = create<AppState>()(
         personas: [],
         sceneTypes: defaultSceneTypes(),
         sessions: [],
+        cassettes: [],
         activeId: null,
         branchTrees: {},
         ui: DEFAULT_UI,
@@ -2870,7 +2888,7 @@ export const useStore = create<AppState>()(
         },
 
         exportBundle: async (includeImages) => {
-          const { characters, worlds, personas, sceneTypes, sessions } = get()
+          const { characters, worlds, personas, sceneTypes, sessions, cassettes } = get()
           // providers（API キー）は localStorage のみに保持し、エクスポートには含めない（共有時の漏洩防止）
           const bundle: ExportBundle = {
             type: 'ai-storytelling-studio',
@@ -2881,9 +2899,10 @@ export const useStore = create<AppState>()(
             personas,
             sceneTypes,
             sessions,
+            cassettes,
           }
           if (includeImages) {
-            const ids = collectUsedImageIds(characters, personas, sessions)
+            const ids = collectUsedImageIds(characters, personas, sessions, cassettes)
             const images: { id: string; mime: string; dataBase64: string }[] = []
             for (const id of ids) {
               const blob = await getImage(id)
@@ -2944,6 +2963,7 @@ export const useStore = create<AppState>()(
               personas: mergeById(st.personas, incomingPersonas),
               sceneTypes: mergeById(st.sceneTypes, bundle.sceneTypes ?? []),
               sessions: mergeById(st.sessions, incomingSessions),
+              cassettes: mergeById(st.cassettes, bundle.cassettes ?? []),
               // providers はユーザー固有の設定のためインポート対象外
             }
           })
@@ -3021,12 +3041,88 @@ export const useStore = create<AppState>()(
           })
         },
 
-        // ゲームカセットの中身は「開始状態に初期化済みのセッション＋素材」で、取り込み処理は
-        // セッションカードと完全に同じ（画像 remap・素材 id マージ・新規セッション追加・アクティブ化）。
-        // 差分は書き出し時の初期化と紹介文メタのみなので、取り込みは importSessionCard に委譲する。
-        importCassette: async (bundle) => {
-          await get().importSessionCard(bundle)
+        // ゲームカセットは「棚に登録」する（FB2-E）。素材（キャラ/世界/ペルソナ）はライブラリへ
+        // マージ・同梱画像は remap するが、セッションは作らず Cassette として cassettes に積む。
+        // 実際に遊ぶのは playCassette（複製してセッション化）。
+        importCassette: async (bundle, cover) => {
+          // 1) 同梱画像を IndexedDB へ登録し直し、旧 id → 新 id の対応表を作る（直列）
+          const idMap = new Map<string, string>()
+          for (const entry of bundle.images) {
+            const newId = await putImage(sessionCardImageBlob(entry))
+            idMap.set(entry.id, newId)
+          }
+          // 2) 表紙＝取り込んだカード PNG そのものを保存（無ければ表紙なし）
+          let coverImageId: string | undefined
+          if (cover) coverImageId = await putImage(cover)
+
+          const remapAvatar = <T extends { avatar: Avatar }>(x: T): T => ({
+            ...x,
+            avatar: { ...x.avatar, imageId: x.avatar.imageId ? idMap.get(x.avatar.imageId) : undefined },
+          })
+          const remapSprites = (c: Character): Character =>
+            c.sprites && c.sprites.length > 0
+              ? { ...c, sprites: c.sprites.map((sp) => ({ ...sp, imageId: idMap.get(sp.imageId) ?? sp.imageId })) }
+              : c
+
+          set((st) => {
+            const now = Date.now()
+            const charIds = new Set(st.characters.map((c) => c.id))
+            const freshChars = bundle.characters
+              .filter((c) => !charIds.has(c.id))
+              .map(remapAvatar)
+              .map(remapSprites)
+            const worldExists = bundle.world && st.worlds.some((w) => w.id === bundle.world!.id)
+            const freshWorlds = bundle.world && !worldExists ? [bundle.world] : []
+            const personaExists = bundle.persona && st.personas.some((p) => p.id === bundle.persona!.id)
+            const freshPersonas = bundle.persona && !personaExists ? [remapAvatar(bundle.persona)] : []
+
+            // カセットの同梱セッションは開始状態（freshSessionOf 済み）。挿絵・背景の remap のみ行う
+            const session: Session = {
+              ...bundle.session,
+              scenes: bundle.session.scenes.map((sc) => ({
+                ...sc,
+                illustrations: (sc.illustrations ?? []).map((ill) => ({
+                  ...ill,
+                  imageId: idMap.get(ill.imageId) ?? ill.imageId,
+                })),
+                ...(sc.backgroundImageId
+                  ? { backgroundImageId: idMap.get(sc.backgroundImageId) ?? sc.backgroundImageId }
+                  : {}),
+              })),
+            }
+            const cassette: Cassette = {
+              id: uid(),
+              title: bundle.session.title || '無題のカセット',
+              description: bundle.description ?? '',
+              coverImageId,
+              session,
+              createdAt: now,
+            }
+            return {
+              characters: [...freshChars, ...st.characters],
+              worlds: [...freshWorlds, ...st.worlds],
+              personas: [...freshPersonas, ...st.personas],
+              cassettes: [cassette, ...st.cassettes],
+            }
+          })
         },
+
+        playCassette: (cassetteId) => {
+          const cas = get().cassettes.find((c) => c.id === cassetteId)
+          if (!cas) return
+          const now = Date.now()
+          // 同梱セッションを丸ごと複製して新しい id で開始（何度でも最初から遊べる）
+          const cloned = JSON.parse(JSON.stringify(cas.session)) as Session
+          const session: Session = { ...cloned, id: uid(), createdAt: now, updatedAt: now }
+          set((st) => ({
+            sessions: [session, ...st.sessions],
+            activeId: session.id,
+            view: 'sessions' as View,
+          }))
+        },
+
+        deleteCassette: (cassetteId) =>
+          set((st) => ({ cassettes: st.cassettes.filter((c) => c.id !== cassetteId) })),
 
         addIllustration: (sessionId, sceneId, ill) =>
           set((st) => ({
@@ -3223,8 +3319,8 @@ export const useStore = create<AppState>()(
         },
 
         gcUnusedImages: async () => {
-          const { characters, personas, sessions, branchTrees } = get()
-          const used = collectUsedImageIds(characters, personas, sessions)
+          const { characters, personas, sessions, cassettes, branchTrees } = get()
+          const used = collectUsedImageIds(characters, personas, sessions, cassettes)
           // チェックポイント（分岐ツリー）が参照する画像も使用中扱い（GC 一本化。C1）
           for (const tree of Object.values(branchTrees)) {
             for (const node of tree.nodes) {
@@ -3254,6 +3350,7 @@ export const useStore = create<AppState>()(
         personas: st.personas,
         sceneTypes: st.sceneTypes,
         sessions: st.sessions,
+        cassettes: st.cassettes,
         activeId: st.activeId,
         branchTrees: st.branchTrees,
         ui: st.ui,

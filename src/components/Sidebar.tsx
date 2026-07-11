@@ -14,6 +14,7 @@ const LIBRARY_NAV: { key: View; label: string; icon: IconName }[] = [
   { key: 'worlds', label: '世界観', icon: 'globe' },
   { key: 'personas', label: 'ペルソナ', icon: 'smile' },
   { key: 'sceneTypes', label: '演出', icon: 'clapperboard' },
+  { key: 'cassettes', label: 'カセット', icon: 'library-big' },
 ]
 
 export default function Sidebar() {
@@ -46,8 +47,8 @@ export default function Sidebar() {
         const bytes = new Uint8Array(await file.arrayBuffer())
         const parsed = parseCardPng(bytes)
         if (parsed?.kind === 'cassette') {
-          await importCassette(parsed.bundle)
-          setNotice(`🎮 ゲームカセット「${parsed.bundle.session.title || '無題'}」を読み込みました（最初から）。`)
+          await importCassette(parsed.bundle, new Blob([bytes as BlobPart], { type: 'image/png' }))
+          setNotice(`🎮 ゲームカセット「${parsed.bundle.session.title || '無題'}」を棚に登録しました（「作る > カセット」から遊べます）。`)
         } else if (parsed?.kind === 'session') {
           await importSessionCard(parsed.bundle)
           setNotice(`セッション「${parsed.bundle.session.title || '無題'}」を復元しました。`)
@@ -120,6 +121,11 @@ export default function Sidebar() {
             </button>
             <button onClick={() => newSession('story')}>
               <Icon name="plus" size={14} /> 物語
+            </button>
+          </div>
+          <div className="new-buttons" style={{ marginTop: 0 }}>
+            <button onClick={() => setView('cassettes')} title="ゲームカセットの棚から選んで遊ぶ">
+              <Icon name="library-big" size={14} /> カセットから遊ぶ
             </button>
           </div>
 

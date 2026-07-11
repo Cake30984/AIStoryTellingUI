@@ -104,8 +104,8 @@ export function SettingsBody() {
           await importSessionCard(parsed.bundle)
           setNotice(`セッション「${parsed.bundle.session.title || '無題'}」を復元しました。`)
         } else if (parsed.kind === 'cassette') {
-          await importCassette(parsed.bundle)
-          setNotice(`🎮 ゲームカセット「${parsed.bundle.session.title || '無題'}」を読み込みました（最初から）。`)
+          await importCassette(parsed.bundle, new Blob([bytes as BlobPart], { type: 'image/png' }))
+          setNotice(`🎮 ゲームカセット「${parsed.bundle.session.title || '無題'}」を棚に登録しました（「作る > カセット」から遊べます）。`)
         } else {
           importWorldCard(parsed.world)
           setNotice(`カードから「${parsed.world.name || '無名の世界'}」を追加しました。`)
