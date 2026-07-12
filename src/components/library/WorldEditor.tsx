@@ -225,14 +225,19 @@ export default function WorldEditor({ world, onClose }: Props) {
     setRoleError('')
     patch({ roles: roles.filter((role) => role.id !== id) })
   }
-  const renameRole = (role: WorldRole, nextName: string) => {
-    const oldName = role.name.trim()
-    const nextTrimmed = nextName.trim()
-    const nextRoles = roles.map((item) => (item.id === role.id ? { ...item, name: nextName } : item))
-    if (!oldName || !nextTrimmed || oldName === nextTrimmed || !d.startPreset?.opening) {
-      updateRole(role.id, { name: nextName })
-      return
-    }
+  // 導入文の @旧名 追従は「フォーカス開始時の名前 → 確定時の名前」を blur で1回だけ適用する。
+  // onChange ごとに追従すると、名前欄が空を経由した瞬間に同期チェーンが切れ、@ロール名 が孤児化する。
+  const roleRenameFrom = useRef<Record<string, string>>({})
+  const beginRoleRename = (role: WorldRole) => {
+    roleRenameFrom.current[role.id] = role.name
+  }
+  const commitRoleRename = (role: WorldRole) => {
+    const from = roleRenameFrom.current[role.id]
+    delete roleRenameFrom.current[role.id]
+    if (from === undefined) return
+    const oldName = from.trim()
+    const nextTrimmed = role.name.trim()
+    if (!oldName || !nextTrimmed || oldName === nextTrimmed || !d.startPreset?.opening) return
     // 別ロールの長い名前（例: ライバルの師匠）を先に除外して、@旧名だけを追従させる。
     const longerSuffixes = roles
       .filter((item) => item.id !== role.id && item.name.startsWith(oldName) && item.name !== oldName)
@@ -245,8 +250,7 @@ export default function WorldEditor({ world, onClose }: Props) {
       new RegExp(`[@＠]${escapeRegExp(oldName)}${suffixGuard}`, 'g'),
       () => `@${nextTrimmed}`,
     )
-    setRoleError('')
-    patch({ roles: nextRoles, startPreset: { ...d.startPreset, opening } })
+    if (opening !== d.startPreset.opening) patchPreset({ opening })
   }
   const roleValidationError = (): string | undefined => {
     const seen = new Set<string>()
@@ -652,7 +656,9 @@ export default function WorldEditor({ world, onClose }: Props) {
                       className="lore-keys"
                       value={role.name}
                       placeholder="ロール名（例: ライバル）"
-                      onChange={(event) => renameRole(role, event.target.value)}
+                      onFocus={() => beginRoleRename(role)}
+                      onChange={(event) => updateRole(role.id, { name: event.target.value })}
+                      onBlur={() => commitRoleRename(role)}
                     />
                     <label className="chk">
                       <input

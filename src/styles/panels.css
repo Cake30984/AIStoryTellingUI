@@ -277,6 +277,18 @@
 .casting-warning {
   color: var(--warning, #e9b44c);
 }
+.casting-persona-pick {
+  margin: 10px 0;
+}
+.casting-persona-pick > label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.casting-persona-pick select {
+  width: 100%;
+}
 .casting-preview {
   margin-top: 10px;
   font-size: 12px;

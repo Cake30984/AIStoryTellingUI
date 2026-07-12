@@ -2669,7 +2669,11 @@ export const useStore = create<AppState>()(
           const openingTemplate = s.mode === 'story' ? s.story.opening.trim() : ''
           const refs = resolveRefs(s)
           let opening = openingTemplate
-          const issues = validateCasting(s, refs.world, get().characters, get().personas)
+          // roleplay では導入文を掲載しないため、残存する導入文中の @ロール名 で開始をブロックしない
+          // （required ロールは opening 非依存なので、そのまま開始ブロッカーとして機能する）
+          const validationSession =
+            s.mode === 'story' ? s : { ...s, story: { ...s.story, opening: '' } }
+          const issues = validateCasting(validationSession, refs.world, get().characters, get().personas)
           if (issues.length > 0) {
             set({ castingSessionId: s.id, error: null })
             return
