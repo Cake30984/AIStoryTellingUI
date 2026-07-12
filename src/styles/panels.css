@@ -1036,8 +1036,6 @@
 .se-nav {
   flex-shrink: 0;
   width: 132px;
-  position: sticky;
-  top: 0;
   display: flex;
   flex-direction: column;
   gap: 4px;
