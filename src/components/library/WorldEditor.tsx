@@ -411,14 +411,20 @@ export default function WorldEditor({ world, onClose }: Props) {
               </div>
               <div className="field">
                 <label>ジャンル・トーン</label>
+                <div className="desc">
+                  作風・温度感を一言で。毎回「物語設定」として AI に渡されます。
+                </div>
                 <input
                   value={sp.genre ?? ''}
-                  placeholder="例: ダークファンタジー"
+                  placeholder="例: 切なく静かなダークファンタジー"
                   onChange={(e) => patchPreset({ genre: e.target.value })}
                 />
               </div>
               <div className="field">
                 <label>あらすじ・前提</label>
+                <div className="desc">
+                  この物語で何が起きるかの前提。世界そのものの説明は世界観の「基本」へ、絶対に守らせたい指示は固定メモへ。
+                </div>
                 <textarea
                   rows={3}
                   value={sp.premise ?? ''}
@@ -446,10 +452,13 @@ export default function WorldEditor({ world, onClose }: Props) {
               </div>
               <div className="field">
                 <label>固定メモ（常に踏まえる重要事項）</label>
+                <div className="desc">
+                  毎回「常に踏まえる重要事項」として AI に渡されます。文体・禁則などの指示向きで、ロールプレイモードでも有効です。
+                </div>
                 <textarea
                   rows={2}
                   value={sp.authorNote ?? ''}
-                  placeholder="例: 二人は幼馴染。物語は入学式の朝から始まる。"
+                  placeholder="例: 残酷描写は避ける。主人公の心情を勝手に確定しない。"
                   onChange={(e) => patchPreset({ authorNote: e.target.value })}
                 />
               </div>

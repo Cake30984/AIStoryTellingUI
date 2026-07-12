@@ -231,16 +231,19 @@ export default function SessionEditor({ session, onClose }: Props) {
                 <>
                   <div className="field">
                     <label>ジャンル・トーン</label>
+                    <div className="desc">
+                      作風・温度感を一言で。毎回「物語設定」として AI に渡されます。
+                    </div>
                     <input
                       value={d.story.genre}
-                      placeholder="例: ダークファンタジー"
+                      placeholder="例: 切なく静かなダークファンタジー"
                       onChange={(e) => patch({ story: { ...d.story, genre: e.target.value } })}
                     />
                   </div>
                   <div className="field">
                     <label>あらすじ・前提</label>
                     <div className="desc">
-                      物語の背景・世界の状況。毎ターン AI に注入され続ける前提情報です。
+                      この物語で何が起きるかの前提。世界そのものの説明は世界観素材へ、絶対に守らせたい指示は固定メモへ。
                     </div>
                     <textarea
                       rows={3}
@@ -273,11 +276,13 @@ export default function SessionEditor({ session, onClose }: Props) {
 
               <div className="field">
                 <label>固定メモ（常に踏まえる重要事項・任意）</label>
-                <div className="desc">関係性、約束、現在地など、AI に常に覚えさせたいこと。</div>
+                <div className="desc">
+                  毎回「常に踏まえる重要事項」として AI に渡されます。文体・禁則などの指示向きで、ロールプレイモードでも有効です。
+                </div>
                 <textarea
                   rows={2}
                   value={d.authorNote}
-                  placeholder="例: 二人は幼馴染。今は廃城の地下にいる。"
+                  placeholder="例: 残酷描写は避ける。主人公の心情を勝手に確定しない。"
                   onChange={(e) => patch({ authorNote: e.target.value })}
                 />
               </div>
