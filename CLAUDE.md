@@ -47,7 +47,7 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist`。storage は
 - `imageGen.ts` — 画像生成抽象層。`generateImage`（comfyui: /prompt→/history→/view、openai-image: b64_json）/`testImageProvider`/`fillWorkflow`/`DEFAULT_COMFY_WORKFLOW`。**接続先の `defaultPositive`/`defaultNegative` の結合はここ1箇所のみ**（`combineWithDefaults`）
 - `promptTags.ts` — `ensureTags`（pins のタグ欠け補完）＋`combineWithDefaults`（接続先デフォルトタグの先頭結合・重複除去）
 - `imageJobs.ts` — バックグラウンド画像生成ジョブの型（`ImageJobTarget`/`ImageJob`）とヘルパ。Blob を含むため **partialize から除外**。AbortController はモジュールレベル `Map`（`registerJobAbort`/`clearJobAbort`/`abortJobController`）。`useBlobUrl` フック
-- `cards.ts` — キャラカード（`chara_card_v2` 互換）／世界カード（`aist_world`）／ペルソナカード（`aist_persona`）／セッションカード（`aist_session`・画像 base64 同梱の自己完結バンドル）／ゲームカセット（`aist_cassette`・W2＝開始状態に初期化したセッション＋素材＋画像の全部入り＋紹介文メタ）の組み立て・解釈。`exportCharacterCard`/`exportWorldCard`/`exportPersonaCard`/`exportSessionCard`/`exportCassetteCard`/`parseCardPng`/`attachCardImage`。カセット書き出しは `freshSessionOf`（プレイ記録・モデル参照を初期化）を通す。画像収集/サイズ確認/model 除去は `collectCardImages`/`confirmImageSize`/`stripCharacterModels` に共通化しセッションカードと共用。`model`/`avatar.imageId`/`sprites` は通常カードから除外（セッションカード・カセットのみ同梱）。`parseCardPng` はカセットを `aist_session` より先に判定
+- `cards.ts` — キャラカード（`chara_card_v2` 互換）／世界カード（`aist_world`）／ペルソナカード（`aist_persona`）／ゲームカセット（`aist_cassette`＝開始状態に初期化したセッション＋素材＋画像の全部入り＋紹介文メタ）の組み立て・解釈。`exportCharacterCard`/`exportWorldCard`/`exportPersonaCard`/`exportCassetteCard`/`parseCardPng`/`attachCardImage`＋`freshSessionOf`（プレイ記録・モデル参照を初期化。カセット下書きの種にも使う・export）。画像収集/サイズ確認/model 除去は `collectCardImages`/`confirmImageSize`/`stripCharacterModels`。`model`/`avatar.imageId`/`sprites` は通常カードから除外（カセットのみ同梱）。**セッションカード（`aist_session`）は FB3-D で読み書きとも撤去**（過去に書き出した PNG は読めない。共有はカセット・バックアップは System のデータ書き出し）
 - `useCardDrop.ts` — PNG カード D&D 受付フック（`dragOver`＋`dropProps`）
 - `useMultiSelect.ts` — カード/セッション一覧の複数選択フック（Ctrl/Cmd=個別トグル・Shift=範囲・右クリック選択）。`handleClick` は修飾キー付きのみ true（＝開かない）。FB2-D
 - `modalStack.ts` — `useModalEscape`（最前面モーダルだけ Escape で閉じる）/`modalStackSize`
@@ -77,8 +77,8 @@ Play 領域:
 - `CommandPalette.tsx` — `Ctrl+K` で開くパレット。セッション/素材の名前検索→移動＋固定コマンド。実行は既存 store アクション／`setUiPrefs` のみ
 
 モーダル・パネル:
-- `SessionEditor.tsx` — セッション設定。「基本／進行／モデル／出力」4タブ（同一 draft を共有）。フッターに「セッションをカード化」。「構造化出力」チェックボックスあり。世界観選択時に開始テンプレートを空欄項目のみ自動コピー（`startPresetPatch`・W1）＋「開始テンプレートを読み込む」リンクで全上書き（確認つき）。story モードは導入（`story.opening`/`openingTitle`・そのまま掲載）欄あり（主人公像はペルソナで代替のため廃止）。進行タブに開始時間帯（`timeline.currentSlot`／未開始時は `startDay`/`startSlot` として記録）
-- `SessionCardModal.tsx` — セッションカード／ゲームカセット書き出し（モード切替＝続きから／最初から。カセット時は紹介文入力）。カード画像は「タイトルから自動」のプレビュー付きサムネ＋挿絵から選択（FB2-A3）。読み込みは Sidebar D&D・System ページのファイル入力・カセット棚 D&D（`importSessionCard`/`importCassette`。カセットは 🎮 で分岐し、取込は「棚に登録のみ」＝`cassettes` に積む。FB2-E）
+- `SessionEditor.tsx` — セッション設定。「基本／進行／モデル／出力」4タブ（同一 draft を共有）。フッターに「カセットにする…」（`CassetteEditor` を `seedSession` 付きで開く）。「構造化出力」チェックボックスあり。世界観選択時に開始テンプレートを空欄項目のみ自動コピー（`startPresetPatch`・W1）＋「開始テンプレートを読み込む」リンクで全上書き（確認つき）。story モードは導入（`story.opening`/`openingTitle`・そのまま掲載）欄あり（主人公像はペルソナで代替のため廃止）。進行タブに開始時間帯（`timeline.currentSlot`／未開始時は `startDay`/`startSlot` として記録）
+- `CassetteEditor.tsx` — カセット専用エディタ（FB3-D）。左セクションナビ（基本〔タイトル・紹介文・表紙〕／世界観／登場キャラ／ペルソナ／開始・進行）で `Cassette`（内部に開始状態のセッション）を編成。新規＝`newCassette()`／既存編集＝`cassette` prop／セッションから＝`seedSession`（`freshSessionOf` で下書き化）。表紙はタイトルから自動（保存時に生成焼付け）／画像ファイル選択（`normalizeImage`→`putImage`）／種セッションの挿絵から選択。保存は `upsertCassette`。読み込みは Sidebar D&D・System ファイル入力・カセット棚 D&D（`importCassette`＝「棚に登録のみ」＝`cassettes` に積む。FB2-E）
 - `SettingsModal.tsx` — `export function SettingsBody()`（System ページ本体）。プロバイダ管理・データ入出力（「画像も含める」チェックボックス）・未使用画像 GC。App.tsx が `view==='system'` で描画
 - `ImageProviderSettings.tsx` — 画像生成接続先の管理（ComfyUI/画像API の追加・編集・削除・接続テスト・デフォルトタグ入力）。`SettingsBody` に組み込み
 - `ImageGenModal.tsx` — 画像生成モーダル（アバター/挿絵/ペルソナ/立ち絵/背景で共用）。接続先・サイズ・枚数選択、「プロンプトを起案」、`target: ImageJobTarget`＋`label` で `store.startImageJob` を呼びジョブ購読。接続先/起案モデルは記憶（`lastImageProviderId`/`lastDraftModel`）
@@ -87,7 +87,7 @@ Play 領域:
 - `BranchTreeModal.tsx` — `BranchTreeBody({session})`（ドックの branch タブ）。**SourceTree 風コミットグラフ**（FB3-B2・`.bg-*` クラス）: 全ノードを pre-order（現在パスの子を最優先＝現在パスをレーン0の直線に保つ）で縦1列に並べ、`buildGraph` がレーン割り当て＋各行の通過縦線／分岐カーブを計算し SVG で描画。最初の子は親と同じレーンを継ぎ2番目以降は新レーンへ（木なので merge 無し＝分岐カーブは親行の下半分のみ）。レーン色は `--graph-lane-0..5`。行＝色ドット＋ラベル＋timeLabel＋★＋いまここ、hover の「↩ 戻る」`restoreCheckpoint`＋⋯メニュー（しおり `setBranchStar`/`removeBranchStar`・シーン開始前へ戻る・この分岐を削除 `deleteBranchSubtree`＝現在パス上は無効）。「✂ 現在の分岐だけ残す（他n件を削除）」`pruneToCurrentPath`・「★ しおり」タブ・currentId 変化で自動スクロール
 - `ModelPicker.tsx` — プロバイダ切替・モデル一覧・お気に入り。`onPick` は `"providerId::modelId"`
 - `SceneEditor.tsx`/`SceneReviewModal.tsx`/`StoryLogModal.tsx`/`StatusPanel.tsx`/`DiscoveryPanel.tsx`/`CsvInput.tsx` — 各種閲覧・編集モーダル。StatusPanel/DiscoveryPanel はドックの「✎ 編集」経由で開く。`DiscoveryPanel` は `scope`（`'lore' | {characterId}`・F4）で世界観/キャラ別に編集画面を分割し、保存は live 起点でスコープ分だけ差し替え（編集中の他スコープ追記を巻き戻さない）
-- `library/` — 各素材の一覧＋エディタ（Character/World/Persona）と `CassetteLibrary`（🎮カセット棚＝表紙/紹介文/▶遊ぶ/PNG書き出し/削除・D&D取込。FB2-E）と `AvatarField`/`SpriteSetField`。各 Library は PNG カード D&D 受付＋検索＋複数選択（`useMultiSelect`・右クリックメニュー＝`LibraryMultiSelect.tsx` の `SelectionBar`/`CardContextMenu`。Ctrl/Shift 選択→一括削除。FB2-D）。CharacterEditor/PersonaEditor は draft を保存ボタンで反映、`AvatarField`/`SpriteSetField` は store 直管理フィールド（avatar.imageId/sprites）を live 購読して同期。WorldEditor はフルページ（`.section-nav`＋`.section-content` の8セクション。「開始テンプレート」= `World.startPreset` の編集・W1）
+- `library/` — 各素材の一覧＋エディタ（Character/World/Persona）と `CassetteLibrary`（🎮カセット棚＝「＋カセットを作る」で `CassetteEditor` 起動・表紙/紹介文/▶遊ぶ/✎編集/PNG書き出し/削除・D&D取込。FB2-E/FB3-D）と `AvatarField`/`SpriteSetField`。各 Library は PNG カード D&D 受付＋検索＋複数選択（`useMultiSelect`・右クリックメニュー＝`LibraryMultiSelect.tsx` の `SelectionBar`/`CardContextMenu`。Ctrl/Shift 選択→一括削除。FB2-D）。CharacterEditor/PersonaEditor は draft を保存ボタンで反映、`AvatarField`/`SpriteSetField` は store 直管理フィールド（avatar.imageId/sprites）を live 購読して同期。WorldEditor はフルページ（`.section-nav`＋`.section-content` の8セクション。「開始テンプレート」= `World.startPreset` の編集・W1）
 
 ## 設計ドキュメント（`docs/`）
 実装の詳細設計・意思決定の経緯はここに集約。CLAUDE.md で疑問が残ったら該当ドキュメントを読む。
@@ -116,7 +116,7 @@ Play 領域:
 - **Provider** — `{id,label,kind:'openrouter'|'openai',baseUrl,apiKey}`。localStorage のみ・エクスポート除外
 - **ImageProvider** — `{id,label,kind:'comfyui'|'openai-image',baseUrl,apiKey,model,workflowJson,defaultPositive?,defaultNegative?}`。画像生成の接続先（LLM の Provider とは別リスト `imageProviders`）。localStorage のみ・エクスポート除外。`defaultPositive?`/`defaultNegative?` は生成時に先頭結合される定型タグ（`defaultNegative` は comfyui のみ）
 - **Avatar** — `{imageId?, color}`。`imageId` は画像ストア id（未設定なら色＋イニシャル。表示は `EntityAvatar`）
-- **Character** — name/persona/speechStyle/appearance/exampleDialogues/greeting/avatar/tags＋`developments: Development[]`＋`model?`（chat 群像で話者確定時のみ）＋`imagePrompt?`（画像生成用固定英語タグ）＋`sprites?: {emotion:EmotionId,imageId}[]`（表情つき立ち絵。通常カードには含めずセッションカードのみ）
+- **Character** — name/persona/speechStyle/appearance/exampleDialogues/greeting/avatar/tags＋`developments: Development[]`＋`model?`（chat 群像で話者確定時のみ）＋`imagePrompt?`（画像生成用固定英語タグ）＋`sprites?: {emotion:EmotionId,imageId}[]`（表情つき立ち絵。通常カードには含めずカセットのみ同梱）
 - **EMOTIONS**（`types.ts`）— 固定セット `neutral/joy/anger/sadness/shy/surprise`（`EmotionId`）。各 `{id,label,tags}`
 - **World** — description＋`entries: LoreEntry[]`＋`scheduledEvents: ScheduledEvent[]`＋`relationAspects: RelationAspectDef[]`（関係性 prose の次元・ワールド固定）＋`stats: StatDef[]`＋`counters: CounterDef[]`＋`achievements: AchievementDef[]`＋`startPreset?: WorldStartPreset`（セッション開始テンプレート＝genre/premise/opening/openingTitle/authorNote/timeline〔開始日・開始時間帯含む〕定義。世界選択時にセッションへ**コピー**され素材側は不変。反映は `startPresetPatch`/`hasStartPreset`（store.ts の純関数）・W1）。プリセット `WORLD_PRESETS`（恋愛/RPG/経営）
 - **Persona** — 利用者が演じる人物。`imagePrompt?` あり
@@ -130,7 +130,7 @@ Play 領域:
 - **SceneIllustration** — `{id,imageId,prompt,messageId?,createdAt}`。`messageId` 直後に表示（消失時はシーン末尾）
 - **Message** — role/characterId?/sceneId?/content/choices?/truncated?/pending?
 - **ImageJob**（`imageJobs.ts`・store の `imageJobs`・**非永続**）— `{id,label,target,providerId,prompt,negative?,width,height,count,status:'running'|'selecting'|'error'|'canceled',results:Blob[],error?,createdAt}`。`target`＝`scene-illustration`/`character-avatar`/`persona-avatar`/`character-sprite`/`scene-background`。1枚でも自動採用せず、採用は常にユーザー選択（`applyImageJobResult`）。`store.imageJobToasts`（選択待ち通知・非永続）
-- **Cassette/`cassettes`**（FB2-E）— `{id,title,description,coverImageId?,session,createdAt}`。ゲームカセット（`aist_cassette`）を棚に素材化して保持。`session` は開始状態（`freshSessionOf` 済み）・参照素材は取込時にライブラリへマージ済み。取込＝`importCassette`（棚登録のみ・セッションは作らない・表紙=取込カード PNG を putImage）、開始＝`playCassette`（session を新 id に複製）、削除＝`deleteCassette`。**AppState 直下**（`cassettes: Cassette[]`）・persist 対象・exportBundle/importBundle 対象・画像 GC 集合（`collectUsedImageIds` の第4引数）に含める
+- **Cassette/`cassettes`**（FB2-E）— `{id,title,description,coverImageId?,session,createdAt}`。ゲームカセット（`aist_cassette`）を棚に素材化して保持。`session` は開始状態（`freshSessionOf` 済み）・参照素材は取込時にライブラリへマージ済み。取込＝`importCassette`（棚登録のみ・セッションは作らない・表紙=取込カード PNG を putImage）、新規作成/編集＝`CassetteEditor`＋`upsertCassette`（`newCassette(seed?)` で下書き生成）、開始＝`playCassette`（session を新 id に複製）、削除＝`deleteCassette`。**AppState 直下**（`cassettes: Cassette[]`）・persist 対象・exportBundle/importBundle 対象・画像 GC 集合（`collectUsedImageIds` の第4引数）に含める
 - **BranchNode/BranchTree/`branchTrees`** — `BranchNode{id,parentId,kind:'action'|'scene',label,timeLabel?,createdAt,imageIds,bytes,star?:{name,thumbImageId?}}`（`parentId:null`=ルート・実体は `checkpointStore` に nodeId で保存）、`BranchTree{currentId,nodes}`。`branchTrees: Record<sessionId,BranchTree>` は **Session の外・AppState 直下**（Session 内だとスナップショット深コピーが木を含んで再帰肥大するため）。persist 対象
 - **UiPrefs/`ui`**（`types.ts`）— `{dockTab: DockTab|null, dockWidth, fontSize, lineHeight, contentWidth, dialogueTint, stageBgOpacity, stageSpriteOpacity, immersive}`（`DockTab='status'|'discovery'|'gallery'|'branch'|'jobs'`）。**AppState 直下**（`DEFAULT_UI`）・persist 対象。`fontSize`/`lineHeight`/`contentWidth`/`dockWidth` は number（F2で段階式 union から数値化）で可変範囲は `UI_LIMITS`。`merge` は `normalizeUiPrefs()`（旧・段階式文字列値 s/m/l/xl・compact/normal/wide 等を数値へ引き継ぎ＋範囲クランプ＋欠落補完の純関数）を通す。更新は `store.setUiPrefs(patch)` に一本化（没入 OFF→ON で `infoNotice` 案内トーストをセット）・編集 UI は `ReaderSettings.tsx`（Aa。スライダー＋数値入力の `RsField`・「表示を既定に戻す」）
 
@@ -175,7 +175,7 @@ Play 領域:
 - **カンマ区切り入力は必ず `CsvInput`**（タグ・ロアのキーワード・timeline slots）。生の `value=arr.join`＋split はカンマが消えるバグの原因
 - マーカー疑似メッセージ（`CONTINUE_PROMPT`/`SCENE_START_PROMPT`）は user として積むが、UI では本文を描かず**ターン境界の薄い水平線 `.gen-divider`** で表現（続ける＝線、シーン導入＝見出しが担うので線なし）。小説形式ではユーザー入力の前にも `.gen-divider` を1本入れる（`renderSceneContent` の `seenContent` 判定・FB3-A2）。`isMarker` で判定
 - API キーは localStorage のみ。エクスポートバンドルに providers は含めない
-- **画像 id を持つフィールドを増やしたら `sessionImageIds`（store.ts）に追加する**。入れ忘れると GC で使用中画像が消える／チェックポイント参照画像が誤回収される。セッションカードの画像収集・remap にも追加が必要
+- **画像 id を持つフィールドを増やしたら `sessionImageIds`（store.ts）に追加する**。入れ忘れると GC で使用中画像が消える／チェックポイント参照画像が誤回収される。カセットの画像収集（`collectCardImages`）・remap にも追加が必要
 - **画像の即時 `deleteImage` を新規に書かない**。分岐チェックポイントが imageId を参照しうるため、削除は常に「参照除去のみ＋`gcUnusedImages` 回収」
 - **`branchTrees` を `Session` の中に入れない**。スナップショット深コピーが木を含んで再帰肥大する。必ず AppState 直下
 - **`restoreCheckpoint` の passthrough リストの変更は慎重に**。「本文・進行と結合しているか」で判定（結合＝復元対象／非結合＝現在値維持）。迷ったらスナップショット側に倒す
@@ -202,7 +202,7 @@ Play 領域:
 
 - 状態エンジン（関係性 prose＋事実の数＋条件エンジン＋実績＋選択肢連動加点。ADR-1 / P1〜P5）
 - セッション・オーバーレイ（発見の素材↔セッション分離・実効ビュー注入・昇格。B1〜B4）
-- 画像基盤・PNG カード入出力（IndexedDB 画像ストア・EntityAvatar・ST 互換キャラカード・世界/ペルソナ/セッションカード。P1〜P4 / G1〜G4）
+- 画像基盤・PNG カード入出力（IndexedDB 画像ストア・EntityAvatar・ST 互換キャラカード・世界/ペルソナカード・ゲームカセット。P1〜P4 / G1〜G4。※セッションカードは FB3-D で撤去）
 - 画像改善（バックグラウンドジョブ・ギャラリー・立ち絵/表情差分/背景・ステージのバックドロップ化・各種 store 不具合修正。V1〜V5）
 - Tauri 化（画像込みエクスポート・CORS-free HTTP・環境アダプタ層・`%APPDATA%` ファイルストレージ＋自動移行。T0〜T3。**T4=配布は当面見送り**）
 - セーブ/ロードと分岐周回（チェックポイント基盤・ツリーUI・しおり。C1〜C3）
@@ -214,7 +214,7 @@ Play 領域:
 各フェーズの詳細・検証記録は対応する `docs/設計_*.md` を参照。
 
 ## 未着手・残タスク
-- **フィードバック反映3（FB3・A/B/C済／D未着手）**: 手順書 → `docs/設計_フィードバック反映3.md`。**A=本文表示の即効改善（実装済み・2026-07-11）**＝開始シーン見出し・マーカーの罫線化（`.gen-divider`）・自動スクロール停止・分岐ラベルを本文冒頭化・一覧選択UX（Esc解除／バーは2件以上／activeは控えめ）・末尾本文に「選択肢を生成」。**B=分岐チェックポイントの分岐化＋フルグラフUI（実装済み・2026-07-12）**＝`anchorMessageId`＋`reanchorBranch` で巻き戻しを兄弟分岐化・`BranchTreeBody` を SourceTree 風コミットグラフに再設計。**C=演出ディレクター廃止（実装済み・2026-07-12）**＝SceneType/director/sceneTypeId を全廃し `nextScheduledEvent` で世界観イベントに一本化・進行タブに `eventAutoFire` トグル。D=セッションカード全廃＋カセット専用エディタ（残り）
+- **フィードバック反映3（FB3・A〜D すべて実装済み・2026-07-12）**: 手順書 → `docs/設計_フィードバック反映3.md`。A=本文表示の即効改善（`.gen-divider`・自動スクロール停止・分岐ラベル本文冒頭・選択UX・選択肢生成ボタン）／B=巻き戻しの兄弟分岐化（`anchorMessageId`＋`reanchorBranch`）＋SourceTree 風フルグラフ／C=演出ディレクター廃止（`nextScheduledEvent` 一本化・`eventAutoFire`）／D=セッションカード全廃＋`CassetteEditor`（専用エディタ・`newCassette`/`upsertCassette`・セッションからは「カセットにする…」で `seedSession`）
 - **T1 で判明した既知の問題**: ①選択肢生成中に本編生成が始まると選択肢側 AbortController が追従せず `Cannot read properties of null (reading 'signal')`（再現手順が不明で切り分け未着手のまま据え置き）②ComfyUI が通常起動（`--enable-cors-header` なし）で接続できない＝設計通りでないバグ。**未解決・現在も再現する**。appFetch 未置換経路や `isTauri()` 誤判定を疑い切り分けが必要（詳細は `docs/設計_Tauri化.md`）
 - **T4（配布）**: NSIS・GitHub Releases。ユーザー判断で当面見送り（まだ公開しない）
 - **ComfyUI 実機動作確認・ワークフローテンプレ拡充**（SDXL 以外・LoRA ノード入り）

@@ -66,7 +66,6 @@ export type ParsedCard =
   | { kind: 'character'; character: Character }
   | { kind: 'world'; world: World }
   | { kind: 'persona'; persona: Persona }
-  | { kind: 'session'; bundle: SessionCardBundle }
   | { kind: 'cassette'; bundle: CassetteBundle }
 
 /** キャラクターの extensions に格納する独自拡張（model・avatar.imageId・sprites は環境固有のため除外） */
@@ -149,7 +148,7 @@ export async function exportCharacterCard(character: Character): Promise<void> {
 function normalizeCharacterFromExtension(raw: any): Character {
   const now = Date.now()
   // sprites の imageId は同梱画像への参照（セッションカード経由のみ持つ。通常カードには無い）。
-  // インポート側（importSessionCard）で remap するためそのまま保持する。
+  // インポート側（importCassette）で remap するためそのまま保持する。
   const sprites: { emotion: EmotionId; imageId: string }[] | undefined = Array.isArray(raw.sprites)
     ? raw.sprites.filter(
         (s: any) => typeof s?.emotion === 'string' && typeof s?.imageId === 'string',
@@ -353,42 +352,12 @@ function stripCharacterModels(characters: Character[]): Character[] {
 }
 
 /**
- * セッションを PNG カードとして書き出す。参照素材（キャラ/世界/ペルソナ）と
- * 参照画像（アバター＋挿絵）を base64 で同梱し、1ファイルで完全共有できる。
- * cardImageBlob がカードの見た目（挿絵から選択 or 自動生成）。
- */
-export async function exportSessionCard(
-  session: Session,
-  refs: { characters: Character[]; world?: World; persona?: Persona },
-  cardImageBlob: Blob,
-): Promise<void> {
-  const { images, totalBytes } = await collectCardImages(session, refs)
-  if (!(await confirmImageSize(totalBytes))) return
-
-  // session 側の ModelRef は文字列として無害（解決不能なら providers[0] にフォールバック）なので残す
-  const bundle: SessionCardBundle = {
-    session,
-    characters: stripCharacterModels(refs.characters),
-    world: refs.world,
-    persona: refs.persona,
-    images,
-  }
-
-  const normalized = await normalizeImage(cardImageBlob, 1024)
-  const pngBytes = new Uint8Array(await normalized.arrayBuffer())
-  const card = { spec: 'aist_session', spec_version: '1.0', data: bundle }
-  const withChunk = writeTextChunk(pngBytes, 'aist_session', b64encode(JSON.stringify(card)))
-  const outBlob = new Blob([withChunk as BlobPart], { type: 'image/png' })
-  downloadBlob(outBlob, `session_${session.title || 'story'}.png`)
-}
-
-/**
- * セッションを「開始状態」に初期化する（ゲームカセット書き出し用。W2）。
+ * セッションを「開始状態」に初期化する（ゲームカセット書き出し・カセット下書き用。W2 / FB3-D）。
  * プレイ記録（会話・シーン・状態・オーバーレイ・消化イベント・表情）を全て空にし、
  * タイムラインは1日目へ戻す。モデル参照は環境固有のため空へ（受け手側でフォールバック）。
  * 残すのは設定（title/story/authorNote/顔ぶれ/世界/ペルソナ/進行設定/文体/timeline 定義 等）。
  */
-function freshSessionOf(session: Session): Session {
+export function freshSessionOf(session: Session): Session {
   const now = Date.now()
   const scene: Scene = {
     id: uid(),
@@ -492,14 +461,6 @@ export function parseCardPng(bytes: Uint8Array): ParsedCard | null {
       const description = typeof raw.description === 'string' ? raw.description : undefined
       return { kind: 'cassette', bundle: { ...bundle, ...(description ? { description } : {}) } }
     }
-    return null
-  }
-
-  const sessionChunk = chunks.find((c) => c.keyword === 'aist_session')
-  if (sessionChunk) {
-    const json = JSON.parse(b64decode(sessionChunk.text))
-    const bundle = normalizeSessionBundle(json.data ?? json)
-    if (bundle) return { kind: 'session', bundle }
     return null
   }
 

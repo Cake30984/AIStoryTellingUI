@@ -21,7 +21,6 @@ export function SettingsBody() {
     importCharacterCard,
     importWorldCard,
     importPersonaCard,
-    importSessionCard,
     importCassette,
     gcUnusedImages,
   } = useStore()
@@ -100,9 +99,6 @@ export function SettingsBody() {
           const withImage = await attachCardImage(parsed.persona, bytes)
           importPersonaCard(withImage)
           setNotice(`カードから「${withImage.name || '無名'}」を追加しました。`)
-        } else if (parsed.kind === 'session') {
-          await importSessionCard(parsed.bundle)
-          setNotice(`セッション「${parsed.bundle.session.title || '無題'}」を復元しました。`)
         } else if (parsed.kind === 'cassette') {
           await importCassette(parsed.bundle, new Blob([bytes as BlobPart], { type: 'image/png' }))
           setNotice(`🎮 ゲームカセット「${parsed.bundle.session.title || '無題'}」を棚に登録しました（「作る > カセット」から遊べます）。`)

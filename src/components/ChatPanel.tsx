@@ -22,7 +22,7 @@ import SceneEditor from './SceneEditor'
 import StoryLogModal from './StoryLogModal'
 import StatusPanel from './StatusPanel'
 import DiscoveryPanel, { type DiscoveryScope } from './DiscoveryPanel'
-import SessionCardModal from './SessionCardModal'
+import CassetteEditor from './CassetteEditor'
 import EntityAvatar from './EntityAvatar'
 import StageBackdrop from './StageBackdrop'
 import ContextDock from './ContextDock'
@@ -112,7 +112,7 @@ export default function ChatPanel({ session }: Props) {
   const [discoveryScope, setDiscoveryScope] = useState<DiscoveryScope | null>(null)
   const [showImageGen, setShowImageGen] = useState(false)
   const [showBgGen, setShowBgGen] = useState(false)
-  const [showSessionCard, setShowSessionCard] = useState(false)
+  const [showCassetteEditor, setShowCassetteEditor] = useState(false)
   const [showMenu, setShowMenu] = useState(false)
   const [speaker, setSpeaker] = useState<string | undefined>(undefined)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
@@ -550,10 +550,10 @@ export default function ChatPanel({ session }: Props) {
                 className="menu-item"
                 onClick={() => {
                   setShowMenu(false)
-                  setShowSessionCard(true)
+                  setShowCassetteEditor(true)
                 }}
               >
-                <Icon name="credit-card" size={15} /> セッションをカード化
+                <Icon name="library-big" size={15} /> カセットにする…
               </button>
               <div className="menu-sep" />
               <button
@@ -947,8 +947,8 @@ export default function ChatPanel({ session }: Props) {
           onClose={() => setShowBgGen(false)}
         />
       )}
-      {showSessionCard && (
-        <SessionCardModal session={session} onClose={() => setShowSessionCard(false)} />
+      {showCassetteEditor && (
+        <CassetteEditor seedSession={session} onClose={() => setShowCassetteEditor(false)} />
       )}
     </div>
   )

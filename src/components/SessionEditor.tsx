@@ -6,7 +6,7 @@ import type { Session } from '../types'
 import CsvInput from './CsvInput'
 import ModelPicker from './ModelPicker'
 import EntityAvatar from './EntityAvatar'
-import SessionCardModal from './SessionCardModal'
+import CassetteEditor from './CassetteEditor'
 import ModalShell from './ModalShell'
 import { Icon } from './icons'
 
@@ -89,8 +89,8 @@ export default function SessionEditor({ session, onClose }: Props) {
       wide
       footer={
         <>
-          <button className="btn" onClick={() => setShowCardModal(true)} title="会話・状態・素材・画像を1枚のPNGに埋め込んで共有">
-            <Icon name="credit-card" size={14} /> セッションをカード化
+          <button className="btn" onClick={() => setShowCardModal(true)} title="この設定を種にゲームカセットを作る">
+            <Icon name="library-big" size={14} /> カセットにする…
           </button>
           <div style={{ flex: 1 }} />
           <button className="btn" onClick={onClose}>
@@ -564,7 +564,7 @@ export default function SessionEditor({ session, onClose }: Props) {
             </div>
           </div>
     </ModalShell>
-      {showCardModal && <SessionCardModal session={session} onClose={() => setShowCardModal(false)} />}
+      {showCardModal && <CassetteEditor seedSession={session} onClose={() => setShowCardModal(false)} />}
       {pickerTarget === 'review' && (
         <ModelPicker
           current={d.reviewModel}

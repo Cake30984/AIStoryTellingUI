@@ -48,7 +48,7 @@ import {
   type ImageJob,
   type ImageJobTarget,
 } from './lib/imageJobs'
-import { sessionCardImageBlob, type CassetteBundle, type SessionCardBundle } from './lib/cards'
+import { freshSessionOf, sessionCardImageBlob, type CassetteBundle } from './lib/cards'
 import {
   buildMessages,
   choicesSystem,
@@ -552,6 +552,23 @@ export function currentScene(s: Session): Scene | undefined {
 }
 
 /**
+ * カセットの下書きを作る（FB3-D）。seed を渡すと `freshSessionOf` で開始状態に初期化して種にする
+ * （プレイ記録・モデル参照を落とす）。渡さなければ物語モードの新規セッションを素体にする。
+ * 返り値はまだ `cassettes` に積まれていない下書き（CassetteEditor が編集し upsertCassette で保存）。
+ */
+export function newCassette(seed?: Session): Cassette {
+  const session = seed ? freshSessionOf(seed) : newSession('story')
+  return {
+    id: uid(),
+    title: session.title,
+    description: '',
+    coverImageId: undefined,
+    session,
+    createdAt: Date.now(),
+  }
+}
+
+/**
  * セッション1件が参照する画像 id を抽出する（C1）。ライブ収集（collectUsedImageIds）と
  * チェックポイント保存時の imageIds 抽出の両方がこの1関数を使う。「画像 id を増やしたら
  * ここに追加」の規約はこの関数1箇所に集約する。
@@ -803,10 +820,10 @@ interface AppState {
   /** includeImages=true で使用中の画像（アバター・立ち絵・挿絵・背景）を base64 同梱する（T0） */
   exportBundle: (includeImages?: boolean) => Promise<ExportBundle>
   importBundle: (bundle: ExportBundle) => Promise<{ added: number }>
-  /** セッションカード（aist_session）の取り込み。同梱画像を putImage し直して参照を remap する */
-  importSessionCard: (bundle: SessionCardBundle) => Promise<void>
   /** ゲームカセット（aist_cassette）を「棚に登録」する（素材はマージ・画像 remap・セッションは作らない。FB2-E） */
   importCassette: (bundle: CassetteBundle, cover?: Blob) => Promise<void>
+  /** カセット下書きを棚へ追加/更新する（CassetteEditor の保存。FB3-D） */
+  upsertCassette: (cassette: Cassette) => void
   /** カセットを新しいセッションに複製して開始する（何度でも最初から遊べる。FB2-E） */
   playCassette: (cassetteId: string) => void
   /** カセットを棚から削除する（表紙・同梱画像は gcUnusedImages で回収。FB2-E） */
@@ -2884,77 +2901,6 @@ export const useStore = create<AppState>()(
           return { added }
         },
 
-        importSessionCard: async (bundle) => {
-          // 1) 同梱画像を IndexedDB へ登録し直し、旧 id → 新 id の対応表を作る（直列＝IndexedDB を並列で叩かない）
-          const idMap = new Map<string, string>()
-          for (const entry of bundle.images) {
-            const newId = await putImage(sessionCardImageBlob(entry))
-            idMap.set(entry.id, newId)
-          }
-          const remapAvatar = <T extends { avatar: Avatar }>(x: T): T => ({
-            ...x,
-            avatar: {
-              ...x.avatar,
-              imageId: x.avatar.imageId ? idMap.get(x.avatar.imageId) : undefined,
-            },
-          })
-          // 立ち絵の imageId も同梱画像への参照なので remap する（忘れるとカード復元で立ち絵が消える）
-          const remapSprites = (c: Character): Character =>
-            c.sprites && c.sprites.length > 0
-              ? { ...c, sprites: c.sprites.map((sp) => ({ ...sp, imageId: idMap.get(sp.imageId) ?? sp.imageId })) }
-              : c
-
-          // 2) 素材は importBundle と同じ id マージ（既存 id はスキップ＝既存優先）
-          //    セッション本体は常に追加（id 衝突時は新 id 採番）
-          set((st) => {
-            const now = Date.now()
-            const charIds = new Set(st.characters.map((c) => c.id))
-            const freshChars = bundle.characters
-              .filter((c) => !charIds.has(c.id))
-              .map(remapAvatar)
-              .map(remapSprites)
-
-            const worldExists = bundle.world && st.worlds.some((w) => w.id === bundle.world!.id)
-            const freshWorlds = bundle.world && !worldExists ? [bundle.world] : []
-
-            const personaExists = bundle.persona && st.personas.some((p) => p.id === bundle.persona!.id)
-            const freshPersonas = bundle.persona && !personaExists ? [remapAvatar(bundle.persona)] : []
-
-            const sessionIdTaken = st.sessions.some((s) => s.id === bundle.session.id)
-            const session: Session = {
-              ...bundle.session,
-              id: sessionIdTaken ? uid() : bundle.session.id,
-              // 挿絵・背景の imageId を remap（対応が無いものは表示フォールバックに任せてそのまま）
-              scenes: bundle.session.scenes.map((sc) => ({
-                ...sc,
-                illustrations: (sc.illustrations ?? []).map((ill) => ({
-                  ...ill,
-                  imageId: idMap.get(ill.imageId) ?? ill.imageId,
-                })),
-                ...(sc.backgroundImageId
-                  ? { backgroundImageId: idMap.get(sc.backgroundImageId) ?? sc.backgroundImageId }
-                  : {}),
-              })),
-              overlay:
-                bundle.session.overlay &&
-                Array.isArray(bundle.session.overlay.lore) &&
-                Array.isArray(bundle.session.overlay.characterDevelopments)
-                  ? bundle.session.overlay
-                  : { lore: [], characterDevelopments: [] },
-              updatedAt: now,
-            }
-
-            return {
-              characters: [...freshChars, ...st.characters],
-              worlds: [...freshWorlds, ...st.worlds],
-              personas: [...freshPersonas, ...st.personas],
-              sessions: [session, ...st.sessions],
-              activeId: session.id,
-              view: 'sessions' as View,
-            }
-          })
-        },
-
         // ゲームカセットは「棚に登録」する（FB2-E）。素材（キャラ/世界/ペルソナ）はライブラリへ
         // マージ・同梱画像は remap するが、セッションは作らず Cassette として cassettes に積む。
         // 実際に遊ぶのは playCassette（複製してセッション化）。
@@ -3020,6 +2966,16 @@ export const useStore = create<AppState>()(
             }
           })
         },
+
+        upsertCassette: (cassette) =>
+          set((st) => {
+            const exists = st.cassettes.some((c) => c.id === cassette.id)
+            return {
+              cassettes: exists
+                ? st.cassettes.map((c) => (c.id === cassette.id ? cassette : c))
+                : [cassette, ...st.cassettes],
+            }
+          }),
 
         playCassette: (cassetteId) => {
           const cas = get().cassettes.find((c) => c.id === cassetteId)

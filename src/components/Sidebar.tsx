@@ -7,7 +7,7 @@ import { appConfirm } from '../lib/dialogs'
 import { Icon, type IconName } from './icons'
 import MenuPopover from './MenuPopover'
 import SessionEditor from './SessionEditor'
-import SessionCardModal from './SessionCardModal'
+import CassetteEditor from './CassetteEditor'
 
 const LIBRARY_NAV: { key: View; label: string; icon: IconName }[] = [
   { key: 'characters', label: 'キャラ', icon: 'users' },
@@ -27,7 +27,6 @@ export default function Sidebar() {
     updateSession,
     deleteSession,
     characters,
-    importSessionCard,
     importCassette,
   } = useStore()
   const [notice, setNotice] = useState('')
@@ -35,7 +34,7 @@ export default function Sidebar() {
   const [showArchived, setShowArchived] = useState(false)
   const [ctxMenu, setCtxMenu] = useState<{ id: string; x: number; y: number } | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [cardId, setCardId] = useState<string | null>(null)
+  const [cassetteSeedId, setCassetteSeedId] = useState<string | null>(null)
   const area = areaOf(view)
 
   // セッションカード（PNG）のドロップ受付
@@ -48,11 +47,8 @@ export default function Sidebar() {
         if (parsed?.kind === 'cassette') {
           await importCassette(parsed.bundle, new Blob([bytes as BlobPart], { type: 'image/png' }))
           setNotice(`🎮 ゲームカセット「${parsed.bundle.session.title || '無題'}」を棚に登録しました（「作る > カセット」から遊べます）。`)
-        } else if (parsed?.kind === 'session') {
-          await importSessionCard(parsed.bundle)
-          setNotice(`セッション「${parsed.bundle.session.title || '無題'}」を復元しました。`)
         } else {
-          throw new Error('セッションカード／ゲームカセットではありません。')
+          throw new Error('ゲームカセットではありません。')
         }
       } catch (e) {
         setNotice(`読み込み失敗：${(e as Error).message}`)
@@ -99,7 +95,7 @@ export default function Sidebar() {
   const ctxSession = ctxMenu ? sessions.find((s) => s.id === ctxMenu.id) : undefined
   const ctxMulti = ctxMenu ? selected.has(ctxMenu.id) && selected.size > 1 : false
   const editingSession = editingId ? sessions.find((s) => s.id === editingId) : undefined
-  const cardSession = cardId ? sessions.find((s) => s.id === cardId) : undefined
+  const cassetteSeed = cassetteSeedId ? sessions.find((s) => s.id === cassetteSeedId) : undefined
 
   return (
     <aside className="sidebar" {...dropProps} style={dragOver ? { outline: '2px dashed var(--accent)', outlineOffset: -4 } : undefined}>
@@ -262,11 +258,11 @@ export default function Sidebar() {
           <button
             className="menu-item"
             onClick={() => {
-              setCardId(ctxMenu.id)
+              setCassetteSeedId(ctxMenu.id)
               setCtxMenu(null)
             }}
           >
-            <Icon name="credit-card" size={15} /> セッションをカード化
+            <Icon name="library-big" size={15} /> カセットにする…
           </button>
           <button
             className="menu-item"
@@ -294,7 +290,9 @@ export default function Sidebar() {
       {editingSession && (
         <SessionEditor session={editingSession} onClose={() => setEditingId(null)} />
       )}
-      {cardSession && <SessionCardModal session={cardSession} onClose={() => setCardId(null)} />}
+      {cassetteSeed && (
+        <CassetteEditor seedSession={cassetteSeed} onClose={() => setCassetteSeedId(null)} />
+      )}
     </aside>
   )
 }
