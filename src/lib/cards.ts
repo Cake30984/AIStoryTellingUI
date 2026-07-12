@@ -4,6 +4,7 @@ import { getImage, putImage } from './imageStore'
 import { generateDefaultAvatar, normalizeImage } from './avatarGen'
 import { downloadBlob } from './io'
 import { appConfirm } from './dialogs'
+import { normalizeRoleAssignments, normalizeWorldRoles } from './casting'
 
 function uid(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
@@ -250,6 +251,7 @@ function normalizeWorldFromData(raw: any): World {
     stats: Array.isArray(raw.stats) ? raw.stats : [],
     counters: Array.isArray(raw.counters) ? raw.counters : [],
     achievements: Array.isArray(raw.achievements) ? raw.achievements : [],
+    roles: normalizeWorldRoles(raw.roles),
     ...(startPreset ? { startPreset } : {}),
     createdAt: typeof raw.createdAt === 'number' ? raw.createdAt : now,
     updatedAt: typeof raw.updatedAt === 'number' ? raw.updatedAt : now,
@@ -439,7 +441,7 @@ function normalizeSessionBundle(raw: any): SessionCardBundle | null {
       ? { ...norm, avatar: { ...norm.avatar, imageId: src.avatar.imageId } }
       : norm
   return {
-    session: raw.session,
+    session: { ...raw.session, roleAssignments: normalizeRoleAssignments(raw.session?.roleAssignments) },
     characters: Array.isArray(raw.characters)
       ? raw.characters.map((c: any) => keepImageId(normalizeCharacterFromExtension(c), c))
       : [],

@@ -35,6 +35,7 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist`。storage は
 - `providers.ts` — `Provider` 型・プリセット・`parseModelRef`/`makeModelRef`/`splitRef`/`modelRefLabel`
 - `openrouter.ts` — SSE ストリーミング補完・モデル一覧取得（provider オブジェクト駆動）
 - `prompts.ts` — system プロンプト組み立て・選択肢/レビュー用プロンプト・定数（`CONTINUE_PROMPT`/`SCENE_START_PROMPT`）・画像プロンプト起案（`illustrationPromptSystem`/`backgroundPromptSystem` 等）・表情判定用 `emotionSystem`。`buildSystemPrompt`/`buildMessages` は `session.structuredOutput` で【セリフの出力形式】ブロック追加や矛盾指示の条件無効化を切替
+- `casting.ts` — 配役記法の検出・検証・導入本文の実名解決とカード/永続化入力の正規化。React/store 非依存の純粋関数
 - `lorebook.ts` — 世界観ロアのキーワード一致抽出
 - `timeline.ts` — `advanceTimeline`/`timeLabelOf`/`timelinePromptInfo`/`isNearEnd`
 - `json.ts` — `extractJson`（モデル出力からの堅牢な JSON 抽出）
@@ -121,9 +122,9 @@ Play 領域:
 - **Avatar** — `{imageId?, color}`。`imageId` は画像ストア id（未設定なら色＋イニシャル。表示は `EntityAvatar`）
 - **Character** — name/persona/speechStyle/appearance/exampleDialogues/greeting/avatar/tags＋`developments: Development[]`＋`model?`（chat 群像で話者確定時のみ）＋`imagePrompt?`（画像生成用固定英語タグ）＋`sprites?: {emotion:EmotionId,imageId}[]`（表情つき立ち絵。通常カードには含めずカセットのみ同梱）
 - **EMOTIONS**（`types.ts`）— 固定セット `neutral/joy/anger/sadness/shy/surprise`（`EmotionId`）。各 `{id,label,tags}`
-- **World** — description＋`entries: LoreEntry[]`＋`scheduledEvents: ScheduledEvent[]`＋`relationAspects: RelationAspectDef[]`（関係性 prose の次元・ワールド固定）＋`stats: StatDef[]`＋`counters: CounterDef[]`＋`achievements: AchievementDef[]`＋`startPreset?: WorldStartPreset`（セッション開始テンプレート＝genre/premise/opening/openingTitle/authorNote/timeline〔開始日・開始時間帯含む〕定義。世界選択時にセッションへ**コピー**され素材側は不変。反映は `startPresetPatch`/`hasStartPreset`（store.ts の純関数）・W1）。プリセット `WORLD_PRESETS`（恋愛/RPG/経営）
+- **World** — description＋`entries: LoreEntry[]`＋`scheduledEvents: ScheduledEvent[]`＋`relationAspects: RelationAspectDef[]`（関係性 prose の次元・ワールド固定）＋`stats: StatDef[]`＋`counters: CounterDef[]`＋`achievements: AchievementDef[]`＋`roles?: WorldRole[]`（世界観が定義する名前つき配役。`id`/`name`/立場の`description`/`required?`。配役本体は Session 側に持ち、開始テンプレートへコピーしない）＋`startPreset?: WorldStartPreset`（セッション開始テンプレート＝genre/premise/opening/openingTitle/authorNote/timeline〔開始日・開始時間帯含む〕定義。世界選択時にセッションへ**コピー**され素材側は不変。反映は `startPresetPatch`/`hasStartPreset`（store.ts の純関数）・W1）。プリセット `WORLD_PRESETS`（恋愛/RPG/経営）
 - **Persona** — 利用者が演じる人物。`imagePrompt?` あり
-- **Session** — characterIds/worldId/personaId/authorNote/story/`scenes: Scene[]`/currentSceneId/timeline/choiceMode（off|always|auto）/narrativeStyle（novel|chat）/`reviewModel`/`choicesModel`/`eventAutoFire?`（世界観イベント自動発火＝undefined/true で有効・FB3-C）/usedEventIds/`state: SessionState`/`overlay: SessionOverlay`/messages/model/temperature/maxTokens＋`spritesEnabled?`（ステージ表示）＋`spriteEmotions?: {characterId,emotion}[]`（表情判定結果）＋`structuredOutput?`（本編を行タグ形式で書かせる。`newSession` は既定 true・既存は `?? false`）＋`archived?`（一覧から既定除外）
+- **Session** — characterIds/worldId/personaId＋`roleAssignments?: {roleId,characterId}[]`（世界観ロールへの配役。同キャラの複数ロール可・無効参照は開始時に無視）/authorNote/story/`scenes: Scene[]`/currentSceneId/timeline/choiceMode（off|always|auto）/narrativeStyle（novel|chat）/`reviewModel`/`choicesModel`/`eventAutoFire?`（世界観イベント自動発火＝undefined/true で有効・FB3-C）/usedEventIds/`state: SessionState`/`overlay: SessionOverlay`/messages/model/temperature/maxTokens＋`spritesEnabled?`（ステージ表示）＋`spriteEmotions?: {characterId,emotion}[]`（表情判定結果）＋`structuredOutput?`（本編を行タグ形式で書かせる。`newSession` は既定 true・既存は `?? false`）＋`archived?`（一覧から既定除外）
 - **SessionState**（セッション固有・素材化しない）— `{relations, moods, stats, counters, achievements}`（「事実は数、判断は言葉」＝ADR-1）
 - **SessionOverlay**（セッション固有）— `{lore: LoreEntry[], characterDevelopments: {characterId,developments}[]}`。物語中の発見の上乗せ。**元 Character/World は不変**、レビュー承認の追記先はここ。本編には素材＋オーバーレイの実効ビュー（`resolveRefs` の `effectiveWorld`/`effectiveCharacter`）で注入。`promoteOverlayLore`/`promoteOverlayDev` で元素材へ move 昇格可
 - **Relation** — `{fromId,toId,stance,aspects:{aspectId,note}[],flags,updatedAt}`。キャラ→主人公（toId='hero'）の prose。数値ティア（band）は持たない

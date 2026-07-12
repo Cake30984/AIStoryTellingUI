@@ -196,6 +196,18 @@ export interface WorldStartPreset {
   }
 }
 
+/** 世界観が求める物語上の立ち位置（配役は Session 側で結ぶ） */
+export interface WorldRole {
+  /** リネームしても配役を維持するための安定 ID */
+  id: string
+  /** 導入文の @置換キー・配役 UI の表示名 */
+  name: string
+  /** 性格ではなく、世界における立場・物語上の機能 */
+  description: string
+  /** 未配役では開始できないロール */
+  required?: boolean
+}
+
 /** 世界観（ロアブック＋ゲームシステム定義） */
 export interface World {
   id: string
@@ -213,6 +225,8 @@ export interface World {
   counters: CounterDef[]
   /** 実績の定義（達成条件はコードが自動判定） */
   achievements: AchievementDef[]
+  /** 世界観が定義する配役。未設定の旧データは空配列として扱う */
+  roles?: WorldRole[]
   /** セッション開始テンプレート（世界を選んだ時にセッションへコピーされる推奨初期設定。素材側は不変） */
   startPreset?: WorldStartPreset
   createdAt: number
@@ -389,6 +403,12 @@ export interface SessionState {
   achievements: { defId: string; unlockedAt: number }[]
 }
 
+/** 世界観ロールと参加キャラクターの対応。1ロール1人、同じキャラの複数ロールは許可する */
+export interface RoleAssignment {
+  roleId: string
+  characterId: string
+}
+
 export interface Session {
   id: string
   title: string
@@ -402,6 +422,8 @@ export interface Session {
   characterIds: string[]
   worldId: string | null
   personaId: string | null
+  /** 世界観ロールへの配役。無効な参照は保存したまま開始時には無視する */
+  roleAssignments?: RoleAssignment[]
   /** 常に記憶させたい固定メモ（作者ノート） */
   authorNote: string
   story: StorySetup

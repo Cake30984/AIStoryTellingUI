@@ -70,6 +70,13 @@ import {
 } from './lib/timeline'
 import { extractJson } from './lib/json'
 import { defaultOpenRouterProvider, parseModelRef } from './lib/providers'
+import {
+  castingIssueLabel,
+  normalizeRoleAssignments,
+  normalizeWorldRoles,
+  resolveCasting,
+  validateCasting,
+} from './lib/casting'
 
 export const DEFAULT_MODEL = 'openrouter/auto'
 
@@ -357,6 +364,7 @@ export function newWorld(): World {
     stats: [],
     counters: [],
     achievements: [],
+    roles: [],
     createdAt: now,
     updatedAt: now,
   }
@@ -525,6 +533,7 @@ function newSession(mode: SessionMode): Session {
     characterIds: [],
     worldId: null,
     personaId: null,
+    roleAssignments: [],
     authorNote: '',
     story: { premise: '', genre: '', opening: '', openingTitle: '' },
     scenes: [scene],
@@ -1599,6 +1608,7 @@ export const useStore = create<AppState>()(
             sessions: st.sessions.map((s) => ({
               ...s,
               characterIds: s.characterIds.filter((cid) => cid !== id),
+              roleAssignments: (s.roleAssignments ?? []).filter((assignment) => assignment.characterId !== id),
               scenes: s.scenes.map((sc) => ({
                 ...sc,
                 activeCharacterIds: sc.activeCharacterIds.filter((cid) => cid !== id),
@@ -2646,8 +2656,31 @@ export const useStore = create<AppState>()(
           const scene = currentScene(s)
           if (!scene) return
 
-          // 開始時のシーン選出：世界イベント確認＋時間帯決定（FB3-C で演出タイプ抽選は廃止）
+          // 導入文は開始前にだけ配役を実名へ解決する。未解決のまま履歴・チェックポイント・イベント消化を
+          // 作らないことで、@ロール名が few-shot としてモデルへ流れるのを防ぐ。
+          const openingTemplate = s.mode === 'story' ? s.story.opening.trim() : ''
           const refs = resolveRefs(s)
+          let opening = openingTemplate
+          const issues = validateCasting(s, refs.world, get().characters, get().personas)
+          if (issues.length > 0) {
+            set({ error: `開始できません。${issues.map(castingIssueLabel).join(' ')}` })
+            return
+          }
+          if (openingTemplate) {
+            const resolved = resolveCasting(openingTemplate, {
+              roles: refs.world?.roles,
+              assignments: s.roleAssignments,
+              characters: get().characters.filter((c) => s.characterIds.includes(c.id)),
+              persona: refs.persona,
+            })
+            if (resolved.issues.length > 0) {
+              set({ error: `開始できません。${resolved.issues.map(castingIssueLabel).join(' ')}` })
+              return
+            }
+            opening = resolved.content
+          }
+
+          // 開始時のシーン選出：世界イベント確認＋時間帯決定（FB3-C で演出タイプ抽選は廃止）
           const day = s.timeline.enabled ? s.timeline.currentDay : null
           const slot = s.timeline.enabled ? s.timeline.currentSlot : null
           const pick = nextScheduledEvent(s, refs.world, day, slot)
@@ -2658,7 +2691,6 @@ export const useStore = create<AppState>()(
           const baseName = event?.name || ''
           const drafted = [label, baseName].filter(Boolean).join('：') || scene.title
           // 導入（そのまま掲載）モードでは見出しを openingTitle 優先に（FB2-B）
-          const opening = s.mode === 'story' ? s.story.opening.trim() : ''
           const openingTitle = s.mode === 'story' ? s.story.openingTitle.trim() : ''
           const title = opening && openingTitle ? openingTitle : drafted
 
@@ -2893,9 +2925,11 @@ export const useStore = create<AppState>()(
             stats: Array.isArray(w.stats) ? w.stats : [],
             counters: Array.isArray(w.counters) ? w.counters : [],
             achievements: Array.isArray(w.achievements) ? w.achievements : [],
+            roles: normalizeWorldRoles(w.roles),
           }))
           const incomingSessions = (bundle.sessions ?? []).map((sess: any) => ({
             ...sess,
+            roleAssignments: normalizeRoleAssignments(sess.roleAssignments),
             overlay:
               sess.overlay && Array.isArray(sess.overlay.lore) && Array.isArray(sess.overlay.characterDevelopments)
                 ? sess.overlay
@@ -2913,7 +2947,18 @@ export const useStore = create<AppState>()(
               worlds: mergeById(st.worlds, incomingWorlds),
               personas: mergeById(st.personas, incomingPersonas),
               sessions: mergeById(st.sessions, incomingSessions),
-              cassettes: mergeById(st.cassettes, bundle.cassettes ?? []),
+              cassettes: mergeById(
+                st.cassettes,
+                (bundle.cassettes ?? []).map((cassette: any) => ({
+                  ...cassette,
+                  session: cassette.session
+                    ? {
+                        ...cassette.session,
+                        roleAssignments: normalizeRoleAssignments(cassette.session.roleAssignments),
+                      }
+                    : cassette.session,
+                })),
+              ),
               // providers はユーザー固有の設定のためインポート対象外
             }
           })
@@ -3250,6 +3295,10 @@ export const useStore = create<AppState>()(
         const p = (persisted as Partial<AppState>) ?? {}
         // ui は normalizeUiPrefs で現行スキーマへ正規化（旧・段階式の文字列値を数値へ引き継ぐ。F2）
         const merged = { ...current, ...p, ui: normalizeUiPrefs({ ...current.ui, ...(p.ui ?? {}) }) }
+        merged.worlds = (merged.worlds ?? []).map((world) => ({
+          ...world,
+          roles: normalizeWorldRoles(world.roles),
+        }))
         merged.sessions = (merged.sessions ?? []).map((s) => {
           // story に opening/openingTitle を後方補完（旧セッションは undefined のため .trim() が例外になる。FB2-B）
           const story = {
@@ -3263,8 +3312,15 @@ export const useStore = create<AppState>()(
                 .filter((m) => !(m.pending && !m.content.trim()))
                 .map((m) => (m.pending ? { ...m, pending: false, truncated: true } : m))
             : s.messages
-          return { ...s, story, messages }
+          return { ...s, story, roleAssignments: normalizeRoleAssignments(s.roleAssignments), messages }
         })
+        merged.cassettes = (merged.cassettes ?? []).map((cassette) => ({
+          ...cassette,
+          session: {
+            ...cassette.session,
+            roleAssignments: normalizeRoleAssignments(cassette.session?.roleAssignments),
+          },
+        }))
         return merged
       },
     },
