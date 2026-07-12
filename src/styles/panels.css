@@ -814,6 +814,20 @@
   border-color: color-mix(in srgb, var(--accent) 45%, transparent);
   background: var(--accent-soft);
 }
+.bg-current-badge {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  line-height: 1;
+}
+.bg-star-badge {
+  display: inline-block;
+  min-width: 0;
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 0 1 auto;
+}
 .bg-list {
   display: flex;
   flex-direction: column;
@@ -865,6 +879,14 @@
   color: var(--text-faint);
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;
+}
+@container (max-width: 380px) {
+  .bg-bytes {
+    display: none;
+  }
+  .bg-star-badge {
+    max-width: 60px;
+  }
 }
 .bg-back {
   flex-shrink: 0;

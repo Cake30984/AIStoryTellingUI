@@ -412,6 +412,7 @@
   flex-direction: column;
   min-height: 0;
   position: relative;
+  container-type: inline-size;
 }
 /* 左端の幅リサイズ用ハンドル（F1/A9） */
 .dock-resizer {
