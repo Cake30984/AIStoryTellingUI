@@ -297,8 +297,7 @@ export default function SessionEditor({ session, onClose }: Props) {
                   />
                   タイムライン（期間・区切りの自動進行）
                 </label>
-                {d.timeline.enabled && (
-                  <div className="timeline-box">
+                <fieldset className="timeline-box" disabled={!d.timeline.enabled}>
                     <div className="sub-field">
                       <span className="sub-label">期間の呼称</span>
                       <input
@@ -403,8 +402,7 @@ export default function SessionEditor({ session, onClose }: Props) {
                       {' → 次のシーンで: '}
                       {timeLabelOf(advanceTimeline(d.timeline))}
                     </div>
-                  </div>
-                )}
+                </fieldset>
               </div>
 
               {/* 選択肢進行 */}

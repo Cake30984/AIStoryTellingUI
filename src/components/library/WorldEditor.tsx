@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import {
   newAchievementDef,
   newClause,
@@ -195,6 +195,16 @@ export default function WorldEditor({ world, onClose }: Props) {
   // 開始テンプレート（W1）。セッション設定で世界を選んだ時にコピーされる推奨初期設定
   const sp = d.startPreset ?? {}
   const patchPreset = (p: Partial<WorldStartPreset>) => patch({ startPreset: { ...sp, ...p } })
+  const timelineDraftRef = useRef<NonNullable<WorldStartPreset['timeline']>>(
+    sp.timeline ?? { slots: ['朝', '昼', '夜'], totalDays: null, spanLabel: '' },
+  )
+  if (sp.timeline) timelineDraftRef.current = sp.timeline
+  const timelineDraft = sp.timeline ?? timelineDraftRef.current
+  const patchTimeline = (p: Partial<NonNullable<WorldStartPreset['timeline']>>) => {
+    const timeline = { ...timelineDraft, ...p }
+    timelineDraftRef.current = timeline
+    patchPreset({ timeline })
+  }
 
   const updateEntry = (id: string, p: Partial<LoreEntry>) =>
     patch({ entries: d.entries.map((e) => (e.id === id ? { ...e, ...p } : e)) })
@@ -448,26 +458,22 @@ export default function WorldEditor({ world, onClose }: Props) {
                   <input
                     type="checkbox"
                     checked={!!sp.timeline}
-                    onChange={(e) =>
-                      patchPreset({
-                        timeline: e.target.checked
-                          ? { slots: ['朝', '昼', '夜'], totalDays: null, spanLabel: '' }
-                          : undefined,
-                      })
-                    }
+                    onChange={(e) => {
+                      if (!e.target.checked) timelineDraftRef.current = timelineDraft
+                      patchPreset({ timeline: e.target.checked ? timelineDraftRef.current : undefined })
+                    }}
                     style={{ width: 'auto', marginRight: 8 }}
                   />
                   タイムライン定義を含める（期間・区切り・開始時点）
                 </label>
-                {sp.timeline && (
-                  <div className="timeline-box">
+                <fieldset className="timeline-box" disabled={!sp.timeline}>
                     <div className="sub-field">
                       <span className="sub-label">期間の呼称</span>
                       <input
-                        value={sp.timeline.spanLabel}
+                        value={timelineDraft.spanLabel}
                         placeholder="例: 1学年（入学〜卒業）"
                         onChange={(e) =>
-                          patchPreset({ timeline: { ...sp.timeline!, spanLabel: e.target.value } })
+                          patchTimeline({ spanLabel: e.target.value })
                         }
                       />
                     </div>
@@ -476,33 +482,25 @@ export default function WorldEditor({ world, onClose }: Props) {
                       <input
                         type="number"
                         min={0}
-                        value={sp.timeline.totalDays ?? ''}
+                        value={timelineDraft.totalDays ?? ''}
                         placeholder="例: 90"
                         onChange={(e) =>
-                          patchPreset({
-                            timeline: {
-                              ...sp.timeline!,
-                              totalDays: e.target.value ? Number(e.target.value) : null,
-                            },
-                          })
+                          patchTimeline({ totalDays: e.target.value ? Number(e.target.value) : null })
                         }
                       />
                     </div>
                     <div className="sub-field">
                       <span className="sub-label">区切り単位（カンマ区切り）</span>
                       <CsvInput
-                        value={sp.timeline.slots}
+                        value={timelineDraft.slots}
                         placeholder="例: 朝, 昼, 夜"
                         onChange={(slots) =>
-                          patchPreset({
-                            timeline: {
-                              ...sp.timeline!,
-                              slots,
-                              startSlot: Math.min(
-                                sp.timeline!.startSlot ?? 0,
-                                Math.max(0, slots.length - 1),
-                              ),
-                            },
+                          patchTimeline({
+                            slots,
+                            startSlot: Math.min(
+                              timelineDraft.startSlot ?? 0,
+                              Math.max(0, slots.length - 1),
+                            ),
                           })
                         }
                       />
@@ -513,26 +511,22 @@ export default function WorldEditor({ world, onClose }: Props) {
                         <input
                           type="number"
                           min={1}
-                          value={sp.timeline.startDay ?? 1}
+                          value={timelineDraft.startDay ?? 1}
                           onChange={(e) =>
-                            patchPreset({
-                              timeline: { ...sp.timeline!, startDay: Math.max(1, Number(e.target.value)) },
-                            })
+                            patchTimeline({ startDay: Math.max(1, Number(e.target.value)) })
                           }
                         />
                       </div>
-                      {sp.timeline.slots.length > 1 && (
+                      {timelineDraft.slots.length > 1 && (
                         <div className="sub-field">
                           <span className="sub-label">開始する時間帯</span>
                           <select
-                            value={sp.timeline.startSlot ?? 0}
+                            value={timelineDraft.startSlot ?? 0}
                             onChange={(e) =>
-                              patchPreset({
-                                timeline: { ...sp.timeline!, startSlot: Number(e.target.value) },
-                              })
+                              patchTimeline({ startSlot: Number(e.target.value) })
                             }
                           >
-                            {sp.timeline.slots.map((slot, i) => (
+                            {timelineDraft.slots.map((slot, i) => (
                               <option key={i} value={i}>
                                 {slot}
                               </option>
@@ -541,16 +535,16 @@ export default function WorldEditor({ world, onClose }: Props) {
                         </div>
                       )}
                     </div>
-                    {sp.timeline.slots.length > 0 && (() => {
+                    {timelineDraft.slots.length > 0 && (() => {
                       const startTimeline = {
                         enabled: true,
-                        slots: sp.timeline!.slots,
-                        totalDays: sp.timeline!.totalDays,
-                        spanLabel: sp.timeline!.spanLabel,
-                        currentDay: Math.max(1, sp.timeline!.startDay ?? 1),
+                        slots: timelineDraft.slots,
+                        totalDays: timelineDraft.totalDays,
+                        spanLabel: timelineDraft.spanLabel,
+                        currentDay: Math.max(1, timelineDraft.startDay ?? 1),
                         currentSlot: Math.min(
-                          Math.max(0, sp.timeline!.startSlot ?? 0),
-                          sp.timeline!.slots.length - 1,
+                          Math.max(0, timelineDraft.startSlot ?? 0),
+                          timelineDraft.slots.length - 1,
                         ),
                       }
                       return (
@@ -561,8 +555,7 @@ export default function WorldEditor({ world, onClose }: Props) {
                         </div>
                       )
                     })()}
-                  </div>
-                )}
+                </fieldset>
               </div>
             </>
           )}
