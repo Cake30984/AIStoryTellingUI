@@ -530,7 +530,7 @@ function newSession(mode: SessionMode): Session {
     scenes: [scene],
     currentSceneId: scene.id,
     timeline: defaultTimeline(),
-    choiceMode: 'off',
+    choiceMode: 'auto',
     narrativeStyle: mode === 'story' ? 'novel' : 'chat',
     eventAutoFire: true,
     usedEventIds: [],
