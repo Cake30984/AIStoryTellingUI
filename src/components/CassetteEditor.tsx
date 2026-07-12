@@ -7,6 +7,7 @@ import { generateDefaultAvatar, normalizeImage } from '../lib/avatarGen'
 import ModalShell from './ModalShell'
 import EntityAvatar from './EntityAvatar'
 import { Icon } from './icons'
+import CastingFields from './CastingFields'
 
 type Tab = 'basic' | 'world' | 'cast' | 'persona' | 'start'
 
@@ -319,6 +320,13 @@ export default function CassetteEditor({ cassette, seedSession, onClose }: Props
                   onChange={(e) => patchSession({ story: { ...s.story, opening: e.target.value } })}
                 />
               </div>
+              <CastingFields
+                session={s}
+                world={world}
+                characters={characters}
+                personas={personas}
+                onChange={(roleAssignments) => patchSession({ roleAssignments })}
+              />
               <div className="field">
                 <label>固定メモ（常に踏まえる重要事項・任意）</label>
                 <textarea

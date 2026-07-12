@@ -15,6 +15,12 @@ export default function StatusView({ session }: Props) {
     .map((id) => characters.find((c) => c.id === id))
     .filter((c): c is NonNullable<typeof c> => !!c)
   const aspectName = (id: string) => world?.relationAspects.find((a) => a.id === id)?.name ?? ''
+  const assignmentByRole = new Map((session.roleAssignments ?? []).map((assignment) => [assignment.roleId, assignment.characterId]))
+  const rolesOf = (characterId: string) =>
+    (world?.roles ?? [])
+      .filter((role) => assignmentByRole.get(role.id) === characterId)
+      .map((role) => role.name)
+      .filter(Boolean)
 
   const st = session.state
   const statValue = (defId: string, characterId?: string): number => {
@@ -58,11 +64,12 @@ export default function StatusView({ session }: Props) {
       {cast.map((c) => {
         const rel = st.relations.find((r) => r.fromId === c.id && r.toId === 'hero')
         const mood = st.moods.find((m) => m.characterId === c.id)?.mood
+        const roleNames = rolesOf(c.id)
         return (
           <div key={c.id} className="field">
             <label>
               <EntityAvatar className="dot-avatar" avatar={c.avatar} name={c.name || '無名'} />{' '}
-              {c.name || '無名'} → {heroName}
+              {c.name || '無名'}{roleNames.length > 0 ? `（${roleNames.join('・')}）` : ''} → {heroName}
             </label>
             {(charStats.length > 0 || charCounters.length > 0) && (
               <div className="dock-chip-row" style={{ marginBottom: 6 }}>

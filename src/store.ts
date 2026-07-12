@@ -1153,11 +1153,16 @@ export const useStore = create<AppState>()(
           worlds.find((w) => w.id === session.worldId),
           session.overlay,
         )
+        const allCharacters = session.characterIds
+          .map((id) => characters.find((c) => c.id === id))
+          .filter((c): c is Character => !!c)
+          .map((c) => effectiveCharacter(c, session.overlay))
         return {
           characters: castIds
             .map((id) => characters.find((c) => c.id === id))
             .filter((c): c is Character => !!c)
             .map((c) => effectiveCharacter(c, session.overlay)),
+          allCharacters,
           world: effWorld,
           persona: personas.find((p) => p.id === session.personaId) ?? undefined,
           priorSummaries: session.scenes

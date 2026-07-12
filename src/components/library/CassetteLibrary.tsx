@@ -8,6 +8,7 @@ import { useCardDrop } from '../../lib/useCardDrop'
 import { appConfirm } from '../../lib/dialogs'
 import { Icon } from '../icons'
 import CassetteEditor from '../CassetteEditor'
+import { castingIssueLabel, validateCasting } from '../../lib/casting'
 
 /** カセット1枚のカード（表紙・紹介文・遊ぶ/編集/書き出し/削除）。FB2-E / FB3-D */
 function CassetteCard({
@@ -79,11 +80,17 @@ export default function CassetteLibrary() {
 
   const doExport = async (cas: Cassette) => {
     try {
+      const world = worlds.find((w) => w.id === cas.session.worldId)
+      const castingIssues = validateCasting(cas.session, world, characters, personas)
+      if (castingIssues.length > 0) {
+        setNotice(`書き出せません。${castingIssues.map(castingIssueLabel).join(' ')}`)
+        return
+      }
       const refs = {
         characters: cas.session.characterIds
           .map((id) => characters.find((c) => c.id === id))
           .filter((c): c is NonNullable<typeof c> => !!c),
-        world: worlds.find((w) => w.id === cas.session.worldId),
+        world,
         persona: personas.find((p) => p.id === cas.session.personaId),
       }
       const cover =

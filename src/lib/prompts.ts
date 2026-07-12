@@ -5,6 +5,8 @@ import { selectLoreEntries } from './lorebook'
 export interface ResolvedRefs {
   /** 現在のシーンに登場するキャラ */
   characters: Character[]
+  /** セッション参加キャラ全員（配役の動的解決用。現在シーン外も含む） */
+  allCharacters: Character[]
   world?: World
   persona?: Persona
   /** 過去シーンの引き継ぎ要約（これまでのあらすじ） */
@@ -34,6 +36,33 @@ function characterBlock(c: Character, label?: string): string {
   return lines.join('\n')
 }
 
+/** 配役済みロールを毎ターン実名で注入する。@記法はモデルへ渡さない。 */
+function castingBlock(session: Session, refs: ResolvedRefs): string | undefined {
+  const roles = (refs.world?.roles ?? []).filter((role) => role.id.trim() && role.name.trim())
+  if (roles.length === 0) return undefined
+  const roleIds = new Set(roles.map((role) => role.id))
+  const charactersById = new Map(refs.allCharacters.map((character) => [character.id, character]))
+  const byRole = new Map<string, Character>()
+  for (const assignment of session.roleAssignments ?? []) {
+    if (!roleIds.has(assignment.roleId)) continue
+    const character = charactersById.get(assignment.characterId)
+    if (!character?.name.trim()) {
+      byRole.delete(assignment.roleId)
+      continue
+    }
+    // 同 roleId の重複は後勝ち（v1 は1ロール1人）
+    byRole.set(assignment.roleId, character)
+  }
+  const safe = (text: string) => text.trim().replaceAll('@', '＠')
+  const lines = roles.flatMap((role) => {
+    const character = byRole.get(role.id)
+    if (!character) return []
+    const description = safe(role.description)
+    return [`- ${safe(character.name)} —「${safe(role.name)}」${description ? `: ${description}` : ''}`]
+  })
+  return lines.length ? `【配役】\nこの物語における各キャラクターの立ち位置:\n${lines.join('\n')}` : undefined
+}
+
 /**
  * system プロンプトを組み立てる。
  * activeCharacter が指定された場合は「その人物として応答」を末尾に明示。
@@ -57,6 +86,9 @@ export function buildSystemPrompt(
       parts.push(`【世界観: ${refs.world.name}】\n${wParts.join('\n\n')}`)
     }
   }
+
+  const casting = castingBlock(session, refs)
+  if (casting) parts.push(casting)
 
   // 1.5 これまでのあらすじ（過去シーンの引き継ぎ要約）
   if (refs.priorSummaries.length) {
