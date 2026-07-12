@@ -1055,12 +1055,6 @@
   flex-direction: column;
   gap: 4px;
 }
-.session-editor-body .se-nav {
-  padding: 8px;
-  background: var(--bg-elev2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-}
 .session-editor-body .se-navlayout {
   flex: 1;
   min-height: 0;
