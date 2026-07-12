@@ -6,6 +6,7 @@ import { getImage, useImageUrl } from '../../lib/imageStore'
 import { generateDefaultAvatar } from '../../lib/avatarGen'
 import { useCardDrop } from '../../lib/useCardDrop'
 import { appConfirm } from '../../lib/dialogs'
+import { openingRoleLabel, validateOpeningRoles } from '../../lib/openingRoles'
 import { Icon } from '../icons'
 import CassetteEditor from '../CassetteEditor'
 
@@ -106,6 +107,16 @@ export default function CassetteLibrary() {
     deleteCassette(cas.id)
   }
 
+  const doPlay = (cas: Cassette) => {
+    const issues = validateOpeningRoles(cas.session.story.opening, cas.session, characters, personas)
+    if (issues.length > 0) {
+      setNotice(`導入ロールが未設定です: ${issues.map(openingRoleLabel).join('、')}。編集画面で設定してください。`)
+      setEditing({ cassette: cas })
+      return
+    }
+    playCassette(cas.id)
+  }
+
   return (
     <div className={'library' + (dragOver ? ' drag-over' : '')} {...dropProps}>
       <div className="library-head">
@@ -132,7 +143,7 @@ export default function CassetteLibrary() {
             <CassetteCard
               key={cas.id}
               cas={cas}
-              onPlay={() => playCassette(cas.id)}
+              onPlay={() => doPlay(cas)}
               onEdit={() => setEditing({ cassette: cas })}
               onExport={() => doExport(cas)}
               onDelete={() => doDelete(cas)}

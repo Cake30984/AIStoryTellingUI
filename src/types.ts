@@ -313,6 +313,14 @@ export type ChoiceMode = 'off' | 'always' | 'auto'
 /** 文体スタイル: novel=小説形式（地の文＋セリフ混在） / chat=会話劇（キャラ別） */
 export type NarrativeStyle = 'novel' | 'chat'
 
+/** 導入文の @キャラクターN と参加キャラの対応 */
+export interface OpeningCharacterSlot {
+  /** @キャラクターN の N（1〜99） */
+  slot: number
+  /** Session.characterIds に含まれる Character.id */
+  characterId: string
+}
+
 /** 物語モード固有の設定 */
 export interface StorySetup {
   premise: string
@@ -325,6 +333,8 @@ export interface StorySetup {
   opening: string
   /** 導入シーンの見出し（空なら従来のタイトル抽選にフォールバック） */
   openingTitle: string
+  /** 導入文の @キャラクターN と参加キャラの対応。旧データは未設定＝空配列として扱う */
+  openingCharacterSlots?: OpeningCharacterSlot[]
 }
 
 /**

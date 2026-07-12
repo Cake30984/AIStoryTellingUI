@@ -66,55 +66,94 @@ const LANE_COLORS = 6
 const laneX = (lane: number) => lane * LANE_W + LANE_W / 2
 const laneColor = (lane: number) => `var(--graph-lane-${lane % LANE_COLORS})`
 
+interface GraphSegment {
+  lane: number
+  /** 現在パスの辺ならレーン色より優先して紫で描く */
+  onCurrentPath: boolean
+  key: string
+}
+
+interface GraphBranch {
+  from: number
+  to: number
+  /** 現在パスの辺ならレーン色より優先して紫で描く */
+  onCurrentPath: boolean
+  key: string
+}
+
 /** 1行分の描画情報（縦線・分岐カーブ・ドット位置） */
 interface GraphRow {
   node: BranchNode
   lane: number
-  topLanes: number[] // 上半分に縦線を引くレーン
-  bottomLanes: number[] // 下半分に縦線を引くレーン（分岐カーブ先は含めない）
-  branches: { from: number; to: number }[] // 下半分に描く分岐カーブ
+  topSegments: GraphSegment[]
+  bottomSegments: GraphSegment[]
+  branches: GraphBranch[]
 }
 
 /**
- * 木を SourceTree 風のコミットグラフにレイアウトする。行は pre-order（現在パスの子を最優先）で並べ、
- * 最初の子は親と同じレーンを継ぎ、2番目以降の子は新しいレーンへ分岐させる。merge は無い（木なので
- * 入ってくる辺は常に同一レーンの直線・分岐カーブは親行の下半分にのみ描く）。
+ * 木を SourceTree 風のコミットグラフにレイアウトする。
+ * 行は BranchTree.nodes の配列順（= 実際に生成された順）をそのまま使い、現在パスによる並べ替えはしない。
+ * 最初に生成された子は親レーンを継ぎ、同じ親の2番目以降の子だけが新レーンへ分岐する。merge は無い。
  */
 function buildGraph(tree: BranchTree, pathIds: Set<string>): { rows: GraphRow[]; laneCount: number } {
-  const root = tree.nodes.find((n) => n.parentId === null)
-  if (!root) return { rows: [], laneCount: 0 }
-  const childrenOf = (id: string) =>
-    tree.nodes
-      .filter((n) => n.parentId === id)
-      .sort((a, b) => {
-        // 現在パス上の子を先頭に（＝現在パスをレーン0の直線に保つ）→ 残りは作成順
-        const ap = pathIds.has(a.id) ? 0 : 1
-        const bp = pathIds.has(b.id) ? 0 : 1
-        return ap !== bp ? ap - bp : a.createdAt - b.createdAt
-      })
+  if (tree.nodes.length === 0) return { rows: [], laneCount: 0 }
 
-  const rows: GraphRow[] = []
-  const active = new Map<number, string>() // レーン → そのレーンを流れ下る辺の子 id
-  let maxLane = 0
+  const indexById = new Map(tree.nodes.map((node, index) => [node.id, index]))
+  const laneById = new Map<string, number>()
+  const childCountByParent = new Map<string, number>()
   let nextLane = 0
 
-  const visit = (node: BranchNode, lane: number) => {
-    maxLane = Math.max(maxLane, lane)
-    // 上半分: 現在アクティブな全レーンが通過（このノードの入り辺 active[lane] もここで終端）
-    const topLanes = [...active.keys()]
-    active.delete(lane)
-    // 出る辺: 子ごとにレーンを決める
-    const kids = childrenOf(node.id)
-    const childLanes = kids.map((_, i) => (i === 0 ? lane : ++nextLane))
-    kids.forEach((c, i) => active.set(childLanes[i], c.id))
-    const branchLanes = new Set(childLanes.filter((_, i) => i > 0))
-    const branches = childLanes.filter((_, i) => i > 0).map((to) => ({ from: lane, to }))
-    // 下半分: アクティブレーンのうち分岐カーブ先でないものを縦線に
-    const bottomLanes = [...active.keys()].filter((l) => !branchLanes.has(l))
-    rows.push({ node, lane, topLanes, bottomLanes, branches })
-    kids.forEach((c, i) => visit(c, childLanes[i]))
-  }
-  visit(root, 0)
+  // 配列順でレーンを決める。同一 createdAt でも順序が変わらないよう createdAt は参照しない。
+  tree.nodes.forEach((node, index) => {
+    const parentId = node.parentId
+    const parentIndex = parentId ? indexById.get(parentId) : undefined
+    const parentLane = parentId ? laneById.get(parentId) : undefined
+    if (parentId === null && laneById.size === 0) {
+      laneById.set(node.id, 0)
+      return
+    }
+    if (!parentId || parentIndex === undefined || parentIndex >= index || parentLane === undefined) {
+      laneById.set(node.id, ++nextLane)
+      return
+    }
+    const childCount = childCountByParent.get(parentId) ?? 0
+    childCountByParent.set(parentId, childCount + 1)
+    laneById.set(node.id, childCount === 0 ? parentLane : ++nextLane)
+  })
+
+  const rows: GraphRow[] = tree.nodes.map((node) => ({
+    node,
+    lane: laneById.get(node.id) ?? 0,
+    topSegments: [],
+    bottomSegments: [],
+    branches: [],
+  }))
+  const maxLane = Math.max(...rows.map((row) => row.lane), 0)
+
+  // 親行から子行までの辺を、途中行も含めて描画情報へ展開する。
+  tree.nodes.forEach((child, childIndex) => {
+    if (!child.parentId) return
+    const parentIndex = indexById.get(child.parentId)
+    if (parentIndex === undefined || parentIndex >= childIndex) return // 破損データは独立ノード扱い
+    const parent = tree.nodes[parentIndex]
+    const parentLane = laneById.get(parent.id)
+    const childLane = laneById.get(child.id)
+    if (parentLane === undefined || childLane === undefined) return
+    const onCurrentPath = pathIds.has(parent.id) && pathIds.has(child.id)
+    const key = `${parent.id}-${child.id}`
+
+    for (let index = parentIndex + 1; index <= childIndex; index++) {
+      rows[index].topSegments.push({ lane: childLane, onCurrentPath, key })
+    }
+    for (let index = parentIndex; index < childIndex; index++) {
+      if (index === parentIndex && parentLane !== childLane) {
+        rows[index].branches.push({ from: parentLane, to: childLane, onCurrentPath, key })
+      } else {
+        rows[index].bottomSegments.push({ lane: childLane, onCurrentPath, key })
+      }
+    }
+  })
+
   return { rows, laneCount: maxLane + 1 }
 }
 
@@ -258,34 +297,34 @@ export function BranchTreeBody({ session }: { session: Session }) {
       >
         <div className="bg-graph" style={{ width: gutterW, height: ROW_H }}>
           <svg width={gutterW} height={ROW_H} className="bg-svg">
-            {row.topLanes.map((l) => (
+            {row.topSegments.map((segment) => (
               <line
-                key={'t' + l}
-                x1={laneX(l)}
+                key={'t' + segment.key}
+                x1={laneX(segment.lane)}
                 y1={0}
-                x2={laneX(l)}
+                x2={laneX(segment.lane)}
                 y2={cy}
-                stroke={laneColor(l)}
+                stroke={segment.onCurrentPath ? 'var(--accent)' : laneColor(segment.lane)}
                 strokeWidth={2}
               />
             ))}
-            {row.bottomLanes.map((l) => (
+            {row.bottomSegments.map((segment) => (
               <line
-                key={'b' + l}
-                x1={laneX(l)}
+                key={'b' + segment.key}
+                x1={laneX(segment.lane)}
                 y1={cy}
-                x2={laneX(l)}
+                x2={laneX(segment.lane)}
                 y2={ROW_H}
-                stroke={laneColor(l)}
+                stroke={segment.onCurrentPath ? 'var(--accent)' : laneColor(segment.lane)}
                 strokeWidth={2}
               />
             ))}
             {row.branches.map((br) => (
               <path
-                key={'c' + br.to}
+                key={'c' + br.key}
                 d={`M ${laneX(br.from)} ${cy} C ${laneX(br.from)} ${(cy + ROW_H) / 2} ${laneX(br.to)} ${(cy + ROW_H) / 2} ${laneX(br.to)} ${ROW_H}`}
                 fill="none"
-                stroke={laneColor(br.to)}
+                stroke={br.onCurrentPath ? 'var(--accent)' : laneColor(br.to)}
                 strokeWidth={2}
               />
             ))}
@@ -293,7 +332,7 @@ export function BranchTreeBody({ session }: { session: Session }) {
               cx={laneX(lane)}
               cy={cy}
               r={isCurrent ? DOT_R + 1.5 : DOT_R}
-              fill={node.star ? 'var(--star)' : laneColor(lane)}
+              fill={onPath ? 'var(--accent)' : node.star ? 'var(--star)' : laneColor(lane)}
               stroke={isCurrent ? 'var(--accent)' : 'transparent'}
               strokeWidth={isCurrent ? 2.5 : 0}
             />
@@ -305,8 +344,8 @@ export function BranchTreeBody({ session }: { session: Session }) {
             {isScene ? `📖 ${node.label}` : node.label}
             {node.timeLabel ? `（${node.timeLabel}）` : ''}
           </span>
-          {node.star && <span className="badge">★ {node.star.name}</span>}
-          {isCurrent && <span className="badge accent">▶ いまここ</span>}
+          {node.star && <span className="badge bg-star-badge">★ {node.star.name}</span>}
+          {isCurrent && <span className="badge accent bg-current-badge">▶ いまここ</span>}
           <span className="bg-bytes">{formatBytes(node.bytes)}</span>
           {!isCurrent && (
             <button
@@ -413,7 +452,7 @@ export function BranchTreeBody({ session }: { session: Session }) {
                   </div>
                   <div className="branch-time">{new Date(n.createdAt).toLocaleString()}</div>
                 </div>
-                {tree.currentId === n.id && <span className="badge accent">▶ いまここ</span>}
+                {tree.currentId === n.id && <span className="badge accent bg-current-badge">▶ いまここ</span>}
                 <button
                   className="btn"
                   disabled={busy || tree.currentId === n.id}

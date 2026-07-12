@@ -814,6 +814,20 @@
   border-color: color-mix(in srgb, var(--accent) 45%, transparent);
   background: var(--accent-soft);
 }
+.bg-current-badge {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  line-height: 1;
+}
+.bg-star-badge {
+  display: inline-block;
+  min-width: 0;
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 0 1 auto;
+}
 .bg-list {
   display: flex;
   flex-direction: column;
@@ -866,6 +880,14 @@
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;
 }
+@container (max-width: 380px) {
+  .bg-bytes {
+    display: none;
+  }
+  .bg-star-badge {
+    max-width: 60px;
+  }
+}
 .bg-back {
   flex-shrink: 0;
   display: inline-flex;
@@ -886,6 +908,75 @@
 .bg-back:hover:not(:disabled) {
   border-color: var(--accent);
   color: var(--text);
+}
+
+/* ---------- 導入ロール（@ペルソナ / @キャラクターN） ---------- */
+.opening-roles {
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elev);
+}
+.opening-roles-title {
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.opening-role-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 7px;
+  min-width: 0;
+  font-size: 12px;
+}
+.opening-role-row.unresolved .opening-role-name,
+.opening-role-row.unresolved .opening-role-value {
+  color: var(--warn);
+}
+.opening-role-name {
+  width: 104px;
+  flex: 0 0 auto;
+  font-weight: 600;
+}
+.opening-role-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.opening-role-row select {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 7px;
+  font-size: 12px;
+}
+.opening-role-note,
+.opening-role-warning {
+  color: var(--warn);
+  font-size: 11px;
+}
+.opening-role-warning {
+  margin: 8px 0 0;
+}
+.opening-role-preview {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.opening-role-preview summary {
+  cursor: pointer;
+}
+.opening-role-preview pre {
+  margin: 6px 0 0;
+  padding: 7px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  background: var(--bg-elev2);
+  border-radius: var(--radius-sm);
+  font: inherit;
 }
 
 /* ---------- しおり（C3） ---------- */
