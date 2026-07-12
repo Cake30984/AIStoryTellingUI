@@ -225,6 +225,77 @@
   line-height: 1.6;
 }
 
+/* ---------- 配役（CA2） ---------- */
+.casting-fields {
+  margin: 14px 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--bg-elev2) 66%, transparent);
+}
+.casting-fields-head > label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.casting-fields-head .desc {
+  margin-top: 0;
+}
+.casting-role {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(140px, 0.7fr);
+  gap: 10px;
+  align-items: center;
+  padding: 9px 0;
+  border-top: 1px solid var(--border);
+}
+.casting-role-copy {
+  min-width: 0;
+}
+.casting-role-copy strong {
+  margin-right: 6px;
+}
+.casting-role-copy p {
+  margin: 4px 0 0;
+  color: var(--text-faint);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.casting-role select {
+  width: 100%;
+}
+.casting-role.unresolved,
+.casting-persona.unresolved {
+  color: var(--danger);
+}
+.casting-persona,
+.casting-warning {
+  margin: 8px 0 0;
+  font-size: 12px;
+}
+.casting-warning {
+  color: var(--warning, #e9b44c);
+}
+.casting-preview {
+  margin-top: 10px;
+  font-size: 12px;
+}
+.casting-preview summary {
+  cursor: pointer;
+  color: var(--text-dim);
+}
+.casting-preview pre {
+  margin: 7px 0 0;
+  padding: 8px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text-dim);
+  font-family: inherit;
+}
+
 .row2 {
   display: grid;
   grid-template-columns: 1fr 1fr;

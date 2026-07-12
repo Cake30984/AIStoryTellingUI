@@ -65,6 +65,7 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist`。storage は
 - `ActivityIndicator.tsx` — 本編/選択肢/レビュー/画像生成/表情判定の進行状態を1チップに集約。クリックで内訳＋中止
 - `LibraryBar.tsx` — Library（作る）画面用の細いトップバー（`ActivityIndicator`＋ジョブボタン）。画像生成の進行/採用を Play に行かず確認できるよう App.tsx が各 Library ビューを `.main` でラップして表示（F6）。ジョブ一覧はドックが無いので `ModalShell`＋`ImageJobsBody`
 - `EntityAvatar.tsx` — 画像 or 色＋イニシャルの共通アバター（全画面で統一）
+- `CastingFields.tsx` — セッション設定・カセット・開始時モーダルで共有する、世界観ロールへの配役欄（参加キャラ選択・未解決警告・導入文の実名プレビュー）
 
 Play 領域:
 - `ChatPanel.tsx` — 会話画面。トップバー（①`.session-title-wrap`＝タイトル入力＋hover鉛筆で編集可視化・F3②`.scene-chip`＝クリックで SceneEditor③`ActivityIndicator`④`.topbar-group`＝状態/発見/ギャラリー/分岐/ジョブの5ボタン＝`ui.dockTab` トグル⑤`ReaderSettings`（Aa）⑥`⋯`メニュー）。本文領域は `.play-body`＝`.play-col`（`StageBackdrop`＋`chat-wrap`＋`composer-wrap`）と `<ContextDock/>` の2カラム。コンポーザーに常時レンダリングの `.composer-tools`（開始/続ける・やり直す・続きを生成・選択肢生成・挿絵🎨・背景🏞・シーン編集・シーン終了）。挿絵・背景生成はコンポーザーと ⋯ メニューの両導線（F3）で `ImageGenModal` にジョブ用 `target`/`label` を渡す。assistant メッセージは `hasStructuredLines` が真なら `StructuredMessage` に描画切替。発見編集は `discoveryScope`（`DiscoveryScope`）で `DiscoveryPanel` を開く
@@ -78,7 +79,8 @@ Play 領域:
 - `CommandPalette.tsx` — `Ctrl+K` で開くパレット。セッション/素材の名前検索→移動＋固定コマンド。実行は既存 store アクション／`setUiPrefs` のみ
 
 モーダル・パネル:
-- `SessionEditor.tsx` — セッション設定。「基本／進行／モデル／出力」4タブ（同一 draft を共有）。フッターに「カセットにする…」（`CassetteEditor` を `seedSession` 付きで開く）。「構造化出力」チェックボックスあり。世界観選択時に開始テンプレートを空欄項目のみ自動コピー（`startPresetPatch`・W1）＋「開始テンプレートを読み込む」リンクで全上書き（確認つき）。story モードは導入（`story.opening`/`openingTitle`・そのまま掲載）欄あり（主人公像はペルソナで代替のため廃止）。進行タブに開始時間帯（`timeline.currentSlot`／未開始時は `startDay`/`startSlot` として記録）
+- `SessionEditor.tsx` — セッション設定。「基本／進行／モデル／出力」4タブ（同一 draft を共有）。フッターに「カセットにする…」（`CassetteEditor` を `seedSession` 付きで開く）。「構造化出力」チェックボックスあり。世界観選択時に開始テンプレートを空欄項目のみ自動コピー（`startPresetPatch`・W1）＋「開始テンプレートを読み込む」リンクで全上書き（確認つき）。story モードは導入（`story.opening`/`openingTitle`・そのまま掲載）欄の直下に `CastingFields`（世界観ロールへの配役）がある。進行タブに開始時間帯（`timeline.currentSlot`／未開始時は `startDay`/`startSlot` として記録）
+- `CastingModal.tsx` — 導入文または必須ロールが未配役の開始時に開くモーダル。`CastingFields` で埋めてから、そのまま `startStory` を再実行する
 - `CassetteEditor.tsx` — カセット専用エディタ（FB3-D）。左セクションナビ（基本〔タイトル・紹介文・表紙〕／世界観／登場キャラ／ペルソナ／開始・進行）で `Cassette`（内部に開始状態のセッション）を編成。新規＝`newCassette()`／既存編集＝`cassette` prop／セッションから＝`seedSession`（`freshSessionOf` で下書き化）。表紙はタイトルから自動（保存時に生成焼付け）／画像ファイル選択（`normalizeImage`→`putImage`）／種セッションの挿絵から選択。保存は `upsertCassette`。読み込みは Sidebar D&D・System ファイル入力・カセット棚 D&D（`importCassette`＝「棚に登録のみ」＝`cassettes` に積む。FB2-E）
 - `SettingsModal.tsx` — `export function SettingsBody()`（System ページ本体）。プロバイダ管理・データ入出力（「画像も含める」チェックボックス）・未使用画像 GC。App.tsx が `view==='system'` で描画
 - `ImageProviderSettings.tsx` — 画像生成接続先の管理（ComfyUI/画像API の追加・編集・削除・接続テスト・デフォルトタグ入力）。`SettingsBody` に組み込み
@@ -88,7 +90,7 @@ Play 領域:
 - `BranchTreeModal.tsx` — `BranchTreeBody({session})`（ドックの branch タブ）。**SourceTree 風コミットグラフ**（FB3-B2・`.bg-*` クラス）: 全ノードを pre-order（現在パスの子を最優先＝現在パスをレーン0の直線に保つ）で縦1列に並べ、`buildGraph` がレーン割り当て＋各行の通過縦線／分岐カーブを計算し SVG で描画。最初の子は親と同じレーンを継ぎ2番目以降は新レーンへ（木なので merge 無し＝分岐カーブは親行の下半分のみ）。レーン色は `--graph-lane-0..5`。行＝色ドット＋ラベル＋timeLabel＋★＋いまここ、hover の「↩ 戻る」`restoreCheckpoint`＋⋯メニュー（しおり `setBranchStar`/`removeBranchStar`・シーン開始前へ戻る・この分岐を削除 `deleteBranchSubtree`＝現在パス上は無効）。「✂ 現在の分岐だけ残す（他n件を削除）」`pruneToCurrentPath`・「★ しおり」タブ・currentId 変化で自動スクロール
 - `ModelPicker.tsx` — プロバイダ切替・モデル一覧・お気に入り。`onPick` は `"providerId::modelId"`
 - `SceneEditor.tsx`/`SceneReviewModal.tsx`/`StoryLogModal.tsx`/`StatusPanel.tsx`/`DiscoveryPanel.tsx`/`CsvInput.tsx` — 各種閲覧・編集モーダル。StatusPanel/DiscoveryPanel はドックの「✎ 編集」経由で開く。`DiscoveryPanel` は `scope`（`'lore' | {characterId}`・F4）で世界観/キャラ別に編集画面を分割し、保存は live 起点でスコープ分だけ差し替え（編集中の他スコープ追記を巻き戻さない）
-- `library/` — 各素材の一覧＋エディタ（Character/World/Persona）と `CassetteLibrary`（🎮カセット棚＝「＋カセットを作る」で `CassetteEditor` 起動・表紙/紹介文/▶遊ぶ/✎編集/PNG書き出し/削除・D&D取込。FB2-E/FB3-D）と `AvatarField`/`SpriteSetField`。各 Library は PNG カード D&D 受付＋検索＋複数選択（`useMultiSelect`・右クリックメニュー＝`LibraryMultiSelect.tsx` の `SelectionBar`/`CardContextMenu`。Ctrl/Shift 選択→一括削除。FB2-D）。CharacterEditor/PersonaEditor は draft を保存ボタンで反映、`AvatarField`/`SpriteSetField` は store 直管理フィールド（avatar.imageId/sprites）を live 購読して同期。WorldEditor はフルページ（`.section-nav`＋`.section-content` の8セクション。「開始テンプレート」= `World.startPreset` の編集・W1）
+- `library/` — 各素材の一覧＋エディタ（Character/World/Persona）と `CassetteLibrary`（🎮カセット棚＝「＋カセットを作る」で `CassetteEditor` 起動・表紙/紹介文/▶遊ぶ/✎編集/PNG書き出し/削除・D&D取込。FB2-E/FB3-D）と `AvatarField`/`SpriteSetField`。各 Library は PNG カード D&D 受付＋検索＋複数選択（`useMultiSelect`・右クリックメニュー＝`LibraryMultiSelect.tsx` の `SelectionBar`/`CardContextMenu`。Ctrl/Shift 選択→一括削除。FB2-D）。CharacterEditor/PersonaEditor は draft を保存ボタンで反映、`AvatarField`/`SpriteSetField` は store 直管理フィールド（avatar.imageId/sprites）を live 購読して同期。WorldEditor はフルページ（`.section-nav`＋`.section-content` の9セクション。「開始テンプレート」= `World.startPreset` の編集・W1、「配役」= `World.roles` の編集・CA2）
 
 ## 設計ドキュメント（`docs/`）
 実装の詳細設計・意思決定の経緯はここに集約。AGENTS.md で疑問が残ったら該当ドキュメントを読む。

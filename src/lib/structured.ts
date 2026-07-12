@@ -40,7 +40,7 @@ export function matchCharacterByName(name: string, characters: ParseCharacter[])
  * モデルが地の文行にまで @地の文(感情)「…」 とラベルを付けてしまうケースの救済（ラベルを描画しない）。
  * ASCII 名の大小文字ゆれを吸収するため小文字で保持し、照合時も toLowerCase する。
  */
-const NARRATION_NAMES = new Set(['地の文', '地文', 'ナレーション', 'ナレーター', 'narration', 'narrator'])
+export const NARRATION_NAMES = new Set(['地の文', '地文', 'ナレーション', 'ナレーター', 'narration', 'narrator'])
 
 /** 感情トークンを EmotionId に解決（id の大小文字ゆれ・日本語ラベルも受理）。不明は undefined */
 export function resolveEmotionToken(token: string): EmotionId | undefined {

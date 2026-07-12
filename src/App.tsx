@@ -11,6 +11,7 @@ import CassetteLibrary from './components/library/CassetteLibrary'
 import LibraryBar from './components/LibraryBar'
 import SceneReviewModal from './components/SceneReviewModal'
 import SessionEditor from './components/SessionEditor'
+import CastingModal from './components/CastingModal'
 import DialogHost from './components/DialogHost'
 import CommandPalette from './components/CommandPalette'
 import { useGlobalShortcuts } from './lib/shortcuts'
@@ -53,6 +54,7 @@ export default function App() {
     clearError,
     createSession,
     sceneReview,
+    castingSessionId,
     newlyUnlockedAchievements,
     dismissNewAchievements,
     imageJobToasts,
@@ -200,6 +202,8 @@ export default function App() {
       )}
 
       {sceneReview && <SceneReviewModal />}
+
+      {castingSessionId && <CastingModal sessionId={castingSessionId} />}
 
       {newEditorSession && (
         <SessionEditor session={newEditorSession} onClose={() => setNewEditorId(null)} />

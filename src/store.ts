@@ -665,6 +665,8 @@ interface AppState {
   /** 次シーン候補（suggestions）だけを再生成中 */
   isRegenSuggestions: boolean
   sceneReview: SceneReview | null
+  /** 開始時に未配役だったセッション。null なら配役モーダルを閉じる */
+  castingSessionId: string | null
   error: string | null
   /** 直近のシーン確定で新規解除された実績（通知用・非永続） */
   newlyUnlockedAchievements: AchievementDef[]
@@ -1507,6 +1509,7 @@ export const useStore = create<AppState>()(
         isClassifyingEmotions: false,
         isRegenSuggestions: false,
         sceneReview: null,
+        castingSessionId: null,
         error: null,
         newlyUnlockedAchievements: [],
         imageJobs: [],
@@ -2663,7 +2666,7 @@ export const useStore = create<AppState>()(
           let opening = openingTemplate
           const issues = validateCasting(s, refs.world, get().characters, get().personas)
           if (issues.length > 0) {
-            set({ error: `開始できません。${issues.map(castingIssueLabel).join(' ')}` })
+            set({ castingSessionId: s.id, error: null })
             return
           }
           if (openingTemplate) {

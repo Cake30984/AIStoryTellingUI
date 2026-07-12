@@ -21,6 +21,7 @@ import type {
   ScheduledEvent,
   StatDef,
   World,
+  WorldRole,
   WorldStartPreset,
 } from '../../types'
 import CsvInput from '../CsvInput'
@@ -28,14 +29,18 @@ import { exportWorldCard } from '../../lib/cards'
 import { appConfirm } from '../../lib/dialogs'
 import { advanceTimeline, timeLabelOf } from '../../lib/timeline'
 import { Icon } from '../icons'
+import { NARRATION_NAMES } from '../../lib/structured'
 
 const OPS: Op[] = ['>=', '>', '<=', '<', '==', '!=']
 
-type Section = 'basic' | 'start' | 'lore' | 'events' | 'aspects' | 'stats' | 'counters' | 'achievements'
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+type Section = 'basic' | 'start' | 'roles' | 'lore' | 'events' | 'aspects' | 'stats' | 'counters' | 'achievements'
 
 const SECTIONS: { id: Section; label: string }[] = [
   { id: 'basic', label: '基本' },
   { id: 'start', label: '開始テンプレート' },
+  { id: 'roles', label: '配役' },
   { id: 'lore', label: 'ロア' },
   { id: 'events', label: '特別イベント' },
   { id: 'aspects', label: '関係性の次元' },
@@ -173,6 +178,7 @@ export default function WorldEditor({ world, onClose }: Props) {
   const [exporting, setExporting] = useState(false)
   const [dirty, setDirty] = useState(false)
   const [section, setSection] = useState<Section>('basic')
+  const [roleError, setRoleError] = useState('')
   const patch = (p: Partial<World>) => {
     setD((w) => ({ ...w, ...p }))
     setDirty(true)
@@ -204,6 +210,57 @@ export default function WorldEditor({ world, onClose }: Props) {
     const timeline = { ...timelineDraft, ...p }
     timelineDraftRef.current = timeline
     patchPreset({ timeline })
+  }
+
+  const roles = d.roles ?? []
+  const updateRole = (id: string, p: Partial<WorldRole>) => {
+    setRoleError('')
+    patch({ roles: roles.map((role) => (role.id === id ? { ...role, ...p } : role)) })
+  }
+  const addRole = () => {
+    setRoleError('')
+    patch({ roles: [...roles, { id: uid(), name: '', description: '' }] })
+  }
+  const removeRole = (id: string) => {
+    setRoleError('')
+    patch({ roles: roles.filter((role) => role.id !== id) })
+  }
+  const renameRole = (role: WorldRole, nextName: string) => {
+    const oldName = role.name.trim()
+    const nextTrimmed = nextName.trim()
+    const nextRoles = roles.map((item) => (item.id === role.id ? { ...item, name: nextName } : item))
+    if (!oldName || !nextTrimmed || oldName === nextTrimmed || !d.startPreset?.opening) {
+      updateRole(role.id, { name: nextName })
+      return
+    }
+    // 別ロールの長い名前（例: ライバルの師匠）を先に除外して、@旧名だけを追従させる。
+    const longerSuffixes = roles
+      .filter((item) => item.id !== role.id && item.name.startsWith(oldName) && item.name !== oldName)
+      .map((item) => item.name.slice(oldName.length))
+      .sort((a, b) => b.length - a.length)
+    const suffixGuard = longerSuffixes.length
+      ? `(?!${longerSuffixes.map(escapeRegExp).join('|')})`
+      : ''
+    const opening = d.startPreset.opening.replace(
+      new RegExp(`[@＠]${escapeRegExp(oldName)}${suffixGuard}`, 'g'),
+      () => `@${nextTrimmed}`,
+    )
+    setRoleError('')
+    patch({ roles: nextRoles, startPreset: { ...d.startPreset, opening } })
+  }
+  const roleValidationError = (): string | undefined => {
+    const seen = new Set<string>()
+    for (const role of roles) {
+      const name = role.name.trim()
+      if (!name) return 'ロール名が空です。名前を入力するか、不要な行を削除してください。'
+      const key = name.toLowerCase()
+      if (seen.has(key)) return `ロール名「${name}」が重複しています。`
+      if (key === 'ペルソナ' || NARRATION_NAMES.has(key)) {
+        return `ロール名「${name}」は予約語のため使えません。`
+      }
+      seen.add(key)
+    }
+    return undefined
   }
 
   const updateEntry = (id: string, p: Partial<LoreEntry>) =>
@@ -322,6 +379,12 @@ export default function WorldEditor({ world, onClose }: Props) {
   }
 
   const save = () => {
+    const problem = roleValidationError()
+    if (problem) {
+      setRoleError(problem)
+      setSection('roles')
+      return
+    }
     // order を現在の並びで振り直して保存
     upsertWorld({ ...d, entries: d.entries.map((e, i) => ({ ...e, order: i })) })
     onClose()
@@ -566,6 +629,55 @@ export default function WorldEditor({ world, onClose }: Props) {
                     })()}
                 </fieldset>
               </div>
+            </>
+          )}
+
+          {section === 'roles' && (
+            <>
+              <div className="lore-head">
+                <label>配役</label>
+                <div className="desc">
+                  この世界で必要な立ち位置を定義します。説明には「宿屋の主人。旅人に情報を売る」のような立場を書き、性格はキャラクター側に書いてください。
+                  導入文では <code>@ロール名</code> を使うと、開始時に配役したキャラ名へ置き換わります。
+                </div>
+              </div>
+              {roleError && <p className="notice">{roleError}</p>}
+              {roles.length === 0 && (
+                <p className="inline-empty">ロールはまだありません。世界に必要な登場人物の立ち位置を追加できます。</p>
+              )}
+              {roles.map((role) => (
+                <div key={role.id} className="lore-entry">
+                  <div className="lore-entry-top">
+                    <input
+                      className="lore-keys"
+                      value={role.name}
+                      placeholder="ロール名（例: ライバル）"
+                      onChange={(event) => renameRole(role, event.target.value)}
+                    />
+                    <label className="chk">
+                      <input
+                        type="checkbox"
+                        checked={role.required ?? false}
+                        onChange={(event) => updateRole(role.id, { required: event.target.checked || undefined })}
+                      />
+                      開始に必須
+                    </label>
+                    <button className="icon-btn small" onClick={() => removeRole(role.id)} title="ロールを削除">
+                      ✕
+                    </button>
+                  </div>
+                  <textarea
+                    rows={2}
+                    className="lore-content"
+                    value={role.description}
+                    placeholder="立場の説明（例: 宿屋の主人。旅人に情報を売る）"
+                    onChange={(event) => updateRole(role.id, { description: event.target.value })}
+                  />
+                </div>
+              ))}
+              <button className="btn" style={{ marginTop: 8 }} onClick={addRole}>
+                ＋ ロールを追加
+              </button>
             </>
           )}
 

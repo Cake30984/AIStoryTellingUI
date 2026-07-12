@@ -9,6 +9,7 @@ import EntityAvatar from './EntityAvatar'
 import CassetteEditor from './CassetteEditor'
 import ModalShell from './ModalShell'
 import { Icon } from './icons'
+import CastingFields from './CastingFields'
 
 type PickerTarget = 'review' | 'choices' | 'bulk'
 type Tab = 'basic' | 'progress' | 'model' | 'output'
@@ -64,6 +65,7 @@ export default function SessionEditor({ session, onClose }: Props) {
       characterIds: d.characterIds,
       worldId: d.worldId,
       personaId: d.personaId,
+      roleAssignments: d.roleAssignments,
       authorNote: d.authorNote,
       story: d.story,
       scenes,
@@ -273,6 +275,13 @@ export default function SessionEditor({ session, onClose }: Props) {
                       onChange={(e) => patch({ story: { ...d.story, opening: e.target.value } })}
                     />
                   </div>
+                  <CastingFields
+                    session={d}
+                    world={worlds.find((world) => world.id === d.worldId)}
+                    characters={characters}
+                    personas={personas}
+                    onChange={(roleAssignments) => patch({ roleAssignments })}
+                  />
                 </>
               )}
 
