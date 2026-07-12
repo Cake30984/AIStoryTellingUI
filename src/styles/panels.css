@@ -27,7 +27,6 @@
   border-bottom: 1px solid var(--border);
   position: sticky;
   top: 0;
-  /* セッション設定など、本文内の sticky ナビより常に前面に表示する。 */
   z-index: 1;
   background: var(--bg-elev);
 }
@@ -48,6 +47,22 @@
   bottom: 0;
   z-index: 1;
   background: var(--bg-elev);
+}
+.modal-scroll-body {
+  height: min(86vh, 760px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.modal-scroll-body .modal-head,
+.modal-scroll-body .modal-foot {
+  flex-shrink: 0;
+}
+.modal-scroll-body .modal-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 /* ---------- 汎用ポップオーバー（⋯メニュー・アクティビティ内訳。UI-2） ---------- */
@@ -1040,6 +1055,18 @@
   flex-direction: column;
   gap: 4px;
 }
+.session-editor-body .se-nav {
+  padding: 8px;
+  background: var(--bg-elev2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.session-editor-body .se-navlayout {
+  flex: 1;
+  min-height: 0;
+  align-items: stretch;
+  gap: 14px;
+}
 .se-nav-btn {
   display: flex;
   align-items: center;
@@ -1068,6 +1095,13 @@
   flex: 1;
   min-width: 0;
 }
+.session-editor-body .se-panel {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 2px 10px 2px 18px;
+  border-left: 1px solid var(--border);
+  scrollbar-gutter: stable;
+}
 @media (max-width: 560px) {
   .se-navlayout {
     flex-direction: column;
@@ -1076,5 +1110,10 @@
     flex-direction: row;
     width: 100%;
     overflow-x: auto;
+  }
+  .session-editor-body .se-panel {
+    padding: 14px 2px 2px;
+    border-top: 1px solid var(--border);
+    border-left: 0;
   }
 }

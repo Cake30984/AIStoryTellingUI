@@ -10,6 +10,9 @@ interface Props {
   dirty?: boolean
   discardMessage?: string
   wide?: boolean
+  /** 本文だけをスクロールさせる固定ヘッダー・フッター付きレイアウト */
+  scrollableBody?: boolean
+  bodyClassName?: string
   footer?: ReactNode
   children: ReactNode
 }
@@ -21,6 +24,8 @@ export default function ModalShell({
   dirty,
   discardMessage = '編集内容を破棄しますか？',
   wide,
+  scrollableBody,
+  bodyClassName,
   footer,
   children,
 }: Props) {
@@ -37,14 +42,14 @@ export default function ModalShell({
 
   return (
     <div className="overlay" onClick={onOverlayClick}>
-      <div className={wide ? 'modal modal-wide' : 'modal'}>
+      <div className={['modal', wide && 'modal-wide', scrollableBody && 'modal-scroll-body'].filter(Boolean).join(' ')}>
         <div className="modal-head">
           <h3>{title}</h3>
           <button className="icon-btn" onClick={requestClose}>
             <Icon name="x" size={15} />
           </button>
         </div>
-        <div className="modal-body">{children}</div>
+        <div className={['modal-body', bodyClassName].filter(Boolean).join(' ')}>{children}</div>
         {footer && <div className="modal-foot">{footer}</div>}
       </div>
     </div>

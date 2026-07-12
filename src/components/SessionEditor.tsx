@@ -87,6 +87,8 @@ export default function SessionEditor({ session, onClose }: Props) {
       onClose={onClose}
       dirty={dirty}
       wide
+      scrollableBody
+      bodyClassName="session-editor-body"
       footer={
         <>
           <button className="btn" onClick={() => setShowCardModal(true)} title="この設定を種にゲームカセットを作る">
