@@ -167,7 +167,8 @@ export interface AchievementDef {
  * セッション開始テンプレート（World に付属する推奨初期設定。W1）。
  * セッション設定で世界を選んだ時に「コピー」で流し込む（参照ではない）。
  * 以後の編集はセッション側の値だけを変えるため、素材（World）側は不変に保たれる。
- * timeline は定義のみ（currentDay/currentSlot は持たない＝常に1日目から開始）。
+ * timeline は定義＋開始時点（startDay/startSlot）のみ（currentDay/currentSlot は持たない。
+ * 反映時に開始時点を currentDay/currentSlot へ書き込む。FB2-B / クランプは FB4-A）。
  */
 export interface WorldStartPreset {
   /** ジャンル・トーン（→ session.story.genre） */

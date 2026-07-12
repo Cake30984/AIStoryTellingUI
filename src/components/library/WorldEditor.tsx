@@ -26,6 +26,7 @@ import type {
 import CsvInput from '../CsvInput'
 import { exportWorldCard } from '../../lib/cards'
 import { appConfirm } from '../../lib/dialogs'
+import { advanceTimeline, timeLabelOf } from '../../lib/timeline'
 import { Icon } from '../icons'
 
 const OPS: Op[] = ['>=', '>', '<=', '<', '==', '!=']
@@ -489,7 +490,18 @@ export default function WorldEditor({ world, onClose }: Props) {
                       <CsvInput
                         value={sp.timeline.slots}
                         placeholder="例: 朝, 昼, 夜"
-                        onChange={(slots) => patchPreset({ timeline: { ...sp.timeline!, slots } })}
+                        onChange={(slots) =>
+                          patchPreset({
+                            timeline: {
+                              ...sp.timeline!,
+                              slots,
+                              startSlot: Math.min(
+                                sp.timeline!.startSlot ?? 0,
+                                Math.max(0, slots.length - 1),
+                              ),
+                            },
+                          })
+                        }
                       />
                     </div>
                     <div className="row2">
@@ -526,6 +538,26 @@ export default function WorldEditor({ world, onClose }: Props) {
                         </div>
                       )}
                     </div>
+                    {sp.timeline.slots.length > 0 && (() => {
+                      const startTimeline = {
+                        enabled: true,
+                        slots: sp.timeline!.slots,
+                        totalDays: sp.timeline!.totalDays,
+                        spanLabel: sp.timeline!.spanLabel,
+                        currentDay: Math.max(1, sp.timeline!.startDay ?? 1),
+                        currentSlot: Math.min(
+                          Math.max(0, sp.timeline!.startSlot ?? 0),
+                          sp.timeline!.slots.length - 1,
+                        ),
+                      }
+                      return (
+                        <div className="desc timeline-preview">
+                          開始: {timeLabelOf(startTimeline)}
+                          {' → 次のシーンで: '}
+                          {timeLabelOf(advanceTimeline(startTimeline))}
+                        </div>
+                      )
+                    })()}
                   </div>
                 )}
               </div>

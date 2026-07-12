@@ -379,11 +379,15 @@ export function freshSessionOf(session: Session): Session {
     overlay: { lore: [], characterDevelopments: [] },
     usedEventIds: [],
     spriteEmotions: [],
-    // 開始時点（startDay/startSlot）へ巻き戻す。指定が無ければ従来どおり1日目・先頭スロット（FB2-B）
+    // 開始時点（startDay/startSlot）へ巻き戻す。指定が無ければ従来どおり1日目・先頭スロット（FB2-B）。
+    // 区切り編集後に範囲外となった開始時点は防御的にクランプ（FB4-A）
     timeline: {
       ...session.timeline,
-      currentDay: session.timeline.startDay ?? 1,
-      currentSlot: session.timeline.startSlot ?? 0,
+      currentDay: Math.max(1, session.timeline.startDay ?? 1),
+      currentSlot: Math.min(
+        Math.max(0, session.timeline.startSlot ?? 0),
+        Math.max(0, session.timeline.slots.length - 1),
+      ),
     },
     archived: false,
     updatedAt: now,

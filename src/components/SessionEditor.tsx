@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { currentScene, hasStartPreset, startPresetPatch, useStore } from '../store'
-import { timeLabelOf } from '../lib/timeline'
+import { advanceTimeline, timeLabelOf } from '../lib/timeline'
 import { appConfirm } from '../lib/dialogs'
 import type { Session } from '../types'
 import CsvInput from './CsvInput'
@@ -397,6 +397,11 @@ export default function SessionEditor({ session, onClose }: Props) {
                           patch({ timeline: { ...d.timeline, slots, currentSlot: 0 } })
                         }
                       />
+                    </div>
+                    <div className="desc timeline-preview">
+                      {d.messages.length === 0 ? '開始' : '現在'}: {timeLabelOf(d.timeline)}
+                      {' → 次のシーンで: '}
+                      {timeLabelOf(advanceTimeline(d.timeline))}
                     </div>
                   </div>
                 )}

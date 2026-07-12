@@ -383,7 +383,8 @@ export function hasStartPreset(world: World | undefined | null): boolean {
  * コピー方式＝以後の編集はセッション側だけを変え、World 素材は不変
  * （設計は docs/設計_開始テンプレートとゲームカセット.md）。
  * story 系は mode==='story' のみ反映（roleplay では注入も UI も無いため不可視データを作らない）。
- * timeline の「空欄」= enabled が false（一度も有効化していない）。反映は常に1日目から。
+ * timeline の「空欄」= enabled が false（一度も有効化していない）。startDay/startSlot があれば
+ * その時点から開始（範囲外の値は防御的にクランプ。FB4-A）。
  */
 export function startPresetPatch(d: Session, world: World, overwrite: boolean): Partial<Session> {
   const p = world.startPreset
@@ -412,8 +413,8 @@ export function startPresetPatch(d: Session, world: World, overwrite: boolean): 
   }
   if (p.authorNote?.trim() && (overwrite || !d.authorNote.trim())) patch.authorNote = p.authorNote
   if (p.timeline && p.timeline.slots.length > 0 && (overwrite || !d.timeline.enabled)) {
-    const startDay = p.timeline.startDay ?? 1
-    const startSlot = p.timeline.startSlot ?? 0
+    const startDay = Math.max(1, p.timeline.startDay ?? 1)
+    const startSlot = Math.min(Math.max(0, p.timeline.startSlot ?? 0), p.timeline.slots.length - 1)
     patch.timeline = {
       enabled: true,
       slots: p.timeline.slots,

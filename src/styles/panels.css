@@ -718,6 +718,11 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
 }
+.timeline-preview {
+  margin-top: 4px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
 .sub-field {
   margin-bottom: 12px;
 }
