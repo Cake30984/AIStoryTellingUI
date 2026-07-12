@@ -27,6 +27,8 @@
   border-bottom: 1px solid var(--border);
   position: sticky;
   top: 0;
+  /* セッション設定など、本文内の sticky ナビより常に前面に表示する。 */
+  z-index: 1;
   background: var(--bg-elev);
 }
 .modal-head h3 {
@@ -44,6 +46,7 @@
   gap: 10px;
   position: sticky;
   bottom: 0;
+  z-index: 1;
   background: var(--bg-elev);
 }
 
