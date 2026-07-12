@@ -87,11 +87,13 @@ export interface LoreEntry {
   addedInStory?: boolean
 }
 
-/** 特別イベント（世界設定で日付指定・条件指定。コードが自動判定して発火する） */
+/** 特別イベント（世界設定で日付・時間帯・条件を指定。コードが自動判定して発火する） */
 export interface ScheduledEvent {
   id: string
   /** タイムラインの何日目に発生するか（未指定＝日付条件なし。condition と併用可） */
   day?: number
+  /** 発生する時間帯のラベル（未指定・セッションの区切りに不一致＝時間帯条件なし） */
+  slot?: string
   name: string
   /** シーンの状況・方向性 */
   note: string

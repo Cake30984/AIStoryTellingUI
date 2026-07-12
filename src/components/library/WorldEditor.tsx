@@ -204,6 +204,9 @@ export default function WorldEditor({ world, onClose }: Props) {
   const removeEntry = (id: string) => patch({ entries: d.entries.filter((e) => e.id !== id) })
 
   const events = d.scheduledEvents ?? []
+  const eventSlots = d.startPreset?.timeline?.slots.length
+    ? d.startPreset.timeline.slots
+    : ['朝', '昼', '夜']
   const updateEvent = (id: string, p: Partial<ScheduledEvent>) =>
     patch({ scheduledEvents: events.map((e) => (e.id === id ? { ...e, ...p } : e)) })
   const addEvent = () =>
@@ -628,9 +631,9 @@ export default function WorldEditor({ world, onClose }: Props) {
           {section === 'events' && (
             <>
           <div className="lore-head">
-            <label>特別イベント（日付指定）</label>
+            <label>特別イベント（日付・時間帯指定）</label>
             <div className="desc">
-              タイムラインの指定日に到来すると、シーン演出で最優先に発生します（体育祭・クリスマスなど）。
+              タイムラインの指定日時に到来すると、次のシーンで最優先に発生します（体育祭・クリスマスなど）。
             </div>
           </div>
 
@@ -654,6 +657,22 @@ export default function WorldEditor({ world, onClose }: Props) {
                         })
                       }
                     />
+                  </label>
+                  <label className="chk" title="発生する時間帯（空欄＝時間帯条件なし）">
+                    時間帯
+                    <select
+                      value={e.slot ?? ''}
+                      style={{ background: 'var(--bg)' }}
+                      onChange={(ev) => updateEvent(e.id, { slot: ev.target.value || undefined })}
+                    >
+                      <option value="">指定なし</option>
+                      {e.slot && !eventSlots.includes(e.slot) && (
+                        <option value={e.slot}>{e.slot}（区切りに無し）</option>
+                      )}
+                      {eventSlots.map((slot) => (
+                        <option key={slot} value={slot}>{slot}</option>
+                      ))}
+                    </select>
                   </label>
                   <input
                     className="lore-keys"
@@ -699,8 +718,8 @@ export default function WorldEditor({ world, onClose }: Props) {
                 </button>
                 <div className="desc" style={{ marginTop: 4 }}>
                   {clauses.length > 0
-                    ? '条件を満たし、day も到来していれば自動的に発火します（承認不要）。'
-                    : 'Day のみで判定します（空欄なら常に候補）。'}
+                    ? '条件を満たし、指定日時も到来していれば自動的に発火します（承認不要）。'
+                    : '指定日時で判定します（両方空欄なら常に候補）。'}
                 </div>
               </div>
             )

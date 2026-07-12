@@ -974,24 +974,40 @@ function buildStateInfo(session: Session, characters: Character[], world?: World
 
 /**
  * 次シーンの特別イベントを決める（FB3-C。演出タイプ抽選は廃止し、世界観イベントに一本化）。
- * 未消化かつ day 到来かつ条件成立のイベントを day 順で1つ返す。人の承認なしでコードが自動判定して
+ * 未消化かつ day/slot 到来かつ条件成立のイベントを日時順で1つ返す。slot はラベル一致で解決し、
+ * 不一致またはタイムライン無効時は時間帯条件を無視する（FB4-C）。人の承認なしでコードが自動判定して
  * 発火する（ADR-1）。`session.eventAutoFire === false` なら発火しない。
  */
 function nextScheduledEvent(
   session: Session,
   world: World | undefined,
   nextDay: number | null,
+  nextSlot: number | null,
 ): { eventId?: string; eventName?: string } {
   if (!world || session.eventAutoFire === false) return {}
+  const slotIndexOf = (slot: string | undefined) =>
+    slot == null ? -1 : session.timeline.slots.indexOf(slot)
   const ev = (world.scheduledEvents ?? [])
     .filter((e) => {
       if (session.usedEventIds.includes(e.id)) return false
       if (e.day != null && (nextDay == null || e.day > nextDay)) return false
+      const eventSlot = slotIndexOf(e.slot)
+      if (
+        eventSlot >= 0 &&
+        nextSlot != null &&
+        (e.day == null || e.day === nextDay) &&
+        eventSlot > nextSlot
+      )
+        return false
       if (e.condition && !evalCondition(e.condition, session.state, world, session.characterIds))
         return false
       return true
     })
-    .sort((a, b) => (a.day ?? Infinity) - (b.day ?? Infinity))[0]
+    .sort((a, b) => {
+      const dayDiff = (a.day ?? Infinity) - (b.day ?? Infinity)
+      if (dayDiff !== 0) return dayDiff
+      return slotIndexOf(a.slot) - slotIndexOf(b.slot)
+    })[0]
   return ev ? { eventId: ev.id, eventName: ev.name } : {}
 }
 
@@ -1979,7 +1995,8 @@ export const useStore = create<AppState>()(
             // 次シーンの特別イベント判定（FB3-C。演出タイプ抽選は廃止）。
             // 過去シーンの再レビューではライブの現在日での日付/条件付き判定を行わない。
             const nextDay = !isPastScene && nextTimeline ? nextTimeline.currentDay : null
-            const pick = isPastScene ? {} : nextScheduledEvent(s, refs.world, nextDay)
+            const nextSlot = !isPastScene && nextTimeline ? nextTimeline.currentSlot : null
+            const pick = isPastScene ? {} : nextScheduledEvent(s, refs.world, nextDay, nextSlot)
             const event = pick.eventId
               ? refs.world?.scheduledEvents.find((e) => e.id === pick.eventId)
               : undefined
@@ -2632,7 +2649,8 @@ export const useStore = create<AppState>()(
           // 開始時のシーン選出：世界イベント確認＋時間帯決定（FB3-C で演出タイプ抽選は廃止）
           const refs = resolveRefs(s)
           const day = s.timeline.enabled ? s.timeline.currentDay : null
-          const pick = nextScheduledEvent(s, refs.world, day)
+          const slot = s.timeline.enabled ? s.timeline.currentSlot : null
+          const pick = nextScheduledEvent(s, refs.world, day, slot)
           const event = pick.eventId
             ? refs.world?.scheduledEvents.find((e) => e.id === pick.eventId)
             : undefined
