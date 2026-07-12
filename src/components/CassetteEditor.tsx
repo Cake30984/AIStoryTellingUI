@@ -7,8 +7,6 @@ import { generateDefaultAvatar, normalizeImage } from '../lib/avatarGen'
 import ModalShell from './ModalShell'
 import EntityAvatar from './EntityAvatar'
 import { Icon } from './icons'
-import OpeningRoleFields from './OpeningRoleFields'
-import { normalizeOpeningCharacterSlots } from '../lib/openingRoles'
 
 type Tab = 'basic' | 'world' | 'cast' | 'persona' | 'start'
 
@@ -39,21 +37,12 @@ export default function CassetteEditor({ cassette, seedSession, onClose }: Props
     setDirty(true)
   }
 
-  const toggleCharacter = (id: string) => {
-    const removing = s.characterIds.includes(id)
-    const characterIds = removing ? s.characterIds.filter((c) => c !== id) : [...s.characterIds, id]
+  const toggleCharacter = (id: string) =>
     patchSession({
-      characterIds,
-      story: removing
-        ? {
-            ...s.story,
-            openingCharacterSlots: (s.story.openingCharacterSlots ?? []).filter(
-              (slot) => slot.characterId !== id,
-            ),
-          }
-        : s.story,
+      characterIds: s.characterIds.includes(id)
+        ? s.characterIds.filter((c) => c !== id)
+        : [...s.characterIds, id],
     })
-  }
 
   // 表紙: coverImageId があればそれ、無ければタイトルからの自動プレビュー
   const coverUrl = useImageUrl(d.coverImageId)
@@ -93,21 +82,7 @@ export default function CassetteEditor({ cassette, seedSession, onClose }: Props
         coverImageId = await putImage(blob)
       }
       // カセット名＝セッション名に揃える（playCassette 後の表示と一致させる）
-      upsertCassette({
-        ...d,
-        coverImageId,
-        title: s.title,
-        session: {
-          ...s,
-          story: {
-            ...s.story,
-            openingCharacterSlots: normalizeOpeningCharacterSlots(
-              s.story.openingCharacterSlots,
-              s.characterIds,
-            ),
-          },
-        },
-      })
+      upsertCassette({ ...d, coverImageId, title: s.title })
       onClose()
     } finally {
       setBusy(false)
@@ -342,14 +317,6 @@ export default function CassetteEditor({ cassette, seedSession, onClose }: Props
                   value={s.story.opening}
                   placeholder="例: 城が焼け落ちた前夜のことだった——"
                   onChange={(e) => patchSession({ story: { ...s.story, opening: e.target.value } })}
-                />
-                <OpeningRoleFields
-                  session={s}
-                  characters={characters}
-                  personas={personas}
-                  onChange={(openingCharacterSlots) =>
-                    patchSession({ story: { ...s.story, openingCharacterSlots } })
-                  }
                 />
               </div>
               <div className="field">

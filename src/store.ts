@@ -70,12 +70,6 @@ import {
 } from './lib/timeline'
 import { extractJson } from './lib/json'
 import { defaultOpenRouterProvider, parseModelRef } from './lib/providers'
-import {
-  normalizeOpeningCharacterSlots,
-  openingRoleLabel,
-  resolveOpeningRoles,
-  validateOpeningRoles,
-} from './lib/openingRoles'
 
 export const DEFAULT_MODEL = 'openrouter/auto'
 
@@ -532,7 +526,7 @@ function newSession(mode: SessionMode): Session {
     worldId: null,
     personaId: null,
     authorNote: '',
-    story: { premise: '', genre: '', opening: '', openingTitle: '', openingCharacterSlots: [] },
+    story: { premise: '', genre: '', opening: '', openingTitle: '' },
     scenes: [scene],
     currentSceneId: scene.id,
     timeline: defaultTimeline(),
@@ -1598,19 +1592,13 @@ export const useStore = create<AppState>()(
           }),
 
         deleteCharacter: (id) =>
-          set((st) => {
+          set((st) => ({
+            characters: st.characters.filter((c) => c.id !== id),
             // 参照の残骸を全セッションから掃除する（残すと buildStateInfo が
-            // 削除済みキャラの関係を「キャラ」名義で本編プロンプトに注入し続ける）。
-            // 導入ロールも同時に外し、別のキャラへ勝手に割り当てない。
-            const removeFromSession = (s: Session): Session => ({
+            // 削除済みキャラの関係を「キャラ」名義で本編プロンプトに注入し続ける）
+            sessions: st.sessions.map((s) => ({
               ...s,
               characterIds: s.characterIds.filter((cid) => cid !== id),
-              story: {
-                ...s.story,
-                openingCharacterSlots: (s.story.openingCharacterSlots ?? []).filter(
-                  (slot) => slot.characterId !== id,
-                ),
-              },
               scenes: s.scenes.map((sc) => ({
                 ...sc,
                 activeCharacterIds: sc.activeCharacterIds.filter((cid) => cid !== id),
@@ -1628,16 +1616,8 @@ export const useStore = create<AppState>()(
                   (x) => x.characterId !== id,
                 ),
               },
-            })
-            return {
-              characters: st.characters.filter((c) => c.id !== id),
-              sessions: st.sessions.map(removeFromSession),
-              cassettes: st.cassettes.map((cassette) => ({
-                ...cassette,
-                session: removeFromSession(cassette.session),
-              })),
-            }
-          }),
+            })),
+          })),
 
         bulkSetCharacterModel: (characterIds, modelRef) =>
           set((st) => ({
@@ -1719,11 +1699,6 @@ export const useStore = create<AppState>()(
             personas: st.personas.filter((p) => p.id !== id),
             sessions: st.sessions.map((s) =>
               s.personaId === id ? { ...s, personaId: null } : s,
-            ),
-            cassettes: st.cassettes.map((cassette) =>
-              cassette.session.personaId === id
-                ? { ...cassette, session: { ...cassette.session, personaId: null } }
-                : cassette,
             ),
           })),
 
@@ -2671,19 +2646,6 @@ export const useStore = create<AppState>()(
           const scene = currentScene(s)
           if (!scene) return
 
-          // 導入テンプレート内の予約ロールを、開始時にだけ実名へ解決する。
-          // 未設定のままでは構造化話者アイコンを正しく解決できないため、シーン更新前に止める。
-          const openingTemplate = s.mode === 'story' ? s.story.opening.trim() : ''
-          const openingResult = openingTemplate
-            ? resolveOpeningRoles(openingTemplate, s, get().characters, get().personas)
-            : { content: '', issues: [] }
-          if (openingResult.issues.length > 0) {
-            set({
-              error: `導入ロールを設定してください: ${openingResult.issues.map(openingRoleLabel).join('、')}`,
-            })
-            return
-          }
-
           // 開始時のシーン選出：世界イベント確認＋時間帯決定（FB3-C で演出タイプ抽選は廃止）
           const refs = resolveRefs(s)
           const day = s.timeline.enabled ? s.timeline.currentDay : null
@@ -2696,7 +2658,7 @@ export const useStore = create<AppState>()(
           const baseName = event?.name || ''
           const drafted = [label, baseName].filter(Boolean).join('：') || scene.title
           // 導入（そのまま掲載）モードでは見出しを openingTitle 優先に（FB2-B）
-          const opening = openingResult.content
+          const opening = s.mode === 'story' ? s.story.opening.trim() : ''
           const openingTitle = s.mode === 'story' ? s.story.openingTitle.trim() : ''
           const title = opening && openingTitle ? openingTitle : drafted
 
@@ -3037,13 +2999,6 @@ export const useStore = create<AppState>()(
         playCassette: (cassetteId) => {
           const cas = get().cassettes.find((c) => c.id === cassetteId)
           if (!cas) return
-          const issues = validateOpeningRoles(cas.session.story.opening, cas.session, get().characters, get().personas)
-          if (issues.length > 0) {
-            set({
-              error: `カセットの導入ロールを設定してください: ${issues.map(openingRoleLabel).join('、')}`,
-            })
-            return
-          }
           const now = Date.now()
           // 同梱セッションを丸ごと複製して新しい id で開始（何度でも最初から遊べる）
           const cloned = JSON.parse(JSON.stringify(cas.session)) as Session
@@ -3296,17 +3251,12 @@ export const useStore = create<AppState>()(
         // ui は normalizeUiPrefs で現行スキーマへ正規化（旧・段階式の文字列値を数値へ引き継ぐ。F2）
         const merged = { ...current, ...p, ui: normalizeUiPrefs({ ...current.ui, ...(p.ui ?? {}) }) }
         merged.sessions = (merged.sessions ?? []).map((s) => {
-          // story に導入関連を後方補完（旧セッションは undefined のため .trim() が例外になる。FB2-B）。
-          // 導入ロールの対応は、参加キャラに含まれる有効な id だけを残す。
+          // story に opening/openingTitle を後方補完（旧セッションは undefined のため .trim() が例外になる。FB2-B）
           const story = {
             premise: s.story?.premise ?? '',
             genre: s.story?.genre ?? '',
             opening: s.story?.opening ?? '',
             openingTitle: s.story?.openingTitle ?? '',
-            openingCharacterSlots: normalizeOpeningCharacterSlots(
-              s.story?.openingCharacterSlots,
-              s.characterIds,
-            ),
           }
           const messages = s.messages.some((m) => m.pending)
             ? s.messages
@@ -3314,25 +3264,6 @@ export const useStore = create<AppState>()(
                 .map((m) => (m.pending ? { ...m, pending: false, truncated: true } : m))
             : s.messages
           return { ...s, story, messages }
-        })
-        merged.cassettes = (merged.cassettes ?? []).map((cassette) => {
-          const session = cassette.session
-          return {
-            ...cassette,
-            session: {
-              ...session,
-              story: {
-                premise: session.story?.premise ?? '',
-                genre: session.story?.genre ?? '',
-                opening: session.story?.opening ?? '',
-                openingTitle: session.story?.openingTitle ?? '',
-                openingCharacterSlots: normalizeOpeningCharacterSlots(
-                  session.story?.openingCharacterSlots,
-                  session.characterIds,
-                ),
-              },
-            },
-          }
         })
         return merged
       },

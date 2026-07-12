@@ -4,7 +4,6 @@ import { getImage, putImage } from './imageStore'
 import { generateDefaultAvatar, normalizeImage } from './avatarGen'
 import { downloadBlob } from './io'
 import { appConfirm } from './dialogs'
-import { normalizeOpeningCharacterSlots, openingRoleLabel, validateOpeningRoles } from './openingRoles'
 
 function uid(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
@@ -406,10 +405,6 @@ export async function exportCassetteCard(
   cardImageBlob: Blob,
   description: string,
 ): Promise<void> {
-  const issues = validateOpeningRoles(session.story.opening, session, refs.characters, refs.persona ? [refs.persona] : [])
-  if (issues.length > 0) {
-    throw new Error(`導入ロールを設定してください: ${issues.map(openingRoleLabel).join('、')}`)
-  }
   const fresh = freshSessionOf(session)
   const { images, totalBytes } = await collectCardImages(fresh, refs)
   if (!(await confirmImageSize(totalBytes))) return
@@ -443,19 +438,8 @@ function normalizeSessionBundle(raw: any): SessionCardBundle | null {
     typeof src?.avatar?.imageId === 'string'
       ? { ...norm, avatar: { ...norm.avatar, imageId: src.avatar.imageId } }
       : norm
-  const sourceSession = raw.session as Session
-  const session: Session = {
-    ...sourceSession,
-    story: {
-      ...sourceSession.story,
-      openingCharacterSlots: normalizeOpeningCharacterSlots(
-        sourceSession.story?.openingCharacterSlots,
-        sourceSession.characterIds,
-      ),
-    },
-  }
   return {
-    session,
+    session: raw.session,
     characters: Array.isArray(raw.characters)
       ? raw.characters.map((c: any) => keepImageId(normalizeCharacterFromExtension(c), c))
       : [],

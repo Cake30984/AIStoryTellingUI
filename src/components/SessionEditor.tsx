@@ -9,8 +9,6 @@ import EntityAvatar from './EntityAvatar'
 import CassetteEditor from './CassetteEditor'
 import ModalShell from './ModalShell'
 import { Icon } from './icons'
-import OpeningRoleFields from './OpeningRoleFields'
-import { normalizeOpeningCharacterSlots } from '../lib/openingRoles'
 
 type PickerTarget = 'review' | 'choices' | 'bulk'
 type Tab = 'basic' | 'progress' | 'model' | 'output'
@@ -32,21 +30,12 @@ export default function SessionEditor({ session, onClose }: Props) {
     setDirty(true)
   }
 
-  const toggleCharacter = (id: string) => {
-    const removing = d.characterIds.includes(id)
-    const characterIds = removing ? d.characterIds.filter((c) => c !== id) : [...d.characterIds, id]
+  const toggleCharacter = (id: string) =>
     patch({
-      characterIds,
-      story: removing
-        ? {
-            ...d.story,
-            openingCharacterSlots: (d.story.openingCharacterSlots ?? []).filter(
-              (slot) => slot.characterId !== id,
-            ),
-          }
-        : d.story,
+      characterIds: d.characterIds.includes(id)
+        ? d.characterIds.filter((c) => c !== id)
+        : [...d.characterIds, id],
     })
-  }
 
   const save = () => {
     // モーダルを開いている間にバックグラウンドでシーンが進行している場合に備え、
@@ -76,10 +65,7 @@ export default function SessionEditor({ session, onClose }: Props) {
       worldId: d.worldId,
       personaId: d.personaId,
       authorNote: d.authorNote,
-      story: {
-        ...d.story,
-        openingCharacterSlots: normalizeOpeningCharacterSlots(d.story.openingCharacterSlots, d.characterIds),
-      },
+      story: d.story,
       scenes,
       timeline,
       choiceMode: d.choiceMode,
@@ -285,14 +271,6 @@ export default function SessionEditor({ session, onClose }: Props) {
                       value={d.story.opening}
                       placeholder="例: 城が焼け落ちた前夜のことだった。あなたは血の匂いの残る廊下で目を覚ます——"
                       onChange={(e) => patch({ story: { ...d.story, opening: e.target.value } })}
-                    />
-                    <OpeningRoleFields
-                      session={d}
-                      characters={characters}
-                      personas={personas}
-                      onChange={(openingCharacterSlots) =>
-                        patch({ story: { ...d.story, openingCharacterSlots } })
-                      }
                     />
                   </div>
                 </>
