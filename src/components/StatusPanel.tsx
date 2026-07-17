@@ -248,6 +248,27 @@ export default function StatusPanel({ session, onClose }: Props) {
               })}
             </div>
           )}
+
+          {/* エンディング（v1 は表示のみ。外したい場合は分岐復元で代替） */}
+          {(world?.endings ?? []).length > 0 && (
+            <div className="field">
+              <label>🏁 エンディング</label>
+              {world!.endings!.map((e) => {
+                const reached = session.ending?.defId === e.id
+                const conceal = e.hidden && !reached
+                return (
+                  <div
+                    key={e.id}
+                    className="desc"
+                    style={{ opacity: reached ? 1 : 0.7, marginBottom: 4, fontWeight: reached ? 600 : undefined }}
+                  >
+                    {reached ? '🏁' : '🔒'} {conceal ? '？？？' : e.name || '無名'}
+                    {!conceal && e.description && <span> — {e.description}</span>}
+                  </div>
+                )
+              })}
+            </div>
+          )}
     </ModalShell>
   )
 }

@@ -341,7 +341,7 @@ export function BranchTreeBody({ session }: { session: Session }) {
 
         <div className="bg-body">
           <span className={'bg-label' + (isScene ? ' scene' : '')}>
-            {isScene ? `📖 ${node.label}` : node.label}
+            {node.ending ? node.label : isScene ? `📖 ${node.label}` : node.label}
             {node.timeLabel ? `（${node.timeLabel}）` : ''}
           </span>
           {node.star && <span className="badge bg-star-badge">★ {node.star.name}</span>}
@@ -447,7 +447,7 @@ export function BranchTreeBody({ session }: { session: Session }) {
                 <div className="star-row-info">
                   <div className="star-row-name">★ {n.star?.name}</div>
                   <div className="desc">
-                    {n.kind === 'scene' ? `📖 ${n.label}` : n.label}
+                    {n.ending ? n.label : n.kind === 'scene' ? `📖 ${n.label}` : n.label}
                     {n.timeLabel ? `（${n.timeLabel}）` : ''}
                   </div>
                   <div className="branch-time">{new Date(n.createdAt).toLocaleString()}</div>

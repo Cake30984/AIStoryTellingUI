@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { useStore } from '../store'
+import { useEffect, useMemo, useState } from 'react'
+import { applyReviewToState, checkEndings, useStore } from '../store'
 import { advanceTimeline, timeLabelOf } from '../lib/timeline'
 import ModalShell from './ModalShell'
 
@@ -12,11 +12,13 @@ export default function SceneReviewModal() {
     isRegenSuggestions,
     sessions,
     activeId,
+    worlds,
     stopReview,
   } = useStore()
   const review = sceneReview!
   const session = sessions.find((s) => s.id === activeId)
   const isPastScene = !!session && review.sceneId !== session.currentSceneId
+  const world = session ? worlds.find((w) => w.id === session.worldId) : undefined
 
   // 次シーンで進む時間帯（現在シーン確定時のみ。タイムライン有効時）
   const nextTimeLabel =
@@ -44,6 +46,45 @@ export default function SceneReviewModal() {
   const [moodSel, setMoodSel] = useState<Set<number>>(
     new Set(review.moodChanges.map((_, i) => i)),
   )
+  // 到達エンディングへ「進む」か（auto は選択なし＝常に進む。既定は保守側＝まだ続ける／満了時は進む）
+  const [endingGo, setEndingGo] = useState(false)
+
+  // 到達プレビュー（E2）。選択を確定した場合の次 state を applyReviewToState で計算し、
+  // checkEndings＋満了判定でどの結末に到達するかを求める。純関数なので選択変更ごとに再計算。
+  const endingPreview = useMemo(() => {
+    if (!session || isPastScene || session.ending) return null
+    const endings = world?.endings ?? []
+    if (endings.length === 0) return null
+    const sel = {
+      relationUpdates: [...relUpdSel].map((i) => review.relationUpdates[i]).filter(Boolean),
+      statChanges: [...statSel].map((i) => review.statChanges[i]).filter(Boolean),
+      counterEvents: [...counterSel].map((i) => review.counterEvents[i]).filter(Boolean),
+      moodChanges: [...moodSel].map((i) => review.moodChanges[i]).filter(Boolean),
+    }
+    const applied = applyReviewToState(session.state, world, session.characterIds, sel)
+    const matched = checkEndings(endings, applied.state, world, session.characterIds)
+    const tlNext = session.timeline.enabled ? advanceTimeline(session.timeline) : null
+    const isExpiry = !!(
+      tlNext &&
+      session.timeline.totalDays != null &&
+      tlNext.currentDay > session.timeline.totalDays
+    )
+    const fallback = endings.find((e) => e.fallback)
+    // 候補は ①条件成立の最上位 → ②（満了時のみ）fallback
+    const candidate = matched ?? (isExpiry ? fallback : undefined)
+    if (!candidate) return null
+    return {
+      candidate,
+      auto: !!candidate.auto && !candidate.fallback,
+      isExpiry,
+      isFallback: !!candidate.fallback,
+    }
+  }, [session, isPastScene, world, review, relUpdSel, statSel, counterSel, moodSel])
+
+  // 候補が変わったら既定選択を更新（満了時は「進む」・通常は「まだ続ける」を既定にする）
+  useEffect(() => {
+    if (endingPreview && !endingPreview.auto) setEndingGo(endingPreview.isExpiry)
+  }, [endingPreview?.candidate.id, endingPreview?.isExpiry, endingPreview?.auto])
 
   // 別のレビュー（別シーン）に切り替わったときだけ全体をリセット。
   // 候補だけ再生成した場合は編集中の要約を保持する。
@@ -69,6 +110,9 @@ export default function SceneReviewModal() {
     setFn(next)
   }
 
+  // エンディングへ進むか（auto は強制。それ以外は endingGo で選択）
+  const goEnding = !!endingPreview && (endingPreview.auto || endingGo)
+
   const confirm = () => {
     confirmSceneReview({
       summary,
@@ -79,6 +123,7 @@ export default function SceneReviewModal() {
       statChangeIdx: [...statSel],
       counterEventIdx: [...counterSel],
       moodChangeIdx: [...moodSel],
+      endingDefId: goEnding ? endingPreview!.candidate.id : undefined,
     })
   }
 
@@ -99,7 +144,7 @@ export default function SceneReviewModal() {
             onClick={confirm}
             disabled={isReviewing || isRegenSuggestions}
           >
-            {isPastScene ? '要約を更新' : '確定して次のシーンへ'}
+            {isPastScene ? '要約を更新' : goEnding ? '🏁 エンディングへ進む' : '確定して次のシーンへ'}
           </button>
         </>
       }
@@ -113,6 +158,51 @@ export default function SceneReviewModal() {
                 <label>📝 このシーンのあらすじ（編集可）</label>
                 <textarea rows={6} value={summary} onChange={(e) => setSummary(e.target.value)} />
               </div>
+
+              {/* 到達エンディングのプレビュー（E2）。選択した状態で成立する結末を予告する */}
+              {endingPreview && (
+                <div className="field">
+                  <label>🏁 エンディング</label>
+                  {endingPreview.auto ? (
+                    <div className="desc">
+                      エンディング「<strong>{endingPreview.candidate.name || '無名'}</strong>」に到達します。
+                      確定するとエピローグに入ります。
+                    </div>
+                  ) : (
+                    <>
+                      <div className="desc">
+                        エンディング「<strong>{endingPreview.candidate.name || '無名'}</strong>」に到達できます。
+                        {endingPreview.isExpiry && (
+                          <span className="event-badge" style={{ marginLeft: 6 }}>
+                            ⏰ 期間満了
+                          </span>
+                        )}
+                        {endingPreview.isFallback && (
+                          <span className="growth-keys">（満了時の受け皿エンディング）</span>
+                        )}
+                      </div>
+                      <div className="review-cards">
+                        <button
+                          className={'review-card' + (endingGo ? ' on' : '')}
+                          onClick={() => setEndingGo(true)}
+                        >
+                          <div className="review-card-title">エンディングへ進む</div>
+                          <div className="review-card-note">エピローグに入って物語を締めくくります。</div>
+                        </button>
+                        <button
+                          className={'review-card' + (!endingGo ? ' on' : '')}
+                          onClick={() => setEndingGo(false)}
+                        >
+                          <div className="review-card-title">まだ続ける</div>
+                          <div className="review-card-note">
+                            通常どおり次のシーンへ進みます（条件を満たし続ければまた提示されます）。
+                          </div>
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
 
               {/* 特別イベントの発生（FB3-C。世界観イベントに一本化・自動発生の告知のみ） */}
               {review.scheduledEventName && (

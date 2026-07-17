@@ -15,6 +15,7 @@ import { downloadBlob } from '../lib/io'
 import { hasStructuredLines, plainTextOf } from '../lib/structured'
 import { appConfirm } from '../lib/dialogs'
 import ImageGenModal from './ImageGenModal'
+import ModalShell from './ModalShell'
 import type { DockTab, Message, Scene, SceneIllustration, Session } from '../types'
 import ModelPicker from './ModelPicker'
 import SessionEditor from './SessionEditor'
@@ -83,6 +84,7 @@ export default function ChatPanel({ session }: Props) {
     stopChoices,
     stopReview,
     prepareSceneReview,
+    finalizeStory,
     startStory,
     continueLast,
     regenChoices,
@@ -114,6 +116,7 @@ export default function ChatPanel({ session }: Props) {
   const [showBgGen, setShowBgGen] = useState(false)
   const [showCassetteEditor, setShowCassetteEditor] = useState(false)
   const [showMenu, setShowMenu] = useState(false)
+  const [showFinale, setShowFinale] = useState(false)
   const [speaker, setSpeaker] = useState<string | undefined>(undefined)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -128,6 +131,12 @@ export default function ChatPanel({ session }: Props) {
   const toggleDock = (tab: DockTab) => setUiPrefs({ dockTab: ui.dockTab === tab ? null : tab })
 
   const scene = currentScene(session)
+  // エピローグ滞在中か／物語が完結済みか（設計_エンディング.md。完結は別フラグを持たず ending＋endedAt から導出）
+  const isEpilogue = !!session.ending && scene?.id === session.ending.epilogueSceneId
+  const epilogueScene = session.ending
+    ? session.scenes.find((sc) => sc.id === session.ending!.epilogueSceneId)
+    : undefined
+  const isFinalized = !!session.ending && !!epilogueScene?.endedAt
   const castIds = scene && scene.activeCharacterIds.length > 0 ? scene.activeCharacterIds : session.characterIds
 
   const participants = useMemo(
@@ -138,6 +147,9 @@ export default function ChatPanel({ session }: Props) {
     [castIds, characters],
   )
   const world = worlds.find((w) => w.id === session.worldId)
+  const endingDef = session.ending
+    ? world?.endings?.find((e) => e.id === session.ending!.defId)
+    : undefined
   const stageOn = session.spritesEnabled ?? true // 未設定は ON（コンテンツが無ければ何も描かれない）
   const persona = personas.find((p) => p.id === session.personaId)
   const novel = session.narrativeStyle === 'novel'
@@ -455,6 +467,17 @@ export default function ChatPanel({ session }: Props) {
             <span className={'token-badge ' + tokLvl} title="現在シーンのおおよそのトークン量">
               ~{sceneTokens.toLocaleString()} tok{tokLvl === 'high' ? ' ・締め時' : ''}
             </span>
+          </button>
+        )}
+
+        {isFinalized && session.ending && (
+          <button
+            className="badge accent"
+            style={{ cursor: 'pointer' }}
+            onClick={() => setShowFinale(true)}
+            title="この物語は完結しています（続きは分岐ツリーから復元できます）"
+          >
+            🏁 完結：{session.ending.name}
           </button>
         )}
 
@@ -792,22 +815,42 @@ export default function ChatPanel({ session }: Props) {
                 <button className="composer-tool-btn" onClick={() => setShowSceneEditor(true)}>
                   <Icon name="pencil" size={14} /> シーン編集
                 </button>
-                <button
-                  className="scene-btn end"
-                  onClick={() => (isReviewing ? stopReview() : prepareSceneReview())}
-                  disabled={isStreaming}
-                  title={isReviewing ? 'レビュー生成を中止' : 'このシーンを振り返って次のシーンへ'}
-                >
-                  {isReviewing ? (
-                    <>
-                      <Icon name="square" size={14} /> レビュー作成中…（中止）
-                    </>
-                  ) : (
-                    <>
-                      <Icon name="check" size={14} /> このシーンを終える
-                    </>
-                  )}
-                </button>
+                {isEpilogue && !isFinalized ? (
+                  <button
+                    className="scene-btn end"
+                    onClick={() => {
+                      finalizeStory()
+                      setShowFinale(true)
+                    }}
+                    disabled={isStreaming}
+                    title="エピローグを締めて物語を完結する"
+                  >
+                    🏁 物語を完結する
+                  </button>
+                ) : (
+                  <button
+                    className="scene-btn end"
+                    onClick={() => (isReviewing ? stopReview() : prepareSceneReview())}
+                    disabled={isStreaming || isFinalized}
+                    title={
+                      isFinalized
+                        ? 'この物語は完結しています'
+                        : isReviewing
+                          ? 'レビュー生成を中止'
+                          : 'このシーンを振り返って次のシーンへ'
+                    }
+                  >
+                    {isReviewing ? (
+                      <>
+                        <Icon name="square" size={14} /> レビュー作成中…（中止）
+                      </>
+                    ) : (
+                      <>
+                        <Icon name="check" size={14} /> このシーンを終える
+                      </>
+                    )}
+                  </button>
+                )}
               </div>
 
               <div className="input-row">
@@ -949,6 +992,34 @@ export default function ChatPanel({ session }: Props) {
       )}
       {showCassetteEditor && (
         <CassetteEditor seedSession={session} onClose={() => setShowCassetteEditor(false)} />
+      )}
+
+      {/* 完結オーバーレイ（簡素な演出。将来ここにエンディング CG・スタッフロールを足せる） */}
+      {showFinale && session.ending && (
+        <ModalShell
+          title="🏁 物語の完結"
+          onClose={() => setShowFinale(false)}
+          footer={
+            <button className="btn primary" onClick={() => setShowFinale(false)}>
+              閉じる
+            </button>
+          }
+        >
+          <div className="field" style={{ textAlign: 'center', padding: '12px 0' }}>
+            <div style={{ fontSize: 40, marginBottom: 8 }}>🏁</div>
+            <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>
+              {session.ending.name}
+            </div>
+            {endingDef?.description && (
+              <p className="desc" style={{ maxWidth: 420, margin: '0 auto' }}>
+                {endingDef.description}
+              </p>
+            )}
+            <p className="desc" style={{ marginTop: 16 }}>
+              おつかれさまでした。読み返し・別の結末を狙う周回は、分岐ツリーからいつでも再開できます。
+            </p>
+          </div>
+        </ModalShell>
       )}
     </div>
   )

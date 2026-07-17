@@ -166,6 +166,27 @@ export interface AchievementDef {
 }
 
 /**
+ * エンディングの定義（ワールド固定。到達判定はコードが自動で行う。docs/設計_エンディング.md）。
+ * 実績の親戚＝条件成立で到達する「終わりの構造」。配列順が優先度（上が優先）。
+ */
+export interface EndingDef {
+  id: string
+  name: string
+  /** UI 表示用の説明（一覧・到達時に見せる。条件そのものは晒さない） */
+  description: string
+  /** 到達条件。fallback=true の定義は持たない（UI で条件エディタを隠し、判定でも無視） */
+  condition?: Condition
+  /** エピローグ生成への指示（結末のトーン・締め方）。到達後にのみ注入＝プレイ中のリークなし */
+  epilogueGuidance: string
+  /** 条件成立で強制突入する（レビューでの「まだ続ける」を出さない。バッドエンド向け） */
+  auto?: boolean
+  /** 未到達時に名前・内容を ??? 表示（実績の hidden と同じ） */
+  hidden?: boolean
+  /** 期間満了時、条件成立エンディングが無い場合に採用するノーマル/バッドエンド */
+  fallback?: boolean
+}
+
+/**
  * セッション開始テンプレート（World に付属する推奨初期設定。W1）。
  * セッション設定で世界を選んだ時に「コピー」で流し込む（参照ではない）。
  * 以後の編集はセッション側の値だけを変えるため、素材（World）側は不変に保たれる。
@@ -229,6 +250,8 @@ export interface World {
   roles?: WorldRole[]
   /** セッション開始テンプレート（世界を選んだ時にセッションへコピーされる推奨初期設定。素材側は不変） */
   startPreset?: WorldStartPreset
+  /** エンディング定義（未設定は空配列扱い。配列順=優先度＝上が優先）。docs/設計_エンディング.md */
+  endings?: EndingDef[]
   createdAt: number
   updatedAt: number
 }
@@ -453,6 +476,18 @@ export interface Session {
   structuredOutput?: boolean
   /** アーカイブ済み（セッション一覧から既定で除外。UI-5） */
   archived?: boolean
+  /**
+   * 到達したエンディング（セッション固有・チェックポイント対象＝分岐で戻れば未到達に戻る。
+   * docs/設計_エンディング.md）。restoreCheckpoint の passthrough には入れない。
+   * 「完結済み」は ending があり、かつ epilogueSceneId のシーンに endedAt が立つことから導出する。
+   */
+  ending?: {
+    defId: string
+    name: string
+    reachedAt: number
+    /** エピローグシーンの id。このシーンが currentScene の間だけエンディング指示を注入する */
+    epilogueSceneId: string
+  }
   messages: Message[]
   temperature: number
   maxTokens: number
@@ -627,6 +662,8 @@ export interface BranchNode {
    * 旧データ（未設定）は従来どおり直列に積む。
    */
   anchorMessageId?: string
+  /** エンディング突入・完結ノードに立つ結末名（E3。ツリーで 🏁 表示） */
+  ending?: string
   /** しおり（C3） */
   star?: { name: string; thumbImageId?: string }
 }
@@ -725,6 +762,17 @@ export function normalizeUiPrefs(raw: unknown): UiPrefs {
   }
 }
 
+/**
+ * エンディング到達の周回横断記録（E3・AppState 直下）。エピローグ突入時に追記する。
+ * セッションの外に置く＝セッション削除・複製・分岐巻き戻しでも「見た」事実は残す。
+ */
+export interface EndingRecord {
+  worldId: string
+  endingDefId: string
+  sessionId: string
+  reachedAt: number
+}
+
 /** エクスポート/インポート用のデータ束 */
 export interface ExportBundle {
   type: 'ai-storytelling-studio'
@@ -736,6 +784,8 @@ export interface ExportBundle {
   sessions: Session[]
   /** ゲームカセット棚（FB2-E） */
   cassettes?: Cassette[]
+  /** エンディング到達の周回横断記録（E3。同値 dedupe でマージ） */
+  endingRecords?: EndingRecord[]
   providers?: Provider[]
   /** 画像込みエクスポート時のみ同梱（アバター・立ち絵・挿絵・背景・カセット表紙の実体。T0/FB2-E） */
   images?: { id: string; mime: string; dataBase64: string }[]

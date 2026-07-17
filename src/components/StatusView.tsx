@@ -8,7 +8,7 @@ interface Props {
 
 /** 状態（関係性 prose ＋ 事実の数）の読み取り専用ビュー（ドック用。編集は StatusPanel モーダルで行う） */
 export default function StatusView({ session }: Props) {
-  const { worlds, characters, personas } = useStore()
+  const { worlds, characters, personas, endingRecords } = useStore()
   const world = worlds.find((w) => w.id === session.worldId)
   const heroName = personas.find((p) => p.id === session.personaId)?.name || '主人公'
   const cast = session.characterIds
@@ -127,6 +127,44 @@ export default function StatusView({ session }: Props) {
           })}
         </div>
       )}
+
+      {(world.endings ?? []).length > 0 &&
+        (() => {
+          const endings = world.endings ?? []
+          // この世界で見た結末（周回横断・distinct）。E3
+          const seen = new Set(
+            endingRecords
+              .filter((r) => r.worldId === world.id)
+              .map((r) => r.endingDefId),
+          )
+          return (
+            <div className="field">
+              <label>
+                🏁 エンディング（この世界で見た結末 {seen.size}/{endings.length}）
+              </label>
+              {endings.map((e) => {
+                const reached = session.ending?.defId === e.id
+                const everSeen = seen.has(e.id)
+                const conceal = e.hidden && !everSeen
+                return (
+                  <div
+                    key={e.id}
+                    className="desc"
+                    style={{
+                      opacity: everSeen ? 1 : 0.55,
+                      marginBottom: 4,
+                      fontWeight: reached ? 600 : undefined,
+                    }}
+                  >
+                    {reached ? '🏁' : everSeen ? '✅' : '🔒'} {conceal ? '？？？' : e.name || '無名'}
+                    {reached && <span className="badge accent" style={{ marginLeft: 6 }}>到達</span>}
+                    {!conceal && e.description && <span> — {e.description}</span>}
+                  </div>
+                )
+              })}
+            </div>
+          )
+        })()}
     </>
   )
 }

@@ -13,12 +13,18 @@ import { castingIssueLabel, validateCasting } from '../../lib/casting'
 /** カセット1枚のカード（表紙・紹介文・遊ぶ/編集/書き出し/削除）。FB2-E / FB3-D */
 function CassetteCard({
   cas,
+  endingSeen,
+  endingTotal,
   onPlay,
   onEdit,
   onExport,
   onDelete,
 }: {
   cas: Cassette
+  /** この世界で見た結末数（周回横断・distinct。E3） */
+  endingSeen: number
+  /** この世界のエンディング総数（E3） */
+  endingTotal: number
   onPlay: () => void
   onEdit: () => void
   onExport: () => void
@@ -35,7 +41,14 @@ function CassetteCard({
         )}
       </div>
       <div className="cassette-body">
-        <div className="entity-name">{cas.title || '無題のカセット'}</div>
+        <div className="entity-name">
+          {cas.title || '無題のカセット'}
+          {endingTotal > 0 && (
+            <span className="badge" style={{ marginLeft: 6 }} title="この世界で見た結末（周回横断）">
+              🏁 {endingSeen}/{endingTotal}
+            </span>
+          )}
+        </div>
         <div className="entity-desc">{cas.description || '紹介文なし'}</div>
         <div className="cassette-actions">
           <button className="btn primary" onClick={onPlay}>
@@ -57,7 +70,8 @@ function CassetteCard({
 }
 
 export default function CassetteLibrary() {
-  const { cassettes, characters, worlds, personas, importCassette, playCassette, deleteCassette } = useStore()
+  const { cassettes, characters, worlds, personas, endingRecords, importCassette, playCassette, deleteCassette } =
+    useStore()
   const [notice, setNotice] = useState('')
   // null=閉じている / {}=新規 / {cassette}=編集
   const [editing, setEditing] = useState<{ cassette?: Cassette } | null>(null)
@@ -135,16 +149,26 @@ export default function CassetteLibrary() {
         </div>
       ) : (
         <div className="cassette-grid">
-          {cassettes.map((cas) => (
+          {cassettes.map((cas) => {
+            const wid = cas.session.worldId
+            const casWorld = wid ? worlds.find((w) => w.id === wid) : undefined
+            const endingTotal = casWorld?.endings?.length ?? 0
+            const endingSeen = wid
+              ? new Set(endingRecords.filter((r) => r.worldId === wid).map((r) => r.endingDefId)).size
+              : 0
+            return (
             <CassetteCard
               key={cas.id}
               cas={cas}
+              endingSeen={endingSeen}
+              endingTotal={endingTotal}
               onPlay={() => playCassette(cas.id)}
               onEdit={() => setEditing({ cassette: cas })}
               onExport={() => doExport(cas)}
               onDelete={() => doDelete(cas)}
             />
-          ))}
+            )
+          })}
         </div>
       )}
 

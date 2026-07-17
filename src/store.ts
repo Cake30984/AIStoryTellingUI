@@ -12,18 +12,24 @@ import type {
   Clause,
   Condition,
   CounterDef,
+  CounterEvent,
   Development,
   EmotionId,
+  EndingDef,
+  EndingRecord,
   ExportBundle,
   ImageProvider,
   LoreEntry,
+  MoodChange,
   NextSceneSuggestion,
   Op,
   OpenRouterModel,
   Persona,
   Provider,
   RelationAspectDef,
+  RelationUpdate,
   Scene,
+  StatChange,
   SceneIllustration,
   SceneReview,
   Session,
@@ -218,6 +224,121 @@ function unlockAchievements(
 }
 
 /**
+ * 条件成立エンディングを配列順（＝優先度）で1つ返す純関数（E2）。
+ * fallback=true・condition 未設定の定義はスキップ（fallback は満了時の受け皿であり条件判定の対象外）。
+ * 満了判定・session.ending の既set・過去シーン判定は呼び出し側（confirmSceneReview／モーダル）が行う。
+ */
+export function checkEndings(
+  endings: EndingDef[] | undefined,
+  state: SessionState,
+  world: World | undefined,
+  characterIds: string[],
+): EndingDef | undefined {
+  for (const e of endings ?? []) {
+    if (e.fallback || !e.condition) continue
+    if (evalCondition(e.condition, state, world, characterIds)) return e
+  }
+  return undefined
+}
+
+/** エンディング到達記録を同値 dedupe でマージする（E3。id を持たないため4フィールドの組で判定） */
+function mergeEndingRecords(cur: EndingRecord[], inc: EndingRecord[]): EndingRecord[] {
+  const key = (r: EndingRecord) => `${r.worldId}|${r.endingDefId}|${r.sessionId}|${r.reachedAt}`
+  const seen = new Set(cur.map(key))
+  const merged = [...cur]
+  for (const r of inc) {
+    if (!r || typeof r.worldId !== 'string' || typeof r.endingDefId !== 'string') continue
+    const k = key(r)
+    if (seen.has(k)) continue
+    seen.add(k)
+    merged.push(r)
+  }
+  return merged
+}
+
+/**
+ * レビュー確定で選ばれた変更を state へ適用する純関数（E2）。confirmSceneReview 内の applyState
+ * クロージャをモジュールレベルへ抽出したもの。confirmSceneReview（確定）と SceneReviewModal
+ * （到達プレビュー）の両方がこれを呼ぶことで、モーダルの予告と実際の発火が必ず一致する。
+ * 関係性 prose は全文書き直し（aspect は aspectId 単位でマージ）、flags は和集合、スタットは
+ * clamp 加算、カウンターは累計、実績は連鎖解決するまで反復評価する。
+ */
+export function applyReviewToState(
+  base: SessionState | undefined,
+  world: World | undefined,
+  characterIds: string[],
+  sel: {
+    relationUpdates: RelationUpdate[]
+    statChanges: StatChange[]
+    counterEvents: CounterEvent[]
+    moodChanges: MoodChange[]
+  },
+): { state: SessionState; unlocked: AchievementDef[] } {
+  const prev = base ?? { relations: [], moods: [], stats: [], counters: [], achievements: [] }
+  // 関係性（fromId,toId で upsert。stance は全文置換、flags は和集合）
+  const relations = prev.relations.map((r) => ({ ...r }))
+  for (const u of sel.relationUpdates) {
+    const idx = relations.findIndex((r) => r.fromId === u.fromId && r.toId === u.toId)
+    const aspects = u.aspects.map((a) => ({ aspectId: a.aspectId, note: a.note }))
+    if (idx >= 0) {
+      const flags = Array.from(new Set([...relations[idx].flags, ...u.flagsAdd]))
+      // aspects は aspectId 単位でマージ：返ってきた次元のみ全文置換し、省略された次元は保持する
+      const cur = relations[idx].aspects
+      const merged = [
+        ...cur.map((a) => aspects.find((n) => n.aspectId === a.aspectId) ?? a),
+        ...aspects.filter((n) => !cur.some((a) => a.aspectId === n.aspectId)),
+      ]
+      relations[idx] = {
+        ...relations[idx],
+        stance: u.stance || relations[idx].stance,
+        aspects: merged,
+        flags,
+        updatedAt: Date.now(),
+      }
+    } else {
+      relations.push({
+        fromId: u.fromId,
+        toId: u.toId,
+        stance: u.stance,
+        aspects,
+        flags: u.flagsAdd,
+        updatedAt: Date.now(),
+      })
+    }
+  }
+  // 気分
+  const moods = prev.moods.map((m) => ({ ...m }))
+  for (const m of sel.moodChanges) {
+    const idx = moods.findIndex((x) => x.characterId === m.characterId)
+    if (idx >= 0) moods[idx].mood = m.mood
+    else moods.push({ characterId: m.characterId, mood: m.mood })
+  }
+  // スタット（defId,characterId で clamp 加算。未存在は default を起点）
+  const stats = prev.stats.map((sv) => ({ ...sv }))
+  for (const c of sel.statChanges) {
+    const def = world?.stats.find((d) => d.id === c.defId)
+    const idx = stats.findIndex((sv) => sv.defId === c.defId && sv.characterId === c.characterId)
+    const curVal = idx >= 0 ? stats[idx].value : (def?.default ?? 0)
+    const val = clampStat(curVal + c.delta, def)
+    if (idx >= 0) stats[idx].value = val
+    else stats.push({ defId: c.defId, characterId: c.characterId, value: val })
+  }
+  // カウンター（defId,characterId で累計加算）
+  const counters = (prev.counters ?? []).map((cv) => ({ ...cv }))
+  for (const c of sel.counterEvents) {
+    const idx = counters.findIndex((cv) => cv.defId === c.defId && cv.characterId === c.characterId)
+    if (idx >= 0) counters[idx].value += c.amount
+    else counters.push({ defId: c.defId, characterId: c.characterId, value: c.amount })
+  }
+  // 実績（数・フラグ・実績のしきい値をコードが自動判定。連鎖依存も解決するまで反復）
+  return unlockAchievements(
+    { relations, moods, stats, counters, achievements: prev.achievements ?? [] },
+    world,
+    characterIds,
+  )
+}
+
+/**
  * 表情判定（V4）のモデル出力を検証・解決する純粋関数。
  * キャラ名は完全一致 → 前方一致の順で解決し、解決できない名前・6値以外の emotion は捨てる。
  */
@@ -365,6 +486,7 @@ export function newWorld(): World {
     counters: [],
     achievements: [],
     roles: [],
+    endings: [],
     createdAt: now,
     updatedAt: now,
   }
@@ -451,6 +573,19 @@ export function newCounterDef(name = ''): CounterDef {
 
 export function newAchievementDef(name = ''): AchievementDef {
   return { id: uid(), name, description: '', condition: { all: [] }, hidden: false }
+}
+
+export function newEndingDef(name = ''): EndingDef {
+  return {
+    id: uid(),
+    name,
+    description: '',
+    condition: { all: [] },
+    epilogueGuidance: '',
+    auto: false,
+    hidden: false,
+    fallback: false,
+  }
 }
 
 /** 条件節の既定値（kind 選択時の初期形） */
@@ -647,6 +782,8 @@ interface AppState {
   sessions: Session[]
   /** ゲームカセット棚（配布物の素材化。FB2-E） */
   cassettes: Cassette[]
+  /** エンディング到達の周回横断記録（E3。エピローグ突入時に追記・persist・export/import 対象） */
+  endingRecords: EndingRecord[]
   activeId: string | null
   /** セッションごとの分岐ツリー（軽量メタデータのみ。実体は checkpointStore。C1） */
   branchTrees: Record<string, BranchTree>
@@ -670,6 +807,8 @@ interface AppState {
   error: string | null
   /** 直近のシーン確定で新規解除された実績（通知用・非永続） */
   newlyUnlockedAchievements: AchievementDef[]
+  /** 直近のエンディング到達（🏁 到達トースト用・非永続。エピローグ突入時にセット） */
+  endingToast: { name: string } | null
   /** バックグラウンド画像生成ジョブ（Blob を含むため非永続。partialize から除外） */
   imageJobs: ImageJob[]
   /** 選択待ちに変わったジョブの通知（非永続） */
@@ -681,6 +820,8 @@ interface AppState {
   setView: (v: View) => void
   clearError: () => void
   dismissNewAchievements: () => void
+  /** エンディング到達トーストを閉じる（E2） */
+  dismissEndingToast: () => void
   /** 右コンテキストドック等の UI 設定を部分更新する（UI-3）。没入 OFF→ON で案内を出す（F2） */
   setUiPrefs: (patch: Partial<UiPrefs>) => void
   /** 一時案内メッセージのセット/クリア（F2） */
@@ -763,7 +904,14 @@ interface AppState {
     statChangeIdx: number[]
     counterEventIdx: number[]
     moodChangeIdx: number[]
+    /** 到達エンディングへ進む場合の EndingDef.id（レビューで「エンディングへ進む」を選んだとき。E2） */
+    endingDefId?: string
   }) => void
+  /**
+   * エピローグシーンを締めて物語を完結する（E2）。レビューをスキップして scene.endedAt をセットし、
+   * チェックポイントを記録する。次シーンは作らない。
+   */
+  finalizeStory: () => void
   /** 現在の方向性で次シーン候補だけを再生成する */
   regenerateSuggestions: () => Promise<void>
   cancelReview: () => void
@@ -1056,6 +1204,7 @@ export const useStore = create<AppState>()(
         beforeSession: Session | undefined,
         timeLabel?: string,
         rootLabel?: string,
+        ending?: string,
       ): Promise<void> {
         await serializeCheckpointWrite(sessionId, async () => {
           const session = get().sessions.find((s) => s.id === sessionId)
@@ -1093,6 +1242,7 @@ export const useStore = create<AppState>()(
             imageIds: sessionImageIds(session),
             bytes,
             anchorMessageId: lastMessageId(session),
+            ...(ending ? { ending } : {}),
           }
           set((st) => {
             const cur = st.branchTrees[sessionId] ?? tree!
@@ -1171,8 +1321,18 @@ export const useStore = create<AppState>()(
           sceneNote: scene?.note ?? '',
           currentSceneId: scene?.id ?? null,
           timelineInfo: timelinePromptInfo(session.timeline),
-          nearEnd: isNearEnd(session.timeline),
+          // ending が set の間は nearEnd を出さない（「クライマックスへ収束」とエピローグ指示が矛盾するため）
+          nearEnd: session.ending ? false : isNearEnd(session.timeline),
           stateInfo: buildStateInfo(session, characters, effWorld),
+          // エピローグシーン滞在中だけエンディング指示を注入する（他シーンでは自由な文体へ戻る）
+          ending:
+            session.ending && scene?.id === session.ending.epilogueSceneId
+              ? {
+                  name: session.ending.name,
+                  guidance:
+                    effWorld?.endings?.find((e) => e.id === session.ending!.defId)?.epilogueGuidance ?? '',
+                }
+              : undefined,
         }
       }
 
@@ -1501,6 +1661,7 @@ export const useStore = create<AppState>()(
         personas: [],
         sessions: [],
         cassettes: [],
+        endingRecords: [],
         activeId: null,
         branchTrees: {},
         ui: DEFAULT_UI,
@@ -1517,6 +1678,7 @@ export const useStore = create<AppState>()(
         castingSessionId: null,
         error: null,
         newlyUnlockedAchievements: [],
+        endingToast: null,
         imageJobs: [],
         imageJobToasts: [],
         infoNotice: null,
@@ -1524,6 +1686,7 @@ export const useStore = create<AppState>()(
         setView: (view) => set({ view }),
         clearError: () => set({ error: null }),
         dismissNewAchievements: () => set({ newlyUnlockedAchievements: [] }),
+        dismissEndingToast: () => set({ endingToast: null }),
         setUiPrefs: (patch) =>
           set((s) => {
             // 没入モードを OFF→ON にした瞬間だけ操作方法を案内する（バーが消えて戸惑うため。F2/A8）
@@ -1691,6 +1854,8 @@ export const useStore = create<AppState>()(
             sessions: st.sessions.map((s) =>
               s.worldId === id ? { ...s, worldId: null } : s,
             ),
+            // 該当ワールドのエンディング到達記録を掃除する（E3）
+            endingRecords: st.endingRecords.filter((r) => r.worldId !== id),
           })),
 
         upsertPersona: (p) =>
@@ -2262,81 +2427,18 @@ export const useStore = create<AppState>()(
             .map((i) => review.moodChanges[i])
             .filter(Boolean)
           const stateWorld = get().worlds.find((w) => w.id === s.worldId)
-          // このレビュー適用で新規解除された実績（通知用）
-          const newlyUnlocked: AchievementDef[] = []
 
-          // 関係性 prose を全文書き直し・気分上書き・スタットを clamp 加算した新 state を返す
-          const applyState = (prev: Session['state']): Session['state'] => {
-            const base = prev ?? { relations: [], moods: [], stats: [], counters: [], achievements: [] }
-            // 関係性（fromId,toId で upsert。stance は全文置換、flags は和集合）
-            const relations = base.relations.map((r) => ({ ...r }))
-            for (const u of selectedRelUpdates) {
-              const idx = relations.findIndex((r) => r.fromId === u.fromId && r.toId === u.toId)
-              const aspects = u.aspects.map((a) => ({ aspectId: a.aspectId, note: a.note }))
-              if (idx >= 0) {
-                const flags = Array.from(new Set([...relations[idx].flags, ...u.flagsAdd]))
-                // aspects は aspectId 単位でマージ：レビューは「変化の無い次元は省略してよい」ため、
-                // 配列ごと置換すると省略された次元の記述が失われる。返ってきた次元のみ全文置換する。
-                const prev = relations[idx].aspects
-                const merged = [
-                  ...prev.map((a) => aspects.find((n) => n.aspectId === a.aspectId) ?? a),
-                  ...aspects.filter((n) => !prev.some((a) => a.aspectId === n.aspectId)),
-                ]
-                relations[idx] = {
-                  ...relations[idx],
-                  stance: u.stance || relations[idx].stance,
-                  aspects: merged,
-                  flags,
-                  updatedAt: Date.now(),
-                }
-              } else {
-                relations.push({
-                  fromId: u.fromId,
-                  toId: u.toId,
-                  stance: u.stance,
-                  aspects,
-                  flags: u.flagsAdd,
-                  updatedAt: Date.now(),
-                })
-              }
-            }
-            // 気分
-            const moods = base.moods.map((m) => ({ ...m }))
-            for (const m of selectedMoods) {
-              const idx = moods.findIndex((x) => x.characterId === m.characterId)
-              if (idx >= 0) moods[idx].mood = m.mood
-              else moods.push({ characterId: m.characterId, mood: m.mood })
-            }
-            // スタット（defId,characterId で clamp 加算。未存在は default を起点）
-            const stats = base.stats.map((sv) => ({ ...sv }))
-            for (const c of selectedStats) {
-              const def = stateWorld?.stats.find((d) => d.id === c.defId)
-              const idx = stats.findIndex(
-                (sv) => sv.defId === c.defId && sv.characterId === c.characterId,
-              )
-              const cur = idx >= 0 ? stats[idx].value : (def?.default ?? 0)
-              const val = clampStat(cur + c.delta, def)
-              if (idx >= 0) stats[idx].value = val
-              else stats.push({ defId: c.defId, characterId: c.characterId, value: val })
-            }
-            // カウンター（defId,characterId で累計加算）
-            const counters = (base.counters ?? []).map((cv) => ({ ...cv }))
-            for (const c of selectedCounters) {
-              const idx = counters.findIndex(
-                (cv) => cv.defId === c.defId && cv.characterId === c.characterId,
-              )
-              if (idx >= 0) counters[idx].value += c.amount
-              else counters.push({ defId: c.defId, characterId: c.characterId, value: c.amount })
-            }
-            // 実績（数・フラグ・実績のしきい値をコードが自動判定。連鎖依存も解決するまで反復）
-            const { state: withAchievements, unlocked } = unlockAchievements(
-              { relations, moods, stats, counters, achievements: base.achievements ?? [] },
-              stateWorld,
-              s.characterIds,
-            )
-            newlyUnlocked.push(...unlocked)
-            return withAchievements
-          }
+          // レビュー適用後の新 state を1度だけ計算（純関数 applyReviewToState に一本化。E2）。
+          // エンディング判定・シーン確定の両方でこの同一結果を使う＝プレビューと発火の不一致を防ぐ。
+          const applied = applyReviewToState(s.state, stateWorld, s.characterIds, {
+            relationUpdates: selectedRelUpdates,
+            statChanges: selectedStats,
+            counterEvents: selectedCounters,
+            moodChanges: selectedMoods,
+          })
+          const newState = applied.state
+          // このレビュー適用で新規解除された実績（通知用）
+          const newlyUnlocked: AchievementDef[] = [...applied.unlocked]
 
           // 発見ロア・キャラ成長はセッションのオーバーレイへ積む（元 Character/World は不変に保つ）
           const nextOverlay = (prev: Session['overlay'] | undefined): Session['overlay'] => {
@@ -2410,6 +2512,93 @@ export const useStore = create<AppState>()(
           const tl = s.timeline.enabled ? advanceTimeline(s.timeline) : s.timeline
           const nextLabel = s.timeline.enabled ? timeLabelOf(tl) : undefined
 
+          // ── エンディング判定（E2）。session.ending が既 set なら判定・発火しない（到達済み）。
+          // 判定は newState（このレビュー適用後の state）に対して行い、モーダルのプレビューと一致させる。
+          const endings = stateWorld?.endings ?? []
+          const matched = s.ending
+            ? undefined
+            : checkEndings(endings, newState, stateWorld, s.characterIds)
+          // 満了モード：確定後に進む先が totalDays を超えるか（enabled かつ totalDays 指定時のみ）
+          const isExpiry =
+            !s.ending &&
+            s.timeline.enabled &&
+            s.timeline.totalDays != null &&
+            tl.currentDay > s.timeline.totalDays
+          // 発火する結末を confirm 側で最終決定する（防御）：
+          //  1) 最上位成立が auto なら opts に依らず強制突入
+          //  2) それ以外は opts.endingDefId が渡され、確定後 state で実際に成立（または満了 fallback）する時のみ
+          let firing: EndingDef | undefined
+          if (!s.ending) {
+            if (matched?.auto) {
+              firing = matched
+            } else if (opts.endingDefId) {
+              const chosen = endings.find((e) => e.id === opts.endingDefId)
+              if (chosen?.fallback) {
+                if (isExpiry) firing = chosen
+              } else if (chosen && evalCondition(chosen.condition, newState, stateWorld, s.characterIds)) {
+                firing = chosen
+              }
+            }
+          }
+
+          if (firing) {
+            // ── エピローグシーンへ突入（E2）。タイムラインは進めない（もう時間の意味が無い）。
+            const ending = firing
+            const epiScene = newScene(`エピローグ：${ending.name}`, scene.activeCharacterIds, 'エピローグ')
+            epiScene.note = ending.epilogueGuidance
+            const reachedAt = Date.now()
+            set((st) => ({
+              sessions: st.sessions.map((sess) =>
+                sess.id === s.id
+                  ? {
+                      ...sess,
+                      scenes: sess.scenes
+                        .map((sc) =>
+                          sc.id === scene.id
+                            ? { ...sc, summary: opts.summary.trim(), endedAt: reachedAt }
+                            : sc,
+                        )
+                        .concat(epiScene),
+                      currentSceneId: epiScene.id,
+                      // タイムライン・usedEventIds は据え置き（特別イベント同時発火はエンディングが勝つ＝未消化のまま残す）
+                      state: newState,
+                      overlay: nextOverlay(sess.overlay),
+                      spriteEmotions: [],
+                      ending: {
+                        defId: ending.id,
+                        name: ending.name,
+                        reachedAt,
+                        epilogueSceneId: epiScene.id,
+                      },
+                      updatedAt: reachedAt,
+                    }
+                  : sess,
+              ),
+              sceneReview: null,
+              newlyUnlockedAchievements: newlyUnlocked,
+              endingToast: { name: ending.name },
+              // 周回横断の到達記録（E3）。突入時に追記＝完結ボタンの押し忘れで漏れないため。再到達も追記し表示側で distinct
+              endingRecords: s.worldId
+                ? [
+                    ...st.endingRecords,
+                    { worldId: s.worldId, endingDefId: ending.id, sessionId: s.id, reachedAt },
+                  ]
+                : st.endingRecords,
+            }))
+            void recordCheckpoint(
+              s.id,
+              'scene',
+              `🏁 エピローグ：${ending.name}`,
+              s,
+              'エピローグ',
+              undefined,
+              ending.name,
+            )
+            // エピローグ導入を自動生成（締めの場面。選択肢も choiceMode に従う）
+            void get().beginScene()
+            return
+          }
+
           const sug = opts.suggestion
           const event = review.scheduledEventId
             ? get().worlds
@@ -2441,7 +2630,7 @@ export const useStore = create<AppState>()(
                     currentSceneId: next.id,
                     timeline: tl,
                     usedEventIds,
-                    state: applyState(sess.state),
+                    state: newState,
                     overlay: nextOverlay(sess.overlay),
                     spriteEmotions: [], // シーンは時間・場面が飛ぶため前シーンの表情を持ち越さない
                     updatedAt: Date.now(),
@@ -2455,6 +2644,38 @@ export const useStore = create<AppState>()(
 
           // 新シーンの導入を自動生成（→ 続けて選択肢が提示される）
           void get().beginScene()
+        },
+
+        finalizeStory: () => {
+          const s = active()
+          if (!s || !s.ending) return
+          if (get().isStreaming || get().isReviewing) return
+          const sceneId = s.ending.epilogueSceneId
+          const scene = s.scenes.find((sc) => sc.id === sceneId)
+          if (!scene || scene.endedAt) return
+          const endedAt = Date.now()
+          set((st) => ({
+            sessions: st.sessions.map((sess) =>
+              sess.id === s.id
+                ? {
+                    ...sess,
+                    scenes: sess.scenes.map((sc) =>
+                      sc.id === sceneId ? { ...sc, endedAt } : sc,
+                    ),
+                    updatedAt: endedAt,
+                  }
+                : sess,
+            ),
+          }))
+          void recordCheckpoint(
+            s.id,
+            'scene',
+            `🏁 完結：${s.ending.name}`,
+            s,
+            'エピローグ',
+            undefined,
+            s.ending.name,
+          )
         },
 
         regenerateSuggestions: async () => {
@@ -2884,7 +3105,7 @@ export const useStore = create<AppState>()(
         },
 
         exportBundle: async (includeImages) => {
-          const { characters, worlds, personas, sessions, cassettes } = get()
+          const { characters, worlds, personas, sessions, cassettes, endingRecords } = get()
           // providers（API キー）は localStorage のみに保持し、エクスポートには含めない（共有時の漏洩防止）
           const bundle: ExportBundle = {
             type: 'ai-storytelling-studio',
@@ -2895,6 +3116,7 @@ export const useStore = create<AppState>()(
             personas,
             sessions,
             cassettes,
+            endingRecords,
           }
           if (includeImages) {
             const ids = collectUsedImageIds(characters, personas, sessions, cassettes)
@@ -2938,6 +3160,7 @@ export const useStore = create<AppState>()(
             counters: Array.isArray(w.counters) ? w.counters : [],
             achievements: Array.isArray(w.achievements) ? w.achievements : [],
             roles: normalizeWorldRoles(w.roles),
+            endings: Array.isArray(w.endings) ? w.endings : [],
           }))
           const incomingSessions = (bundle.sessions ?? []).map((sess: any) => ({
             ...sess,
@@ -2971,6 +3194,8 @@ export const useStore = create<AppState>()(
                     : cassette.session,
                 })),
               ),
+              // エンディング到達記録は同値 dedupe でマージ（E3。id を持たないため組み合わせで判定）
+              endingRecords: mergeEndingRecords(st.endingRecords, bundle.endingRecords ?? []),
               // providers はユーザー固有の設定のためインポート対象外
             }
           })
@@ -3296,6 +3521,7 @@ export const useStore = create<AppState>()(
         personas: st.personas,
         sessions: st.sessions,
         cassettes: st.cassettes,
+        endingRecords: st.endingRecords,
         activeId: st.activeId,
         branchTrees: st.branchTrees,
         ui: st.ui,

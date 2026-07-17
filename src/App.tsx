@@ -57,6 +57,8 @@ export default function App() {
     castingSessionId,
     newlyUnlockedAchievements,
     dismissNewAchievements,
+    endingToast,
+    dismissEndingToast,
     imageJobToasts,
     dismissImageJobToasts,
     infoNotice,
@@ -230,6 +232,15 @@ export default function App() {
             className="toast achievement"
             text={`🏆 実績解除: ${newlyUnlockedAchievements.map((a) => a.name || '無名').join(' / ')}`}
             onClose={dismissNewAchievements}
+            autoCloseMs={6000}
+          />
+        )}
+
+        {endingToast && (
+          <ToastItem
+            className="toast achievement"
+            text={`🏁 エンディング「${endingToast.name}」へ`}
+            onClose={dismissEndingToast}
             autoCloseMs={6000}
           />
         )}

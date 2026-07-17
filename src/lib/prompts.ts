@@ -21,6 +21,8 @@ export interface ResolvedRefs {
   nearEnd: boolean
   /** 関係性 prose・気分・注入対象スタットの現在値（空なら無効） */
   stateInfo: string
+  /** エピローグシーン滞在中のみ設定（到達した結末のトーン指示。docs/設計_エンディング.md） */
+  ending?: { name: string; guidance: string }
 }
 
 /** キャラ1人の定義ブロックを作る */
@@ -108,6 +110,16 @@ export function buildSystemPrompt(
     let t = `【時間】\n${refs.timelineInfo}`
     if (refs.nearEnd) t += `\n物語は終盤です。クライマックスに向けて収束させてください。`
     parts.push(t)
+  }
+
+  // 1.8 エンディング（エピローグシーン滞在中のみ。nearEnd はこの間スキップ済み）
+  if (refs.ending) {
+    parts.push(
+      `【エンディング】\nこの物語は結末「${refs.ending.name}」のエピローグに入っています。` +
+        (refs.ending.guidance.trim() ? `（${refs.ending.guidance.trim()}）` : '') +
+        `\n新しい事件・伏線を起こさず、これまでの感情と関係の帰着を描いてください。` +
+        `\n数ターンで余韻を残して物語を締めくくる方向で書きます。`,
+    )
   }
 
   // 1.9 状態（関係性 prose・気分・注入対象スタット）

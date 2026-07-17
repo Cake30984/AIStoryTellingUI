@@ -252,6 +252,8 @@ function normalizeWorldFromData(raw: any): World {
     counters: Array.isArray(raw.counters) ? raw.counters : [],
     achievements: Array.isArray(raw.achievements) ? raw.achievements : [],
     roles: normalizeWorldRoles(raw.roles),
+    // カード往復でエンディング定義が消えないよう明示的に引き継ぐ（E1）
+    endings: Array.isArray(raw.endings) ? raw.endings : [],
     ...(startPreset ? { startPreset } : {}),
     createdAt: typeof raw.createdAt === 'number' ? raw.createdAt : now,
     updatedAt: typeof raw.updatedAt === 'number' ? raw.updatedAt : now,
@@ -380,6 +382,8 @@ export function freshSessionOf(session: Session): Session {
     state: { relations: [], moods: [], stats: [], counters: [], achievements: [] },
     overlay: { lore: [], characterDevelopments: [] },
     usedEventIds: [],
+    // 到達エンディングを初期化（忘れるとカセット出力→新規プレイで即「完結済み」表示になる。E1）
+    ending: undefined,
     spriteEmotions: [],
     // 開始時点（startDay/startSlot）へ巻き戻す。指定が無ければ従来どおり1日目・先頭スロット（FB2-B）。
     // 区切り編集後に範囲外となった開始時点は防御的にクランプ（FB4-A）

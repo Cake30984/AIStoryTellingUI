@@ -3,6 +3,7 @@ import {
   newAchievementDef,
   newClause,
   newCounterDef,
+  newEndingDef,
   newLoreEntry,
   newRelationAspect,
   newStatDef,
@@ -15,6 +16,7 @@ import type {
   Clause,
   Condition,
   CounterDef,
+  EndingDef,
   LoreEntry,
   Op,
   RelationAspectDef,
@@ -35,7 +37,17 @@ const OPS: Op[] = ['>=', '>', '<=', '<', '==', '!=']
 
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
-type Section = 'basic' | 'start' | 'roles' | 'lore' | 'events' | 'aspects' | 'stats' | 'counters' | 'achievements'
+type Section =
+  | 'basic'
+  | 'start'
+  | 'roles'
+  | 'lore'
+  | 'events'
+  | 'aspects'
+  | 'stats'
+  | 'counters'
+  | 'achievements'
+  | 'endings'
 
 const SECTIONS: { id: Section; label: string }[] = [
   { id: 'basic', label: '基本' },
@@ -47,6 +59,7 @@ const SECTIONS: { id: Section; label: string }[] = [
   { id: 'stats', label: 'ステータス' },
   { id: 'counters', label: 'カウンター' },
   { id: 'achievements', label: '実績' },
+  { id: 'endings', label: 'エンディング' },
 ]
 
 /** Condition から節配列・モードを取り出す（all/any の判別） */
@@ -354,6 +367,40 @@ export default function WorldEditor({ world, onClose }: Props) {
       a.id,
       modeOf(a.condition),
       clausesOf(a.condition).filter((_, i) => i !== idx),
+    )
+
+  // エンディング定義（E1。配列順=優先度＝上が優先。到達判定はコードが自動で行う）
+  const endings = d.endings ?? []
+  const updateEnding = (id: string, p: Partial<EndingDef>) =>
+    patch({ endings: endings.map((e) => (e.id === id ? { ...e, ...p } : e)) })
+  const addEnding = () => patch({ endings: [...endings, newEndingDef()] })
+  const removeEnding = (id: string) => patch({ endings: endings.filter((e) => e.id !== id) })
+  const moveEnding = (idx: number, dir: -1 | 1) => {
+    const to = idx + dir
+    if (to < 0 || to >= endings.length) return
+    const next = endings.slice()
+    ;[next[idx], next[to]] = [next[to], next[idx]]
+    patch({ endings: next })
+  }
+  const setEndingCondition = (id: string, mode: 'all' | 'any', clauses: Clause[]) =>
+    updateEnding(id, { condition: mode === 'all' ? { all: clauses } : { any: clauses } })
+  const addEndingClause = (e: EndingDef) =>
+    setEndingCondition(
+      e.id,
+      modeOf(e.condition ?? { all: [] }),
+      [...clausesOf(e.condition ?? { all: [] }), newClause('stat', d)],
+    )
+  const updateEndingClause = (e: EndingDef, idx: number, clause: Clause) =>
+    setEndingCondition(
+      e.id,
+      modeOf(e.condition ?? { all: [] }),
+      clausesOf(e.condition ?? { all: [] }).map((c, i) => (i === idx ? clause : c)),
+    )
+  const removeEndingClause = (e: EndingDef, idx: number) =>
+    setEndingCondition(
+      e.id,
+      modeOf(e.condition ?? { all: [] }),
+      clausesOf(e.condition ?? { all: [] }).filter((_, i) => i !== idx),
     )
 
   // プリセット：既存と重複しない次元・スタット・カウンターを追記
@@ -1103,6 +1150,143 @@ export default function WorldEditor({ world, onClose }: Props) {
           })}
           <button className="btn" style={{ marginTop: 8 }} onClick={addAchievement}>
             ＋ 実績を追加
+          </button>
+            </>
+          )}
+
+          {section === 'endings' && (
+            <>
+          <div className="lore-head">
+            <label>エンディング</label>
+            <div className="desc">
+              条件を満たすと物語がその結末へ到達し、エピローグシーンに入ります（到達判定はコードが自動で行い、
+              prose は読みません）。<strong>上にあるほど優先</strong>されます（複数成立時は最上位の1つ）。
+              「fallback」は期間満了時に条件成立エンディングが無い場合の受け皿です。
+            </div>
+          </div>
+          {endings.map((e, idx) => {
+            const cond = e.condition ?? { all: [] }
+            const mode = modeOf(cond)
+            const clauses = clausesOf(cond)
+            return (
+              <div key={e.id} className="lore-entry">
+                <div className="lore-entry-top">
+                  <span className="sub-label" style={{ minWidth: 28, textAlign: 'center' }}>
+                    {idx + 1}
+                  </span>
+                  <input
+                    className="lore-keys"
+                    value={e.name}
+                    placeholder="エンディング名（例: 卒業の約束）"
+                    onChange={(ev) => updateEnding(e.id, { name: ev.target.value })}
+                  />
+                  <button
+                    className="icon-btn small"
+                    onClick={() => moveEnding(idx, -1)}
+                    disabled={idx === 0}
+                    title="優先度を上げる"
+                  >
+                    ↑
+                  </button>
+                  <button
+                    className="icon-btn small"
+                    onClick={() => moveEnding(idx, 1)}
+                    disabled={idx === endings.length - 1}
+                    title="優先度を下げる"
+                  >
+                    ↓
+                  </button>
+                  <button className="icon-btn small" onClick={() => removeEnding(e.id)} title="削除">
+                    ✕
+                  </button>
+                </div>
+                <textarea
+                  rows={2}
+                  className="lore-content"
+                  value={e.description}
+                  placeholder="説明（一覧・到達時に表示。条件そのものは書かない）"
+                  onChange={(ev) => updateEnding(e.id, { description: ev.target.value })}
+                />
+                <div className="sub-field" style={{ marginTop: 6 }}>
+                  <span className="sub-label">エピローグ指針</span>
+                  <textarea
+                    rows={2}
+                    value={e.epilogueGuidance}
+                    placeholder="結末のトーン・締め方（到達後にのみ本編へ注入。プレイ中はリークしない）"
+                    onChange={(ev) => updateEnding(e.id, { epilogueGuidance: ev.target.value })}
+                  />
+                </div>
+                <div className="lore-entry-top" style={{ marginTop: 6, flexWrap: 'wrap' }}>
+                  <label className="chk" title="条件成立で強制突入する（「まだ続ける」を出さない。バッドエンド向け）">
+                    <input
+                      type="checkbox"
+                      checked={!!e.auto}
+                      disabled={!!e.fallback}
+                      onChange={(ev) => updateEnding(e.id, { auto: ev.target.checked })}
+                    />
+                    自動突入（auto）
+                  </label>
+                  <label className="chk" title="未到達時は名前・内容を隠す">
+                    <input
+                      type="checkbox"
+                      checked={!!e.hidden}
+                      onChange={(ev) => updateEnding(e.id, { hidden: ev.target.checked })}
+                    />
+                    未到達時は隠す
+                  </label>
+                  <label className="chk" title="期間満了時、条件成立エンディングが無い場合の受け皿（条件・自動突入は持たない）">
+                    <input
+                      type="checkbox"
+                      checked={!!e.fallback}
+                      onChange={(ev) =>
+                        updateEnding(e.id, {
+                          fallback: ev.target.checked,
+                          // fallback は条件・auto を持たない（判定側も無視する）
+                          ...(ev.target.checked ? { auto: false } : {}),
+                        })
+                      }
+                    />
+                    満了時の受け皿（fallback）
+                  </label>
+                </div>
+                {!e.fallback && (
+                  <>
+                    <div className="row2" style={{ marginTop: 6, alignItems: 'center' }}>
+                      <span className="sub-label">到達条件</span>
+                      <select
+                        value={mode}
+                        style={{ background: 'var(--bg)' }}
+                        onChange={(ev) =>
+                          setEndingCondition(e.id, ev.target.value as 'all' | 'any', clauses)
+                        }
+                      >
+                        <option value="all">すべて満たす</option>
+                        <option value="any">いずれか満たす</option>
+                      </select>
+                    </div>
+                    {clauses.map((c, i) => (
+                      <ClauseRow
+                        key={i}
+                        clause={c}
+                        world={d}
+                        onChange={(nc) => updateEndingClause(e, i, nc)}
+                        onRemove={() => removeEndingClause(e, i)}
+                      />
+                    ))}
+                    <button
+                      className="btn"
+                      style={{ marginTop: 6 }}
+                      onClick={() => addEndingClause(e)}
+                    >
+                      ＋ 条件を追加
+                    </button>
+                  </>
+                )}
+              </div>
+            )
+          })}
+          <button className="btn" style={{ marginTop: 8 }} onClick={addEnding}>
+            ＋ エンディングを追加
           </button>
             </>
           )}
