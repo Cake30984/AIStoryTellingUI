@@ -1,9 +1,10 @@
 import { useRef, useState } from 'react'
-import { useStore } from '../store'
+import { DEFAULT_MODEL, useStore } from '../store'
 import { downloadBundle, parseBundle } from '../lib/io'
 import { parseCardPng, attachCardImage } from '../lib/cards'
 import { PROVIDER_PRESETS, newProvider } from '../lib/providers'
 import ImageProviderSettings from './ImageProviderSettings'
+import ModelPicker from './ModelPicker'
 import { appConfirm } from '../lib/dialogs'
 import type { Provider } from '../types'
 import { Icon } from './icons'
@@ -23,6 +24,8 @@ export function SettingsBody() {
     importPersonaCard,
     importCassette,
     gcUnusedImages,
+    defaultModelRef,
+    setDefaultModelRef,
   } = useStore()
 
   // API キーはローカルバッファに保持し「保存」ボタンで確定
@@ -41,6 +44,7 @@ export function SettingsBody() {
   const [addKey, setAddKey] = useState('')
   const [showAddKey, setShowAddKey] = useState(false)
   const [includeImages, setIncludeImages] = useState(true)
+  const [showDefaultPicker, setShowDefaultPicker] = useState(false)
 
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -283,6 +287,25 @@ export function SettingsBody() {
             )}
           </div>
 
+          {/* 新規セッションの既定モデル */}
+          <div className="field">
+            <label>新しい物語の既定モデル</label>
+            <div className="desc">
+              新しいセッションの作成時とカセット開始時に、最初からこのモデルが選択された状態になります
+              （セッションごとの変更は今までどおり可能です）。
+            </div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <button className="model-chip" style={{ flex: 1 }} onClick={() => setShowDefaultPicker(true)}>
+                {defaultModelRef || `未設定（${DEFAULT_MODEL}）`}
+              </button>
+              {defaultModelRef && (
+                <button className="btn" style={{ whiteSpace: 'nowrap' }} onClick={() => setDefaultModelRef('')}>
+                  クリア
+                </button>
+              )}
+            </div>
+          </div>
+
           <hr className="divider" />
 
           {/* 画像生成の接続先 */}
@@ -354,6 +377,14 @@ export function SettingsBody() {
           <p className="desc" style={{ marginTop: 32, textAlign: 'center' }}>
             AI Storytelling Studio
           </p>
+
+          {showDefaultPicker && (
+            <ModelPicker
+              current={defaultModelRef ?? ''}
+              onPick={(ref) => setDefaultModelRef(ref)}
+              onClose={() => setShowDefaultPicker(false)}
+            />
+          )}
     </>
   )
 }

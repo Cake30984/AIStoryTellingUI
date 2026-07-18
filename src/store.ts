@@ -703,6 +703,8 @@ export function currentScene(s: Session): Scene | undefined {
  */
 export function newCassette(seed?: Session): Cassette {
   const session = seed ? freshSessionOf(seed) : newSession('story')
+  // カセットはモデル参照を持たない（配布先の環境に依存するため。seed 経由は freshSessionOf が空にする）
+  if (!seed) session.model = ''
   return {
     id: uid(),
     title: session.title,
@@ -775,6 +777,8 @@ interface AppState {
   lastImageProviderId?: string
   /** 最後に起案（プロンプト起草）に使ったモデル（"providerId::modelId"。V5c） */
   lastDraftModel?: string
+  /** 新規セッション・カセット開始時の既定モデル（"providerId::modelId"。System で設定。persist のみ・エクスポート除外） */
+  defaultModelRef?: string
   favoriteModels: string[]
   characters: Character[]
   worlds: World[]
@@ -832,6 +836,8 @@ interface AppState {
   deleteProvider: (id: string) => void
   loadModels: (providerId: string) => Promise<void>
   toggleFavorite: (modelId: string) => void
+  /** 新規セッション・カセット開始時の既定モデルを設定する（空文字でクリア） */
+  setDefaultModelRef: (ref: string) => void
 
   // 画像生成の接続先
   upsertImageProvider: (p: ImageProvider) => void
@@ -1655,6 +1661,7 @@ export const useStore = create<AppState>()(
         imageProviders: [],
         lastImageProviderId: undefined,
         lastDraftModel: undefined,
+        defaultModelRef: undefined,
         favoriteModels: [],
         characters: [],
         worlds: [],
@@ -1724,6 +1731,7 @@ export const useStore = create<AppState>()(
 
         setLastImageProviderId: (id) => set({ lastImageProviderId: id }),
         setLastDraftModel: (ref) => set({ lastDraftModel: ref }),
+        setDefaultModelRef: (ref) => set({ defaultModelRef: ref || undefined }),
 
         loadModels: async (providerId) => {
           const provider = get().providers.find((p) => p.id === providerId)
@@ -1887,6 +1895,8 @@ export const useStore = create<AppState>()(
 
         createSession: (mode) => {
           const s = newSession(mode)
+          // System で設定した既定モデルがあれば、最初から選択済みの状態で始める
+          s.model = get().defaultModelRef || s.model
           set((st) => ({ sessions: [s, ...st.sessions], activeId: s.id, view: 'sessions' }))
           return s.id // 呼び出し側で作成直後に設定モーダルを開くため（F3/R15）
         },
@@ -3284,7 +3294,13 @@ export const useStore = create<AppState>()(
           const now = Date.now()
           // 同梱セッションを丸ごと複製して新しい id で開始（何度でも最初から遊べる）
           const cloned = JSON.parse(JSON.stringify(cas.session)) as Session
-          const session: Session = { ...cloned, id: uid(), createdAt: now, updatedAt: now }
+          // カセットはモデル参照を持たない（freshSessionOf が空にする）ため既定モデルで開始する。
+          // 旧カセット（DEFAULT_MODEL が刻印されたままの下書き）も未設定として扱う
+          const model =
+            cloned.model && cloned.model !== DEFAULT_MODEL
+              ? cloned.model
+              : get().defaultModelRef || DEFAULT_MODEL
+          const session: Session = { ...cloned, id: uid(), model, createdAt: now, updatedAt: now }
           set((st) => ({
             sessions: [session, ...st.sessions],
             activeId: session.id,
@@ -3515,6 +3531,7 @@ export const useStore = create<AppState>()(
         imageProviders: st.imageProviders,
         lastImageProviderId: st.lastImageProviderId,
         lastDraftModel: st.lastDraftModel,
+        defaultModelRef: st.defaultModelRef,
         favoriteModels: st.favoriteModels,
         characters: st.characters,
         worlds: st.worlds,

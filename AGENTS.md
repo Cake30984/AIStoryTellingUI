@@ -82,7 +82,7 @@ Play 領域:
 - `SessionEditor.tsx` — セッション設定。「基本／進行／モデル／出力」4タブ（同一 draft を共有）。フッターに「カセットにする…」（`CassetteEditor` を `seedSession` 付きで開く）。「構造化出力」チェックボックスあり。世界観選択時に開始テンプレートを空欄項目のみ自動コピー（`startPresetPatch`・W1）＋「開始テンプレートを読み込む」リンクで全上書き（確認つき）。story モードは導入（`story.opening`/`openingTitle`・そのまま掲載）欄の直下に `CastingFields`（世界観ロールへの配役）がある。進行タブに開始時間帯（`timeline.currentSlot`／未開始時は `startDay`/`startSlot` として記録）
 - `CastingModal.tsx` — 導入文または必須ロールが未配役の開始時に開くモーダル。`CastingFields` で埋めてから、そのまま `startStory` を再実行する
 - `CassetteEditor.tsx` — カセット専用エディタ（FB3-D）。左セクションナビ（基本〔タイトル・紹介文・表紙〕／世界観／登場キャラ／ペルソナ／開始・進行）で `Cassette`（内部に開始状態のセッション）を編成。開始・進行の導入欄直下に `CastingFields` を置く。新規＝`newCassette()`／既存編集＝`cassette` prop／セッションから＝`seedSession`（`freshSessionOf` で下書き化）。表紙はタイトルから自動（保存時に生成焼付け）／画像ファイル選択（`normalizeImage`→`putImage`）／種セッションの挿絵から選択。保存は `upsertCassette`。読み込みは Sidebar D&D・System ファイル入力・カセット棚 D&D（`importCassette`＝「棚に登録のみ」＝`cassettes` に積む。FB2-E）。PNG 書き出しは未解決の配役があると拒否する
-- `SettingsModal.tsx` — `export function SettingsBody()`（System ページ本体）。プロバイダ管理・データ入出力（「画像も含める」チェックボックス）・未使用画像 GC。App.tsx が `view==='system'` で描画
+- `SettingsModal.tsx` — `export function SettingsBody()`（System ページ本体）。プロバイダ管理・新しい物語の既定モデル（`defaultModelRef`）・データ入出力（「画像も含める」チェックボックス）・未使用画像 GC。App.tsx が `view==='system'` で描画
 - `ImageProviderSettings.tsx` — 画像生成接続先の管理（ComfyUI/画像API の追加・編集・削除・接続テスト・デフォルトタグ入力）。`SettingsBody` に組み込み
 - `ImageGenModal.tsx` — 画像生成モーダル（アバター/挿絵/ペルソナ/立ち絵/背景で共用）。接続先・サイズ・枚数選択、「プロンプトを起案」、`target: ImageJobTarget`＋`label` で `store.startImageJob` を呼びジョブ購読。接続先/起案モデルは記憶（`lastImageProviderId`/`lastDraftModel`）
 - `ImageJobsPanel.tsx` — `ImageJobsBody()`（ドックの jobs タブ）。running=進捗＋キャンセル、selecting=候補サムネ＋採用/破棄
@@ -149,6 +149,8 @@ Play 領域:
 - 本編: `character.model`（chat 群像・話者確定時のみ）→ `session.model`
 - レビュー用: `session.reviewModel` → `session.model`
 - 選択肢用: `session.choicesModel` → `session.model`
+
+新規作成時の初期値: `createSession`（新規セッション）と `playCassette`（カセット開始）は System の「新しい物語の既定モデル」＝AppState 直下 `defaultModelRef`（persist のみ・エクスポート除外＝プロバイダ id が端末固有のため）を刻印する。未設定なら `DEFAULT_MODEL`。カセット下書き（`newCassette`/`freshSessionOf`）はモデル参照を持たない（空文字）。
 
 ヘルパ: `mainModelOf(session, character?)`/`reviewModelOf(session)`/`choicesModelOf(session)`（store.ts エクスポート）
 
