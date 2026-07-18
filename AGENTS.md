@@ -89,7 +89,7 @@ Play 領域:
 - `GalleryModal.tsx` — `GalleryBody({session})`（ドックの gallery タブ）。挿絵・背景をシーン見出し付きグリッド表示。保存・削除
 - `BranchTreeModal.tsx` — `BranchTreeBody({session})`（ドックの branch タブ）。**SourceTree 風コミットグラフ**（FB3-B2・`.bg-*` クラス）: 全ノードを pre-order（現在パスの子を最優先＝現在パスをレーン0の直線に保つ）で縦1列に並べ、`buildGraph` がレーン割り当て＋各行の通過縦線／分岐カーブを計算し SVG で描画。最初の子は親と同じレーンを継ぎ2番目以降は新レーンへ（木なので merge 無し＝分岐カーブは親行の下半分のみ）。レーン色は `--graph-lane-0..5`。行＝色ドット＋ラベル＋timeLabel＋★＋いまここ、hover の「↩ 戻る」`restoreCheckpoint`＋⋯メニュー（しおり `setBranchStar`/`removeBranchStar`・シーン開始前へ戻る・この分岐を削除 `deleteBranchSubtree`＝現在パス上は無効）。「✂ 現在の分岐だけ残す（他n件を削除）」`pruneToCurrentPath`・「★ しおり」タブ・currentId 変化で自動スクロール
 - `ModelPicker.tsx` — プロバイダ切替・モデル一覧・お気に入り。`onPick` は `"providerId::modelId"`
-- `SceneEditor.tsx`/`SceneReviewModal.tsx`/`StoryLogModal.tsx`/`StatusPanel.tsx`/`DiscoveryPanel.tsx`/`CsvInput.tsx` — 各種閲覧・編集モーダル。StatusPanel/DiscoveryPanel はドックの「✎ 編集」経由で開く。`DiscoveryPanel` は `scope`（`'lore' | {characterId}`・F4）で世界観/キャラ別に編集画面を分割し、保存は live 起点でスコープ分だけ差し替え（編集中の他スコープ追記を巻き戻さない）
+- `SceneEditor.tsx`/`SceneReviewModal.tsx`/`StoryLogModal.tsx`/`StatusPanel.tsx`/`DiscoveryPanel.tsx`/`CsvInput.tsx` — 各種閲覧・編集モーダル。`SceneReviewModal` はヘッダの「✎ 編集」トグルで全項目（あらすじ・候補・成長・ロア・関係性・数値）をローカル draft 編集でき、閲覧モードは読み取り専用・編集モードはチェックボックス非表示（追加/削除なし。FB5-C）。「自分で決める」はタイトル/内容の直接記入で AI 候補と同扱い。エンディング到達プレビューは draft で計算し、確定は `updateSceneReview` で draft を書き戻してから（プレビューと発火の一致）。StatusPanel/DiscoveryPanel はドックの「✎ 編集」経由で開く。`DiscoveryPanel` は `scope`（`'lore' | {characterId}`・F4）で世界観/キャラ別に編集画面を分割し、保存は live 起点でスコープ分だけ差し替え（編集中の他スコープ追記を巻き戻さない）
 - `library/` — 各素材の一覧＋エディタ（Character/World/Persona）と `CassetteLibrary`（🎮カセット棚＝「＋カセットを作る」で `CassetteEditor` 起動・表紙/紹介文/▶遊ぶ/✎編集/PNG書き出し/削除・D&D取込。FB2-E/FB3-D）と `AvatarField`/`SpriteSetField`。各 Library は PNG カード D&D 受付＋検索＋複数選択（`useMultiSelect`・右クリックメニュー＝`LibraryMultiSelect.tsx` の `SelectionBar`/`CardContextMenu`。Ctrl/Shift 選択→一括削除。FB2-D）。CharacterEditor/PersonaEditor は draft を保存ボタンで反映、`AvatarField`/`SpriteSetField` は store 直管理フィールド（avatar.imageId/sprites）を live 購読して同期。WorldEditor はフルページ（`.section-nav`＋`.section-content` の9セクション。「開始テンプレート」= `World.startPreset` の編集・W1、「配役」= `World.roles` の編集・CA2）
 
 ## 設計ドキュメント（`docs/`）
@@ -161,7 +161,7 @@ Play 領域:
 **スキーマ変更時の手順: 型更新 → 初期state/factory更新 → exportBundle/importBundle 反映 → partialize に新フィールド。**（破壊的なら persist キーも更新）
 
 ## 主要な振る舞い
-- **シーン進行**: `このシーンを終える` → `prepareSceneReview`（要約＋`nextScheduledEvent`＋成長案＋関係値差分。max_tokens 途中切れ対策＝拡大＋`finish_reason==='length'` で最大2回再試行、失敗時は明示エラー）→ レビュー確認 → `confirmSceneReview`（成長/イベント反映・関係値加算/気分更新・タイムライン前進・新シーン作成）→ `beginScene()` → 選択肢。物語開始は `startStory()`。**導入（`story.opening`）が非空なら AI 生成せずその文章を最初の assistant メッセージとして掲載**（`openingTitle` があれば見出しに採用）→ 選択肢生成＋チェックポイント（FB2-B）
+- **シーン進行**: `このシーンを終える` → `prepareSceneReview`（要約＋`nextScheduledEvent`＋成長案＋関係値差分。max_tokens 途中切れ対策＝拡大＋`finish_reason==='length'` で最大2回再試行、失敗時は明示エラー）→ レビュー確認 → `confirmSceneReview`（成長/イベント反映・関係値加算/気分更新・タイムライン前進・新シーン作成。新シーンのタイトルは 提案タイトル → イベント名 → 連番 の優先＝ユーザー編集を優先。FB5-C）→ `beginScene()` → 選択肢。物語開始は `startStory()`。**導入（`story.opening`）が非空なら AI 生成せずその文章を最初の assistant メッセージとして掲載**（`openingTitle` があれば見出しに採用）→ 選択肢生成＋チェックポイント（FB2-B）
 - **セッション・オーバーレイ**: 素材（Character/World）は再利用資産なので**レビューは書き換えない**。採用された発見は `confirmSceneReview`（`applyDiscovery`）で `overlay` に追記。本編・レビュー文脈は必ず実効ビュー（`effectiveWorld`/`effectiveCharacter`）を読む（片方だけ素材素を読むと発見が消えて見える）。閲覧/編集は `DiscoveryPanel`、昇格は `promoteOverlayLore`/`promoteOverlayDev`（**move**。copy だと実効合成で二重注入）
 - **世界観イベント自動発火** `nextScheduledEvent`: 未消化・day 到来・condition 成立の特別イベントを day 順で1つ選び、人の承認なしでコードが自動発火（`session.eventAutoFire===false` で無効化）。**演出タイプ抽選（旧ディレクター・SceneType）は FB3-C で全廃**し、世界観イベントに一本化
 - **状態エンジン**（`Session.state`／ADR-1）: 関係性は prose、進捗は数（`StatValue`）。`reviewSystem` がレビュー時に `relationUpdates`（stance/aspects 全文書き直し・flagsAdd）／`statChanges`（delta）／`counterEvents`／`moods` を出力。**prose は全文置換・数値の加算はコードが行う**。現在値は `buildStateInfo`→本編 system の【状態（現在）】に注入。条件エンジン: `evalCondition`/`evalClause` が `Clause`（stat/counter/relationFlag/achievement・省略時「参加キャラのいずれか」）を判定し、実績の反復評価は `unlockAchievements()` に共通化（`confirmSceneReview` と選択肢加点の両方から呼ぶ）
@@ -222,6 +222,7 @@ Play 領域:
 - UI 再設計（3領域IA＋右コンテキストドック・トップバー4要素化・リーダー設定＋没入モード・ショートカット/コマンドパレット・SVG アイコン一掃。UI-0〜UI-7）
 - 世界観の開始テンプレート＋ゲームカセット（世界からセッションへ推奨初期設定をコピー／1枚で最初から遊べる `aist_cassette` 配布カード。W1〜W2）
 - エンディング定義（`EndingDef`＝条件・エピローグ指針・auto/hidden/fallback／`checkEndings`＋`applyReviewToState` の純関数判定／レビュー内到達プレビュー・エピローグシーン・【エンディング】注入・`finalizeStory`・完結演出／周回横断到達記録 `endingRecords`・ツリー🏁・カセット棚バッジ。E1〜E3）
+- フィードバック反映5（シーン区切りのペース制御＋時間帯固定・最初の方向付け `initialDirective`・既定モデル `defaultModelRef`・Library インポート・レビュー編集モード。FB5-A〜C）
 
 各フェーズの詳細・検証記録は対応する `docs/設計_*.md` を参照。
 

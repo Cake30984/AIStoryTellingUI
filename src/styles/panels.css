@@ -817,6 +817,75 @@
   flex-shrink: 0;
 }
 
+/* ---------- レビュー編集モード（FB5-C） ---------- */
+.review-title-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.review-edit-toggle {
+  font-size: 12px;
+  padding: 4px 10px;
+}
+.review-edit-toggle.on {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+/* 閲覧モードのあらすじ（読み取り専用表示） */
+.review-static-text {
+  white-space: pre-wrap;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--text);
+  background: var(--bg-elev2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+}
+/* 編集モードの候補カード（input を含むため button でなく div。クリックで選択は維持） */
+.review-card-edit {
+  cursor: pointer;
+}
+.review-card-edit .review-card-title {
+  margin-bottom: 0;
+}
+.review-card-edit input,
+.review-card-edit textarea {
+  margin-top: 6px;
+}
+/* 編集モードの一覧行（チェックボックス非表示・縦積み） */
+.growth-item.editing {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  cursor: default;
+}
+/* .growth-item input（チェックボックス用 width:auto）を打ち消してテキスト入力を全幅に */
+.growth-item.editing input {
+  width: 100%;
+  margin-top: 0;
+  flex-shrink: 1;
+}
+.growth-item.editing strong {
+  font-size: 13px;
+}
+.growth-edit-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.growth-item.editing input.num {
+  width: 90px;
+  flex-shrink: 0;
+  margin-top: 0;
+}
+.rel-aspect-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 /* ---------- タイムライン設定 ---------- */
 .timeline-box {
   min-width: 0;

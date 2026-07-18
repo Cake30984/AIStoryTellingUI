@@ -908,6 +908,8 @@ interface AppState {
   // シーン
   updateScene: (sceneId: string, patch: Partial<Scene>) => void
   prepareSceneReview: (sceneId?: string) => Promise<void>
+  /** レビュー内容の編集をストアへ書き戻す（FB5-C。confirm 前に draft を反映し、プレビューと発火を一致させる） */
+  updateSceneReview: (review: SceneReview) => void
   confirmSceneReview: (opts: {
     summary: string
     suggestion?: NextSceneSuggestion
@@ -2422,6 +2424,12 @@ export const useStore = create<AppState>()(
           }
         },
 
+        updateSceneReview: (review) => {
+          const cur = get().sceneReview
+          if (!cur || cur.sceneId !== review.sceneId) return
+          set({ sceneReview: review })
+        },
+
         confirmSceneReview: (opts) => {
           const review = get().sceneReview
           const s = active()
@@ -2510,7 +2518,8 @@ export const useStore = create<AppState>()(
                         if (sc.id === scene.id)
                           return { ...sc, summary: opts.summary.trim() }
                         if (nextScene && sc.id === nextScene.id && (sug || event)) {
-                          const base = event?.name || sug?.title || sc.title
+                          // ユーザーが編集/記入したタイトルをイベント名より優先する（FB5-C。note と同じ優先順）
+                          const base = sug?.title || event?.name || sc.title
                           return {
                             ...sc,
                             title: base || sc.title,
@@ -2627,7 +2636,8 @@ export const useStore = create<AppState>()(
                 .find((w) => w.id === s.worldId)
                 ?.scheduledEvents.find((e) => e.id === review.scheduledEventId)
             : undefined
-          const base = event?.name || sug?.title || ''
+          // ユーザーが編集/記入したタイトルをイベント名より優先する（FB5-C。note と同じ優先順）
+          const base = sug?.title || event?.name || ''
           const title =
             [nextLabel, base].filter(Boolean).join('：') ||
             `シーン ${s.scenes.length + 1}`
