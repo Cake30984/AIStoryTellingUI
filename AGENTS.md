@@ -34,7 +34,7 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist`。storage は
 - `checkpoint.ts` — チェックポイント用 gzip ヘルパ（`gzipText`/`gunzipText`）
 - `providers.ts` — `Provider` 型・プリセット・`parseModelRef`/`makeModelRef`/`splitRef`/`modelRefLabel`
 - `openrouter.ts` — SSE ストリーミング補完・モデル一覧取得（provider オブジェクト駆動）
-- `prompts.ts` — system プロンプト組み立て・選択肢/レビュー用プロンプト・定数（`CONTINUE_PROMPT`/`SCENE_START_PROMPT`）・画像プロンプト起案（`illustrationPromptSystem`/`backgroundPromptSystem` 等）・表情判定用 `emotionSystem`。`buildSystemPrompt`/`buildMessages` は `session.structuredOutput` で【セリフの出力形式】ブロック追加や矛盾指示の条件無効化を切替。配役済みロールは毎ターン【配役】として実名＋立場で動的に注入し、`@` 記法は渡さない
+- `prompts.ts` — system プロンプト組み立て・選択肢/レビュー用プロンプト・定数（`CONTINUE_PROMPT`/`SCENE_START_PROMPT`）・画像プロンプト起案（`illustrationPromptSystem`/`backgroundPromptSystem` 等）・表情判定用 `emotionSystem`。【時間】には時間帯固定の指示（シーン内で時間帯を先へ進めない・進行はシーン切り替わりの役割）を含む。`buildSystemPrompt`/`buildMessages` は `session.structuredOutput` で【セリフの出力形式】ブロック追加や矛盾指示の条件無効化を切替。配役済みロールは毎ターン【配役】として実名＋立場で動的に注入し、`@` 記法は渡さない
 - `casting.ts` — 配役記法の検出・検証・導入本文の実名解決とカード/永続化入力の正規化。React/store 非依存の純粋関数
 - `lorebook.ts` — 世界観ロアのキーワード一致抽出
 - `timeline.ts` — `advanceTimeline`/`timeLabelOf`/`timelinePromptInfo`/`isNearEnd`

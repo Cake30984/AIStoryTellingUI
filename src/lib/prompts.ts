@@ -108,6 +108,16 @@ export function buildSystemPrompt(
   // 1.7 時間・期間
   if (refs.timelineInfo) {
     let t = `【時間】\n${refs.timelineInfo}`
+    // 時間帯の区切りがある場合、シーン内での時間帯ドリフト（昼のシーンが進行中に夜へ進む等）を防ぐ。
+    // 時間帯を進めるのはシーンの切り替わり（レビュー確定）の役割。
+    const tl = session.timeline
+    const slotName = tl.slots[tl.currentSlot] ?? ''
+    if (tl.enabled && tl.slots.length > 1 && slotName && slotName !== '1日') {
+      t +=
+        `\nこのシーンは「${slotName}」の時間帯の中の出来事です。シーン内で時間帯を先へ進めないでください` +
+        `（例: 昼の場面が途中で夕方や夜になってはいけない）。大きな時間経過はシーンの切り替わりが担います。` +
+        `場面の状況で別の時間経過が明示されている場合のみ、そちらを優先してください。`
+    }
     if (refs.nearEnd) t += `\n物語は終盤です。クライマックスに向けて収束させてください。`
     parts.push(t)
   }
