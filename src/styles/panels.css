@@ -730,6 +730,8 @@
 }
 .event-badge {
   flex: 1;
+  /* インラインのままだと上下 padding・枠線が行ボックスに算入されず前の行に被る */
+  display: inline-block;
   font-size: 13px;
   font-weight: 600;
   color: var(--warn);
@@ -737,6 +739,10 @@
   border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
   border-radius: var(--radius-sm);
   padding: 9px 12px;
+}
+/* 「⏰ 時間帯が進む」バッジの行（説明文とは別行に置く） */
+.review-next-time {
+  margin: 0 0 8px;
 }
 
 .growth-list {

@@ -219,13 +219,12 @@ export default function SceneReviewModal() {
                 <label>➡ 次のシーン</label>
                 <div className="desc">
                   各案はこのシーン終了時点からの並列の候補です。いずれかを選ぶと、その方向で次のシーンを用意します。
-                  {nextTimeLabel && (
-                    <>
-                      {' '}
-                      <span className="event-badge">⏰ 時間帯が進む → {nextTimeLabel}</span>
-                    </>
-                  )}
                 </div>
+                {nextTimeLabel && (
+                  <div className="review-next-time">
+                    <span className="event-badge">⏰ 時間帯が進む → {nextTimeLabel}</span>
+                  </div>
+                )}
                 {isRegenSuggestions && (
                   <div className="choices-loading">
                     次シーンの候補を生成中…
