@@ -54,7 +54,14 @@ import {
   type ImageJob,
   type ImageJobTarget,
 } from './lib/imageJobs'
-import { freshSessionOf, sessionCardImageBlob, type CassetteBundle } from './lib/cards'
+import {
+  attachCardImage,
+  freshSessionOf,
+  parseCardPng,
+  sessionCardImageBlob,
+  type CassetteBundle,
+} from './lib/cards'
+import { parseBundle } from './lib/io'
 import {
   buildMessages,
   choicesSystem,
@@ -986,6 +993,11 @@ interface AppState {
   /** includeImages=true で使用中の画像（アバター・立ち絵・挿絵・背景）を base64 同梱する（T0） */
   exportBundle: (includeImages?: boolean) => Promise<ExportBundle>
   importBundle: (bundle: ExportBundle) => Promise<{ added: number }>
+  /**
+   * PNG カード（キャラ/世界観/ペルソナ/カセット）と JSON バンドルを種別自動判別で取り込む。
+   * System と Library（作る）のインポート導線で共用。成功時は結果メッセージを返し、失敗は throw。
+   */
+  importAnyFile: (file: File) => Promise<string>
   /** ゲームカセット（aist_cassette）を「棚に登録」する（素材はマージ・画像 remap・セッションは作らない。FB2-E） */
   importCassette: (bundle: CassetteBundle, cover?: Blob) => Promise<void>
   /** カセット下書きを棚へ追加/更新する（CassetteEditor の保存。FB3-D） */
@@ -3210,6 +3222,37 @@ export const useStore = create<AppState>()(
             }
           })
           return { added }
+        },
+
+        // PNG カード / JSON バンドルの種別自動判別取り込み（System・Library 共通の入口）
+        importAnyFile: async (file) => {
+          const isPng = file.type === 'image/png' || file.name.toLowerCase().endsWith('.png')
+          if (isPng) {
+            const bytes = new Uint8Array(await file.arrayBuffer())
+            const parsed = parseCardPng(bytes)
+            if (!parsed) throw new Error('カード情報が見つかりません。')
+            if (parsed.kind === 'character') {
+              const withImage = await attachCardImage(parsed.character, bytes)
+              get().importCharacterCard(withImage)
+              return `カードから「${withImage.name || '無名'}」を追加しました。`
+            }
+            if (parsed.kind === 'persona') {
+              const withImage = await attachCardImage(parsed.persona, bytes)
+              get().importPersonaCard(withImage)
+              return `カードから「${withImage.name || '無名'}」を追加しました。`
+            }
+            if (parsed.kind === 'cassette') {
+              await get().importCassette(parsed.bundle, new Blob([bytes as BlobPart], { type: 'image/png' }))
+              return `🎮 ゲームカセット「${parsed.bundle.session.title || '無題'}」を棚に登録しました（「作る > カセット」から遊べます）。`
+            }
+            get().importWorldCard(parsed.world)
+            return `カードから「${parsed.world.name || '無名の世界'}」を追加しました。`
+          }
+          const bundle = parseBundle(await file.text())
+          const { added } = await get().importBundle(bundle)
+          const imgNote =
+            bundle.images && bundle.images.length > 0 ? `（画像 ${bundle.images.length} 件を含む）` : ''
+          return `インポート完了：${added} 件を追加しました（既存は保持）。${imgNote}`
         },
 
         // ゲームカセットは「棚に登録」する（FB2-E）。素材（キャラ/世界/ペルソナ）はライブラリへ

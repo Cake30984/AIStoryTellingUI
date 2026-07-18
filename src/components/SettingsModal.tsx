@@ -1,7 +1,6 @@
 import { useRef, useState } from 'react'
 import { DEFAULT_MODEL, useStore } from '../store'
-import { downloadBundle, parseBundle } from '../lib/io'
-import { parseCardPng, attachCardImage } from '../lib/cards'
+import { downloadBundle } from '../lib/io'
 import { PROVIDER_PRESETS, newProvider } from '../lib/providers'
 import ImageProviderSettings from './ImageProviderSettings'
 import ModelPicker from './ModelPicker'
@@ -18,11 +17,7 @@ export function SettingsBody() {
     loadModels,
     modelsLoadingFor,
     exportBundle,
-    importBundle,
-    importCharacterCard,
-    importWorldCard,
-    importPersonaCard,
-    importCassette,
+    importAnyFile,
     gcUnusedImages,
     defaultModelRef,
     setDefaultModelRef,
@@ -89,33 +84,8 @@ export function SettingsBody() {
   }
 
   const onImportFile = async (file: File) => {
-    const isPng = file.type === 'image/png' || file.name.toLowerCase().endsWith('.png')
     try {
-      if (isPng) {
-        const bytes = new Uint8Array(await file.arrayBuffer())
-        const parsed = parseCardPng(bytes)
-        if (!parsed) throw new Error('カード情報が見つかりません。')
-        if (parsed.kind === 'character') {
-          const withImage = await attachCardImage(parsed.character, bytes)
-          importCharacterCard(withImage)
-          setNotice(`カードから「${withImage.name || '無名'}」を追加しました。`)
-        } else if (parsed.kind === 'persona') {
-          const withImage = await attachCardImage(parsed.persona, bytes)
-          importPersonaCard(withImage)
-          setNotice(`カードから「${withImage.name || '無名'}」を追加しました。`)
-        } else if (parsed.kind === 'cassette') {
-          await importCassette(parsed.bundle, new Blob([bytes as BlobPart], { type: 'image/png' }))
-          setNotice(`🎮 ゲームカセット「${parsed.bundle.session.title || '無題'}」を棚に登録しました（「作る > カセット」から遊べます）。`)
-        } else {
-          importWorldCard(parsed.world)
-          setNotice(`カードから「${parsed.world.name || '無名の世界'}」を追加しました。`)
-        }
-      } else {
-        const bundle = parseBundle(await file.text())
-        const { added } = await importBundle(bundle)
-        const imgNote = bundle.images && bundle.images.length > 0 ? `（画像 ${bundle.images.length} 件を含む）` : ''
-        setNotice(`インポート完了：${added} 件を追加しました（既存は保持）。${imgNote}`)
-      }
+      setNotice(await importAnyFile(file))
     } catch (e) {
       setNotice(`インポート失敗：${(e as Error).message}`)
     }

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useStore } from '../store'
 import { Icon } from './icons'
 import ActivityIndicator from './ActivityIndicator'
@@ -8,16 +8,44 @@ import { ImageJobsBody } from './ImageJobsPanel'
 /**
  * Library（作る）画面用の細いトップバー。進行状態（ActivityIndicator）と画像生成ジョブを
  * Play 画面に行かなくても確認・採用できるようにする。ジョブ一覧はドックが無いためモーダルで開く。
+ * インポート（PNG カード / JSON バンドル）も System に行かずここから取り込める。
  */
 export default function LibraryBar() {
-  const { imageJobs } = useStore()
+  const { imageJobs, importAnyFile, setInfoNotice } = useStore()
   const [showJobs, setShowJobs] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
   const selecting = imageJobs.some((j) => j.status === 'selecting')
+
+  const onImport = async (file: File) => {
+    try {
+      setInfoNotice(await importAnyFile(file))
+    } catch (e) {
+      setInfoNotice(`インポート失敗：${(e as Error).message}`)
+    }
+  }
 
   return (
     <div className="topbar library-topbar">
       <ActivityIndicator />
       <div style={{ flex: 1 }} />
+      <button
+        className="icon-btn"
+        onClick={() => fileRef.current?.click()}
+        title="インポート（PNG カード / JSON バックアップ）"
+      >
+        <Icon name="upload" />
+      </button>
+      <input
+        ref={fileRef}
+        type="file"
+        accept="application/json,.json,image/png,.png"
+        style={{ display: 'none' }}
+        onChange={(e) => {
+          const f = e.target.files?.[0]
+          if (f) void onImport(f)
+          e.target.value = ''
+        }}
+      />
       <button
         className={'icon-btn' + (selecting ? ' on' : '')}
         onClick={() => setShowJobs(true)}
