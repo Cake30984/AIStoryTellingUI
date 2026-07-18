@@ -34,7 +34,7 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist`。storage は
 - `checkpoint.ts` — チェックポイント用 gzip ヘルパ（`gzipText`/`gunzipText`）
 - `providers.ts` — `Provider` 型・プリセット・`parseModelRef`/`makeModelRef`/`splitRef`/`modelRefLabel`
 - `openrouter.ts` — SSE ストリーミング補完・モデル一覧取得（provider オブジェクト駆動）
-- `prompts.ts` — system プロンプト組み立て・選択肢/レビュー用プロンプト・定数（`CONTINUE_PROMPT`/`SCENE_START_PROMPT`）・画像プロンプト起案（`illustrationPromptSystem`/`backgroundPromptSystem` 等）・表情判定用 `emotionSystem`。【時間】には時間帯固定の指示（シーン内で時間帯を先へ進めない・進行はシーン切り替わりの役割）を含む。`buildSystemPrompt`/`buildMessages` は `session.structuredOutput` で【セリフの出力形式】ブロック追加や矛盾指示の条件無効化を切替。配役済みロールは毎ターン【配役】として実名＋立場で動的に注入し、`@` 記法は渡さない
+- `prompts.ts` — system プロンプト組み立て・選択肢/レビュー用プロンプト・定数（`CONTINUE_PROMPT`/`SCENE_START_PROMPT`）・画像プロンプト起案（`illustrationPromptSystem`/`backgroundPromptSystem` 等）・表情判定用 `emotionSystem`。【時間】には時間帯固定の指示（シーン内で時間帯を先へ進めない・進行はシーン切り替わりの役割）を含む。story モードは `story.initialDirective`（最初の方向付け・FB5-②）を**最初のシーン滞在中のみ**【最初の方向付け】として注入（チャット非表示・`@` は `＠` に無害化）。`buildSystemPrompt`/`buildMessages` は `session.structuredOutput` で【セリフの出力形式】ブロック追加や矛盾指示の条件無効化を切替。配役済みロールは毎ターン【配役】として実名＋立場で動的に注入し、`@` 記法は渡さない
 - `casting.ts` — 配役記法の検出・検証・導入本文の実名解決とカード/永続化入力の正規化。React/store 非依存の純粋関数
 - `lorebook.ts` — 世界観ロアのキーワード一致抽出
 - `timeline.ts` — `advanceTimeline`/`timeLabelOf`/`timelinePromptInfo`/`isNearEnd`
@@ -79,9 +79,9 @@ Play 領域:
 - `CommandPalette.tsx` — `Ctrl+K` で開くパレット。セッション/素材の名前検索→移動＋固定コマンド。実行は既存 store アクション／`setUiPrefs` のみ
 
 モーダル・パネル:
-- `SessionEditor.tsx` — セッション設定。「基本／進行／モデル／出力」4タブ（同一 draft を共有）。フッターに「カセットにする…」（`CassetteEditor` を `seedSession` 付きで開く）。「構造化出力」チェックボックスあり。世界観選択時に開始テンプレートを空欄項目のみ自動コピー（`startPresetPatch`・W1）＋「開始テンプレートを読み込む」リンクで全上書き（確認つき）。story モードは導入（`story.opening`/`openingTitle`・そのまま掲載）欄の直下に `CastingFields`（世界観ロールへの配役）がある。進行タブに開始時間帯（`timeline.currentSlot`／未開始時は `startDay`/`startSlot` として記録）
+- `SessionEditor.tsx` — セッション設定。「基本／進行／モデル／出力」4タブ（同一 draft を共有）。フッターに「カセットにする…」（`CassetteEditor` を `seedSession` 付きで開く）。「構造化出力」チェックボックスあり。世界観選択時に開始テンプレートを空欄項目のみ自動コピー（`startPresetPatch`・W1）＋「開始テンプレートを読み込む」リンクで全上書き（確認つき）。story モードは最初の方向付け（`story.initialDirective`・非表示注入）欄→導入（`story.opening`/`openingTitle`・そのまま掲載）欄の直下に `CastingFields`（世界観ロールへの配役）がある。進行タブに開始時間帯（`timeline.currentSlot`／未開始時は `startDay`/`startSlot` として記録）
 - `CastingModal.tsx` — 導入文または必須ロールが未配役の開始時に開くモーダル。`CastingFields` で埋めてから、そのまま `startStory` を再実行する
-- `CassetteEditor.tsx` — カセット専用エディタ（FB3-D）。左セクションナビ（基本〔タイトル・紹介文・表紙〕／世界観／登場キャラ／ペルソナ／開始・進行）で `Cassette`（内部に開始状態のセッション）を編成。開始・進行の導入欄直下に `CastingFields` を置く。新規＝`newCassette()`／既存編集＝`cassette` prop／セッションから＝`seedSession`（`freshSessionOf` で下書き化）。表紙はタイトルから自動（保存時に生成焼付け）／画像ファイル選択（`normalizeImage`→`putImage`）／種セッションの挿絵から選択。保存は `upsertCassette`。読み込みは Sidebar D&D・System ファイル入力・カセット棚 D&D（`importCassette`＝「棚に登録のみ」＝`cassettes` に積む。FB2-E）。PNG 書き出しは未解決の配役があると拒否する
+- `CassetteEditor.tsx` — カセット専用エディタ（FB3-D）。左セクションナビ（基本〔タイトル・紹介文・表紙〕／世界観／登場キャラ／ペルソナ／開始・進行）で `Cassette`（内部に開始状態のセッション）を編成。開始・進行に最初の方向付け（`initialDirective`）欄があり、導入欄直下に `CastingFields` を置く。新規＝`newCassette()`／既存編集＝`cassette` prop／セッションから＝`seedSession`（`freshSessionOf` で下書き化）。表紙はタイトルから自動（保存時に生成焼付け）／画像ファイル選択（`normalizeImage`→`putImage`）／種セッションの挿絵から選択。保存は `upsertCassette`。読み込みは Sidebar D&D・System ファイル入力・カセット棚 D&D（`importCassette`＝「棚に登録のみ」＝`cassettes` に積む。FB2-E）。PNG 書き出しは未解決の配役があると拒否する
 - `SettingsModal.tsx` — `export function SettingsBody()`（System ページ本体）。プロバイダ管理・新しい物語の既定モデル（`defaultModelRef`）・データ入出力（「画像も含める」チェックボックス。取り込みは `store.importAnyFile` に共通化＝Library のインポートボタンと同じ入口）・未使用画像 GC。App.tsx が `view==='system'` で描画
 - `ImageProviderSettings.tsx` — 画像生成接続先の管理（ComfyUI/画像API の追加・編集・削除・接続テスト・デフォルトタグ入力）。`SettingsBody` に組み込み
 - `ImageGenModal.tsx` — 画像生成モーダル（アバター/挿絵/ペルソナ/立ち絵/背景で共用）。接続先・サイズ・枚数選択、「プロンプトを起案」、`target: ImageJobTarget`＋`label` で `store.startImageJob` を呼びジョブ購読。接続先/起案モデルは記憶（`lastImageProviderId`/`lastDraftModel`）

@@ -184,6 +184,16 @@ export function buildSystemPrompt(
     if (s.genre.trim()) sParts.push(`ジャンル・トーン: ${s.genre.trim()}`)
     if (s.premise.trim()) sParts.push(`あらすじ・前提: ${s.premise.trim()}`)
     if (sParts.length) parts.push(`【物語設定】\n${sParts.join('\n')}`)
+
+    // 4.5 最初の方向付け（FB5-②）: 最初のシーンに滞在している間だけ注入する非表示の指示。
+    // チャットには出さない。@ 記法はモデルへ渡さない規約に合わせて無害化する（配役の実名は【配役】が伝える）。
+    const directive = s.initialDirective?.trim()
+    const isFirstScene = session.scenes.length > 0 && session.scenes[0].id === session.currentSceneId
+    if (directive && isFirstScene) {
+      parts.push(
+        `【最初の方向付け】\n物語の立ち上がり（この最初のシーンのみ）では、次の方向性を踏まえて展開してください:\n${directive.replaceAll('@', '＠')}`,
+      )
+    }
   }
 
   // 5. 固定メモ（作者ノート）

@@ -257,6 +257,19 @@ export default function SessionEditor({ session, onClose }: Props) {
                     />
                   </div>
                   <div className="field">
+                    <label>最初の方向付け（非表示・任意）</label>
+                    <div className="desc">
+                      最初のシーンの間だけ AI に渡される非表示の指示です。チャットには表示されません。
+                      序盤の展開・出会わせ方など立ち上がりの方向付けに（2シーン目からは効かなくなります）。
+                    </div>
+                    <textarea
+                      rows={3}
+                      value={d.story.initialDirective ?? ''}
+                      placeholder="例: 最初のシーンでは謎の少女と出会わせ、事件の予兆だけを見せる。正体はまだ明かさない。"
+                      onChange={(e) => patch({ story: { ...d.story, initialDirective: e.target.value } })}
+                    />
+                  </div>
+                  <div className="field">
                     <label>導入（最初のシーン・任意）</label>
                     <div className="desc">
                       物語の書き出しをこちらで用意します。入力すると「物語をはじめる」で AI に生成させず、

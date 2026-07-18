@@ -677,7 +677,7 @@ function newSession(mode: SessionMode): Session {
     personaId: null,
     roleAssignments: [],
     authorNote: '',
-    story: { premise: '', genre: '', opening: '', openingTitle: '' },
+    story: { premise: '', genre: '', opening: '', openingTitle: '', initialDirective: '' },
     scenes: [scene],
     currentSceneId: scene.id,
     timeline: defaultTimeline(),

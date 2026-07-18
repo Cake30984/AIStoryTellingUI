@@ -362,6 +362,12 @@ export interface StorySetup {
   opening: string
   /** 導入シーンの見出し（空なら従来のタイトル抽選にフォールバック） */
   openingTitle: string
+  /**
+   * 最初の方向付け（FB5-②）。最初のシーンに滞在している間だけ system に注入される非表示の指示。
+   * チャットには一切表示しない。premise が全編の背景なのに対し、これは序盤の立ち上げ方専用で、
+   * 2シーン目以降は自動的に効かなくなる。
+   */
+  initialDirective?: string
 }
 
 /**
