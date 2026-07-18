@@ -27,6 +27,8 @@ export function parseBundle(text: string): ExportBundle {
     worlds: Array.isArray(obj.worlds) ? obj.worlds : [],
     personas: Array.isArray(obj.personas) ? obj.personas : [],
     sessions: Array.isArray(obj.sessions) ? obj.sessions : [],
+    cassettes: Array.isArray(obj.cassettes) ? obj.cassettes : undefined,
+    endingRecords: Array.isArray(obj.endingRecords) ? obj.endingRecords : undefined,
     providers: Array.isArray(obj.providers) ? obj.providers : undefined,
     images: Array.isArray(obj.images) ? obj.images : undefined,
   }
