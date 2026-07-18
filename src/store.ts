@@ -33,6 +33,7 @@ import type {
   SceneIllustration,
   SceneReview,
   Session,
+  SessionImageRecord,
   SessionMode,
   SessionState,
   StatDef,
@@ -41,7 +42,7 @@ import type {
 } from './types'
 import { DEFAULT_UI, EMOTIONS, normalizeUiPrefs } from './types'
 import { fetchModels, streamChat } from './lib/openrouter'
-import { base64ToBlob, blobToBase64, gcImages, getImage, putImage, putImageAs } from './lib/imageStore'
+import { base64ToBlob, blobToBase64, gcImages, getImage, listImageIds, putImage, putImageAs } from './lib/imageStore'
 import { checkpointStore, PERSIST_KEY, stateStorage } from './lib/platform'
 import { gunzipText, gzipText } from './lib/checkpoint'
 import { normalizeImage } from './lib/avatarGen'
@@ -246,6 +247,24 @@ export function checkEndings(
     if (evalCondition(e.condition, state, world, characterIds)) return e
   }
   return undefined
+}
+
+/** 画像記録をセッション単位で record id の dedupe 追記マージする（FB6-A。importBundle 用） */
+function mergeImageLogs(
+  cur: Record<string, SessionImageRecord[]>,
+  inc: Record<string, SessionImageRecord[]>,
+): Record<string, SessionImageRecord[]> {
+  const out = { ...cur }
+  for (const [sessionId, records] of Object.entries(inc)) {
+    if (!Array.isArray(records)) continue
+    const existing = out[sessionId] ?? []
+    const ids = new Set(existing.map((r) => r.id))
+    const fresh = records.filter(
+      (r) => r && typeof r.id === 'string' && typeof r.imageId === 'string' && !ids.has(r.id),
+    )
+    if (fresh.length > 0) out[sessionId] = [...existing, ...fresh]
+  }
+  return out
 }
 
 /** エンディング到達記録を同値 dedupe でマージする（E3。id を持たないため4フィールドの組で判定） */
@@ -737,6 +756,50 @@ export function sessionImageIds(session: Session): string[] {
 }
 
 /**
+ * バックフィル用: セッション（ライブ or スナップショット）から画像記録の候補を抽出する（FB6-A）。
+ * seen に無い imageId のみ record 化し、seen へ追加する（呼び出し側がスナップショット横断で dedupe）。
+ * fallbackCreatedAt は作成時刻を持たない参照（背景）に使う。
+ */
+function extractImageRecords(
+  session: Session,
+  seen: Set<string>,
+  fallbackCreatedAt: number,
+): SessionImageRecord[] {
+  const out: SessionImageRecord[] = []
+  for (const sc of session.scenes) {
+    if (sc.backgroundImageId && !seen.has(sc.backgroundImageId)) {
+      seen.add(sc.backgroundImageId)
+      out.push({
+        id: uid(),
+        imageId: sc.backgroundImageId,
+        kind: 'background',
+        prompt: '',
+        sceneId: sc.id,
+        sceneTitle: sc.title || undefined,
+        timeLabel: sc.timeLabel,
+        createdAt: fallbackCreatedAt,
+      })
+    }
+    for (const ill of sc.illustrations ?? []) {
+      if (seen.has(ill.imageId)) continue
+      seen.add(ill.imageId)
+      out.push({
+        id: uid(),
+        imageId: ill.imageId,
+        kind: 'illustration',
+        prompt: ill.prompt,
+        sceneId: sc.id,
+        sceneTitle: sc.title || undefined,
+        timeLabel: sc.timeLabel,
+        messageId: ill.messageId,
+        createdAt: ill.createdAt,
+      })
+    }
+  }
+  return out
+}
+
+/**
  * しおり（C3）のサムネイルをチェックポイントのスナップショットから自動選択する。
  * 新しいシーンから遡り、背景 → 挿絵（末尾＝最新）の優先度で最初に見つかった画像を使う。
  */
@@ -759,6 +822,7 @@ export function collectUsedImageIds(
   personas: Persona[],
   sessions: Session[],
   cassettes: Cassette[] = [],
+  imageLogs: Record<string, SessionImageRecord[]> = {},
 ): Set<string> {
   const used = new Set<string>()
   for (const c of characters) {
@@ -771,6 +835,10 @@ export function collectUsedImageIds(
   for (const cas of cassettes) {
     if (cas.coverImageId) used.add(cas.coverImageId)
     for (const id of sessionImageIds(cas.session)) used.add(id)
+  }
+  // 画像の永続記録（FB6-A）: 分岐・シーンが消えても記録にある画像は使用中扱い
+  for (const records of Object.values(imageLogs)) {
+    for (const r of records) used.add(r.imageId)
   }
   return used
 }
@@ -798,6 +866,10 @@ interface AppState {
   activeId: string | null
   /** セッションごとの分岐ツリー（軽量メタデータのみ。実体は checkpointStore。C1） */
   branchTrees: Record<string, BranchTree>
+  /** セッションごとの生成画像の永続記録（FB6-A。分岐・シーンの生死と独立。Session の外に置く） */
+  sessionImageLogs: Record<string, SessionImageRecord[]>
+  /** 画像記録のバックフィル（全チェックポイント走査）を実施済みか（FB6-A。初回起動時に1回だけ実行） */
+  imageLogBackfillDone?: boolean
   /** 右コンテキストドック等の永続 UI 状態（UI-3） */
   ui: UiPrefs
 
@@ -1010,6 +1082,15 @@ interface AppState {
   deleteCassette: (cassetteId: string) => void
   /** 未使用のアバター・挿絵画像（IndexedDB）を削除し、削除件数を返す */
   gcUnusedImages: () => Promise<number>
+
+  // 画像の永続記録（FB6-A）
+  /** 記録を1件削除する（record 除去のみ。実体は他で未使用なら gcUnusedImages が回収） */
+  deleteImageRecord: (sessionId: string, recordId: string) => void
+  /**
+   * 過去に採用した挿絵・背景を全チェックポイント走査で記録に補完する（FB6-A。初回起動時に1回）。
+   * ライブの scenes＋全スナップショットから imageId で dedupe して登録。実在しない画像はスキップ。
+   */
+  backfillImageLogs: () => Promise<void>
 }
 
 // 生成の中断は用途別に独立させる。単一の共有 controller だと、選択肢生成の中止が
@@ -1202,6 +1283,15 @@ export const useStore = create<AppState>()(
         const s = active()
         if (s) get().updateSession(s.id, patch)
       }
+
+      /** 画像の永続記録へ1件追記する（FB6-A。採用時とバックフィルの書き込み口） */
+      const appendImageRecord = (sessionId: string, record: SessionImageRecord) =>
+        set((st) => ({
+          sessionImageLogs: {
+            ...st.sessionImageLogs,
+            [sessionId]: [...(st.sessionImageLogs[sessionId] ?? []), record],
+          },
+        }))
 
       async function writeCheckpointNode(sessionId: string, nodeId: string, session: Session): Promise<number> {
         const gz = await gzipText(JSON.stringify({ v: 1, session }))
@@ -1685,6 +1775,7 @@ export const useStore = create<AppState>()(
         endingRecords: [],
         activeId: null,
         branchTrees: {},
+        sessionImageLogs: {},
         ui: DEFAULT_UI,
 
         view: 'sessions',
@@ -1921,7 +2012,10 @@ export const useStore = create<AppState>()(
             const activeId = st.activeId === id ? (sessions[0]?.id ?? null) : st.activeId
             const branchTrees = { ...st.branchTrees }
             delete branchTrees[id]
-            return { sessions, activeId, branchTrees }
+            // 画像の永続記録もセッションと運命を共にする（FB6-A。実体は GC が回収）
+            const sessionImageLogs = { ...st.sessionImageLogs }
+            delete sessionImageLogs[id]
+            return { sessions, activeId, branchTrees, sessionImageLogs }
           })
           void checkpointStore.deleteSession(id)
         },
@@ -3137,7 +3231,7 @@ export const useStore = create<AppState>()(
         },
 
         exportBundle: async (includeImages) => {
-          const { characters, worlds, personas, sessions, cassettes, endingRecords } = get()
+          const { characters, worlds, personas, sessions, cassettes, endingRecords, sessionImageLogs } = get()
           // providers（API キー）は localStorage のみに保持し、エクスポートには含めない（共有時の漏洩防止）
           const bundle: ExportBundle = {
             type: 'ai-storytelling-studio',
@@ -3149,9 +3243,10 @@ export const useStore = create<AppState>()(
             sessions,
             cassettes,
             endingRecords,
+            sessionImageLogs,
           }
           if (includeImages) {
-            const ids = collectUsedImageIds(characters, personas, sessions, cassettes)
+            const ids = collectUsedImageIds(characters, personas, sessions, cassettes, sessionImageLogs)
             const images: { id: string; mime: string; dataBase64: string }[] = []
             for (const id of ids) {
               const blob = await getImage(id)
@@ -3228,6 +3323,8 @@ export const useStore = create<AppState>()(
               ),
               // エンディング到達記録は同値 dedupe でマージ（E3。id を持たないため組み合わせで判定）
               endingRecords: mergeEndingRecords(st.endingRecords, bundle.endingRecords ?? []),
+              // 画像の永続記録はセッション単位で record id の dedupe マージ（FB6-A）
+              sessionImageLogs: mergeImageLogs(st.sessionImageLogs, bundle.sessionImageLogs ?? {}),
               // providers はユーザー固有の設定のためインポート対象外
             }
           })
@@ -3488,6 +3585,21 @@ export const useStore = create<AppState>()(
           const target = job.target
           if (target.type === 'scene-illustration') {
             const imageId = await putImage(blob)
+            // 先に永続記録へ追記する（FB6-A）。配置先シーンが分岐切替で消えていても記録には残る
+            const scene = get()
+              .sessions.find((s) => s.id === target.sessionId)
+              ?.scenes.find((sc) => sc.id === target.sceneId)
+            appendImageRecord(target.sessionId, {
+              id: uid(),
+              imageId,
+              kind: 'illustration',
+              prompt: job.prompt,
+              sceneId: target.sceneId,
+              sceneTitle: scene?.title || undefined,
+              timeLabel: scene?.timeLabel,
+              messageId: target.messageId,
+              createdAt: Date.now(),
+            })
             get().addIllustration(target.sessionId, target.sceneId, {
               id: uid(),
               imageId,
@@ -3542,6 +3654,20 @@ export const useStore = create<AppState>()(
           } else {
             // scene-background（旧 imageId の実体削除はしない。GC 一本化）
             const imageId = await putImage(blob)
+            // 先に永続記録へ追記する（FB6-A）
+            const scene = get()
+              .sessions.find((s) => s.id === target.sessionId)
+              ?.scenes.find((sc) => sc.id === target.sceneId)
+            appendImageRecord(target.sessionId, {
+              id: uid(),
+              imageId,
+              kind: 'background',
+              prompt: job.prompt,
+              sceneId: target.sceneId,
+              sceneTitle: scene?.title || undefined,
+              timeLabel: scene?.timeLabel,
+              createdAt: Date.now(),
+            })
             set((st) => ({
               sessions: st.sessions.map((s) =>
                 s.id !== target.sessionId
@@ -3559,8 +3685,8 @@ export const useStore = create<AppState>()(
         },
 
         gcUnusedImages: async () => {
-          const { characters, personas, sessions, cassettes, branchTrees } = get()
-          const used = collectUsedImageIds(characters, personas, sessions, cassettes)
+          const { characters, personas, sessions, cassettes, branchTrees, sessionImageLogs } = get()
+          const used = collectUsedImageIds(characters, personas, sessions, cassettes, sessionImageLogs)
           // チェックポイント（分岐ツリー）が参照する画像も使用中扱い（GC 一本化。C1）
           for (const tree of Object.values(branchTrees)) {
             for (const node of tree.nodes) {
@@ -3569,6 +3695,62 @@ export const useStore = create<AppState>()(
             }
           }
           return gcImages(used)
+        },
+
+        deleteImageRecord: (sessionId, recordId) =>
+          set((st) => {
+            const records = st.sessionImageLogs[sessionId]
+            if (!records) return {}
+            return {
+              sessionImageLogs: {
+                ...st.sessionImageLogs,
+                [sessionId]: records.filter((r) => r.id !== recordId),
+              },
+            }
+          }),
+
+        backfillImageLogs: async () => {
+          if (get().imageLogBackfillDone) return
+          // 実在する画像だけ登録する（GC 済みの参照は record 化しない）
+          let existing: Set<string>
+          try {
+            existing = new Set(await listImageIds())
+          } catch {
+            return // 画像ストアが読めない時はフラグを立てず次回起動時に再試行
+          }
+          const { sessions, branchTrees } = get()
+          const patch: Record<string, SessionImageRecord[]> = {}
+          let total = 0
+          for (const session of sessions) {
+            const seen = new Set((get().sessionImageLogs[session.id] ?? []).map((r) => r.imageId))
+            // ライブの本文にある分（プロンプト・アンカー付きで最も情報が正確なので先に）
+            const records = extractImageRecords(session, seen, session.updatedAt)
+            // 全スナップショット走査（他分岐にしか無い画像を拾う）
+            for (const node of branchTrees[session.id]?.nodes ?? []) {
+              // 未知の imageId を含まないノードは展開しない（gunzip の節約）
+              if (!node.imageIds.some((id) => !seen.has(id))) continue
+              try {
+                const raw = await checkpointStore.get(session.id, node.id)
+                if (!raw) continue
+                const parsed = JSON.parse(await gunzipText(raw)) as { v: number; session: Session }
+                records.push(...extractImageRecords(parsed.session, seen, node.createdAt))
+              } catch {
+                continue // 壊れたスナップショットはスキップ
+              }
+            }
+            const valid = records.filter((r) => existing.has(r.imageId))
+            if (valid.length === 0) continue
+            valid.sort((a, b) => a.createdAt - b.createdAt)
+            patch[session.id] = [...(get().sessionImageLogs[session.id] ?? []), ...valid]
+            total += valid.length
+          }
+          set((st) => ({
+            sessionImageLogs: { ...st.sessionImageLogs, ...patch },
+            imageLogBackfillDone: true,
+            ...(total > 0
+              ? { infoNotice: `過去の画像 ${total} 件をギャラリーの「すべての記録」に登録しました` }
+              : {}),
+          }))
         },
       }
     },
@@ -3594,6 +3776,8 @@ export const useStore = create<AppState>()(
         endingRecords: st.endingRecords,
         activeId: st.activeId,
         branchTrees: st.branchTrees,
+        sessionImageLogs: st.sessionImageLogs,
+        imageLogBackfillDone: st.imageLogBackfillDone,
         ui: st.ui,
       }),
       // 生成中にタブを閉じた/リロードした際の残骸を起動時に掃除する：

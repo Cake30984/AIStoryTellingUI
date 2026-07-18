@@ -59,9 +59,15 @@ function IllustrationView({ ill, onRemove }: { ill: SceneIllustration; onRemove:
         </button>
         <button
           className="icon-btn small"
-          title="挿絵を削除"
+          title="本文から外す"
           onClick={async () => {
-            if (await appConfirm({ message: 'この挿絵を削除しますか？', danger: true })) onRemove()
+            if (
+              await appConfirm({
+                message: 'この挿絵を本文から外しますか？\n（ギャラリーの「すべての記録」には残ります）',
+                danger: true,
+              })
+            )
+              onRemove()
           }}
         >
           <Icon name="trash-2" size={14} />

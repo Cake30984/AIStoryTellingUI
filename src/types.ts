@@ -301,6 +301,26 @@ export interface SceneIllustration {
   createdAt: number
 }
 
+/**
+ * 生成画像の永続記録（FB6-A）。分岐・シーンの生死と独立に「採用した画像」を残すアルバム。
+ * AppState 直下の `sessionImageLogs`（sessionId キー）に積む。Session の中に入れない
+ * （branchTrees と同じ理由: チェックポイントの深コピーに含めない・復元で巻き戻さない）。
+ */
+export interface SessionImageRecord {
+  id: string
+  /** imageStore の画像 id（GC はこの参照を使用中扱いにする） */
+  imageId: string
+  kind: 'illustration' | 'background'
+  /** 結合前のユーザープロンプト（ImageJob.prompt と同じ規約）。バックフィルした背景など不明な場合は空文字 */
+  prompt: string
+  sceneId?: string
+  /** 分岐が消えても表示できるよう採用時点の値を非正規化して保存 */
+  sceneTitle?: string
+  timeLabel?: string
+  messageId?: string
+  createdAt: number
+}
+
 /** 物語の一区切り（その場の登場キャラ・状況・終了時の要約を持つ） */
 export interface Scene {
   id: string
@@ -792,6 +812,8 @@ export interface ExportBundle {
   cassettes?: Cassette[]
   /** エンディング到達の周回横断記録（E3。同値 dedupe でマージ） */
   endingRecords?: EndingRecord[]
+  /** セッションごとの生成画像の永続記録（FB6-A。record id でセッション単位に dedupe マージ） */
+  sessionImageLogs?: Record<string, SessionImageRecord[]>
   providers?: Provider[]
   /** 画像込みエクスポート時のみ同梱（アバター・立ち絵・挿絵・背景・カセット表紙の実体。T0/FB2-E） */
   images?: { id: string; mime: string; dataBase64: string }[]
