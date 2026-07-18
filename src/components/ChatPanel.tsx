@@ -118,8 +118,9 @@ export default function ChatPanel({ session }: Props) {
   const [showLog, setShowLog] = useState(false)
   const [showStatus, setShowStatus] = useState(false)
   const [discoveryScope, setDiscoveryScope] = useState<DiscoveryScope | null>(null)
-  const [showImageGen, setShowImageGen] = useState(false)
-  const [showBgGen, setShowBgGen] = useState(false)
+  // 挿絵・背景の生成対象（FB6-B。null=閉。過去シーン・任意メッセージをアンカーに後付け生成できる）
+  const [illustGenFor, setIllustGenFor] = useState<{ sceneId: string; messageId?: string } | null>(null)
+  const [bgGenFor, setBgGenFor] = useState<{ sceneId: string } | null>(null)
   const [showCassetteEditor, setShowCassetteEditor] = useState(false)
   const [showMenu, setShowMenu] = useState(false)
   const [showFinale, setShowFinale] = useState(false)
@@ -303,6 +304,29 @@ export default function ChatPanel({ session }: Props) {
   const isMarker = (m: Message) =>
     m.role === 'user' && (m.content === CONTINUE_PROMPT || m.content === SCENE_START_PROMPT)
 
+  // FB6-B: 対象シーンの参加キャラ（過去シーンはそのシーンの配役を使う）
+  const sceneParticipants = (sc: Scene) => {
+    const ids = sc.activeCharacterIds.length > 0 ? sc.activeCharacterIds : session.characterIds
+    return ids
+      .map((id) => characters.find((c) => c.id === id))
+      .filter((c): c is NonNullable<typeof c> => !!c)
+  }
+
+  /**
+   * 対象シーンの本文メッセージ（マーカー・空を除く）をアンカーまで返す（FB6-B）。
+   * アンカー未指定・見つからない場合はシーン全体（＝従来のシーン末尾までの文脈）。
+   * 旧データの sceneId 無しメッセージは現在シーンにだけ含める（本文グルーピングと同じ規則）。
+   */
+  const sceneMessagesUpto = (sceneId: string, uptoMessageId?: string): Message[] => {
+    const isCur = sceneId === session.currentSceneId
+    const msgs = session.messages.filter(
+      (m) => (m.sceneId === sceneId || (isCur && !m.sceneId)) && !isMarker(m) && m.content.trim(),
+    )
+    if (!uptoMessageId) return msgs
+    const idx = msgs.findIndex((m) => m.id === uptoMessageId)
+    return idx >= 0 ? msgs.slice(0, idx + 1) : msgs
+  }
+
   const msgActions = (m: Message) => {
     if (isStreaming || m.pending) return null
     return (
@@ -316,6 +340,17 @@ export default function ChatPanel({ session }: Props) {
         <button onClick={() => deleteMessage(m.id)}>
           <Icon name="trash-2" size={13} /> 削除
         </button>
+        {/* 任意のメッセージをアンカーに後付け生成（過去シーンも可。FB6-B） */}
+        {(m.sceneId ?? session.currentSceneId) && (
+          <button
+            onClick={() =>
+              setIllustGenFor({ sceneId: (m.sceneId ?? session.currentSceneId)!, messageId: m.id })
+            }
+            title="このメッセージの直後に挿絵を生成"
+          >
+            <Icon name="palette" size={13} /> 挿絵
+          </button>
+        )}
         {/* 末尾のアシスタント本文にだけ「選択肢を生成」（FB3-A6） */}
         {m.id === lastAssistantId && session.choiceMode !== 'off' && (
           <button
@@ -562,7 +597,7 @@ export default function ChatPanel({ session }: Props) {
                 disabled={!scene}
                 onClick={() => {
                   setShowMenu(false)
-                  setShowImageGen(true)
+                  if (scene) setIllustGenFor({ sceneId: scene.id })
                 }}
               >
                 <Icon name="palette" size={15} /> 挿絵を生成
@@ -572,7 +607,7 @@ export default function ChatPanel({ session }: Props) {
                 disabled={!scene}
                 onClick={() => {
                   setShowMenu(false)
-                  setShowBgGen(true)
+                  if (scene) setBgGenFor({ sceneId: scene.id })
                 }}
               >
                 <Icon name="mountain" size={15} /> 背景を生成
@@ -826,7 +861,7 @@ export default function ChatPanel({ session }: Props) {
                   className="composer-tool-btn"
                   disabled={!scene}
                   title={scene ? 'この場面の挿絵を生成' : '物語を開始すると生成できます'}
-                  onClick={() => setShowImageGen(true)}
+                  onClick={() => scene && setIllustGenFor({ sceneId: scene.id })}
                 >
                   <Icon name="palette" size={14} />
                 </button>
@@ -834,7 +869,7 @@ export default function ChatPanel({ session }: Props) {
                   className="composer-tool-btn"
                   disabled={!scene}
                   title={scene ? 'この場面の背景を生成' : '物語を開始すると生成できます'}
-                  onClick={() => setShowBgGen(true)}
+                  onClick={() => scene && setBgGenFor({ sceneId: scene.id })}
                 >
                   <Icon name="mountain" size={14} />
                 </button>
@@ -936,7 +971,14 @@ export default function ChatPanel({ session }: Props) {
       {showSceneEditor && scene && (
         <SceneEditor session={session} scene={scene} onClose={() => setShowSceneEditor(false)} />
       )}
-      {showLog && <StoryLogModal session={session} onClose={() => setShowLog(false)} />}
+      {showLog && (
+        <StoryLogModal
+          session={session}
+          onClose={() => setShowLog(false)}
+          onGenIllustration={(sceneId) => setIllustGenFor({ sceneId })}
+          onGenBackground={(sceneId) => setBgGenFor({ sceneId })}
+        />
+      )}
       {showStatus && <StatusPanel session={session} onClose={() => setShowStatus(false)} />}
       {discoveryScope && (
         <DiscoveryPanel
@@ -945,77 +987,80 @@ export default function ChatPanel({ session }: Props) {
           onClose={() => setDiscoveryScope(null)}
         />
       )}
-      {showImageGen && scene && (
-        <ImageGenModal
-          title="この場面の挿絵を生成"
-          draftContext={{
-            system: illustrationPromptSystem(),
-            user: illustrationContextUser({
-              sceneTitle: scene.title,
-              sceneNote: scene.note,
-              timeLabel: scene.timeLabel,
-              characters: participants.map((c) => ({
-                name: c.name,
-                appearance: c.appearance,
-                imagePrompt: c.imagePrompt,
-              })),
-              recentMessages: (() => {
-                // 現在シーンのメッセージのみ（旧データは sceneId 無しがあるため || !m.sceneId を維持）
-                const sceneMsgs = session.messages.filter(
-                  (m) => (m.sceneId === scene.id || !m.sceneId) && !isMarker(m) && m.content.trim(),
-                )
-                // 末尾から文字数予算でキャップ（推定 8,000 文字 ≒ 4,000〜5,000 トークン程度）
-                const budget = 8000
-                const recent: string[] = []
-                let used = 0
-                for (let i = sceneMsgs.length - 1; i >= 0; i--) {
-                  const c = plainTextOf(sceneMsgs[i].content)
-                  if (used + c.length > budget && recent.length > 0) break
-                  recent.unshift(c)
-                  used += c.length
-                }
-                return recent
-              })(),
-            }),
-            modelRef: reviewModelOf(session),
-          }}
-          initialPrompt={participants.map((c) => c.imagePrompt).filter(Boolean).join(', ')}
-          target={{
-            type: 'scene-illustration',
-            sessionId: session.id,
-            sceneId: scene.id,
-            messageId: (() => {
-              const sceneMsgs = session.messages.filter((m) => m.sceneId === scene.id || !m.sceneId)
-              return sceneMsgs[sceneMsgs.length - 1]?.id
-            })(),
-          }}
-          label={`挿絵: ${scene.title || 'シーン'}`}
-          onClose={() => setShowImageGen(false)}
-        />
-      )}
-      {showBgGen && scene && (
-        <ImageGenModal
-          title="場面の背景を生成"
-          draftContext={{
-            system: backgroundPromptSystem(),
-            user: backgroundContextUser({
-              sceneTitle: scene.title,
-              sceneNote: scene.note,
-              timeLabel: scene.timeLabel,
-              worldDescription: world?.description,
-              recentMessages: session.messages
-                .filter((m) => (m.sceneId === scene.id || !m.sceneId) && m.content.trim())
-                .slice(-6)
-                .map((m) => plainTextOf(m.content)),
-            }),
-            modelRef: reviewModelOf(session),
-          }}
-          defaultSizeIdx={1}
-          target={{ type: 'scene-background', sessionId: session.id, sceneId: scene.id }}
-          label={`背景: ${scene.title || 'シーン'}`}
-          onClose={() => setShowBgGen(false)}
-        />
-      )}
+      {illustGenFor &&
+        (() => {
+          // 対象シーンは現在シーンに限らない（過去シーン・任意メッセージへの後付け生成。FB6-B）
+          const sc = session.scenes.find((s) => s.id === illustGenFor.sceneId)
+          if (!sc) return null
+          const cast = sceneParticipants(sc)
+          const ctxMsgs = sceneMessagesUpto(sc.id, illustGenFor.messageId)
+          // アンカーから遡って文字数予算でキャップ（推定 8,000 文字 ≒ 4,000〜5,000 トークン程度）
+          const budget = 8000
+          const recent: string[] = []
+          let used = 0
+          for (let i = ctxMsgs.length - 1; i >= 0; i--) {
+            const c = plainTextOf(ctxMsgs[i].content)
+            if (used + c.length > budget && recent.length > 0) break
+            recent.unshift(c)
+            used += c.length
+          }
+          return (
+            <ImageGenModal
+              title={illustGenFor.messageId ? 'この位置に挿絵を生成' : 'この場面の挿絵を生成'}
+              draftContext={{
+                system: illustrationPromptSystem(),
+                user: illustrationContextUser({
+                  sceneTitle: sc.title,
+                  sceneNote: sc.note,
+                  timeLabel: sc.timeLabel,
+                  characters: cast.map((c) => ({
+                    name: c.name,
+                    appearance: c.appearance,
+                    imagePrompt: c.imagePrompt,
+                  })),
+                  recentMessages: recent,
+                }),
+                modelRef: reviewModelOf(session),
+              }}
+              initialPrompt={cast.map((c) => c.imagePrompt).filter(Boolean).join(', ')}
+              target={{
+                type: 'scene-illustration',
+                sessionId: session.id,
+                sceneId: sc.id,
+                messageId: illustGenFor.messageId ?? ctxMsgs[ctxMsgs.length - 1]?.id,
+              }}
+              label={`挿絵: ${sc.title || 'シーン'}`}
+              onClose={() => setIllustGenFor(null)}
+            />
+          )
+        })()}
+      {bgGenFor &&
+        (() => {
+          const sc = session.scenes.find((s) => s.id === bgGenFor.sceneId)
+          if (!sc) return null
+          return (
+            <ImageGenModal
+              title="場面の背景を生成"
+              draftContext={{
+                system: backgroundPromptSystem(),
+                user: backgroundContextUser({
+                  sceneTitle: sc.title,
+                  sceneNote: sc.note,
+                  timeLabel: sc.timeLabel,
+                  worldDescription: world?.description,
+                  recentMessages: sceneMessagesUpto(sc.id)
+                    .slice(-6)
+                    .map((m) => plainTextOf(m.content)),
+                }),
+                modelRef: reviewModelOf(session),
+              }}
+              defaultSizeIdx={1}
+              target={{ type: 'scene-background', sessionId: session.id, sceneId: sc.id }}
+              label={`背景: ${sc.title || 'シーン'}`}
+              onClose={() => setBgGenFor(null)}
+            />
+          )
+        })()}
       {showCassetteEditor && (
         <CassetteEditor seedSession={session} onClose={() => setShowCassetteEditor(false)} />
       )}
