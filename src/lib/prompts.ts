@@ -1,6 +1,7 @@
 import type { Character, Persona, Session, World } from '../types'
 import type { ChatMessage } from './openrouter'
 import { selectLoreEntries } from './lorebook'
+import { SCENE_WIND_DOWN_TOKENS, SCENE_WRAP_UP_TOKENS, sceneTokensOf } from './tokens'
 
 export interface ResolvedRefs {
   /** 現在のシーンに登場するキャラ */
@@ -230,6 +231,24 @@ export function buildSystemPrompt(
         `- ユーザー入力は物語への介入・方向づけとして自然に取り込んでください。\n` +
         `- 「続けて」と促された場合は、あなたの裁量で展開してください。`,
     )
+  }
+
+  // 6.5 シーンのペース制御（FB5-①）: 現在シーンが長くなってきたら収束へ向かわせる。
+  // メッセージ履歴には積まず、毎回の組み立て時に推定トークンから判定する（状態を持たない）。
+  // エピローグは【エンディング】に専用の締め指示があるため対象外。
+  if (!refs.ending) {
+    const sceneTokens = sceneTokensOf(session)
+    if (sceneTokens >= SCENE_WRAP_UP_TOKENS) {
+      parts.push(
+        `【シーンの締め】\nこの場面は十分な長さに達しています。新しい話題・場所・事件を持ち込まず、` +
+          `次の1〜2回の応答でこの場面を自然な一区切りへ着地させてください（続きが気になる引きは残してよい）。`,
+      )
+    } else if (sceneTokens >= SCENE_WIND_DOWN_TOKENS) {
+      parts.push(
+        `【シーンの収束】\nこの場面は後半に入っています。新しい展開を広げすぎず、` +
+          `いま起きている流れをまとめる方向で書き進めてください。`,
+      )
+    }
   }
 
   // 7. グループ会話: 今回の話者を指定（会話劇のみ）

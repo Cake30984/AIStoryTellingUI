@@ -34,13 +34,13 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist`。storage は
 - `checkpoint.ts` — チェックポイント用 gzip ヘルパ（`gzipText`/`gunzipText`）
 - `providers.ts` — `Provider` 型・プリセット・`parseModelRef`/`makeModelRef`/`splitRef`/`modelRefLabel`
 - `openrouter.ts` — SSE ストリーミング補完・モデル一覧取得（provider オブジェクト駆動）
-- `prompts.ts` — system プロンプト組み立て・選択肢/レビュー用プロンプト・定数（`CONTINUE_PROMPT`/`SCENE_START_PROMPT`）・画像プロンプト起案（`illustrationPromptSystem`/`backgroundPromptSystem` 等）・表情判定用 `emotionSystem`。【時間】には時間帯固定の指示（シーン内で時間帯を先へ進めない・進行はシーン切り替わりの役割）を含む。story モードは `story.initialDirective`（最初の方向付け・FB5-②）を**最初のシーン滞在中のみ**【最初の方向付け】として注入（チャット非表示・`@` は `＠` に無害化）。`buildSystemPrompt`/`buildMessages` は `session.structuredOutput` で【セリフの出力形式】ブロック追加や矛盾指示の条件無効化を切替。配役済みロールは毎ターン【配役】として実名＋立場で動的に注入し、`@` 記法は渡さない
+- `prompts.ts` — system プロンプト組み立て・選択肢/レビュー用プロンプト・定数（`CONTINUE_PROMPT`/`SCENE_START_PROMPT`）・画像プロンプト起案（`illustrationPromptSystem`/`backgroundPromptSystem` 等）・表情判定用 `emotionSystem`。【時間】には時間帯固定の指示（シーン内で時間帯を先へ進めない・進行はシーン切り替わりの役割）を含む。story モードは `story.initialDirective`（最初の方向付け・FB5-②）を**最初のシーン滞在中のみ**【最初の方向付け】として注入（チャット非表示・`@` は `＠` に無害化）。現在シーンの推定トークンが閾値超過なら【シーンの収束】/【シーンの締め】ナッジを注入（履歴に積まない・エピローグ対象外。FB5-①）。`buildSystemPrompt`/`buildMessages` は `session.structuredOutput` で【セリフの出力形式】ブロック追加や矛盾指示の条件無効化を切替。配役済みロールは毎ターン【配役】として実名＋立場で動的に注入し、`@` 記法は渡さない
 - `casting.ts` — 配役記法の検出・検証・導入本文の実名解決とカード/永続化入力の正規化。React/store 非依存の純粋関数
 - `lorebook.ts` — 世界観ロアのキーワード一致抽出
 - `timeline.ts` — `advanceTimeline`/`timeLabelOf`/`timelinePromptInfo`/`isNearEnd`
 - `json.ts` — `extractJson`（モデル出力からの堅牢な JSON 抽出）
 - `structured.ts` — 構造化出力（`@名前(感情)「セリフ」`行タグ）のパーサ。全て純粋関数。`parseLine`/`parseStructured`/`matchCharacterByName`（名前解決の一本化窓口）/`resolveEmotionToken`/`hasStructuredLines`（レンダラ分岐用・メッセージ単位）/`plainTextOf`（マークアップ除去）/`emotionUpdatesOf`/`NARRATION_NAMES`（`地の文`等の予約話者名＝ラベル非表示救済）。パース失敗行は必ず narration に落とす（graceful degradation）
-- `tokens.ts` — `estimateTokens`/`tokenLevel`
+- `tokens.ts` — `estimateTokens`/`tokenLevel`/`sceneTokensOf`（現在シーンの推定トークン）＋ペース制御閾値 `SCENE_WIND_DOWN_TOKENS`(3000)/`SCENE_WRAP_UP_TOKENS`(4500)。バッジ・提案チップ・ナッジの3者はこの閾値を共有する（FB5-①）
 - `io.ts` — `downloadBundle`/`downloadBlob`（内部で `saveBlob` を呼ぶ）/`parseBundle`（取り込み検証）。バンドル組み立て本体は `store.exportBundle`
 - `imageStore.ts` — アバター・カード画像ストア。`putImage`/`putImageAs`/`getImage`/`deleteImage`/`listImageIds`/`gcImages`＋`blobToBase64`/`base64ToBlob`＋表示用 `useImageUrl`。内部は `BlobStore` interface（Web:IndexedDB / Tauri:`data/images/<id>.<拡張子>`）。localStorage には画像を入れない
 - `avatarGen.ts` — `generateDefaultAvatar`（イニシャル＋色 canvas）/`normalizeImage`（縮小・PNG化）
@@ -68,7 +68,7 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist`。storage は
 - `CastingFields.tsx` — セッション設定・カセット・開始時モーダルで共有する、世界観ロールへの配役欄（参加キャラ選択・未解決警告・導入文の実名プレビュー）
 
 Play 領域:
-- `ChatPanel.tsx` — 会話画面。トップバー（①`.session-title-wrap`＝タイトル入力＋hover鉛筆で編集可視化・F3②`.scene-chip`＝クリックで SceneEditor③`ActivityIndicator`④`.topbar-group`＝状態/発見/ギャラリー/分岐/ジョブの5ボタン＝`ui.dockTab` トグル⑤`ReaderSettings`（Aa）⑥`⋯`メニュー）。本文領域は `.play-body`＝`.play-col`（`StageBackdrop`＋`chat-wrap`＋`composer-wrap`）と `<ContextDock/>` の2カラム。コンポーザーに常時レンダリングの `.composer-tools`（開始/続ける・やり直す・続きを生成・選択肢生成・挿絵🎨・背景🏞・シーン編集・シーン終了）。挿絵・背景生成はコンポーザーと ⋯ メニューの両導線（F3）で `ImageGenModal` にジョブ用 `target`/`label` を渡す。assistant メッセージは `hasStructuredLines` が真なら `StructuredMessage` に描画切替。発見編集は `discoveryScope`（`DiscoveryScope`）で `DiscoveryPanel` を開く
+- `ChatPanel.tsx` — 会話画面。トップバー（①`.session-title-wrap`＝タイトル入力＋hover鉛筆で編集可視化・F3②`.scene-chip`＝クリックで SceneEditor③`ActivityIndicator`④`.topbar-group`＝状態/発見/ギャラリー/分岐/ジョブの5ボタン＝`ui.dockTab` トグル⑤`ReaderSettings`（Aa）⑥`⋯`メニュー）。本文領域は `.play-body`＝`.play-col`（`StageBackdrop`＋`chat-wrap`＋`composer-wrap`）と `<ContextDock/>` の2カラム。コンポーザーに常時レンダリングの `.composer-tools`（開始/続ける・やり直す・続きを生成・選択肢生成・挿絵🎨・背景🏞・シーン編集・シーン終了）。シーン推定トークンが締め閾値（`SCENE_WRAP_UP_TOKENS`）超過で操作行の直上に `.scene-wrap-hint`（シーン終了レビューの提案チップ。自動では開かない・×でシーン単位で非表示。FB5-①c）。挿絵・背景生成はコンポーザーと ⋯ メニューの両導線（F3）で `ImageGenModal` にジョブ用 `target`/`label` を渡す。assistant メッセージは `hasStructuredLines` が真なら `StructuredMessage` に描画切替。発見編集は `discoveryScope`（`DiscoveryScope`）で `DiscoveryPanel` を開く
 - `StructuredMessage.tsx` — 構造化出力の表示専用。`StructuredNovelBody`（narration そのまま＋dialogue は話者チップ独立行）／`StructuredChatBody`（同一話者を1吹き出しにまとめ・narration は間ブロック）。ストリーミング中の末尾未改行行は未確定表示。話者→アイコンは `useSpeakers`（参加キャラ＋persona 合成）
 - `StageBackdrop.tsx` — チャット背面のバックドロップ（表示専用・`pointer-events:none`）。`scene.backgroundImageId` を背景、参加キャラの `sprites` を現在感情→neutral→先頭の順で解決し等分セルに横並び。濃さは `ui.stageBgOpacity`/`ui.stageSpriteOpacity`
 - `ContextDock.tsx` — 右コンテキストドック本体。`ui.dockTab`（null=非表示）を購読し `status`=`StatusView`／`discovery`=`DiscoveryView`／`gallery`=`GalleryBody`／`branch`=`BranchTreeBody`／`jobs`=`ImageJobsBody` を出し分け。幅は `ui.dockWidth`（左端 `.dock-resizer` ドラッグで 300〜560 可変・F1）。状態タブは head の「✎ 編集」で `StatusPanel` を開く。発見タブの編集は `DiscoveryView` 内タブ横の「✎ 編集」が選択スコープ（世界観 or キャラ）で `DiscoveryPanel` を開く（`onEditDiscovery(scope)`・F4）

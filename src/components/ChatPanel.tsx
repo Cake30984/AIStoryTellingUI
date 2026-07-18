@@ -8,7 +8,7 @@ import {
   illustrationContextUser,
   illustrationPromptSystem,
 } from '../lib/prompts'
-import { estimateTokens, tokenLevel } from '../lib/tokens'
+import { sceneTokensOf, tokenLevel } from '../lib/tokens'
 import { modelRefLabel } from '../lib/providers'
 import { getImage, useImageUrl } from '../lib/imageStore'
 import { downloadBlob } from '../lib/io'
@@ -156,18 +156,20 @@ export default function ChatPanel({ session }: Props) {
   const groupMode = session.mode === 'roleplay' && participants.length > 1 && !novel
   const effectiveSpeaker = groupMode ? speaker : participants[0]?.id
 
-  // 現在シーンのおおよそのトークン量（締め時の目安）
-  const sceneTokens = useMemo(
-    () =>
-      estimateTokens(
-        session.messages
-          .filter((m) => m.sceneId === scene?.id)
-          .map((m) => m.content)
-          .join('\n'),
-      ),
-    [session.messages, scene?.id],
-  )
+  // 現在シーンのおおよそのトークン量（締め時の目安。prompts.ts のペース制御ナッジと共通判定）
+  const sceneTokens = useMemo(() => sceneTokensOf(session), [session])
   const tokLvl = tokenLevel(sceneTokens)
+
+  // 締め時の提案チップ（FB5-①c）。自動でレビューは開かず、シーン単位で閉じられる
+  const [wrapHintHiddenFor, setWrapHintHiddenFor] = useState<string | null>(null)
+  const showWrapHint =
+    tokLvl === 'high' &&
+    !isEpilogue &&
+    !isFinalized &&
+    !isStreaming &&
+    !isReviewing &&
+    !!scene &&
+    wrapHintHiddenFor !== scene.id
 
   // ストリーミングの毎チャンクでは追従しない。末尾がユーザー発言（送信・続ける・選択肢クリック）に
   // 変わった直後にだけ1回スクロールする（FB3-A3）
@@ -747,6 +749,24 @@ export default function ChatPanel({ session }: Props) {
                       )}
                     </button>
                   ))}
+                </div>
+              )}
+              {/* 締め時の提案チップ（FB5-①c）。ペース制御ナッジと同じ閾値で「このシーンを終える」を後押しする */}
+              {showWrapHint && scene && (
+                <div className="scene-wrap-hint">
+                  <span className="scene-wrap-hint-text">
+                    シーンが長くなってきました（~{sceneTokens.toLocaleString()} tok）。区切りの良いところで締めるのがおすすめです。
+                  </span>
+                  <button className="link" onClick={() => prepareSceneReview()}>
+                    シーン終了レビューへ
+                  </button>
+                  <button
+                    className="icon-btn small"
+                    onClick={() => setWrapHintHiddenFor(scene.id)}
+                    title="このシーンでは表示しない"
+                  >
+                    <Icon name="x" size={12} />
+                  </button>
                 </div>
               )}
               {/* コンポーザーの操作行（常時レンダリング。高さが跳ねないよう左右にツールをまとめる） */}
