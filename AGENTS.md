@@ -59,7 +59,7 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist`。storage は
 共通部品:
 - `DialogHost.tsx` — `dialogs.ts` のキューを描画する常駐ホスト（App.tsx に1つ）
 - `ModalShell.tsx` — 全モーダル共通シェル（overlay＋modal＋head＋body＋foot）。`dirty` が真の時のみオーバーレイクリック・Escape で破棄確認
-- `ZoomOverlay.tsx` — 画像クリック拡大の共通オーバーレイ（`caption` でキャプション付き対応）
+- `ZoomOverlay.tsx` — 画像クリック拡大の共通オーバーレイ（`caption` でキャプション付き対応）。**`document.body` へのポータル描画**（呼び出し元サムネイルの img セレクタ・stacking context の影響を受けない）＋フィット⇔等倍トグル（画像クリック。等倍時はスクロール）。閉じるのは背景クリック・Escape（FB7-A）
 - `icons.tsx` — 自前 SVG アイコン（依存追加なし）。`<Icon name size? className? filled?/>`。`IconName` は機能ボタン用のみ（彩り用絵文字は対象外）
 - `MenuPopover.tsx` — 汎用ポップオーバー（親に `position:relative` 必要・外側クリック＋Escape で閉じる）
 - `ActivityIndicator.tsx` — 本編/選択肢/レビュー/画像生成/表情判定の進行状態を1チップに集約。クリックで内訳＋中止
@@ -116,7 +116,7 @@ Play 領域:
 - `設計_エンディング.md` — World のエンディング定義（`EndingDef`＝条件・エピローグ指針・auto/hidden/fallback）・レビュー確定時のコード判定・エピローグシーン・完結演出・周回横断到達記録。E1〜E3（**実装済み**・2026-07-17）
 - `設計_フィードバック反映5.md` — 実使用フィードバック第5弾（2026-07-18 合意）。シーン区切りのペース制御・時間帯固定・最初の方向付け・既定モデル・Library インポート・レビュー編集モード（FB5-A〜C）の決定と手順書。③ステージ透かし改善は見送り（別途検討）
 - `設計_フィードバック反映6.md` — 実使用フィードバック第6弾（2026-07-19 合意・**全フェーズ未着手**）。FB6-A（セッション画像記録=分岐から独立した生成画像アルバム・全チェックポイント走査バックフィル・ギャラリー「すべての記録」タブ）／B（挿絵・背景の後付け生成=メッセージ単位アンカー・過去シーン・起案文脈をアンカーまでに変更）／C（明示分岐=自動フォーク廃止・上書き方式・⑂ボタン・保護ルール・大きい巻き戻しのみ3択確認）／D（分岐ツリーのレビュー単位折りたたみ=既定折りたたみ・condenseTree 辺縮約）の決定と手順書。実装順は A→B→C→D 固定（C の削除は A の画像保全が前提）
-- `設計_フィードバック反映7.md` — 実使用フィードバック第7弾（2026-07-19 合意・**全フェーズ未着手**）。FB7-A（即効修正=画像ズームのポータル化＋等倍トグル・「スタット」→「ステータス」表記統一・最初の方向付けの開始テンプレート化）／B（分岐ツリーの履歴リンク化=行クリック＝移動・`lineTipOf`・`navigateToNode`・スクロールアンカー）／C（ポイントのレビュー確定一本化=選択肢 effects 廃止・変動幅 deltaMin/deltaMax・世界観レビュー指針 `reviewGuidance`）／D（条件エンジンのキャラ変数化=相手1/2/3・キャラの組ごとの独立発火・`@相手` プレースホルダ・相手つきエンディング）／E（発見キャラ=新キャラ登場ポリシー・未解決話者の？バッジ→キャラ化・ライブラリ直行保存）の決定と手順書
+- `設計_フィードバック反映7.md` — 実使用フィードバック第7弾（2026-07-19 合意・**A実装済み・B〜E未着手**）。FB7-A（即効修正=画像ズームのポータル化＋等倍トグル・「スタット」→「ステータス」表記統一・最初の方向付けの開始テンプレート化）／B（分岐ツリーの履歴リンク化=行クリック＝移動・`lineTipOf`・`navigateToNode`・スクロールアンカー）／C（ポイントのレビュー確定一本化=選択肢 effects 廃止・変動幅 deltaMin/deltaMax・世界観レビュー指針 `reviewGuidance`）／D（条件エンジンのキャラ変数化=相手1/2/3・キャラの組ごとの独立発火・`@相手` プレースホルダ・相手つきエンディング）／E（発見キャラ=新キャラ登場ポリシー・未解決話者の？バッジ→キャラ化・ライブラリ直行保存）の決定と手順書
 - `設計_フィードバック反映4.md` — 実使用フィードバック第4弾（2026-07-12 合意）。FB4-A（開始時間帯の防御的修正=クランプ＋開始→次シーンのプレビュー行。※繰り上げロジック自体は正しいことを全経路確認済み・症状は「夜が先頭の区切り定義」疑い）／B（選択肢の既定を auto に）／C（特別イベントの時間帯指定 `ScheduledEvent.slot`）／D（タイムライン設定欄のグレーアウト化=チェック OFF でも常時表示・fieldset disabled）／E（物語設定3欄の説明強化=3欄維持を決定）の手順書
 - `設計_UI改善_フィードバック反映.md` — UI-0〜UI-7 実装後の実使用フィードバック＋コード再監査（2026-07-10）に基づく修正フェーズ F0〜F5 の実装手順書。問題インベントリ（報告 R1〜R19・監査発見 A1〜A13、根本原因の診断付き）→ F0=即効バグ修正（没入グリッド崩壊・checkbox全幅化・System幅等）／F1=分岐ツリー刷新（主線を現在で止める・章折りたたみ・⑂/▷展開・行アクション⋯集約・ドック幅リサイズ `ui.dockWidth`）／F2=リーダー設定の数値化（UiPrefs を number 化・`normalizeUiPrefs`）＋没入案内トースト（`infoNotice`）／F3=動線（生成ボタンをコンポーザーへ・タイトル鉛筆・セッション右クリックメニュー・新規作成→設定自動オープン・ブランド撤去）／F4=発見ログのタブ化＋編集スコープ分割／F5=密度・面の階層（`--bg-rail`・余白締め・railラベル）
 
@@ -128,7 +128,7 @@ Play 領域:
 - **Avatar** — `{imageId?, color}`。`imageId` は画像ストア id（未設定なら色＋イニシャル。表示は `EntityAvatar`）
 - **Character** — name/persona/speechStyle/appearance/exampleDialogues/greeting/avatar/tags＋`developments: Development[]`＋`model?`（chat 群像で話者確定時のみ）＋`imagePrompt?`（画像生成用固定英語タグ）＋`sprites?: {emotion:EmotionId,imageId}[]`（表情つき立ち絵。通常カードには含めずカセットのみ同梱）
 - **EMOTIONS**（`types.ts`）— 固定セット `neutral/joy/anger/sadness/shy/surprise`（`EmotionId`）。各 `{id,label,tags}`
-- **World** — description＋`entries: LoreEntry[]`＋`scheduledEvents: ScheduledEvent[]`＋`relationAspects: RelationAspectDef[]`（関係性 prose の次元・ワールド固定）＋`stats: StatDef[]`＋`counters: CounterDef[]`＋`achievements: AchievementDef[]`＋`roles?: WorldRole[]`（世界観が定義する名前つき配役。`id`/`name`/立場の`description`/`required?`。配役本体は Session 側に持ち、開始テンプレートへコピーしない）＋`startPreset?: WorldStartPreset`（セッション開始テンプレート＝genre/premise/opening/openingTitle/authorNote/timeline〔開始日・開始時間帯含む〕定義。世界選択時にセッションへ**コピー**され素材側は不変。反映は `startPresetPatch`/`hasStartPreset`（store.ts の純関数）・W1）＋`endings?: EndingDef[]`（名前つきエンディング定義。`condition`・`epilogueGuidance`・`auto`/`hidden`/`fallback`。配列順=優先度。到達判定はコード＝`checkEndings`/`evalCondition`・E1〜E3）。プリセット `WORLD_PRESETS`（恋愛/RPG/経営）
+- **World** — description＋`entries: LoreEntry[]`＋`scheduledEvents: ScheduledEvent[]`＋`relationAspects: RelationAspectDef[]`（関係性 prose の次元・ワールド固定）＋`stats: StatDef[]`＋`counters: CounterDef[]`＋`achievements: AchievementDef[]`＋`roles?: WorldRole[]`（世界観が定義する名前つき配役。`id`/`name`/立場の`description`/`required?`。配役本体は Session 側に持ち、開始テンプレートへコピーしない）＋`startPreset?: WorldStartPreset`（セッション開始テンプレート＝genre/premise/opening/openingTitle/initialDirective〔最初の方向付け・FB7-A〕/authorNote/timeline〔開始日・開始時間帯含む〕定義。世界選択時にセッションへ**コピー**され素材側は不変。反映は `startPresetPatch`/`hasStartPreset`（store.ts の純関数）・W1）＋`endings?: EndingDef[]`（名前つきエンディング定義。`condition`・`epilogueGuidance`・`auto`/`hidden`/`fallback`。配列順=優先度。到達判定はコード＝`checkEndings`/`evalCondition`・E1〜E3）。プリセット `WORLD_PRESETS`（恋愛/RPG/経営）
 - **Persona** — 利用者が演じる人物。`imagePrompt?` あり
 - **Session** — characterIds/worldId/personaId＋`roleAssignments?: {roleId,characterId}[]`（世界観ロールへの配役。同キャラの複数ロール可・無効参照は開始時に無視）/authorNote/story/`scenes: Scene[]`/currentSceneId/timeline/choiceMode（off|always|auto）/narrativeStyle（novel|chat）/`reviewModel`/`choicesModel`/`eventAutoFire?`（世界観イベント自動発火＝undefined/true で有効・FB3-C）/usedEventIds/`state: SessionState`/`overlay: SessionOverlay`/messages/model/temperature/maxTokens＋`spritesEnabled?`（ステージ表示）＋`spriteEmotions?: {characterId,emotion}[]`（表情判定結果）＋`structuredOutput?`（本編を行タグ形式で書かせる。`newSession` は既定 true・既存は `?? false`）＋`archived?`（一覧から既定除外）＋`ending?`（到達エンディング＝`{defId,name,reachedAt,epilogueSceneId}`。チェックポイント対象＝分岐で戻れば未到達に戻る。`restoreCheckpoint` passthrough には**入れない**。「完結済み」は ending＋epilogue シーンの endedAt から導出。E2）
 - **SessionState**（セッション固有・素材化しない）— `{relations, moods, stats, counters, achievements}`（「事実は数、判断は言葉」＝ADR-1）
@@ -201,6 +201,7 @@ Play 領域:
 - **構造化出力のパース失敗行は必ず narration に落とす**（graceful degradation）。名前解決は `matchCharacterByName`（`structured.ts`）に一本化し、他所でコピーしない
 - **構造化レンダラのフォールバック判定はメッセージ単位**（`hasStructuredLines`）。トグルでレンダラを直接切り替えると旧平文・フォーマット無視応答で表示が崩れる
 - **`buildMessages` の履歴からマークアップを剥がさない**。過去メッセージは `@名前(感情)「…」` 込みの生テキストで送る（few-shot 効果で形式遵守が強化される）。`plainTextOf` を適用してよいのは裏方文脈・ラベルの5箇所のみ
+- **ZoomOverlay はポータル描画を維持する**（サムネイル内で普通に描画すると `.job-thumb > img` 等の祖先セレクタが拡大画像に当たる事故に戻る）。サムネイル用の img ルールは**直下セレクタ（`> img`）**で書き、子孫全体に効く `... img` を書かない（FB7-A）
 - **モーダルは `ModalShell` を使う。ネイティブ `confirm`/`prompt` の直呼び禁止**。破棄/削除確認・名前入力は `appConfirm`/`appPrompt`/`appChoices`。draft を持つモーダルは `dirty` state を共通変更入口で立てて `ModalShell` に渡す
 - **分岐の自動削除は必ず保護判定（`subtreeHasProtection`）を通し、`recordCheckpoint` 内では剪定しない**（fail-open。ガード＝`ensureLineTip` を通らない経路で兄弟ができたら従来どおり表示され、取り漏らしをバグとして発見できる。FB6-C）
 
@@ -232,7 +233,7 @@ Play 領域:
 各フェーズの詳細・検証記録は対応する `docs/設計_*.md` を参照。
 
 ## 未着手・残タスク
-- **フィードバック反映7（FB7・A〜E すべて未着手・2026-07-19 合意）**: 手順書 → `docs/設計_フィードバック反映7.md`。A=即効修正（画像ズーム・表記統一・方向付けテンプレート）／B=分岐ツリーの履歴リンク化／C=ポイントのレビュー確定一本化＋変動幅＋レビュー指針／D=条件エンジンのキャラ変数化（キャラ別イベント/実績/エンディング）／E=発見キャラ
+- **フィードバック反映7（FB7・A実装済み 2026-07-19・B〜E未着手）**: 手順書 → `docs/設計_フィードバック反映7.md`。A=即効修正（画像ズームのポータル化＋等倍トグル・表記統一・方向付けテンプレート。**実装済み**）／B=分岐ツリーの履歴リンク化／C=ポイントのレビュー確定一本化＋変動幅＋レビュー指針／D=条件エンジンのキャラ変数化（キャラ別イベント/実績/エンディング）／E=発見キャラ
 - **フィードバック反映6（FB6・A〜D すべて実装済み・2026-07-19）**: 手順書 → `docs/設計_フィードバック反映6.md`。A=セッション画像記録／B=挿絵・背景の後付け生成／C=明示分岐（上書き方式）／D=ツリーのレビュー単位折りたたみ
 - **フィードバック反映3（FB3・A〜D すべて実装済み・2026-07-12）**: 手順書 → `docs/設計_フィードバック反映3.md`。A=本文表示の即効改善（`.gen-divider`・自動スクロール停止・分岐ラベル本文冒頭・選択UX・選択肢生成ボタン）／B=巻き戻しの兄弟分岐化（`anchorMessageId`＋`reanchorBranch`）＋SourceTree 風フルグラフ／C=演出ディレクター廃止（`nextScheduledEvent` 一本化・`eventAutoFire`）／D=セッションカード全廃＋`CassetteEditor`（専用エディタ・`newCassette`/`upsertCassette`・セッションからは「カセットにする…」で `seedSession`）
 - **T1 で判明した既知の問題**: ①選択肢生成中に本編生成が始まると選択肢側 AbortController が追従せず `Cannot read properties of null (reading 'signal')`（再現手順が不明で切り分け未着手のまま据え置き）②ComfyUI が通常起動（`--enable-cors-header` なし）で接続できない＝設計通りでないバグ。**未解決・現在も再現する**。appFetch 未置換経路や `isTauri()` 誤判定を疑い切り分けが必要（詳細は `docs/設計_Tauri化.md`）

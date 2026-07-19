@@ -87,7 +87,7 @@ function ClauseRow({
         style={{ background: 'var(--bg)' }}
         onChange={(e) => onChange(newClause(e.target.value as Clause['kind'], world))}
       >
-        <option value="stat">スタット</option>
+        <option value="stat">ステータス</option>
         <option value="counter">カウンター</option>
         <option value="relationFlag">関係フラグ</option>
         <option value="achievement">実績</option>
@@ -562,6 +562,19 @@ export default function WorldEditor({ world, onClose }: Props) {
                   value={sp.opening ?? ''}
                   placeholder="例: 城が焼け落ちた前夜のことだった——"
                   onChange={(e) => patchPreset({ opening: e.target.value })}
+                />
+              </div>
+              <div className="field">
+                <label>最初の方向付け（非表示・任意）</label>
+                <div className="desc">
+                  最初のシーンの間だけ AI に渡される非表示の指示です。チャットには表示されません。
+                  序盤の展開・出会わせ方など立ち上がりの方向付けに（2シーン目からは効かなくなります）。
+                </div>
+                <textarea
+                  rows={3}
+                  value={sp.initialDirective ?? ''}
+                  placeholder="例: 最初のシーンでは謎の少女と出会わせ、事件の予兆だけを見せる。正体はまだ明かさない。"
+                  onChange={(e) => patchPreset({ initialDirective: e.target.value })}
                 />
               </div>
               <div className="field">
@@ -1087,7 +1100,7 @@ export default function WorldEditor({ world, onClose }: Props) {
           <div className="lore-head">
             <label>実績</label>
             <div className="desc">
-              スタット・カウンター・関係フラグ・他の実績のしきい値を満たすと、承認なしで自動的に解除されます。
+              ステータス・カウンター・関係フラグ・他の実績のしきい値を満たすと、承認なしで自動的に解除されます。
             </div>
           </div>
           {achievements.map((a) => {

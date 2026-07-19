@@ -202,6 +202,8 @@ export interface WorldStartPreset {
   opening?: string
   /** 導入シーンの見出し（→ session.story.openingTitle。FB2-B） */
   openingTitle?: string
+  /** 最初の方向付け（→ session.story.initialDirective。最初のシーン滞在中のみ注入される非表示指示。FB7-A） */
+  initialDirective?: string
   /** 固定メモ（→ session.authorNote） */
   authorNote?: string
   /**

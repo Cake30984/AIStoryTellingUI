@@ -200,7 +200,7 @@ export default function SessionEditor({ session, onClose }: Props) {
                         onClick={async () => {
                           if (
                             !(await appConfirm(
-                              'この世界の開始テンプレートで、ジャンル・あらすじ・導入・固定メモ・タイムラインを上書きしますか？（テンプレートに値がある項目のみ）',
+                              'この世界の開始テンプレートで、ジャンル・あらすじ・導入・最初の方向付け・固定メモ・タイムラインを上書きしますか？（テンプレートに値がある項目のみ）',
                             ))
                           )
                             return

@@ -528,6 +528,7 @@ export function hasStartPreset(world: World | undefined | null): boolean {
     p.premise?.trim() ||
     p.opening?.trim() ||
     p.openingTitle?.trim() ||
+    p.initialDirective?.trim() ||
     p.authorNote?.trim() ||
     (p.timeline && p.timeline.slots.length > 0)
   )
@@ -564,6 +565,10 @@ export function startPresetPatch(d: Session, world: World, overwrite: boolean): 
     }
     if (p.openingTitle?.trim() && (overwrite || !d.story.openingTitle.trim())) {
       story.openingTitle = p.openingTitle
+      changed = true
+    }
+    if (p.initialDirective?.trim() && (overwrite || !(d.story.initialDirective ?? '').trim())) {
+      story.initialDirective = p.initialDirective
       changed = true
     }
     if (changed) patch.story = story

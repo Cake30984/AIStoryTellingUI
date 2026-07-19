@@ -225,6 +225,7 @@ function normalizeStartPreset(raw: any): WorldStartPreset | undefined {
   // 導入（FB2-B）。旧カードの protagonist は廃止フィールドのため読み捨てる
   if (typeof raw.opening === 'string') p.opening = raw.opening
   if (typeof raw.openingTitle === 'string') p.openingTitle = raw.openingTitle
+  if (typeof raw.initialDirective === 'string') p.initialDirective = raw.initialDirective
   if (typeof raw.authorNote === 'string') p.authorNote = raw.authorNote
   if (raw.timeline && Array.isArray(raw.timeline.slots)) {
     p.timeline = {

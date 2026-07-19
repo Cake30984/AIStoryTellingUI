@@ -9,6 +9,38 @@
   padding: 24px;
   animation: fade 0.15s ease;
 }
+/* 画像ズームオーバーレイ（FB7-A）。ZoomOverlay は body へポータル描画される＝
+   サムネイル用の img セレクタが当たらない前提。中央寄せは margin:auto（等倍で
+   オーバーフローした時も全域へスクロールできる。place-items だと上端が切れる） */
+.zoom-overlay {
+  overflow: auto;
+}
+.zoom-overlay-inner {
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.zoom-overlay-img {
+  display: block;
+  max-width: 92vw;
+  max-height: 86vh;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border-radius: var(--radius);
+  cursor: zoom-in;
+}
+.zoom-overlay.full .zoom-overlay-img {
+  max-width: none;
+  max-height: none;
+  cursor: zoom-out;
+}
+.zoom-caption {
+  max-width: min(92vw, 720px);
+}
+
 .modal {
   background: var(--bg-elev);
   border: 1px solid var(--border);
@@ -469,7 +501,8 @@
   align-items: center;
   gap: 6px;
 }
-.job-thumb img {
+/* 直下セレクタ限定（FB7-A）: サムネイル内に描画される他要素の img へ波及させない */
+.job-thumb > img {
   width: 160px;
   height: 160px;
   object-fit: cover;

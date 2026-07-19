@@ -55,7 +55,8 @@
   margin: 12px 0 12px 44px;
   max-width: min(100%, 640px);
 }
-.illustration img {
+/* 直下セレクタ限定（FB7-A）: figure 内に描画される他要素の img へ波及させない */
+.illustration > img {
   max-width: 100%;
   border-radius: var(--radius);
   border: 1px solid var(--border);
