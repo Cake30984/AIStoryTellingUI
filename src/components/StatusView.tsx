@@ -1,4 +1,4 @@
-import { useStore } from '../store'
+import { bindPartnerNames, partnersOf, useStore } from '../store'
 import type { Session } from '../types'
 import EntityAvatar from './EntityAvatar'
 
@@ -30,7 +30,9 @@ export default function StatusView({ session }: Props) {
   }
   const counterValue = (defId: string, characterId?: string): number =>
     (st.counters ?? []).find((c) => c.defId === defId && c.characterId === characterId)?.value ?? 0
-  const isUnlocked = (defId: string) => (st.achievements ?? []).some((a) => a.defId === defId)
+  // 実績の解除記録（キャラ系はキャラの組ごとに複数。FB7-D）
+  const unlockedRecordsOf = (defId: string) => (st.achievements ?? []).filter((a) => a.defId === defId)
+  const nameOf = (id: string) => characters.find((c) => c.id === id)?.name || id
 
   if (!world) {
     return <p className="inline-empty">ワールドを設定すると、関係性・ステータスを管理できます。</p>
@@ -116,12 +118,24 @@ export default function StatusView({ session }: Props) {
         <div className="field">
           <label>🏆 実績</label>
           {world.achievements.map((a) => {
-            const unlocked = isUnlocked(a.id)
+            const recs = unlockedRecordsOf(a.id)
+            const unlocked = recs.length > 0
             const conceal = a.hidden && !unlocked
+            // キャラの組ごとの解除行（相手1=… の名前で表示。FB7-D）
+            const groups = recs.filter((r) => (r.characterIds?.length ?? 0) > 0)
             return (
-              <div key={a.id} className="desc" style={{ opacity: unlocked ? 1 : 0.55, marginBottom: 4 }}>
-                {unlocked ? '✅' : '🔒'} {conceal ? '？？？' : a.name || '無名'}
-                {!conceal && a.description && <span> — {a.description}</span>}
+              <div key={a.id} style={{ marginBottom: 4 }}>
+                <div className="desc" style={{ opacity: unlocked ? 1 : 0.55 }}>
+                  {unlocked ? '✅' : '🔒'} {conceal ? '？？？' : a.name || '無名'}
+                  {!conceal && a.description && <span> — {a.description}</span>}
+                </div>
+                {!conceal &&
+                  groups.map((r, i) => (
+                    <div key={i} className="desc" style={{ marginLeft: 16, opacity: 0.8 }}>
+                      ・{bindPartnerNames(a.name || '無名', partnersOf(r.characterIds!, characters))}
+                      <span className="growth-keys">（{r.characterIds!.map(nameOf).join('・')}）</span>
+                    </div>
+                  ))}
               </div>
             )
           })}

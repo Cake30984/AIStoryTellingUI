@@ -67,6 +67,25 @@ const clausesOf = (cond: Condition): Clause[] => ('all' in cond ? cond.all : con
 const modeOf = (cond: Condition): 'all' | 'any' => ('all' in cond ? 'all' : 'any')
 
 /** 条件節（Clause）1件の編集行。achievementId は実績の自己参照を除外するため（イベントでは未指定） */
+/** キャラ変数（相手1／相手2／相手3）のセレクト（FB7-D）。1変数だけ使えば従来と同じ見た目・挙動 */
+function CharVarSelect({ clause, onChange }: { clause: Clause; onChange: (c: Clause) => void }) {
+  const cur = (clause.kind === 'stat' || clause.kind === 'counter' || clause.kind === 'relationFlag'
+    ? clause.charVar
+    : undefined) ?? 1
+  return (
+    <select
+      value={cur}
+      style={{ background: 'var(--bg)' }}
+      title="この節が誰の条件か（同じ相手の節は同一キャラで、別の相手は別キャラで評価される）"
+      onChange={(e) => onChange({ ...clause, charVar: Number(e.target.value) as 1 | 2 | 3 } as Clause)}
+    >
+      <option value={1}>相手1</option>
+      <option value={2}>相手2</option>
+      <option value={3}>相手3</option>
+    </select>
+  )
+}
+
 function ClauseRow({
   clause,
   world,
@@ -80,6 +99,16 @@ function ClauseRow({
   onChange: (c: Clause) => void
   onRemove: () => void
 }) {
+  // キャラ系の節（キャラ別スタット/カウンターで characterId 未指定・関係フラグで fromId 未指定）は
+  // キャラ変数（相手1〜3）に属する。global・明示キャラ・実績には相手セレクトを出さない（FB7-D）。
+  const isCharScoped =
+    (clause.kind === 'stat' &&
+      !clause.characterId &&
+      world.stats.find((d) => d.id === clause.defId)?.scope === 'character') ||
+    (clause.kind === 'counter' &&
+      !clause.characterId &&
+      world.counters.find((d) => d.id === clause.defId)?.scope === 'character') ||
+    (clause.kind === 'relationFlag' && !clause.fromId)
   return (
     <div className="lore-entry-top" style={{ marginTop: 6 }}>
       <select
@@ -103,7 +132,7 @@ function ClauseRow({
             <option value="">（未選択）</option>
             {(clause.kind === 'stat' ? world.stats : world.counters).map((d) => (
               <option key={d.id} value={d.id}>
-                {d.name || '無名'}
+                {(d.name || '無名') + (d.scope === 'character' ? '（キャラ別）' : '（全体）')}
               </option>
             ))}
           </select>
@@ -124,6 +153,7 @@ function ClauseRow({
             style={{ width: 80, background: 'var(--bg)' }}
             onChange={(e) => onChange({ ...clause, value: Number(e.target.value) })}
           />
+          {isCharScoped && <CharVarSelect clause={clause} onChange={onChange} />}
         </>
       )}
 
@@ -143,6 +173,7 @@ function ClauseRow({
             <option value="have">持っている</option>
             <option value="not">持っていない</option>
           </select>
+          {isCharScoped && <CharVarSelect clause={clause} onChange={onChange} />}
         </>
       )}
 
@@ -898,7 +929,7 @@ export default function WorldEditor({ world, onClose }: Props) {
                 </button>
                 <div className="desc" style={{ marginTop: 4 }}>
                   {clauses.length > 0
-                    ? '条件を満たし、指定日時も到来していれば自動的に発火します（承認不要）。'
+                    ? ' 条件を満たし、指定日時も到来していれば自動的に発火します（承認不要）。キャラ別の条件は同じ「相手」が全部満たしたときに成立し、note に @相手1 と書くとそのキャラ名に置換されます。'
                     : '指定日時で判定します（両方空欄なら常に候補）。'}
                 </div>
               </div>
@@ -1174,6 +1205,9 @@ export default function WorldEditor({ world, onClose }: Props) {
             <label>実績</label>
             <div className="desc">
               ステータス・カウンター・関係フラグ・他の実績のしきい値を満たすと、承認なしで自動的に解除されます。
+              キャラ別の条件は<strong>同じ「相手」が全部満たしたとき</strong>に成立し、そのキャラ名が{' '}
+              <code>@相手1</code> に入ります（実績名・内容に書けます）。相手2 を使うと「別のもう一人」の条件も書けます。
+              キャラの組ごとに独立に解除されます（A で解除→後日 B でも同じ実績が解除）。
             </div>
           </div>
           {achievements.map((a) => {
@@ -1248,6 +1282,9 @@ export default function WorldEditor({ world, onClose }: Props) {
               条件を満たすと物語がその結末へ到達し、エピローグシーンに入ります（到達判定はコードが自動で行い、
               prose は読みません）。<strong>上にあるほど優先</strong>されます（複数成立時は最上位の1つ）。
               「fallback」は期間満了時に条件成立エンディングが無い場合の受け皿です。
+              キャラ別の条件は<strong>同じ「相手」が全部満たしたとき</strong>に成立し、そのキャラ名が{' '}
+              <code>@相手1</code>（名前・エピローグ指針に書けます）に入ります。相手が複数同時に成立した場合は
+              レビューで選べます。
             </div>
           </div>
           {endings.map((e, idx) => {

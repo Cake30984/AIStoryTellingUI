@@ -1,4 +1,4 @@
-import type { Character, Persona, Session, World } from '../types'
+import type { Character, Partner, Persona, Session, World } from '../types'
 import type { ChatMessage } from './openrouter'
 import { selectLoreEntries } from './lorebook'
 import { SCENE_WIND_DOWN_TOKENS, SCENE_WRAP_UP_TOKENS, sceneTokensOf } from './tokens'
@@ -23,7 +23,7 @@ export interface ResolvedRefs {
   /** 関係性 prose・気分・注入対象スタットの現在値（空なら無効） */
   stateInfo: string
   /** エピローグシーン滞在中のみ設定（到達した結末のトーン指示。docs/設計_エンディング.md） */
-  ending?: { name: string; guidance: string }
+  ending?: { name: string; guidance: string; partners?: Partner[] }
 }
 
 /** キャラ1人の定義ブロックを作る */
@@ -125,9 +125,15 @@ export function buildSystemPrompt(
 
   // 1.8 エンディング（エピローグシーン滞在中のみ。nearEnd はこの間スキップ済み）
   if (refs.ending) {
+    // 相手つきエンディング（キャラ変数条件・FB7-D）は「誰との結末か」を明示する
+    const partnerNames = (refs.ending.partners ?? []).map((p) => p.name).filter(Boolean)
+    const partnerLine = partnerNames.length
+      ? `\n相手: ${partnerNames.join('・')}。この結末は ${partnerNames.join('・')} との関係の帰結として描いてください。`
+      : ''
     parts.push(
       `【エンディング】\nこの物語は結末「${refs.ending.name}」のエピローグに入っています。` +
         (refs.ending.guidance.trim() ? `（${refs.ending.guidance.trim()}）` : '') +
+        partnerLine +
         `\n新しい事件・伏線を起こさず、これまでの感情と関係の帰着を描いてください。` +
         `\n数ターンで余韻を残して物語を締めくくる方向で書きます。`,
     )

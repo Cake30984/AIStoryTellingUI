@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { applyReviewToState, checkEndings, useStore } from '../store'
+import { applyReviewToState, bindPartnerNames, checkEndings, useStore } from '../store'
 import { advanceTimeline, timeLabelOf } from '../lib/timeline'
 import type {
   CounterEvent,
@@ -31,6 +31,7 @@ export default function SceneReviewModal() {
     sessions,
     activeId,
     worlds,
+    characters,
     stopReview,
   } = useStore()
   const review = sceneReview!
@@ -72,6 +73,8 @@ export default function SceneReviewModal() {
   )
   // 到達エンディングへ「進む」か（auto は選択なし＝常に進む。既定は保守側＝まだ続ける／満了時は進む）
   const [endingGo, setEndingGo] = useState(false)
+  // 複数の割り当てが成立した際に選ぶ相手（FB7-D。既定=参加キャラ順の最初）
+  const [partnerIdx, setPartnerIdx] = useState(0)
 
   // 到達プレビュー（E2）。選択を確定した場合の次 state を applyReviewToState で計算し、
   // checkEndings＋満了判定でどの結末に到達するかを求める。編集後の値と一致させるため
@@ -86,8 +89,10 @@ export default function SceneReviewModal() {
       counterEvents: [...counterSel].map((i) => draft.counterEvents[i]).filter(Boolean),
       moodChanges: [...moodSel].map((i) => draft.moodChanges[i]).filter(Boolean),
     }
-    const applied = applyReviewToState(session.state, world, session.characterIds, sel)
-    const matched = checkEndings(endings, applied.state, world, session.characterIds)
+    const applied = applyReviewToState(session.state, world, session.characterIds, sel, characters)
+    // checkEndings は最上位成立エンディングの当事者割り当てを列挙して返す（FB7-D）
+    const matches = checkEndings(endings, applied.state, world, session.characterIds, characters)
+    const top = matches[0]
     const tlNext = session.timeline.enabled ? advanceTimeline(session.timeline) : null
     const isExpiry = !!(
       tlNext &&
@@ -96,19 +101,23 @@ export default function SceneReviewModal() {
     )
     const fallback = endings.find((e) => e.fallback)
     // 候補は ①条件成立の最上位 → ②（満了時のみ）fallback
-    const candidate = matched ?? (isExpiry ? fallback : undefined)
+    const candidate = top?.def ?? (isExpiry ? fallback : undefined)
     if (!candidate) return null
+    // 相手の選択肢（成立した割り当てごと。条件にキャラ変数が無ければ空グループ1つ）
+    const partnerOptions = top ? matches.map((m) => m.partners) : []
     return {
       candidate,
       auto: !!candidate.auto && !candidate.fallback,
       isExpiry,
       isFallback: !!candidate.fallback,
+      partnerOptions,
     }
-  }, [session, isPastScene, world, draft, relUpdSel, statSel, counterSel, moodSel])
+  }, [session, isPastScene, world, characters, draft, relUpdSel, statSel, counterSel, moodSel])
 
   // 候補が変わったら既定選択を更新（満了時は「進む」・通常は「まだ続ける」を既定にする）
   useEffect(() => {
     if (endingPreview && !endingPreview.auto) setEndingGo(endingPreview.isExpiry)
+    setPartnerIdx(0)
   }, [endingPreview?.candidate.id, endingPreview?.isExpiry, endingPreview?.auto])
 
   // 別のレビュー（別シーン）に切り替わったときだけ全体をリセット。
@@ -184,8 +193,15 @@ export default function SceneReviewModal() {
       counterEventIdx: [...counterSel],
       moodChangeIdx: [...moodSel],
       endingDefId: goEnding ? endingPreview!.candidate.id : undefined,
+      endingPartners:
+        goEnding && endingPreview!.partnerOptions.length
+          ? endingPreview!.partnerOptions[partnerIdx]
+          : undefined,
     })
   }
+
+  // 選択中の相手（プレビュー表示・エンディング名の @相手 置換に使う）
+  const selectedPartners = endingPreview?.partnerOptions[partnerIdx] ?? []
 
   return (
     <ModalShell
@@ -256,13 +272,19 @@ export default function SceneReviewModal() {
                   <label>🏁 エンディング</label>
                   {endingPreview.auto ? (
                     <div className="desc">
-                      エンディング「<strong>{endingPreview.candidate.name || '無名'}</strong>」に到達します。
-                      確定するとエピローグに入ります。
+                      エンディング「
+                      <strong>{bindPartnerNames(endingPreview.candidate.name, selectedPartners) || '無名'}</strong>
+                      」に到達します。確定するとエピローグに入ります。
+                      {selectedPartners.length > 0 && (
+                        <span className="growth-keys">（相手: {selectedPartners.map((p) => p.name).join('・')}）</span>
+                      )}
                     </div>
                   ) : (
                     <>
                       <div className="desc">
-                        エンディング「<strong>{endingPreview.candidate.name || '無名'}</strong>」に到達できます。
+                        エンディング「
+                        <strong>{bindPartnerNames(endingPreview.candidate.name, selectedPartners) || '無名'}</strong>
+                        」に到達できます。
                         {endingPreview.isExpiry && (
                           <span className="event-badge" style={{ marginLeft: 6 }}>
                             ⏰ 期間満了
@@ -272,6 +294,23 @@ export default function SceneReviewModal() {
                           <span className="growth-keys">（満了時の受け皿エンディング）</span>
                         )}
                       </div>
+                      {/* 複数の相手が同時に条件成立したとき、どのキャラとの結末にするか選ぶ（FB7-D） */}
+                      {endingPreview.partnerOptions.length > 1 && (
+                        <div className="field" style={{ marginTop: 6 }}>
+                          <label>相手を選ぶ</label>
+                          <select
+                            value={partnerIdx}
+                            style={{ background: 'var(--bg)' }}
+                            onChange={(e) => setPartnerIdx(Number(e.target.value))}
+                          >
+                            {endingPreview.partnerOptions.map((partners, i) => (
+                              <option key={i} value={i}>
+                                {partners.map((p) => p.name).join('・') || '（相手なし）'}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
                       <div className="review-cards">
                         <button
                           className={'review-card' + (endingGo ? ' on' : '')}

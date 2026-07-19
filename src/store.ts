@@ -10,6 +10,7 @@ import type {
   Choice,
   Clause,
   Condition,
+  CharVar,
   CounterDef,
   CounterEvent,
   Development,
@@ -22,12 +23,14 @@ import type {
   MoodChange,
   NextSceneSuggestion,
   Op,
+  Partner,
   OpenRouterModel,
   Persona,
   Provider,
   RelationAspectDef,
   RelationUpdate,
   Scene,
+  ScheduledEvent,
   StatChange,
   SceneIllustration,
   SceneReview,
@@ -224,39 +227,190 @@ function evalClause(
   }
 }
 
-/** 条件式を評価する（all=すべて満たす／any=いずれか満たす）。節が空なら不成立扱い。 */
+/**
+ * キャラ系の節か（characterId/fromId 未指定＝キャラ変数に属する。FB7-D）。
+ * global スタット/カウンター・明示キャラ・実績は false。
+ */
+function isCharClause(clause: Clause, world: World | undefined): boolean {
+  switch (clause.kind) {
+    case 'stat': {
+      const def = world?.stats.find((d) => d.id === clause.defId)
+      return !!def && def.scope === 'character' && !clause.characterId
+    }
+    case 'counter': {
+      const def = world?.counters.find((d) => d.id === clause.defId)
+      return !!def && def.scope === 'character' && !clause.characterId
+    }
+    case 'relationFlag':
+      return !clause.fromId
+    default:
+      return false
+  }
+}
+
+/** 節が属するキャラ変数（未指定＝相手1） */
+const charVarOf = (c: Clause): CharVar =>
+  ((c.kind === 'stat' || c.kind === 'counter' || c.kind === 'relationFlag'
+    ? c.charVar
+    : undefined) ?? 1)
+
+/** キャラ変数→キャラの割り当て（相手1=v1・相手2=v2・相手3=v3。FB7-D） */
+export type CharAssignment = { v1?: string; v2?: string; v3?: string }
+
+/** 割り当てを変数順（相手1,相手2,相手3）のキャラ id 配列にする */
+export function assignmentIds(a: CharAssignment): string[] {
+  return [a.v1, a.v2, a.v3].filter((x): x is string => !!x)
+}
+
+/**
+ * 条件が成立する「キャラ変数→キャラ」の割り当てを列挙する純関数（FB7-D）。
+ * - all: キャラ系でない節（global・明示キャラ・実績）が全て成立し、かつキャラ変数ごとに
+ *   相異なるキャラを割り当てて「その変数の全キャラ系節」を満たせる組み合わせを全列挙する。
+ *   → A の好感度と B のフラグの合成では成立しない（同一キャラで全節満たす必要がある）。
+ * - any: 節単位。成立した各節の割り当て（キャラ系ならそのキャラ・それ以外は空）を返す。
+ * 参加キャラ順（characterIds の順）を保つ。成立が無ければ空配列。
+ */
+export function matchAssignments(
+  cond: Condition | undefined,
+  state: SessionState,
+  world: World | undefined,
+  characterIds: string[],
+): CharAssignment[] {
+  if (!cond) return []
+  const clauses = 'all' in cond ? cond.all : cond.any
+  if (clauses.length === 0) return []
+
+  if ('any' in cond) {
+    const out: CharAssignment[] = []
+    const seen = new Set<string>()
+    const push = (a: CharAssignment) => {
+      const k = JSON.stringify(a)
+      if (!seen.has(k)) {
+        seen.add(k)
+        out.push(a)
+      }
+    }
+    for (const c of clauses) {
+      if (isCharClause(c, world)) {
+        const v = charVarOf(c)
+        for (const cid of characterIds) {
+          if (evalClause(c, state, world, [cid])) push({ [`v${v}`]: cid } as CharAssignment)
+        }
+      } else if (evalClause(c, state, world, characterIds)) {
+        push({})
+      }
+    }
+    return out
+  }
+
+  // all：キャラ系でない節が全て成立するのが前提
+  const charClauses = clauses.filter((c) => isCharClause(c, world))
+  const otherClauses = clauses.filter((c) => !isCharClause(c, world))
+  if (!otherClauses.every((c) => evalClause(c, state, world, characterIds))) return []
+  const usedVars = Array.from(new Set(charClauses.map(charVarOf))).sort((a, b) => a - b)
+  if (usedVars.length === 0) return [{}]
+  // 変数ごとの候補キャラ（その変数の全キャラ系節を満たす cid・参加キャラ順）
+  const cands: Record<number, string[]> = {}
+  for (const v of usedVars) {
+    const cs = charClauses.filter((c) => charVarOf(c) === v)
+    const list = characterIds.filter((cid) => cs.every((c) => evalClause(c, state, world, [cid])))
+    if (list.length === 0) return []
+    cands[v] = list
+  }
+  // 相異なるキャラの割り当てを全列挙（バックトラッキング）
+  const results: CharAssignment[] = []
+  const rec = (i: number, used: Set<string>, acc: CharAssignment) => {
+    if (i === usedVars.length) {
+      results.push({ ...acc })
+      return
+    }
+    const v = usedVars[i]
+    for (const cid of cands[v]) {
+      if (used.has(cid)) continue
+      used.add(cid)
+      ;(acc as Record<string, string>)[`v${v}`] = cid
+      rec(i + 1, used, acc)
+      used.delete(cid)
+      delete (acc as Record<string, string>)[`v${v}`]
+    }
+  }
+  rec(0, new Set(), {})
+  return results
+}
+
+/** 割り当てキャラ id を Partner（名前つき）へ。名前が引けなければ id を仮名にする */
+export function partnersOf(ids: string[], characters: { id: string; name: string }[]): Partner[] {
+  return ids.map((id) => ({
+    characterId: id,
+    name: characters.find((c) => c.id === id)?.name || id,
+  }))
+}
+
+/**
+ * `@相手1`・`@相手2`・`@相手3`（変数が1つだけなら `@相手` も同義）を当事者名へ置換する（FB7-D）。
+ * partners は変数順（相手1,相手2…）。当事者が居ないプレースホルダはそのまま残す。
+ */
+export function bindPartnerNames(text: string, partners: Partner[] | undefined): string {
+  if (!text || !partners || partners.length === 0) return text
+  let out = text
+  partners.forEach((p, i) => {
+    out = out.split(`@相手${i + 1}`).join(p.name)
+  })
+  // 数字なしの @相手 は相手1 と同義（後続が 1〜3 の数字のものは対象外＝未束縛の @相手2 等を壊さない）
+  out = out.replace(/@相手(?![1-3])/g, partners[0].name)
+  return out
+}
+
+/**
+ * 条件式を評価する（成立する割り当てが1つ以上あるか）。`matchAssignments` の互換窓口。
+ * 節が空なら不成立扱い。
+ */
 export function evalCondition(
   cond: Condition | undefined,
   state: SessionState,
   world: World | undefined,
   characterIds: string[],
 ): boolean {
-  if (!cond) return false
-  if ('all' in cond)
-    return cond.all.length > 0 && cond.all.every((c) => evalClause(c, state, world, characterIds))
-  return cond.any.length > 0 && cond.any.some((c) => evalClause(c, state, world, characterIds))
+  return matchAssignments(cond, state, world, characterIds).length > 0
+}
+
+/** 新規解除された実績1件（当事者つき。トースト・`@相手` 置換に使う。FB7-D） */
+export interface UnlockedAchievement {
+  def: AchievementDef
+  partners: Partner[]
 }
 
 /**
  * World 定義の実績を state へ反復評価し、新規解除分を記録して返す（連鎖依存も1パスで解決）。
+ * キャラ系条件を含む定義はキャラの組ごとに独立に解除する（FB7-D）＝解除記録は (defId, 当事者組) 単位。
  * シーン確定時・状態の手動編集時など、state が変わり得るあらゆる場所から共通で呼ぶ。
  */
 function unlockAchievements(
   state: SessionState,
   world: World | undefined,
   characterIds: string[],
-): { state: SessionState; unlocked: AchievementDef[] } {
+  characters: { id: string; name: string }[] = [],
+): { state: SessionState; unlocked: UnlockedAchievement[] } {
   const achievements = state.achievements.map((a) => ({ ...a }))
   const candidate: SessionState = { ...state, achievements }
-  const unlocked: AchievementDef[] = []
+  const unlocked: UnlockedAchievement[] = []
+  const keyOf = (defId: string, ids: string[]) => `${defId}@${ids.join('+')}`
+  const done = new Set(achievements.map((a) => keyOf(a.defId, a.characterIds ?? [])))
   let progressed = true
   while (progressed) {
     progressed = false
     for (const def of world?.achievements ?? []) {
-      if (achievements.some((a) => a.defId === def.id)) continue
-      if (evalCondition(def.condition, candidate, world, characterIds)) {
-        achievements.push({ defId: def.id, unlockedAt: Date.now() })
-        unlocked.push(def)
+      for (const a of matchAssignments(def.condition, candidate, world, characterIds)) {
+        const ids = assignmentIds(a)
+        const key = keyOf(def.id, ids)
+        if (done.has(key)) continue
+        done.add(key)
+        achievements.push({
+          defId: def.id,
+          unlockedAt: Date.now(),
+          ...(ids.length ? { characterIds: ids } : {}),
+        })
+        unlocked.push({ def, partners: partnersOf(ids, characters) })
         progressed = true
       }
     }
@@ -274,12 +428,15 @@ export function checkEndings(
   state: SessionState,
   world: World | undefined,
   characterIds: string[],
-): EndingDef | undefined {
+  characters: { id: string; name: string }[] = [],
+): { def: EndingDef; partners: Partner[] }[] {
   for (const e of endings ?? []) {
     if (e.fallback || !e.condition) continue
-    if (evalCondition(e.condition, state, world, characterIds)) return e
+    const assigns = matchAssignments(e.condition, state, world, characterIds)
+    if (assigns.length > 0)
+      return assigns.map((a) => ({ def: e, partners: partnersOf(assignmentIds(a), characters) }))
   }
-  return undefined
+  return []
 }
 
 /** 画像記録をセッション単位で record id の dedupe 追記マージする（FB6-A。importBundle 用） */
@@ -332,7 +489,8 @@ export function applyReviewToState(
     counterEvents: CounterEvent[]
     moodChanges: MoodChange[]
   },
-): { state: SessionState; unlocked: AchievementDef[] } {
+  characters: { id: string; name: string }[] = [],
+): { state: SessionState; unlocked: UnlockedAchievement[] } {
   const prev = base ?? { relations: [], moods: [], stats: [], counters: [], achievements: [] }
   // 関係性（fromId,toId で upsert。stance は全文置換、flags は和集合）
   const relations = prev.relations.map((r) => ({ ...r }))
@@ -394,6 +552,7 @@ export function applyReviewToState(
     { relations, moods, stats, counters, achievements: prev.achievements ?? [] },
     world,
     characterIds,
+    characters,
   )
 }
 
@@ -902,8 +1061,8 @@ interface AppState {
   /** 開始時に未配役だったセッション。null なら配役モーダルを閉じる */
   castingSessionId: string | null
   error: string | null
-  /** 直近のシーン確定で新規解除された実績（通知用・非永続） */
-  newlyUnlockedAchievements: AchievementDef[]
+  /** 直近のシーン確定で新規解除された実績（通知用・非永続。当事者名つき＝FB7-D） */
+  newlyUnlockedAchievements: UnlockedAchievement[]
   /** 直近のエンディング到達（🏁 到達トースト用・非永続。エピローグ突入時にセット） */
   endingToast: { name: string } | null
   /** バックグラウンド画像生成ジョブ（Blob を含むため非永続。partialize から除外） */
@@ -1020,6 +1179,8 @@ interface AppState {
     moodChangeIdx: number[]
     /** 到達エンディングへ進む場合の EndingDef.id（レビューで「エンディングへ進む」を選んだとき。E2） */
     endingDefId?: string
+    /** 複数の割り当てが成立した際にレビューで選んだ当事者（FB7-D。未指定＝参加キャラ順の最初） */
+    endingPartners?: Partner[]
   }) => void
   /**
    * エピローグシーンを締めて物語を完結する（E2）。レビューをスキップして scene.endedAt をセットし、
@@ -1366,42 +1527,73 @@ function buildStateInfo(session: Session, characters: Character[], world?: World
 }
 
 /**
+ * 特別イベントの消化キー（FB7-D）。global 条件は素の eventId、キャラ変数条件は
+ * `eventId@charId1[+charId2]`。キャラの組ごとに独立発火させるためのキー。
+ */
+export function eventUsedKey(eventId: string, partnerIds: string[]): string {
+  return partnerIds.length ? `${eventId}@${partnerIds.join('+')}` : eventId
+}
+
+/**
  * 次シーンの特別イベントを決める（FB3-C。演出タイプ抽選は廃止し、世界観イベントに一本化）。
- * 未消化かつ day/slot 到来かつ条件成立のイベントを日時順で1つ返す。slot はラベル一致で解決し、
- * 不一致またはタイムライン無効時は時間帯条件を無視する（FB4-C）。人の承認なしでコードが自動判定して
- * 発火する（ADR-1）。`session.eventAutoFire === false` なら発火しない。
+ * 未消化かつ day/slot 到来かつ条件成立の「(イベント, キャラ割り当て)」を日時順・参加キャラ順で1つ返す
+ * （FB7-D。キャラ変数条件はキャラの組ごとに独立発火）。slot はラベル一致で解決し、不一致または
+ * タイムライン無効時は時間帯条件を無視する（FB4-C）。人の承認なしでコードが自動判定して発火する（ADR-1）。
+ * `session.eventAutoFire === false` なら発火しない。旧データの素の eventId は「全組み消化済み」として扱う。
  */
 function nextScheduledEvent(
   session: Session,
   world: World | undefined,
   nextDay: number | null,
   nextSlot: number | null,
-): { eventId?: string; eventName?: string } {
+  characters: { id: string; name: string }[] = [],
+): { eventId?: string; eventName?: string; eventKey?: string; eventPartners?: Partner[] } {
   if (!world || session.eventAutoFire === false) return {}
   const slotIndexOf = (slot: string | undefined) =>
     slot == null ? -1 : session.timeline.slots.indexOf(slot)
-  const ev = (world.scheduledEvents ?? [])
-    .filter((e) => {
-      if (session.usedEventIds.includes(e.id)) return false
-      if (e.day != null && (nextDay == null || e.day > nextDay)) return false
-      const eventSlot = slotIndexOf(e.slot)
-      if (
-        eventSlot >= 0 &&
-        nextSlot != null &&
-        (e.day == null || e.day === nextDay) &&
-        eventSlot > nextSlot
-      )
-        return false
-      if (e.condition && !evalCondition(e.condition, session.state, world, session.characterIds))
-        return false
-      return true
-    })
-    .sort((a, b) => {
-      const dayDiff = (a.day ?? Infinity) - (b.day ?? Infinity)
-      if (dayDiff !== 0) return dayDiff
-      return slotIndexOf(a.slot) - slotIndexOf(b.slot)
-    })[0]
-  return ev ? { eventId: ev.id, eventName: ev.name } : {}
+  type Cand = { event: ScheduledEvent; ids: string[]; key: string }
+  const cands: Cand[] = []
+  for (const e of world.scheduledEvents ?? []) {
+    // 素の eventId が消化済み＝旧データ・global 発火済み。全割り当てを消化済み扱いにする（安全側）
+    if (session.usedEventIds.includes(e.id)) continue
+    if (e.day != null && (nextDay == null || e.day > nextDay)) continue
+    const eventSlot = slotIndexOf(e.slot)
+    if (
+      eventSlot >= 0 &&
+      nextSlot != null &&
+      (e.day == null || e.day === nextDay) &&
+      eventSlot > nextSlot
+    )
+      continue
+    if (e.condition) {
+      const asgs = matchAssignments(e.condition, session.state, world, session.characterIds)
+      for (const a of asgs) {
+        const ids = assignmentIds(a)
+        const key = eventUsedKey(e.id, ids)
+        if (session.usedEventIds.includes(key)) continue
+        cands.push({ event: e, ids, key })
+      }
+    } else {
+      cands.push({ event: e, ids: [], key: e.id })
+    }
+  }
+  cands.sort((a, b) => {
+    const dayDiff = (a.event.day ?? Infinity) - (b.event.day ?? Infinity)
+    if (dayDiff !== 0) return dayDiff
+    const slotDiff = slotIndexOf(a.event.slot) - slotIndexOf(b.event.slot)
+    if (slotDiff !== 0) return slotDiff
+    // 同日時は参加キャラ順で安定化（当事者の先頭キャラの参加インデックス）
+    const idx = (c: Cand) => (c.ids.length ? session.characterIds.indexOf(c.ids[0]) : -1)
+    return idx(a) - idx(b)
+  })
+  const pick = cands[0]
+  if (!pick) return {}
+  return {
+    eventId: pick.event.id,
+    eventName: pick.event.name,
+    eventKey: pick.key,
+    eventPartners: partnersOf(pick.ids, characters),
+  }
 }
 
 export const useStore = create<AppState>()(
@@ -1640,8 +1832,12 @@ export const useStore = create<AppState>()(
             session.ending && scene?.id === session.ending.epilogueSceneId
               ? {
                   name: session.ending.name,
-                  guidance:
+                  // エピローグ指針の @相手 を当事者名へ置換して注入（FB7-D）
+                  guidance: bindPartnerNames(
                     effWorld?.endings?.find((e) => e.id === session.ending!.defId)?.epilogueGuidance ?? '',
+                    session.ending.partners,
+                  ),
+                  partners: session.ending.partners,
                 }
               : undefined,
         }
@@ -2523,13 +2719,18 @@ export const useStore = create<AppState>()(
             // 過去シーンの再レビューではライブの現在日での日付/条件付き判定を行わない。
             const nextDay = !isPastScene && nextTimeline ? nextTimeline.currentDay : null
             const nextSlot = !isPastScene && nextTimeline ? nextTimeline.currentSlot : null
-            const pick = isPastScene ? {} : nextScheduledEvent(s, refs.world, nextDay, nextSlot)
+            const pick = isPastScene
+              ? {}
+              : nextScheduledEvent(s, refs.world, nextDay, nextSlot, get().characters)
             const event = pick.eventId
               ? refs.world?.scheduledEvents.find((e) => e.id === pick.eventId)
               : undefined
             if (event) {
+              // note の @相手 を当事者名へ置換して文脈に載せる（FB7-D）
+              const evNote = bindPartnerNames(event.note, pick.eventPartners)
+              const evName = bindPartnerNames(event.name, pick.eventPartners)
               ctxParts.push(
-                `【次のシーンの方向性】特別イベント「${event.name}」が発生します。${event.note}\nsuggestions はこのイベントに沿った内容にしてください。`,
+                `【次のシーンの方向性】特別イベント「${evName}」が発生します。${evNote}\nsuggestions はこのイベントに沿った内容にしてください。`,
               )
             }
             // ワールド固定の関係次元・ステータス定義（レビューを拘束。変動幅つき列挙＝FB7-C）
@@ -2793,6 +2994,8 @@ export const useStore = create<AppState>()(
                 : [],
               scheduledEventId: event?.id,
               scheduledEventName: event?.name,
+              scheduledEventKey: pick.eventKey,
+              scheduledEventPartners: pick.eventPartners,
             }
             set({ sceneReview: review })
           } catch (e) {
@@ -2839,15 +3042,22 @@ export const useStore = create<AppState>()(
 
           // レビュー適用後の新 state を1度だけ計算（純関数 applyReviewToState に一本化。E2）。
           // エンディング判定・シーン確定の両方でこの同一結果を使う＝プレビューと発火の不一致を防ぐ。
-          const applied = applyReviewToState(s.state, stateWorld, s.characterIds, {
-            relationUpdates: selectedRelUpdates,
-            statChanges: selectedStats,
-            counterEvents: selectedCounters,
-            moodChanges: selectedMoods,
-          })
+          const characters = get().characters
+          const applied = applyReviewToState(
+            s.state,
+            stateWorld,
+            s.characterIds,
+            {
+              relationUpdates: selectedRelUpdates,
+              statChanges: selectedStats,
+              counterEvents: selectedCounters,
+              moodChanges: selectedMoods,
+            },
+            characters,
+          )
           const newState = applied.state
-          // このレビュー適用で新規解除された実績（通知用）
-          const newlyUnlocked: AchievementDef[] = [...applied.unlocked]
+          // このレビュー適用で新規解除された実績（通知用・当事者つき。FB7-D）
+          const newlyUnlocked: UnlockedAchievement[] = [...applied.unlocked]
 
           // 発見ロア・キャラ成長はセッションのオーバーレイへ積む（元 Character/World は不変に保つ）
           const nextOverlay = (prev: Session['overlay'] | undefined): Session['overlay'] => {
@@ -2888,6 +3098,9 @@ export const useStore = create<AppState>()(
                   .find((w) => w.id === s.worldId)
                   ?.scheduledEvents.find((e) => e.id === review.scheduledEventId)
               : undefined
+            const evPartners = review.scheduledEventPartners
+            const evName = event ? bindPartnerNames(event.name, evPartners) : ''
+            const evNote = event ? bindPartnerNames(event.note, evPartners) : ''
             set((st) => ({
               sessions: st.sessions.map((sess) =>
                 sess.id === s.id
@@ -2898,11 +3111,11 @@ export const useStore = create<AppState>()(
                           return { ...sc, summary: opts.summary.trim() }
                         if (nextScene && sc.id === nextScene.id && (sug || event)) {
                           // ユーザーが編集/記入したタイトルをイベント名より優先する（FB5-C。note と同じ優先順）
-                          const base = sug?.title || event?.name || sc.title
+                          const base = sug?.title || evName || sc.title
                           return {
                             ...sc,
                             title: base || sc.title,
-                            note: sug?.note || event?.note || sc.note,
+                            note: sug?.note || evNote || sc.note,
                           }
                         }
                         return sc
@@ -2925,9 +3138,11 @@ export const useStore = create<AppState>()(
           // ── エンディング判定（E2）。session.ending が既 set なら判定・発火しない（到達済み）。
           // 判定は newState（このレビュー適用後の state）に対して行い、モーダルのプレビューと一致させる。
           const endings = stateWorld?.endings ?? []
-          const matched = s.ending
-            ? undefined
-            : checkEndings(endings, newState, stateWorld, s.characterIds)
+          // checkEndings は「最上位成立エンディング」の当事者割り当てを列挙して返す（FB7-D）
+          const matches = s.ending
+            ? []
+            : checkEndings(endings, newState, stateWorld, s.characterIds, characters)
+          const topMatch = matches[0]
           // 満了モード：確定後に進む先が totalDays を超えるか（enabled かつ totalDays 指定時のみ）
           const isExpiry =
             !s.ending &&
@@ -2938,15 +3153,27 @@ export const useStore = create<AppState>()(
           //  1) 最上位成立が auto なら opts に依らず強制突入
           //  2) それ以外は opts.endingDefId が渡され、確定後 state で実際に成立（または満了 fallback）する時のみ
           let firing: EndingDef | undefined
+          let firingPartners: Partner[] = []
           if (!s.ending) {
-            if (matched?.auto) {
-              firing = matched
+            if (topMatch?.def.auto) {
+              firing = topMatch.def
+              firingPartners = topMatch.partners
             } else if (opts.endingDefId) {
               const chosen = endings.find((e) => e.id === opts.endingDefId)
               if (chosen?.fallback) {
                 if (isExpiry) firing = chosen
-              } else if (chosen && evalCondition(chosen.condition, newState, stateWorld, s.characterIds)) {
-                firing = chosen
+              } else if (chosen) {
+                const asgs = matchAssignments(chosen.condition, newState, stateWorld, s.characterIds)
+                if (asgs.length > 0) {
+                  firing = chosen
+                  // プレビューで選んだ相手を優先。無効/未指定なら参加キャラ順の最初の割り当て
+                  const chosenIds = opts.endingPartners?.map((p) => p.characterId) ?? []
+                  const valid = asgs.find((a) => {
+                    const ids = assignmentIds(a)
+                    return ids.length === chosenIds.length && ids.every((id, i) => id === chosenIds[i])
+                  })
+                  firingPartners = partnersOf(assignmentIds(valid ?? asgs[0]), characters)
+                }
               }
             }
           }
@@ -2954,8 +3181,11 @@ export const useStore = create<AppState>()(
           if (firing) {
             // ── エピローグシーンへ突入（E2）。タイムラインは進めない（もう時間の意味が無い）。
             const ending = firing
-            const epiScene = newScene(`エピローグ：${ending.name}`, scene.activeCharacterIds, 'エピローグ')
-            epiScene.note = ending.epilogueGuidance
+            const partners = firingPartners
+            const endingName = bindPartnerNames(ending.name, partners)
+            const epiScene = newScene(`エピローグ：${endingName}`, scene.activeCharacterIds, 'エピローグ')
+            // エピローグ指針の @相手 を当事者名へ置換して注入（FB7-D）
+            epiScene.note = bindPartnerNames(ending.epilogueGuidance, partners)
             const reachedAt = Date.now()
             set((st) => ({
               sessions: st.sessions.map((sess) =>
@@ -2976,9 +3206,10 @@ export const useStore = create<AppState>()(
                       spriteEmotions: [],
                       ending: {
                         defId: ending.id,
-                        name: ending.name,
+                        name: endingName,
                         reachedAt,
                         epilogueSceneId: epiScene.id,
+                        ...(partners.length ? { partners } : {}),
                       },
                       updatedAt: reachedAt,
                     }
@@ -2986,23 +3217,29 @@ export const useStore = create<AppState>()(
               ),
               sceneReview: null,
               newlyUnlockedAchievements: newlyUnlocked,
-              endingToast: { name: ending.name },
+              endingToast: { name: endingName },
               // 周回横断の到達記録（E3）。突入時に追記＝完結ボタンの押し忘れで漏れないため。再到達も追記し表示側で distinct
               endingRecords: s.worldId
                 ? [
                     ...st.endingRecords,
-                    { worldId: s.worldId, endingDefId: ending.id, sessionId: s.id, reachedAt },
+                    {
+                      worldId: s.worldId,
+                      endingDefId: ending.id,
+                      sessionId: s.id,
+                      reachedAt,
+                      ...(partners.length ? { characterIds: partners.map((p) => p.characterId) } : {}),
+                    },
                   ]
                 : st.endingRecords,
             }))
             void recordCheckpoint(
               s.id,
               'scene',
-              `🏁 エピローグ：${ending.name}`,
+              `🏁 エピローグ：${endingName}`,
               s,
               'エピローグ',
               undefined,
-              ending.name,
+              endingName,
             )
             // エピローグ導入を自動生成（締めの場面。選択肢も choiceMode に従う）
             void get().beginScene()
@@ -3015,15 +3252,20 @@ export const useStore = create<AppState>()(
                 .find((w) => w.id === s.worldId)
                 ?.scheduledEvents.find((e) => e.id === review.scheduledEventId)
             : undefined
+          // イベントの当事者名で @相手 を置換（タイトル・note。FB7-D）
+          const evPartners = review.scheduledEventPartners
+          const evName = event ? bindPartnerNames(event.name, evPartners) : ''
+          const evNote = event ? bindPartnerNames(event.note, evPartners) : ''
           // ユーザーが編集/記入したタイトルをイベント名より優先する（FB5-C。note と同じ優先順）
-          const base = sug?.title || event?.name || ''
+          const base = sug?.title || evName || ''
           const title =
             [nextLabel, base].filter(Boolean).join('：') ||
             `シーン ${s.scenes.length + 1}`
           const next = newScene(title, scene.activeCharacterIds, nextLabel)
-          next.note = sug?.note || event?.note || ''
+          next.note = sug?.note || evNote || ''
+          // キャラの組ごとの独立発火（FB7-D）: 消化キーは eventKey（`eventId@charId…`）を積む
           const usedEventIds = event
-            ? [...s.usedEventIds, event.id]
+            ? [...s.usedEventIds, review.scheduledEventKey ?? event.id]
             : s.usedEventIds
 
           set((st) => ({
@@ -3184,6 +3426,7 @@ export const useStore = create<AppState>()(
             { ...edited, stats },
             world,
             s.characterIds,
+            get().characters,
           )
           get().updateSession(s.id, { state })
           if (unlocked.length) set({ newlyUnlockedAchievements: unlocked })
@@ -3316,12 +3559,14 @@ export const useStore = create<AppState>()(
           // 開始時のシーン選出：世界イベント確認＋時間帯決定（FB3-C で演出タイプ抽選は廃止）
           const day = s.timeline.enabled ? s.timeline.currentDay : null
           const slot = s.timeline.enabled ? s.timeline.currentSlot : null
-          const pick = nextScheduledEvent(s, refs.world, day, slot)
+          const pick = nextScheduledEvent(s, refs.world, day, slot, get().characters)
           const event = pick.eventId
             ? refs.world?.scheduledEvents.find((e) => e.id === pick.eventId)
             : undefined
+          const evName = event ? bindPartnerNames(event.name, pick.eventPartners) : ''
+          const evNote = event ? bindPartnerNames(event.note, pick.eventPartners) : ''
           const label = s.timeline.enabled ? timeLabelOf(s.timeline) : undefined
-          const baseName = event?.name || ''
+          const baseName = evName || ''
           const drafted = [label, baseName].filter(Boolean).join('：') || scene.title
           // 導入（そのまま掲載）モードでは見出しを openingTitle 優先に（FB2-B）
           const openingTitle = s.mode === 'story' ? s.story.openingTitle.trim() : ''
@@ -3334,11 +3579,11 @@ export const useStore = create<AppState>()(
                     ...sc,
                     title,
                     timeLabel: label ?? sc.timeLabel,
-                    note: sc.note || event?.note || '',
+                    note: sc.note || evNote || '',
                   }
                 : sc,
             ),
-            usedEventIds: event ? [...s.usedEventIds, event.id] : s.usedEventIds,
+            usedEventIds: event ? [...s.usedEventIds, pick.eventKey ?? event.id] : s.usedEventIds,
           })
 
           // 導入文があれば AI 生成せず、そのまま最初の本文（assistant メッセージ）として掲載する（FB2-B）
