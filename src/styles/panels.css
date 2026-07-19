@@ -1101,12 +1101,15 @@
     max-width: 60px;
   }
 }
-.bg-back {
+/* 行クリック＝その地点を本文で開く（FB7-B）。hover で「→ 開く」を出す */
+.bg-body {
+  cursor: pointer;
+}
+.bg-open {
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  background: transparent;
   border: 1px solid var(--border);
   border-radius: 999px;
   color: var(--text-dim);
@@ -1115,10 +1118,10 @@
   opacity: 0;
   transition: 0.12s;
 }
-.bg-row:hover .bg-back {
+.bg-row:hover .bg-open {
   opacity: 1;
 }
-.bg-back:hover:not(:disabled) {
+.bg-body:hover .bg-open {
   border-color: var(--accent);
   color: var(--text);
 }

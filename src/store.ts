@@ -904,6 +904,11 @@ interface AppState {
   imageJobToasts: { jobId: string; label: string }[]
   /** 一時的な案内メッセージ（没入モード起動時など。非永続・info トーストで表示。F2） */
   infoNotice: string | null
+  /**
+   * ツリー行クリックの本文スクロール先（FB7-B。非永続・partialize から除外）。
+   * ChatPanel が消化して null に戻す。seq は同じメッセージへの連続移動でも effect を再発火させるための通番。
+   */
+  scrollTarget: { sessionId: string; messageId: string; seq: number } | null
 
   // 共通
   setView: (v: View) => void
@@ -962,6 +967,13 @@ interface AppState {
    * 「この地点から物語を進める最初の操作」の冒頭で上書きガード（ensureLineTip）が行う（FB6-C）。
    */
   restoreCheckpoint: (sessionId: string, nodeId: string) => Promise<void>
+  /**
+   * ツリー行クリック＝その地点を本文で開く（FB7-B）。何も消さない・確認なしのナビゲーション。
+   * ノードが現在パス上なら復元せず scrollTarget だけセット。パス外なら乗っている線の先端
+   * （lineTipOf）を restoreCheckpoint で読み込んでから scrollTarget をセットする。
+   * 生成中はパス外への移動（復元）は restoreCheckpoint が例外を投げる（パス上スクロールは常時可）。
+   */
+  navigateToNode: (sessionId: string, nodeId: string) => Promise<void>
   /**
    * 指定ノード以下のサブツリーを削除する（チェックポイント実体も削除。C2）。
    * 現在パス（root→currentId）上のノードは削除不可（例外を投げる。UI 側で confirm 済みの前提）。
@@ -1142,6 +1154,25 @@ function currentPathIds(tree: BranchTree): Set<string> {
     id = byId.get(id)?.parentId ?? null
   }
   return ids
+}
+
+/**
+ * ノードが乗っている「線の先端」＝nodes 配列順で「最初の子」を辿り続けて到達する葉（FB7-B。export は検証用）。
+ * buildGraph のレーン継承（最初の子が親レーンを継ぐ）と同じ規則なので、ツリー表示で
+ * クリックした行が乗っているレーンの末端と視覚的に一致する。
+ */
+export function lineTipOf(tree: BranchTree, nodeId: string): string {
+  const firstChildOf = new Map<string, string>()
+  for (const n of tree.nodes) {
+    if (n.parentId && !firstChildOf.has(n.parentId)) firstChildOf.set(n.parentId, n.id)
+  }
+  let id = nodeId
+  const seen = new Set<string>() // 破損データの循環保険
+  while (firstChildOf.has(id) && !seen.has(id)) {
+    seen.add(id)
+    id = firstChildOf.get(id)!
+  }
+  return id
 }
 
 /** 指定ノード自身とその子孫すべての id（C2。サブツリー削除に使う） */
@@ -1958,6 +1989,7 @@ export const useStore = create<AppState>()(
         imageJobs: [],
         imageJobToasts: [],
         infoNotice: null,
+        scrollTarget: null,
 
         setView: (view) => set({ view }),
         clearError: () => set({ error: null }),
@@ -2228,6 +2260,31 @@ export const useStore = create<AppState>()(
               },
             },
           }))
+        },
+
+        navigateToNode: async (sessionId, nodeId) => {
+          const tree = get().branchTrees[sessionId]
+          if (!tree) return
+          const node = tree.nodes.find((n) => n.id === nodeId)
+          if (!node) return
+          // パス外なら乗っている線の先端を読み込む（読みに行くだけの移動＝何も消さない。FB6-C）
+          if (!currentPathIds(tree).has(nodeId)) {
+            await get().restoreCheckpoint(sessionId, lineTipOf(tree, nodeId))
+          }
+          // アンカー解決: anchorMessageId → 旧ノードは自身のスナップショット末尾 → 無ければスクロールしない
+          let messageId = node.anchorMessageId
+          if (!messageId) {
+            const raw = await checkpointStore.get(sessionId, nodeId)
+            if (raw) {
+              const parsed = JSON.parse(await gunzipText(raw)) as { v: number; session: Session }
+              messageId = lastMessageId(parsed.session)
+            }
+          }
+          if (messageId) {
+            set((st) => ({
+              scrollTarget: { sessionId, messageId, seq: (st.scrollTarget?.seq ?? 0) + 1 },
+            }))
+          }
         },
 
         deleteBranchSubtree: async (sessionId, nodeId) => {

@@ -241,6 +241,7 @@ export function BranchTreeBody({ session }: { session: Session }) {
   const {
     branchTrees,
     restoreCheckpoint,
+    navigateToNode,
     branchFromNode,
     deleteBranchSubtree,
     pruneToCurrentPath,
@@ -281,6 +282,21 @@ export function BranchTreeBody({ session }: { session: Session }) {
   useEffect(() => {
     currentRef.current?.scrollIntoView({ block: 'center' })
   }, [tree?.currentId, tab])
+
+  // 行クリック＝その地点を本文で開く（FB7-B。何も消さない・確認なし）。
+  // パス上スクロールは生成中も常時可なので busyAction のみで多重実行を防ぐ
+  // （パス外＝復元を伴う移動は navigateToNode 内の restoreCheckpoint が生成中に例外を投げる）
+  const doOpen = async (nodeId: string) => {
+    if (busyAction) return
+    setBusyAction(true)
+    try {
+      await navigateToNode(session.id, nodeId)
+    } catch (e) {
+      useStore.setState({ error: (e as Error).message })
+    } finally {
+      setBusyAction(false)
+    }
+  }
 
   const doRestore = async (nodeId: string) => {
     if (busy) return
@@ -437,7 +453,14 @@ export function BranchTreeBody({ session }: { session: Session }) {
           </svg>
         </div>
 
-        <div className="bg-body">
+        <div
+          className="bg-body"
+          onClick={(e) => {
+            // ボタン類（折りたたみ・⋯・メニュー項目）のクリックは行ナビゲーションにしない
+            if ((e.target as HTMLElement).closest('button')) return
+            void doOpen(node.id)
+          }}
+        >
           {isScene && (
             <button
               className="icon-btn small bg-fold"
@@ -460,16 +483,9 @@ export function BranchTreeBody({ session }: { session: Session }) {
           {node.star && <span className="badge bg-star-badge">★ {node.star.name}</span>}
           {isCurrent && <span className="badge accent bg-current-badge">▶ いまここ</span>}
           <span className="bg-bytes">{formatBytes(node.bytes)}</span>
-          {!isCurrent && (
-            <button
-              className="bg-back"
-              disabled={busy}
-              onClick={() => doRestore(node.id)}
-              title="この地点に戻る"
-            >
-              <Icon name="rotate-ccw" size={13} /> 戻る
-            </button>
-          )}
+          <span className="bg-open" title="この地点を本文で開く（何も消えません）">
+            → 開く
+          </span>
           <div className="menu-anchor">
             <button
               className="icon-btn small"
@@ -491,6 +507,19 @@ export function BranchTreeBody({ session }: { session: Session }) {
                   <Icon name="star" size={14} filled={!!node.star} />{' '}
                   {node.star ? 'しおりを外す' : 'しおりを付ける'}
                 </button>
+                {!isCurrent && (
+                  <button
+                    className="menu-item"
+                    disabled={busy}
+                    title="この時点より先を読み込まない状態に戻します（ここから進めると先の記録は上書き）"
+                    onClick={() => {
+                      setMenuFor(null)
+                      void doRestore(node.id)
+                    }}
+                  >
+                    <Icon name="rotate-ccw" size={14} /> この時点に戻す
+                  </button>
+                )}
                 {!isCurrent && (
                   <button
                     className="menu-item"

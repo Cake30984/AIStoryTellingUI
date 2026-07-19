@@ -110,6 +110,7 @@ export default function ChatPanel({ session }: Props) {
     worlds,
     ui,
     setUiPrefs,
+    scrollTarget,
   } = useStore()
 
   const [text, setText] = useState('')
@@ -193,6 +194,45 @@ export default function ChatPanel({ session }: Props) {
   useEffect(() => {
     choiceLockRef.current = null
   }, [session.messages])
+
+  // ツリー行クリックの本文スクロール（FB7-B）。復元直後の末尾自動スクロール（上）より後に消化して勝たせる
+  useEffect(() => {
+    if (!scrollTarget || scrollTarget.sessionId !== session.id) return
+    const { messageId } = scrollTarget
+    // 対象メッセージの属するシーンが畳まれていれば展開してから
+    const msg = session.messages.find((m) => m.id === messageId)
+    if (msg?.sceneId && msg.sceneId !== session.currentSceneId) {
+      const sceneId = msg.sceneId
+      setExpanded((prev) => (prev.has(sceneId) ? prev : new Set([...prev, sceneId])))
+    }
+    // 末尾 user メッセージへの自動スクロール（FB3-A3）は消費済み扱いにして抑止する
+    const last = session.messages[session.messages.length - 1]
+    if (last) lastScrolledRef.current = last.id
+    let raf2 = 0
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        // マーカー等で DOM に無い id は直前の描画メッセージへ、それも無ければ末尾へフォールバック
+        const idx = session.messages.findIndex((m) => m.id === messageId)
+        let el: Element | null = null
+        for (let i = idx; i >= 0 && !el; i--) {
+          el = document.querySelector(`[data-msg-id="${session.messages[i].id}"]`)
+        }
+        if (el) {
+          el.scrollIntoView({ block: 'center' })
+          el.classList.add('msg-flash')
+          window.setTimeout(() => el!.classList.remove('msg-flash'), 2000)
+        } else {
+          anchorRef.current?.scrollIntoView()
+        }
+        useStore.setState({ scrollTarget: null })
+      })
+    })
+    return () => {
+      cancelAnimationFrame(raf1)
+      cancelAnimationFrame(raf2)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scrollTarget])
 
   useEffect(() => {
     startSession()
@@ -375,11 +415,11 @@ export default function ChatPanel({ session }: Props) {
   }
 
   const renderNovelMessage = (m: Message) => {
-    if (editingId === m.id) return <div className="prose-block" key={m.id}>{editBox()}</div>
+    if (editingId === m.id) return <div className="prose-block" data-msg-id={m.id} key={m.id}>{editBox()}</div>
     if (m.role === 'assistant') {
       const structured = hasStructuredLines(m.content, participants)
       return (
-        <div className="prose-block" key={m.id}>
+        <div className="prose-block" data-msg-id={m.id} key={m.id}>
           {structured ? (
             <StructuredNovelBody
               content={m.content}
@@ -398,7 +438,7 @@ export default function ChatPanel({ session }: Props) {
       )
     }
     return (
-      <div className="prose-action" key={m.id}>
+      <div className="prose-action" data-msg-id={m.id} key={m.id}>
         {m.content}
         {msgActions(m)}
       </div>
@@ -409,7 +449,7 @@ export default function ChatPanel({ session }: Props) {
     if (novel) return renderNovelMessage(m)
     if (m.role === 'assistant' && editingId !== m.id && hasStructuredLines(m.content, participants)) {
       return (
-        <div className="st-message" key={m.id}>
+        <div className="st-message" data-msg-id={m.id} key={m.id}>
           <StructuredChatBody
             content={m.content}
             participants={participants}
@@ -423,7 +463,7 @@ export default function ChatPanel({ session }: Props) {
     const av = m.role === 'assistant' ? avatarFor(m.characterId) : null
     const name = m.role === 'assistant' ? (av?.name ?? 'AI') : persona?.name || 'あなた'
     return (
-      <div className="msg" key={m.id}>
+      <div className="msg" data-msg-id={m.id} key={m.id}>
         {m.role === 'assistant' ? (
           <EntityAvatar className="avatar" avatar={av!.avatar} name={av!.name} />
         ) : (

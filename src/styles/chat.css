@@ -242,6 +242,24 @@
   cursor: not-allowed;
 }
 
+/* ツリー行クリックで移動した先のメッセージを数秒ハイライト（FB7-B）。
+   fade を併記し、クラス着脱時に既存の fade アニメーションが再始動しないようにする */
+.msg-flash {
+  animation: fade 0.25s ease, msg-flash 2s ease-out;
+  border-radius: var(--radius-sm);
+}
+@keyframes msg-flash {
+  0%,
+  55% {
+    background-color: var(--accent-soft);
+    box-shadow: 0 0 0 5px var(--accent-soft);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: 0 0 0 5px transparent;
+  }
+}
+
 /* ---------- 小説形式の表示 ---------- */
 .prose-block {
   white-space: pre-wrap;
