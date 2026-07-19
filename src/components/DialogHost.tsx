@@ -19,13 +19,16 @@ function DialogView({ req }: { req: DialogRequest }) {
     inputRef.current?.select()
   }, [])
 
-  const cancel = () => settleDialog(req, req.kind === 'prompt' ? null : false)
-  const ok = () => settleDialog(req, req.kind === 'prompt' ? value : true)
+  const cancel = () => settleDialog(req, req.kind === 'confirm' ? false : null)
+  const ok = () => {
+    if (req.kind === 'choices') return // 選択肢ボタンからのみ解決する（Enter では選ばない）
+    settleDialog(req, req.kind === 'prompt' ? value : true)
+  }
 
   useModalEscape(cancel)
 
   const danger = req.kind === 'confirm' && !!req.opts.danger
-  const title = req.opts.title ?? (req.kind === 'confirm' ? '確認' : '入力')
+  const title = req.opts.title ?? (req.kind === 'confirm' ? '確認' : req.kind === 'choices' ? '確認' : '入力')
   const okLabel = (req.kind === 'confirm' ? req.opts.okLabel : undefined) ?? 'OK'
 
   return (
@@ -35,7 +38,7 @@ function DialogView({ req }: { req: DialogRequest }) {
         style={{ maxWidth: 420 }}
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+          if (e.key === 'Enter' && !e.nativeEvent.isComposing && req.kind !== 'choices') {
             e.preventDefault()
             ok()
           }
@@ -45,7 +48,7 @@ function DialogView({ req }: { req: DialogRequest }) {
           <h3>{title}</h3>
         </div>
         <div className="modal-body">
-          <p style={{ margin: req.kind === 'prompt' ? '0 0 12px' : 0, whiteSpace: 'pre-wrap' }}>
+          <p style={{ margin: req.kind === 'confirm' ? 0 : '0 0 12px', whiteSpace: 'pre-wrap' }}>
             {req.opts.message}
           </p>
           {req.kind === 'prompt' && (
@@ -57,14 +60,29 @@ function DialogView({ req }: { req: DialogRequest }) {
               onChange={(e) => setValue(e.target.value)}
             />
           )}
+          {req.kind === 'choices' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {req.opts.options.map((o) => (
+                <button
+                  key={o.value}
+                  className={o.danger ? 'btn danger' : o.primary ? 'btn primary' : 'btn'}
+                  onClick={() => settleDialog(req, o.value)}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         <div className="modal-foot">
           <button className="btn" onClick={cancel}>
             キャンセル
           </button>
-          <button className={danger ? 'btn danger' : 'btn primary'} onClick={ok} autoFocus={req.kind === 'confirm'}>
-            {okLabel}
-          </button>
+          {req.kind !== 'choices' && (
+            <button className={danger ? 'btn danger' : 'btn primary'} onClick={ok} autoFocus={req.kind === 'confirm'}>
+              {okLabel}
+            </button>
+          )}
         </div>
       </div>
     </div>

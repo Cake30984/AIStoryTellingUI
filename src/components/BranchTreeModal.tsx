@@ -180,6 +180,7 @@ export function BranchTreeBody({ session }: { session: Session }) {
   const {
     branchTrees,
     restoreCheckpoint,
+    branchFromNode,
     deleteBranchSubtree,
     pruneToCurrentPath,
     setBranchStar,
@@ -204,12 +205,27 @@ export function BranchTreeBody({ session }: { session: Session }) {
   const doRestore = async (nodeId: string) => {
     if (busy) return
     if (
-      !(await appConfirm('この地点に戻りますか？\n現在の物語はそのまま残り、ここから新しい分岐が始まります。'))
+      !(await appConfirm(
+        'この地点に戻りますか？\nここから物語を進めると、この先の記録は上書きされて消えます（シーンをまたぐ大きな上書きになる場合は、その時に⑂分岐として残すか確認します）。',
+      ))
     )
       return
     setBusyAction(true)
     try {
       await restoreCheckpoint(session.id, nodeId)
+    } catch (e) {
+      useStore.setState({ error: (e as Error).message })
+    } finally {
+      setBusyAction(false)
+    }
+  }
+
+  // ⑂ ここから分岐して再開（FB6-C）: いまの線の先端に名前を付けて保護してから復元する
+  const doBranchFrom = async (nodeId: string) => {
+    if (busy) return
+    setBusyAction(true)
+    try {
+      await branchFromNode(session.id, nodeId)
     } catch (e) {
       useStore.setState({ error: (e as Error).message })
     } finally {
@@ -245,7 +261,7 @@ export function BranchTreeBody({ session }: { session: Session }) {
     if (busy || !tree || pruneCount <= 0) return
     if (
       !(await appConfirm({
-        message: `現在の分岐（${pathIds.size}件）以外の${pruneCount}件を削除します。\n元に戻せません。よろしいですか？`,
+        message: `現在の分岐（${pathIds.size}件）以外の${pruneCount}件を削除します。\n⑂分岐・しおり付きの記録も含めてすべて消え、元に戻せません。よろしいですか？`,
         danger: true,
       }))
     )
@@ -344,6 +360,7 @@ export function BranchTreeBody({ session }: { session: Session }) {
             {node.ending ? node.label : isScene ? `📖 ${node.label}` : node.label}
             {node.timeLabel ? `（${node.timeLabel}）` : ''}
           </span>
+          {node.branchName && <span className="badge bg-branch-badge">⑂ {node.branchName}</span>}
           {node.star && <span className="badge bg-star-badge">★ {node.star.name}</span>}
           {isCurrent && <span className="badge accent bg-current-badge">▶ いまここ</span>}
           <span className="bg-bytes">{formatBytes(node.bytes)}</span>
@@ -378,6 +395,19 @@ export function BranchTreeBody({ session }: { session: Session }) {
                   <Icon name="star" size={14} filled={!!node.star} />{' '}
                   {node.star ? 'しおりを外す' : 'しおりを付ける'}
                 </button>
+                {!isCurrent && (
+                  <button
+                    className="menu-item"
+                    disabled={busy}
+                    title="いま進めている続きに名前を付けて残してから、この地点に戻ります"
+                    onClick={() => {
+                      setMenuFor(null)
+                      void doBranchFrom(node.id)
+                    }}
+                  >
+                    <Icon name="git-branch" size={14} /> ⑂ ここから分岐して再開
+                  </button>
+                )}
                 {isScene && node.parentId && (
                   <button
                     className="menu-item"

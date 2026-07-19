@@ -692,6 +692,12 @@ export interface BranchNode {
   ending?: string
   /** しおり（C3） */
   star?: { name: string; thumbImageId?: string }
+  /**
+   * ⑂ 明示分岐の名前（FB6-C）。「⑂ ここから分岐」で置き去りになる線の先端に付く
+   * （git のブランチ ref 相当）。これ・しおり・ending のいずれかをサブツリーに含む枝は
+   * 上書きガード（ensureLineTip）の削除対象外＝保護される。
+   */
+  branchName?: string
 }
 
 /** セッションごとの分岐ツリー（軽量メタデータのみ。zustand persist 対象。実体は CheckpointStore） */

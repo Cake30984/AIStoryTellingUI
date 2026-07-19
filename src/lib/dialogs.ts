@@ -15,9 +15,24 @@ export interface PromptOptions {
   placeholder?: string
 }
 
+/** 3択などの選択ダイアログ（FB6-C）。value が返る。キャンセル/Escape は null */
+export interface ChoiceOption {
+  label: string
+  value: string
+  danger?: boolean
+  primary?: boolean
+}
+
+export interface ChoicesOptions {
+  message: string
+  title?: string
+  options: ChoiceOption[]
+}
+
 export type DialogRequest =
   | { id: symbol; kind: 'confirm'; opts: ConfirmOptions; resolve: (v: boolean) => void }
   | { id: symbol; kind: 'prompt'; opts: PromptOptions; resolve: (v: string | null) => void }
+  | { id: symbol; kind: 'choices'; opts: ChoicesOptions; resolve: (v: string | null) => void }
 
 let queue: DialogRequest[] = []
 const listeners = new Set<() => void>()
@@ -48,6 +63,14 @@ export function appConfirm(opts: string | ConfirmOptions): Promise<boolean> {
 export function appPrompt(opts: PromptOptions): Promise<string | null> {
   return new Promise((resolve) => {
     queue = [...queue, { id: Symbol(), kind: 'prompt', opts, resolve }]
+    notify()
+  })
+}
+
+/** 選択ダイアログ（FB6-C）。選ばれた option の value、キャンセルなら null を返す */
+export function appChoices(opts: ChoicesOptions): Promise<string | null> {
+  return new Promise((resolve) => {
+    queue = [...queue, { id: Symbol(), kind: 'choices', opts, resolve }]
     notify()
   })
 }

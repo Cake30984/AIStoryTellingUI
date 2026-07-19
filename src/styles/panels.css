@@ -986,6 +986,18 @@
   white-space: nowrap;
   flex: 0 1 auto;
 }
+/* ⑂ 明示分岐の名前チップ（FB6-C。しおりと同じ収まり方・アクセント系の枠色） */
+.bg-branch-badge {
+  display: inline-block;
+  min-width: 0;
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 0 1 auto;
+  border-color: var(--accent);
+  color: var(--accent);
+}
 .bg-list {
   display: flex;
   flex-direction: column;
@@ -1042,7 +1054,8 @@
   .bg-bytes {
     display: none;
   }
-  .bg-star-badge {
+  .bg-star-badge,
+  .bg-branch-badge {
     max-width: 60px;
   }
 }

@@ -98,6 +98,7 @@ export default function ChatPanel({ session }: Props) {
     editMessage,
     deleteMessage,
     regenerateFrom,
+    branchFromMessage,
     updateSession,
     deleteSession,
     startSession,
@@ -277,8 +278,9 @@ export default function ChatPanel({ session }: Props) {
     setEditingId(m.id)
     setEditText(m.content)
   }
-  const saveEdit = () => {
-    if (editingId) editMessage(editingId, editText)
+  const saveEdit = async () => {
+    // 上書きガード（FB6-C）を通すため await（キャンセル時は本文が変わらないまま編集ボックスを閉じる）
+    if (editingId) await editMessage(editingId, editText)
     setEditingId(null)
   }
 
@@ -336,6 +338,13 @@ export default function ChatPanel({ session }: Props) {
         </button>
         <button onClick={() => regenerateFrom(m.id)} title="この発言以降を作り直す">
           <Icon name="rotate-ccw" size={13} /> ここから
+        </button>
+        {/* ⑂ 明示分岐（FB6-C）: 今の続きに名前を付けて残してから、ここから作り直す */}
+        <button
+          onClick={() => branchFromMessage(m.id)}
+          title="今の続きを分岐として残してから、ここから作り直す"
+        >
+          <Icon name="git-branch" size={13} /> 分岐
         </button>
         <button onClick={() => deleteMessage(m.id)}>
           <Icon name="trash-2" size={13} /> 削除

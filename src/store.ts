@@ -63,6 +63,7 @@ import {
   type CassetteBundle,
 } from './lib/cards'
 import { parseBundle } from './lib/io'
+import { appChoices, appPrompt } from './lib/dialogs'
 import {
   buildMessages,
   choicesSystem,
@@ -952,7 +953,8 @@ interface AppState {
   /**
    * チェックポイントへ復元する（C1）。プレイ用ノブ（title/model/reviewModel/choicesModel/
    * temperature/maxTokens/spritesEnabled）だけ現在値を維持し、それ以外はスナップショットから復元する。
-   * 復元は何も削除しない（次の物語操作でこのノードの子が積まれ、既存の子がいれば兄弟分岐になる）。
+   * 復元自体は何も削除しない（過去を読みに行くだけの移動は安全）。置き去りの記録の削除・確認は
+   * 「この地点から物語を進める最初の操作」の冒頭で上書きガード（ensureLineTip）が行う（FB6-C）。
    */
   restoreCheckpoint: (sessionId: string, nodeId: string) => Promise<void>
   /**
@@ -1017,9 +1019,21 @@ interface AppState {
   startStory: () => Promise<void>
   beginScene: () => Promise<void>
   continueLast: () => Promise<void>
-  editMessage: (messageId: string, content: string) => void
-  deleteMessage: (messageId: string) => void
+  /** メッセージを書き換える（FB6-C で async 化＝上書きガードを通す。キャンセル時は何も変えない） */
+  editMessage: (messageId: string, content: string) => Promise<void>
+  /** メッセージを削除する（FB6-C で async 化＝上書きガードを通す） */
+  deleteMessage: (messageId: string) => Promise<void>
   regenerateFrom: (messageId: string) => Promise<void>
+  /**
+   * ⑂ ここから分岐（FB6-C・本文の操作行）。現在の線の先端（currentId）に名前を付けて保護してから
+   * 通常の「ここから」（regenerateFrom）を実行する。名前プロンプトのキャンセルで中止。
+   */
+  branchFromMessage: (messageId: string) => Promise<void>
+  /**
+   * ⑂ ここから分岐して再開（FB6-C・ツリー行）。いま進めている線の先端に名前を付けて保護してから
+   * 指定ノードへ復元する。名前プロンプトのキャンセルで中止。
+   */
+  branchFromNode: (sessionId: string, nodeId: string) => Promise<void>
   /** 本編生成の停止（選択肢・レビュー生成には影響しない） */
   stop: () => void
   /** 選択肢生成の停止（本編には影響しない） */
@@ -1143,6 +1157,83 @@ function subtreeNodeIds(tree: BranchTree, rootId: string): string[] {
     for (const c of childrenOf.get(id) ?? []) stack.push(c)
   }
   return out
+}
+
+/** 親→子 id の索引（FB6-C。保護判定・削除対象列挙で共用） */
+function childrenIndex(tree: BranchTree): Map<string, string[]> {
+  const map = new Map<string, string[]>()
+  for (const n of tree.nodes) {
+    if (!n.parentId) continue
+    const arr = map.get(n.parentId) ?? []
+    arr.push(n.id)
+    map.set(n.parentId, arr)
+  }
+  return map
+}
+
+/** サブツリー（自身含む）に保護ノード（⑂名前付き・しおり・エンディング）を含むか（FB6-C・export はテスト用） */
+export function subtreeHasProtection(tree: BranchTree, rootId: string): boolean {
+  const byId = new Map(tree.nodes.map((n) => [n.id, n]))
+  for (const id of subtreeNodeIds(tree, rootId)) {
+    const n = byId.get(id)
+    if (n && (n.branchName || n.star || n.ending)) return true
+  }
+  return false
+}
+
+/**
+ * parentId の直下で「上書きで消してよい暗黙の枝」を列挙する（FB6-C・export はテスト用）。
+ * 保護ノードを含む枝は丸ごと温存（部分削除はしない＝いま巻き戻していない枝の中身に触らない）。
+ * keepChildId はこれから残す枝（あれば）を除外する。
+ */
+export function deletableChainsBelow(
+  tree: BranchTree,
+  parentId: string,
+  keepChildId?: string,
+): { chains: { topId: string; nodeIds: string[] }[]; crossesScene: boolean } {
+  const byId = new Map(tree.nodes.map((n) => [n.id, n]))
+  const chains: { topId: string; nodeIds: string[] }[] = []
+  let crossesScene = false
+  for (const childId of childrenIndex(tree).get(parentId) ?? []) {
+    if (childId === keepChildId) continue
+    if (subtreeHasProtection(tree, childId)) continue
+    const nodeIds = subtreeNodeIds(tree, childId)
+    chains.push({ topId: childId, nodeIds })
+    if (nodeIds.some((id) => byId.get(id)?.kind === 'scene')) crossesScene = true
+  }
+  return { chains, crossesScene }
+}
+
+/**
+ * 巻き戻し後も残るメッセージ集合（keptIds）に対応する「戻り先ノード」を探す（FB3-B1/FB6-C）。
+ * currentId から親をたどり、anchorMessageId が keptIds に含まれる最初（最も深い）のノード id を返す。
+ * 一致なし（anchor 無しの旧データ等）は null＝従来の直列動作。
+ */
+function findReanchorTarget(tree: BranchTree | undefined, keptIds: Set<string>): string | null {
+  if (!tree || tree.currentId === null) return null
+  const byId = new Map(tree.nodes.map((n) => [n.id, n]))
+  let id: string | null = tree.currentId
+  while (id) {
+    const n = byId.get(id)
+    if (!n) return null
+    if (n.anchorMessageId && keptIds.has(n.anchorMessageId)) return id
+    id = n.parentId
+  }
+  return null
+}
+
+/** 枝の中で最も新しい葉（＝ほぼ確実に元の先端）。上書きガードの「⑂残す」の命名先に使う（FB6-C） */
+function newestLeafOf(tree: BranchTree, chainIds: string[]): string {
+  const inChain = new Set(chainIds)
+  const byId = new Map(tree.nodes.map((n) => [n.id, n]))
+  const hasChildInChain = new Set<string>()
+  for (const n of tree.nodes) {
+    if (n.parentId && inChain.has(n.parentId) && inChain.has(n.id)) hasChildInChain.add(n.parentId)
+  }
+  const leaves = chainIds.filter((id) => !hasChildInChain.has(id))
+  return (
+    leaves.sort((a, b) => (byId.get(b)?.createdAt ?? 0) - (byId.get(a)?.createdAt ?? 0))[0] ?? chainIds[0]
+  )
 }
 
 function headOf(text: string, max = 24): string {
@@ -1363,29 +1454,97 @@ export const useStore = create<AppState>()(
 
       /**
        * 巻き戻し操作の直前に currentId を「切り詰め後も残る地点」の祖先へ戻す（FB3-B1）。
-       * currentId から親をたどり、anchorMessageId が keptIds に含まれる最初（＝最も深い）のノードへ移す。
-       * 以降の recordCheckpoint はそのノードの子として積まれ、元の続きと兄弟分岐になる（git の checkout→commit 相当）。
-       * 一致なし（anchor 無しの旧データ等）なら動かさない＝従来の直列動作にフォールバック。
+       * 計算は findReanchorTarget（純関数）。一致なし（anchor 無しの旧データ等）なら動かさない。
+       * FB6-C 以降、置き去りの記録は事前の ensureLineTip が削除済み（または保護済み）なので、
+       * ここは currentId の付け替えだけを行う。
        */
       function reanchorBranch(sessionId: string, keptIds: Set<string>): void {
         const tree = get().branchTrees[sessionId]
-        if (!tree || tree.currentId === null) return
-        const byId = new Map(tree.nodes.map((n) => [n.id, n]))
-        let id: string | null = tree.currentId
-        while (id) {
-          const n = byId.get(id)
-          if (!n) break
-          if (n.anchorMessageId && keptIds.has(n.anchorMessageId)) {
-            if (id !== tree.currentId) {
-              const target = id
-              set((st) => ({
-                branchTrees: { ...st.branchTrees, [sessionId]: { ...st.branchTrees[sessionId], currentId: target } },
-              }))
-            }
-            return
-          }
-          id = n.parentId
+        const target = findReanchorTarget(tree, keptIds)
+        if (target && tree && target !== tree.currentId) {
+          set((st) => ({
+            branchTrees: { ...st.branchTrees, [sessionId]: { ...st.branchTrees[sessionId], currentId: target } },
+          }))
         }
+      }
+
+      /** ⑂ 名前をノードへ付ける（FB6-C。ensureLineTip・branchFrom* から使う） */
+      function setBranchNameOn(sessionId: string, nodeId: string, name: string): void {
+        set((st) => {
+          const t = st.branchTrees[sessionId]
+          if (!t) return {}
+          return {
+            branchTrees: {
+              ...st.branchTrees,
+              [sessionId]: {
+                ...t,
+                nodes: t.nodes.map((n) => (n.id === nodeId ? { ...n, branchName: name } : n)),
+              },
+            },
+          }
+        })
+      }
+
+      /**
+       * 上書きガード（FB6-C）。「これから parentNodeId の子として記録を積む」物語操作の冒頭で呼ぶ。
+       * 置き去りになる暗黙の枝（保護＝⑂/しおり/🏁 を含まない、parentNodeId 直下の子サブツリー）を
+       * チェックポイントごと即時削除する。削除対象にシーン（レビュー確定）ノードが含まれる場合のみ
+       * 3択で確認し、「⑂ 分岐として残す」なら枝の先端に名前を付けて温存する（Q2 合意=大きい時だけ確認）。
+       * 戻り値 false = キャンセル（呼び出し元は操作を中止する）。
+       * recordCheckpoint 側では剪定しない（fail-open。ガードを通らない経路で兄弟ができたら従来どおり表示され、
+       * 取り漏らしをバグとして発見できる）。
+       */
+      async function ensureLineTip(sessionId: string, parentNodeId: string | null | undefined): Promise<boolean> {
+        if (!parentNodeId) return true
+        const tree = get().branchTrees[sessionId]
+        if (!tree) return true
+        const { chains, crossesScene } = deletableChainsBelow(tree, parentNodeId)
+        if (chains.length === 0) return true
+        if (crossesScene) {
+          const total = chains.reduce((sum, c) => sum + c.nodeIds.length, 0)
+          const choice = await appChoices({
+            title: '上書きの確認',
+            message: `ここから先の記録 ${total} 件（シーンの区切りを含む）が、この操作で上書きされて消えます。`,
+            options: [
+              { label: '⑂ 分岐として残して進む', value: 'branch', primary: true },
+              { label: '上書きして進む（記録を消す）', value: 'overwrite', danger: true },
+            ],
+          })
+          if (choice === null) return false
+          if (choice === 'branch') {
+            for (const chain of chains) {
+              const tipId = newestLeafOf(tree, chain.nodeIds)
+              const tip = tree.nodes.find((n) => n.id === tipId)
+              const name = await appPrompt({
+                title: '⑂ 分岐の名前',
+                message: '残しておく続きに名前を付けてください',
+                initial: (tip?.label ?? '分岐').slice(0, 24),
+              })
+              if (name === null) return false
+              setBranchNameOn(sessionId, tipId, name.trim() || tip?.label || '分岐')
+            }
+            return true
+          }
+        }
+        const toDelete = new Set(chains.flatMap((c) => c.nodeIds))
+        set((st) => {
+          const t = st.branchTrees[sessionId]
+          if (!t) return {}
+          return {
+            branchTrees: {
+              ...st.branchTrees,
+              [sessionId]: {
+                ...t,
+                // 同一線の巻き戻しでは currentId 自身が削除対象に入る。宙吊りにせず、
+                // これから続きを積む親（＝戻り先）へ付け替える
+                currentId: t.currentId && toDelete.has(t.currentId) ? parentNodeId : t.currentId,
+                nodes: t.nodes.filter((n) => !toDelete.has(n.id)),
+              },
+            },
+          }
+        })
+        await Promise.all([...toDelete].map((id) => checkpointStore.delete(sessionId, id)))
+        return true
       }
 
       /** 素材（World/Character）にセッションのオーバーレイ（発見ロア・キャラ成長）を合成した実効ビューを返す */
@@ -2229,6 +2388,8 @@ export const useStore = create<AppState>()(
             ? s.scenes.find((sc) => sc.id === targetSceneId)
             : currentScene(s)
           if (!scene) return
+          // レビュー確定はシーンノードを積む＝復元で線の途中に居るならここで上書きガード（FB6-C）
+          if (!(await ensureLineTip(s.id, get().branchTrees[s.id]?.currentId))) return
           const sceneMsgs = s.messages.filter(
             (m) => m.sceneId === scene.id && m.content.trim().length > 0,
           )
@@ -2953,6 +3114,8 @@ export const useStore = create<AppState>()(
           if (!s || get().isStreaming) return
           const trimmed = text.trim()
           if (!trimmed) return
+          // 復元で線の途中に居る場合の上書きガード（FB6-C）
+          if (!(await ensureLineTip(s.id, get().branchTrees[s.id]?.currentId))) return
           patchActive({
             messages: [
               ...s.messages,
@@ -2971,6 +3134,7 @@ export const useStore = create<AppState>()(
         continueStory: async (speakerId) => {
           const s = active()
           if (!s || get().isStreaming) return
+          if (!(await ensureLineTip(s.id, get().branchTrees[s.id]?.currentId))) return
           patchActive({
             messages: [
               ...s.messages,
@@ -2999,8 +3163,11 @@ export const useStore = create<AppState>()(
           ) {
             msgs.pop()
           }
-          // 切り詰め後に残る地点へ戻してから生成＝元の続きと兄弟分岐にする（FB3-B1）
-          reanchorBranch(s.id, new Set(msgs.map((m) => m.id)))
+          // 上書きガード → 切り詰め後に残る地点へ戻してから生成（FB3-B1/FB6-C）
+          const keptIds = new Set(msgs.map((m) => m.id))
+          const tree = get().branchTrees[s.id]
+          if (!(await ensureLineTip(s.id, findReanchorTarget(tree, keptIds) ?? tree?.currentId))) return
+          reanchorBranch(s.id, keptIds)
           patchActive({ messages: msgs })
           await runCompletion(speakerId)
         },
@@ -3038,6 +3205,9 @@ export const useStore = create<AppState>()(
             }
             opening = resolved.content
           }
+
+          // 復元後の開始やり直し（開始時点へ戻った場合等）の上書きガード（FB6-C）
+          if (!(await ensureLineTip(s.id, get().branchTrees[s.id]?.currentId))) return
 
           // 開始時のシーン選出：世界イベント確認＋時間帯決定（FB3-C で演出タイプ抽選は廃止）
           const day = s.timeline.enabled ? s.timeline.currentDay : null
@@ -3101,6 +3271,7 @@ export const useStore = create<AppState>()(
         beginScene: async () => {
           const s = active()
           if (!s || get().isStreaming) return
+          if (!(await ensureLineTip(s.id, get().branchTrees[s.id]?.currentId))) return
           patchActive({
             messages: [
               ...s.messages,
@@ -3121,27 +3292,36 @@ export const useStore = create<AppState>()(
           if (!s || get().isStreaming) return
           const last = [...s.messages].reverse().find((m) => m.role === 'assistant')
           if (!last) return
+          if (!(await ensureLineTip(s.id, get().branchTrees[s.id]?.currentId))) return
           await runCompletion(last.characterId, last.id, CONTINUATION_NUDGE)
         },
 
-        editMessage: (messageId, content) => {
+        editMessage: async (messageId, content) => {
           const s = active()
           if (!s) return
           const idx = s.messages.findIndex((m) => m.id === messageId)
+          // 上書きガード（FB6-C）。キャンセルなら本文も変更しない
+          const keptIds = new Set(s.messages.slice(0, Math.max(idx, 0)).map((m) => m.id))
+          const tree = get().branchTrees[s.id]
+          const parent = idx >= 0 ? (findReanchorTarget(tree, keptIds) ?? tree?.currentId) : tree?.currentId
+          if (!(await ensureLineTip(s.id, parent))) return
           get().updateSession(s.id, {
             messages: s.messages.map((m) => (m.id === messageId ? { ...m, content } : m)),
           })
-          // 編集で内容が変わるので、編集対象より前を残す地点へ戻して兄弟分岐にする（FB3-B1）
-          if (idx >= 0) reanchorBranch(s.id, new Set(s.messages.slice(0, idx).map((m) => m.id)))
+          // 編集で内容が変わるので、編集対象より前を残す地点へ戻す（FB3-B1）
+          if (idx >= 0) reanchorBranch(s.id, keptIds)
           void recordCheckpoint(s.id, 'action', `✏ 編集: ${headOf(content)}`, s)
         },
 
-        deleteMessage: (messageId) => {
+        deleteMessage: async (messageId) => {
           const s = active()
           if (!s || get().isStreaming) return
           const remaining = s.messages.filter((m) => m.id !== messageId)
+          const keptIds = new Set(remaining.map((m) => m.id))
+          const tree = get().branchTrees[s.id]
+          if (!(await ensureLineTip(s.id, findReanchorTarget(tree, keptIds) ?? tree?.currentId))) return
           get().updateSession(s.id, { messages: remaining })
-          reanchorBranch(s.id, new Set(remaining.map((m) => m.id)))
+          reanchorBranch(s.id, keptIds)
           void recordCheckpoint(s.id, 'action', '🗑 削除', s)
         },
 
@@ -3156,10 +3336,49 @@ export const useStore = create<AppState>()(
           const keepUpto = target.role === 'assistant' ? idx : idx + 1
           const speaker = target.role === 'assistant' ? target.characterId : undefined
           const kept = s.messages.slice(0, keepUpto)
-          // 切り詰め後に残る地点へ戻してから生成＝元の続きと兄弟分岐にする（FB3-B1）
-          reanchorBranch(s.id, new Set(kept.map((m) => m.id)))
+          // 上書きガード → 切り詰め後に残る地点へ戻してから生成（FB3-B1/FB6-C）
+          const keptIds = new Set(kept.map((m) => m.id))
+          const tree = get().branchTrees[s.id]
+          if (!(await ensureLineTip(s.id, findReanchorTarget(tree, keptIds) ?? tree?.currentId))) return
+          reanchorBranch(s.id, keptIds)
           patchActive({ messages: kept })
           await runCompletion(speaker)
+        },
+
+        branchFromMessage: async (messageId) => {
+          const s = active()
+          if (!s || get().isStreaming) return
+          if (!s.messages.some((m) => m.id === messageId)) return
+          const tree = get().branchTrees[s.id]
+          // 現在の線の先端（currentId）に名前を付けて保護（git のブランチ ref 相当）。
+          // 以降の上書きガードはこの線を消さないので、regenerateFrom はそのまま兄弟分岐を作る
+          if (tree?.currentId) {
+            const tip = tree.nodes.find((n) => n.id === tree.currentId)
+            const name = await appPrompt({
+              title: '⑂ ここから分岐',
+              message: '今の続きを分岐として残します。名前を付けてください',
+              initial: (tip?.label ?? '分岐').slice(0, 24),
+            })
+            if (name === null) return
+            setBranchNameOn(s.id, tree.currentId, name.trim() || tip?.label || '分岐')
+          }
+          await get().regenerateFrom(messageId)
+        },
+
+        branchFromNode: async (sessionId, nodeId) => {
+          const tree = get().branchTrees[sessionId]
+          if (!tree || tree.currentId === nodeId || !tree.nodes.some((n) => n.id === nodeId)) return
+          if (tree.currentId) {
+            const tip = tree.nodes.find((n) => n.id === tree.currentId)
+            const name = await appPrompt({
+              title: '⑂ ここから分岐して再開',
+              message: 'いま進めている続きを分岐として残します。名前を付けてください',
+              initial: (tip?.label ?? '分岐').slice(0, 24),
+            })
+            if (name === null) return
+            setBranchNameOn(sessionId, tree.currentId, name.trim() || tip?.label || '分岐')
+          }
+          await get().restoreCheckpoint(sessionId, nodeId)
         },
 
         stop: () => {
