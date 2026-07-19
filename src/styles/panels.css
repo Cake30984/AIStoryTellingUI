@@ -10,8 +10,8 @@
   animation: fade 0.15s ease;
 }
 /* 画像ズームオーバーレイ（FB7-A）。ZoomOverlay は body へポータル描画される＝
-   サムネイル用の img セレクタが当たらない前提。中央寄せは margin:auto（等倍で
-   オーバーフローした時も全域へスクロールできる。place-items だと上端が切れる） */
+   サムネイル用の img セレクタが当たらない前提。画像全体をフィット表示し、
+   画像クリック・背景クリック・Escape で閉じる（cursor は閉じるを示す zoom-out）。 */
 .zoom-overlay {
   overflow: auto;
 }
@@ -30,15 +30,11 @@
   height: auto;
   object-fit: contain;
   border-radius: var(--radius);
-  cursor: zoom-in;
-}
-.zoom-overlay.full .zoom-overlay-img {
-  max-width: none;
-  max-height: none;
   cursor: zoom-out;
 }
 .zoom-caption {
   max-width: min(92vw, 720px);
+  cursor: default;
 }
 
 .modal {

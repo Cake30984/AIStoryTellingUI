@@ -59,7 +59,7 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist`。storage は
 共通部品:
 - `DialogHost.tsx` — `dialogs.ts` のキューを描画する常駐ホスト（App.tsx に1つ）
 - `ModalShell.tsx` — 全モーダル共通シェル（overlay＋modal＋head＋body＋foot）。`dirty` が真の時のみオーバーレイクリック・Escape で破棄確認
-- `ZoomOverlay.tsx` — 画像クリック拡大の共通オーバーレイ（`caption` でキャプション付き対応）。**`document.body` へのポータル描画**（呼び出し元サムネイルの img セレクタ・stacking context の影響を受けない）＋フィット⇔等倍トグル（画像クリック。等倍時はスクロール）。閉じるのは背景クリック・Escape（FB7-A）
+- `ZoomOverlay.tsx` — 画像クリック拡大の共通オーバーレイ（`caption` でキャプション付き対応）。**`document.body` へのポータル描画**（呼び出し元サムネイルの img セレクタ・stacking context の影響を受けない）でフィット表示。閉じるのは画像クリック・背景クリック・Escape（キャプションは本文選択のため stopPropagation）。FB7-A
 - `icons.tsx` — 自前 SVG アイコン（依存追加なし）。`<Icon name size? className? filled?/>`。`IconName` は機能ボタン用のみ（彩り用絵文字は対象外）
 - `MenuPopover.tsx` — 汎用ポップオーバー（親に `position:relative` 必要・外側クリック＋Escape で閉じる）
 - `ActivityIndicator.tsx` — 本編/選択肢/レビュー/画像生成/表情判定の進行状態を1チップに集約。クリックで内訳＋中止
