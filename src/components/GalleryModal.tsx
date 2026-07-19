@@ -70,6 +70,11 @@ function GalleryThumb({
               <p className="desc" style={{ marginTop: 8, whiteSpace: 'pre-wrap' }}>
                 {ill.prompt}
               </p>
+              {ill.negative && (
+                <p className="desc" style={{ whiteSpace: 'pre-wrap' }}>
+                  ネガティブ: {ill.negative}
+                </p>
+              )}
               <p className="desc">{new Date(ill.createdAt).toLocaleString()}</p>
             </>
           }
@@ -184,6 +189,11 @@ function RecordThumb({
               {record.prompt && (
                 <p className="desc" style={{ whiteSpace: 'pre-wrap' }}>
                   {record.prompt}
+                </p>
+              )}
+              {record.negative && (
+                <p className="desc" style={{ whiteSpace: 'pre-wrap' }}>
+                  ネガティブ: {record.negative}
                 </p>
               )}
               <p className="desc">{new Date(record.createdAt).toLocaleString()}</p>

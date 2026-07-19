@@ -324,6 +324,8 @@ export interface SceneIllustration {
   imageId: string
   /** 生成時のプロンプト（記録・再生成用） */
   prompt: string
+  /** 生成時のネガティブプロンプト（結合前のユーザー入力・記録用。FB7-A追修） */
+  negative?: string
   /** どのメッセージの直後に表示するか（メッセージ削除等で見つからない場合はシーン末尾） */
   messageId?: string
   createdAt: number
@@ -341,6 +343,8 @@ export interface SessionImageRecord {
   kind: 'illustration' | 'background'
   /** 結合前のユーザープロンプト（ImageJob.prompt と同じ規約）。バックフィルした背景など不明な場合は空文字 */
   prompt: string
+  /** 結合前のユーザーネガティブプロンプト（ImageJob.negative と同じ規約。FB7-A追修） */
+  negative?: string
   sceneId?: string
   /** 分岐が消えても表示できるよう採用時点の値を非正規化して保存 */
   sceneTitle?: string

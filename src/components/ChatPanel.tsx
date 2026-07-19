@@ -45,7 +45,12 @@ function IllustrationView({ ill, onRemove }: { ill: SceneIllustration; onRemove:
   if (!url) return null
   return (
     <figure className="illustration">
-      <img src={url} alt={ill.prompt} title={ill.prompt} onClick={() => setZoom(true)} />
+      <img
+        src={url}
+        alt={ill.prompt}
+        title={ill.negative ? `${ill.prompt}\nネガティブ: ${ill.negative}` : ill.prompt}
+        onClick={() => setZoom(true)}
+      />
       <div className="illustration-actions">
         <button
           className="icon-btn small"
