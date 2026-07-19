@@ -209,21 +209,6 @@
   font-size: 12px;
   font-weight: 700;
 }
-.choice-effects {
-  margin-left: auto;
-  display: flex;
-  gap: 6px;
-  flex-shrink: 0;
-}
-.choice-effect-badge {
-  font-size: 11px;
-  font-weight: 600;
-  padding: 2px 7px;
-  border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--accent);
-  white-space: nowrap;
-}
 .choices-loading {
   font-size: 12px;
   color: var(--accent);

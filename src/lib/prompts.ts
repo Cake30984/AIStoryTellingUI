@@ -325,15 +325,11 @@ export const CONTINUATION_NUDGE =
 
 /**
  * 選択肢生成用の system プロンプト。
- * @param statNames ワールド定義のスタット名。空でなければ、選択肢に小刻みな加点候補（P5）を持たせられる。
+ * 選択肢は行動の提示のみ＝加点（旧 P5 の effects）は持たない（FB7-C。評価はシーン終了レビューが行う）。
  */
-export function choicesSystem(mode: 'always' | 'auto', statNames: string[] = []): string {
+export function choicesSystem(mode: 'always' | 'auto'): string {
   const base = `あなたは物語の選択肢デザイナーです。直前の場面を踏まえ、主人公（ユーザー）が次に取りうる行動・展開の選択肢を考えます。\n`
-  const format = statNames.length
-    ? `出力は JSON 配列のみ（前後に文章を付けない）。各要素は {"text":"10〜30字程度の短い行動・選択","effects":[{"stat":"名称","character":"キャラ名（省略可＝主人公/全体）","delta":数値}]} の形式。\n` +
-      `effects は既存の【${statNames.join('・')}】のみを使い、その選択が明確にその値を動かすと言える場合だけ小さめの値（1〜3程度）を付ける。関係が無ければ effects は省略するか空配列にする。\n` +
-      `例: [{"text":"贈り物を渡す","effects":[{"stat":"好感度","delta":2}]},{"text":"そっと見守る"}]\n`
-    : `出力は JSON 配列のみ（前後に文章を付けない）。各要素は10〜30字程度の短い行動・選択の文字列。例: ["剣を抜いて立ち向かう","そっと後ずさる","話しかけてみる"]\n`
+  const format = `出力は JSON 配列のみ（前後に文章を付けない）。各要素は10〜30字程度の短い行動・選択の文字列。例: ["剣を抜いて立ち向かう","そっと後ずさる","話しかけてみる"]\n`
   if (mode === 'auto') {
     return (
       base +
@@ -358,27 +354,72 @@ export function choicesUserNudge(mode: 'always' | 'auto'): string {
     : `${head} 上で指定した形式・個数を厳守すること。`
 }
 
+/** reviewSystem に渡すステータス定義の要点（変動幅は範囲付き列挙とクランプの両方に使う。FB7-C） */
+export interface ReviewStatSpec {
+  name: string
+  deltaMin?: number
+  deltaMax?: number
+}
+
+/** reviewSystem に渡すカウンター定義の要点（FB7-C） */
+export interface ReviewCounterSpec {
+  name: string
+  amountMin?: number
+  amountMax?: number
+}
+
+/** 「±5〜15」「±5以上」「±〜15」等の変動幅ラベル（範囲未指定なら空文字） */
+function rangeLabel(prefix: string, min?: number, max?: number): string {
+  if (min != null && max != null) return `${prefix}${min}〜${max}`
+  if (min != null) return `${prefix}${min}以上`
+  if (max != null) return `${prefix}〜${max}`
+  return ''
+}
+
 /**
  * シーン終了レビュー（要約＋次シーン提案＋成長＋関係性 prose＋スタット）生成用の system プロンプト。
  * 原則「事実は数、判断は言葉」：関係の機微は relationUpdates（prose）、数値の増減は statChanges。
+ * ポイントの確定はこのレビューに一本化（選択肢の事前 effects は FB7-C で廃止）＝
+ * 選択肢経由・自由入力の独自行動を問わず「実際に起きた結果」を評価して加点する。
  * @param aspectNames ワールド固定の関係次元名。空でなければその次元のみ使うよう拘束。
- * @param statNames   ワールド定義のステータス名。空なら statChanges は空配列。
- * @param counterNames ワールド定義の行動カウンター名。空なら counterEvents は空配列。
+ * @param stats    ワールド定義のステータス（名前＋変動幅）。空なら statChanges は空配列。
+ * @param counters ワールド定義の行動カウンター（名前＋加算幅）。空なら counterEvents は空配列。
+ * @param reviewGuidance 世界観のレビュー指針（自由記述）。あれば毎回そのまま注入する。
  */
 export function reviewSystem(
   aspectNames: string[],
-  statNames: string[],
-  counterNames: string[] = [],
+  stats: ReviewStatSpec[],
+  counters: ReviewCounterSpec[] = [],
+  reviewGuidance?: string,
 ): string {
   const aspectLine = aspectNames.length
     ? `relationUpdates.aspects の name は既存の【${aspectNames.join('・')}】のみを使う（新しい次元を作らない）。該当する変化が無い次元は省略してよい。`
     : `次元未定義のため relationUpdates.aspects は空配列にし、stance のみ更新する。`
-  const statLine = statNames.length
-    ? `statChanges.name は既存の【${statNames.join('・')}】のみを使う。該当が無ければ空配列。`
+  const statList = stats
+    .map((d) => {
+      const r = rangeLabel('±', d.deltaMin, d.deltaMax)
+      return r ? `${d.name}（動かすなら${r}）` : d.name
+    })
+    .join('・')
+  const statHasRange = stats.some((d) => d.deltaMin != null || d.deltaMax != null)
+  const statLine = stats.length
+    ? `statChanges.name は既存の【${statList}】のみを使う。該当が無ければ空配列。` +
+      (statHasRange
+        ? `括弧内の範囲は「そのシーンの出来事の大きさ」の物差し＝平凡なシーンは下限寄り、決定的な出来事では上限近くまで使ってよい（変動させない場合は項目を出さない）。`
+        : '')
     : `ステータス未定義のため statChanges は空配列。`
-  const counterLine = counterNames.length
-    ? `counterEvents.name は既存の【${counterNames.join('・')}】のみを使う。今シーンで実際に起きた行動の回数だけ計上（amount は通常1）。無ければ空配列。`
+  const counterList = counters
+    .map((d) => {
+      const r = rangeLabel('', d.amountMin, d.amountMax)
+      return r ? `${d.name}（加算するなら${r}）` : d.name
+    })
+    .join('・')
+  const counterLine = counters.length
+    ? `counterEvents.name は既存の【${counterList}】のみを使う。今シーンで実際に起きた行動の回数だけ計上（amount は通常1）。無ければ空配列。`
     : `カウンター未定義のため counterEvents は空配列。`
+  const guidanceBlock = reviewGuidance?.trim()
+    ? `\n【世界のレビュー指針】\n${reviewGuidance.trim()}\n`
+    : ''
   return (
     `あなたは物語編集アシスタントです。直前のシーンの会話を分析し、次の JSON のみを出力してください（前後に文章・コードフェンスを付けない）。\n` +
     `{\n` +
@@ -400,7 +441,10 @@ export function reviewSystem(
     `- moods は各キャラの終了時点の気分。変化が無いキャラは省略可。\n` +
     `- **statChanges**：行動・出来事に対応する数値の増減のみ（delta は相対値。例: デートした→好感度+3）。感情の"査定"ではなく、起きた事実に対応する固定的な変化として出す。${statLine}\n` +
     `- **counterEvents**：今シーンで実際に起きた行動の累計回数の計上（例: デートした→デート回数 amount:1）。起きていない行動は計上しない。${counterLine}\n` +
-    `- 推測の捏造はせず、会話に根拠があるものだけ。`
+    `- 主人公の行動は、提示された選択肢を選んだ場合も自由入力の独自行動も同様に、実際に起きた結果に基づいて statChanges / counterEvents に反映し、reason にその行動と結果を書く。\n` +
+    `- 推測の捏造はせず、会話に根拠があるものだけ。\n` +
+    guidanceBlock +
+    `${guidanceBlock ? '上の【世界のレビュー指針】は状態変動の方針として毎回従うこと（条件つきの方針は、与えられた現在のステータス・カウンター・関係フラグ・日付・本文の描写から判断する）。' : ''}`
   )
 }
 

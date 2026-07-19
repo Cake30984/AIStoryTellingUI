@@ -116,7 +116,7 @@ Play 領域:
 - `設計_エンディング.md` — World のエンディング定義（`EndingDef`＝条件・エピローグ指針・auto/hidden/fallback）・レビュー確定時のコード判定・エピローグシーン・完結演出・周回横断到達記録。E1〜E3（**実装済み**・2026-07-17）
 - `設計_フィードバック反映5.md` — 実使用フィードバック第5弾（2026-07-18 合意）。シーン区切りのペース制御・時間帯固定・最初の方向付け・既定モデル・Library インポート・レビュー編集モード（FB5-A〜C）の決定と手順書。③ステージ透かし改善は見送り（別途検討）
 - `設計_フィードバック反映6.md` — 実使用フィードバック第6弾（2026-07-19 合意・**全フェーズ未着手**）。FB6-A（セッション画像記録=分岐から独立した生成画像アルバム・全チェックポイント走査バックフィル・ギャラリー「すべての記録」タブ）／B（挿絵・背景の後付け生成=メッセージ単位アンカー・過去シーン・起案文脈をアンカーまでに変更）／C（明示分岐=自動フォーク廃止・上書き方式・⑂ボタン・保護ルール・大きい巻き戻しのみ3択確認）／D（分岐ツリーのレビュー単位折りたたみ=既定折りたたみ・condenseTree 辺縮約）の決定と手順書。実装順は A→B→C→D 固定（C の削除は A の画像保全が前提）
-- `設計_フィードバック反映7.md` — 実使用フィードバック第7弾（2026-07-19 合意・**A・B実装済み・C〜E未着手**）。FB7-A（即効修正=画像ズームのポータル化＋等倍トグル・「スタット」→「ステータス」表記統一・最初の方向付けの開始テンプレート化）／B（分岐ツリーの履歴リンク化=行クリック＝移動・`lineTipOf`・`navigateToNode`・スクロールアンカー）／C（ポイントのレビュー確定一本化=選択肢 effects 廃止・変動幅 deltaMin/deltaMax・世界観レビュー指針 `reviewGuidance`）／D（条件エンジンのキャラ変数化=相手1/2/3・キャラの組ごとの独立発火・`@相手` プレースホルダ・相手つきエンディング）／E（発見キャラ=新キャラ登場ポリシー・未解決話者の？バッジ→キャラ化・ライブラリ直行保存）の決定と手順書
+- `設計_フィードバック反映7.md` — 実使用フィードバック第7弾（2026-07-19 合意・**A・B実装済み・C〜E未着手**）。FB7-A（即効修正=画像ズームのポータル化＋等倍トグル・「スタット」→「ステータス」表記統一・最初の方向付けの開始テンプレート化）／B（分岐ツリーの履歴リンク化=行クリック＝移動・`lineTipOf`・`navigateToNode`・スクロールアンカー）／C（ポイントのレビュー確定一本化=選択肢 effects 廃止・変動幅 deltaMin/deltaMax・世界観レビュー指針 `reviewGuidance`。A〜C実装済み）／D（条件エンジンのキャラ変数化=相手1/2/3・キャラの組ごとの独立発火・`@相手` プレースホルダ・相手つきエンディング）／E（発見キャラ=新キャラ登場ポリシー・未解決話者の？バッジ→キャラ化・ライブラリ直行保存）の決定と手順書
 - `設計_フィードバック反映4.md` — 実使用フィードバック第4弾（2026-07-12 合意）。FB4-A（開始時間帯の防御的修正=クランプ＋開始→次シーンのプレビュー行。※繰り上げロジック自体は正しいことを全経路確認済み・症状は「夜が先頭の区切り定義」疑い）／B（選択肢の既定を auto に）／C（特別イベントの時間帯指定 `ScheduledEvent.slot`）／D（タイムライン設定欄のグレーアウト化=チェック OFF でも常時表示・fieldset disabled）／E（物語設定3欄の説明強化=3欄維持を決定）の手順書
 - `設計_UI改善_フィードバック反映.md` — UI-0〜UI-7 実装後の実使用フィードバック＋コード再監査（2026-07-10）に基づく修正フェーズ F0〜F5 の実装手順書。問題インベントリ（報告 R1〜R19・監査発見 A1〜A13、根本原因の診断付き）→ F0=即効バグ修正（没入グリッド崩壊・checkbox全幅化・System幅等）／F1=分岐ツリー刷新（主線を現在で止める・章折りたたみ・⑂/▷展開・行アクション⋯集約・ドック幅リサイズ `ui.dockWidth`）／F2=リーダー設定の数値化（UiPrefs を number 化・`normalizeUiPrefs`）＋没入案内トースト（`infoNotice`）／F3=動線（生成ボタンをコンポーザーへ・タイトル鉛筆・セッション右クリックメニュー・新規作成→設定自動オープン・ブランド撤去）／F4=発見ログのタブ化＋編集スコープ分割／F5=密度・面の階層（`--bg-rail`・余白締め・railラベル）
 
@@ -128,14 +128,14 @@ Play 領域:
 - **Avatar** — `{imageId?, color}`。`imageId` は画像ストア id（未設定なら色＋イニシャル。表示は `EntityAvatar`）
 - **Character** — name/persona/speechStyle/appearance/exampleDialogues/greeting/avatar/tags＋`developments: Development[]`＋`model?`（chat 群像で話者確定時のみ）＋`imagePrompt?`（画像生成用固定英語タグ）＋`sprites?: {emotion:EmotionId,imageId}[]`（表情つき立ち絵。通常カードには含めずカセットのみ同梱）
 - **EMOTIONS**（`types.ts`）— 固定セット `neutral/joy/anger/sadness/shy/surprise`（`EmotionId`）。各 `{id,label,tags}`
-- **World** — description＋`entries: LoreEntry[]`＋`scheduledEvents: ScheduledEvent[]`＋`relationAspects: RelationAspectDef[]`（関係性 prose の次元・ワールド固定）＋`stats: StatDef[]`＋`counters: CounterDef[]`＋`achievements: AchievementDef[]`＋`roles?: WorldRole[]`（世界観が定義する名前つき配役。`id`/`name`/立場の`description`/`required?`。配役本体は Session 側に持ち、開始テンプレートへコピーしない）＋`startPreset?: WorldStartPreset`（セッション開始テンプレート＝genre/premise/opening/openingTitle/initialDirective〔最初の方向付け・FB7-A〕/authorNote/timeline〔開始日・開始時間帯含む〕定義。世界選択時にセッションへ**コピー**され素材側は不変。反映は `startPresetPatch`/`hasStartPreset`（store.ts の純関数）・W1）＋`endings?: EndingDef[]`（名前つきエンディング定義。`condition`・`epilogueGuidance`・`auto`/`hidden`/`fallback`。配列順=優先度。到達判定はコード＝`checkEndings`/`evalCondition`・E1〜E3）。プリセット `WORLD_PRESETS`（恋愛/RPG/経営）
+- **World** — description＋`entries: LoreEntry[]`＋`scheduledEvents: ScheduledEvent[]`＋`relationAspects: RelationAspectDef[]`（関係性 prose の次元・ワールド固定）＋`stats: StatDef[]`＋`counters: CounterDef[]`＋`achievements: AchievementDef[]`＋`reviewGuidance?`（レビュー指針＝シーン終了レビューの system に【世界のレビュー指針】として毎回そのまま注入する状態変動方針。FB7-C）＋`roles?: WorldRole[]`（世界観が定義する名前つき配役。`id`/`name`/立場の`description`/`required?`。配役本体は Session 側に持ち、開始テンプレートへコピーしない）＋`startPreset?: WorldStartPreset`（セッション開始テンプレート＝genre/premise/opening/openingTitle/initialDirective〔最初の方向付け・FB7-A〕/authorNote/timeline〔開始日・開始時間帯含む〕定義。世界選択時にセッションへ**コピー**され素材側は不変。反映は `startPresetPatch`/`hasStartPreset`（store.ts の純関数）・W1）＋`endings?: EndingDef[]`（名前つきエンディング定義。`condition`・`epilogueGuidance`・`auto`/`hidden`/`fallback`。配列順=優先度。到達判定はコード＝`checkEndings`/`evalCondition`・E1〜E3）。プリセット `WORLD_PRESETS`（恋愛/RPG/経営）
 - **Persona** — 利用者が演じる人物。`imagePrompt?` あり
 - **Session** — characterIds/worldId/personaId＋`roleAssignments?: {roleId,characterId}[]`（世界観ロールへの配役。同キャラの複数ロール可・無効参照は開始時に無視）/authorNote/story/`scenes: Scene[]`/currentSceneId/timeline/choiceMode（off|always|auto）/narrativeStyle（novel|chat）/`reviewModel`/`choicesModel`/`eventAutoFire?`（世界観イベント自動発火＝undefined/true で有効・FB3-C）/usedEventIds/`state: SessionState`/`overlay: SessionOverlay`/messages/model/temperature/maxTokens＋`spritesEnabled?`（ステージ表示）＋`spriteEmotions?: {characterId,emotion}[]`（表情判定結果）＋`structuredOutput?`（本編を行タグ形式で書かせる。`newSession` は既定 true・既存は `?? false`）＋`archived?`（一覧から既定除外）＋`ending?`（到達エンディング＝`{defId,name,reachedAt,epilogueSceneId}`。チェックポイント対象＝分岐で戻れば未到達に戻る。`restoreCheckpoint` passthrough には**入れない**。「完結済み」は ending＋epilogue シーンの endedAt から導出。E2）
 - **SessionState**（セッション固有・素材化しない）— `{relations, moods, stats, counters, achievements}`（「事実は数、判断は言葉」＝ADR-1）
 - **SessionOverlay**（セッション固有）— `{lore: LoreEntry[], characterDevelopments: {characterId,developments}[]}`。物語中の発見の上乗せ。**元 Character/World は不変**、レビュー承認の追記先はここ。本編には素材＋オーバーレイの実効ビュー（`resolveRefs` の `effectiveWorld`/`effectiveCharacter`）で注入。`promoteOverlayLore`/`promoteOverlayDev` で元素材へ move 昇格可
 - **Relation** — `{fromId,toId,stance,aspects:{aspectId,note}[],flags,updatedAt}`。キャラ→主人公（toId='hero'）の prose。数値ティア（band）は持たない
-- **StatDef/StatValue** — `StatDef{name,scope,default,min?,max?,inject}` は World 定義、`StatValue{defId,characterId?,value}` は SessionState。`inject:true` のみ本編注入
-- **CounterDef/CounterValue** — 累計カウンター。レビューの `counterEvents` で単調増加加算
+- **StatDef/StatValue** — `StatDef{name,scope,default,min?,max?,deltaMin?,deltaMax?,inject}` は World 定義、`StatValue{defId,characterId?,value}` は SessionState。`inject:true` のみ本編注入。`deltaMin?/deltaMax?`＝レビュー1回あたりの変動幅（絶対値の下限/上限。プロンプトの範囲付き列挙＋受領時 `clampReviewDelta` の両方に使う。0=変動なしは常に許される。FB7-C）
+- **CounterDef/CounterValue** — 累計カウンター。レビューの `counterEvents` で単調増加加算。`amountMin?/amountMax?`＝レビュー1回あたりの加算幅（既定 1..1000 の中でさらに絞る。`clampCounterAmount`。FB7-C）
 - **Scene** — `{title,activeCharacterIds,note,summary,timeLabel?,illustrations?,backgroundImageId?,endedAt?}`。読む側は `illustrations ?? []`
 - **SceneIllustration** — `{id,imageId,prompt,messageId?,createdAt}`。`messageId` 直後に表示（消失時はシーン末尾）
 - **Message** — role/characterId?/sceneId?/content/choices?/truncated?/pending?
@@ -167,8 +167,8 @@ Play 領域:
 - **シーン進行**: `このシーンを終える` → `prepareSceneReview`（要約＋`nextScheduledEvent`＋成長案＋関係値差分。max_tokens 途中切れ対策＝拡大＋`finish_reason==='length'` で最大2回再試行、失敗時は明示エラー）→ レビュー確認 → `confirmSceneReview`（成長/イベント反映・関係値加算/気分更新・タイムライン前進・新シーン作成。新シーンのタイトルは 提案タイトル → イベント名 → 連番 の優先＝ユーザー編集を優先。FB5-C）→ `beginScene()` → 選択肢。物語開始は `startStory()`。**導入（`story.opening`）が非空なら AI 生成せずその文章を最初の assistant メッセージとして掲載**（`openingTitle` があれば見出しに採用）→ 選択肢生成＋チェックポイント（FB2-B）
 - **セッション・オーバーレイ**: 素材（Character/World）は再利用資産なので**レビューは書き換えない**。採用された発見は `confirmSceneReview`（`applyDiscovery`）で `overlay` に追記。本編・レビュー文脈は必ず実効ビュー（`effectiveWorld`/`effectiveCharacter`）を読む（片方だけ素材素を読むと発見が消えて見える）。閲覧/編集は `DiscoveryPanel`、昇格は `promoteOverlayLore`/`promoteOverlayDev`（**move**。copy だと実効合成で二重注入）
 - **世界観イベント自動発火** `nextScheduledEvent`: 未消化・day 到来・condition 成立の特別イベントを day 順で1つ選び、人の承認なしでコードが自動発火（`session.eventAutoFire===false` で無効化）。**演出タイプ抽選（旧ディレクター・SceneType）は FB3-C で全廃**し、世界観イベントに一本化
-- **状態エンジン**（`Session.state`／ADR-1）: 関係性は prose、進捗は数（`StatValue`）。`reviewSystem` がレビュー時に `relationUpdates`（stance/aspects 全文書き直し・flagsAdd）／`statChanges`（delta）／`counterEvents`／`moods` を出力。**prose は全文置換・数値の加算はコードが行う**。現在値は `buildStateInfo`→本編 system の【状態（現在）】に注入。条件エンジン: `evalCondition`/`evalClause` が `Clause`（stat/counter/relationFlag/achievement・省略時「参加キャラのいずれか」）を判定し、実績の反復評価は `unlockAchievements()` に共通化（`confirmSceneReview` と選択肢加点の両方から呼ぶ）
-- **選択肢** `genChoices`: choiceMode≠off で各応答後に生成。`choicesModelOf` 使用、`extractJson`→`coerceChoices`。ワールドにスタット定義があれば `{"text":...,"effects":[{"stat":名称,"delta":数値}]}` 形式も受理し `Choice.effects` にする。手動再生成は `regenChoices()`。選択肢ボタンは `effects` があれば加点バッジ表示＋クリックで `applyChoiceEffects()`→`unlockAchievements()`
+- **状態エンジン**（`Session.state`／ADR-1）: 関係性は prose、進捗は数（`StatValue`）。`reviewSystem` がレビュー時に `relationUpdates`（stance/aspects 全文書き直し・flagsAdd）／`statChanges`（delta）／`counterEvents`／`moods` を出力。**prose は全文置換・数値の加算はコードが行う**。**ポイント確定はシーン終了レビューに一本化**（FB7-C。選択肢の事前 effects=P5 は廃止＝選択肢経由・自由入力の独自行動を問わず「実際に起きた結果」を評価）: `reviewSystem` は定義を変動幅つきで列挙（「好感度（動かすなら±5〜15）」）し `World.reviewGuidance` を毎回注入、レビュー user 文脈に【現在のステータス・カウンター】（全定義の現在値）＋関係フラグを注入（指針の条件参照用）、受領時に `clampReviewDelta`/`clampCounterAmount`（export・符号維持・0除外）でクランプ。**レビュー画面での手動編集は def の min/max クランプのみ**（ユーザー主権）。現在値は `buildStateInfo`→本編 system の【状態（現在）】に注入。条件エンジン: `evalCondition`/`evalClause` が `Clause`（stat/counter/relationFlag/achievement・省略時「参加キャラのいずれか」）を判定し、実績の反復評価は `unlockAchievements()` に共通化（`confirmSceneReview`・状態の手動編集から呼ぶ）
+- **選択肢** `genChoices`: choiceMode≠off で各応答後に生成。`choicesModelOf` 使用、`extractJson`→`coerceChoices`（文字列配列・`{"text":...}` ラップを受理。旧 effects は読み捨て）。手動再生成は `regenChoices()`。**選択肢は加点を持たない**（FB7-C）＝クリックはそのまま `send`
 - **次シーン候補の再生成** `regenerateSuggestions`: レビュー画面で候補を作り直す（`nextSceneSystem()`。方向性は発火中の特別イベント有無のみ）
 - **文体**: novel=地の文＋「」混在（話者プレフィックスなし）/ chat=キャラ別吹き出し（「名前:」先頭をパースして characterId 判定）
 - **出力停止対策**: `finish_reason==='length'` で `message.truncated`→「続きを生成」（`continueLast`＝appendToId で同一メッセージへ追記）。開始の一時エラーは最大3回自動リトライ。**中断は用途別に独立**: `stop`（本編）/`stopChoices`（選択肢）/`stopReview`（レビュー）でモジュールレベル AbortController を分離
@@ -206,6 +206,7 @@ Play 領域:
 - **モーダルは `ModalShell` を使う。ネイティブ `confirm`/`prompt` の直呼び禁止**。破棄/削除確認・名前入力は `appConfirm`/`appPrompt`/`appChoices`。draft を持つモーダルは `dirty` state を共通変更入口で立てて `ModalShell` に渡す
 - **分岐の自動削除は必ず保護判定（`subtreeHasProtection`）を通し、`recordCheckpoint` 内では剪定しない**（fail-open。ガード＝`ensureLineTip` を通らない経路で兄弟ができたら従来どおり表示され、取り漏らしをバグとして発見できる。FB6-C）
 - **ツリー行クリックは移動（`navigateToNode`）**。ツリーは「読む・移動する」装置で、分岐を作る操作は本文の操作行（⑂・ここから・編集・削除）に集約。復元＝「↩ この時点に戻す」は ⋯ メニューのみ（FB7-B）
+- **選択肢は加点を持たない**（P5 廃止・FB7-C）。状態の書き手はシーン終了レビュー（＋状態パネルの手動編集）のみ。選択肢生成・表示に effects 系の分岐を復活させない
 
 ## 検証ワークフロー
 **方針（2026-07-08合意）: 見た目・UX の挙動確認はユーザーが直接ブラウザ／`npm run tauri:dev` で行う。** Claude は Preview MCP でのスクリーンショット・snapshot を目視確認目的では行わない（トークン消費が重く目視は人間が速い）。Claude の担当は型チェック・ビルド・`preview_eval` での純粋関数/store 関数の直接検証など「目視では追いにくい」確認のみ。「ブラウザで確認して」と明示された時のみ Preview MCP を使う。
@@ -218,7 +219,7 @@ Play 領域:
 ## 実装状況
 **主要機能はすべて実装済み**。セッション(RP/物語)・素材ライブラリ（キャラ/世界観/ペルソナ）・ロアブック・グループ会話・シーン管理・タイムライン・選択肢進行・統合レビュー・世界観イベント自動発火・文体切替・マルチプロバイダ・会話編集/削除/作り直し・エクスポート/インポート・出力停止対策、および以下の大型フェーズが完了:
 
-- 状態エンジン（関係性 prose＋事実の数＋条件エンジン＋実績＋選択肢連動加点。ADR-1 / P1〜P5）
+- 状態エンジン（関係性 prose＋事実の数＋条件エンジン＋実績。ADR-1 / P1〜P5。※P5=選択肢連動加点は FB7-C でレビュー一本化により廃止）
 - セッション・オーバーレイ（発見の素材↔セッション分離・実効ビュー注入・昇格。B1〜B4）
 - 画像基盤・PNG カード入出力（IndexedDB 画像ストア・EntityAvatar・ST 互換キャラカード・世界/ペルソナカード・ゲームカセット。P1〜P4 / G1〜G4。※セッションカードは FB3-D で撤去）
 - 画像改善（バックグラウンドジョブ・ギャラリー・立ち絵/表情差分/背景・ステージのバックドロップ化・各種 store 不具合修正。V1〜V5）
@@ -235,7 +236,7 @@ Play 領域:
 各フェーズの詳細・検証記録は対応する `docs/設計_*.md` を参照。
 
 ## 未着手・残タスク
-- **フィードバック反映7（FB7・A・B実装済み 2026-07-19・C〜E未着手）**: 手順書 → `docs/設計_フィードバック反映7.md`。A=即効修正（画像ズームのポータル化＋等倍トグル・表記統一・方向付けテンプレート。**実装済み**）／B=分岐ツリーの履歴リンク化（行クリック＝移動 `navigateToNode`・`lineTipOf`・`scrollTarget`。**実装済み**）／C=ポイントのレビュー確定一本化＋変動幅＋レビュー指針／D=条件エンジンのキャラ変数化（キャラ別イベント/実績/エンディング）／E=発見キャラ
+- **フィードバック反映7（FB7・A〜C実装済み 2026-07-19・D・E未着手）**: 手順書 → `docs/設計_フィードバック反映7.md`。A=即効修正（画像ズームのポータル化＋等倍トグル・表記統一・方向付けテンプレート。**実装済み**）／B=分岐ツリーの履歴リンク化（行クリック＝移動 `navigateToNode`・`lineTipOf`・`scrollTarget`。**実装済み**）／C=ポイントのレビュー確定一本化＋変動幅＋レビュー指針（選択肢 effects 廃止・`deltaMin/deltaMax`・`reviewGuidance`。**実装済み**）／D=条件エンジンのキャラ変数化（キャラ別イベント/実績/エンディング）／E=発見キャラ
 - **フィードバック反映6（FB6・A〜D すべて実装済み・2026-07-19）**: 手順書 → `docs/設計_フィードバック反映6.md`。A=セッション画像記録／B=挿絵・背景の後付け生成／C=明示分岐（上書き方式）／D=ツリーのレビュー単位折りたたみ
 - **フィードバック反映3（FB3・A〜D すべて実装済み・2026-07-12）**: 手順書 → `docs/設計_フィードバック反映3.md`。A=本文表示の即効改善（`.gen-divider`・自動スクロール停止・分岐ラベル本文冒頭・選択UX・選択肢生成ボタン）／B=巻き戻しの兄弟分岐化（`anchorMessageId`＋`reanchorBranch`）＋SourceTree 風フルグラフ／C=演出ディレクター廃止（`nextScheduledEvent` 一本化・`eventAutoFire`）／D=セッションカード全廃＋`CassetteEditor`（専用エディタ・`newCassette`/`upsertCassette`・セッションからは「カセットにする…」で `seedSession`）
 - **T1 で判明した既知の問題**: ①選択肢生成中に本編生成が始まると選択肢側 AbortController が追従せず `Cannot read properties of null (reading 'signal')`（再現手順が不明で切り分け未着手のまま据え置き）②ComfyUI が通常起動（`--enable-cors-header` なし）で接続できない＝設計通りでないバグ。**未解決・現在も再現する**。appFetch 未置換経路や `isTauri()` 誤判定を疑い切り分けが必要（詳細は `docs/設計_Tauri化.md`）
@@ -252,6 +253,7 @@ Play 領域:
   - 判断（感情の機微・関係の質）＝ **prose**（ワールド固定の aspect ごとの記述＋stance）。LLM が読み生成に使う。**条件判定には使わない**
   - 事実（好感度ポイント・回数・所持金・レベル・日数）＝ **数/フラグ**。プレイヤーとコードが読み、**イベント発火条件**に使う
 - **採用（案A）**: 関係性は prose（数値化しない・次元はワールド固定）／進捗は prose と別レイヤーの「好感度ポイント」（イベント/行動で固定値加点・LLM に査定させない・"細かく上昇"は選択肢連動の小刻み加点＝P5）／イベント発火は人の承認なし・コード自動判定／**band（派生ティア）は不採用**／レビューが状態の唯一の書き手（prose は全文書き直し・数値はコードが加算）
+- **方針転換（FB7-C・2026-07-19）**: P5 の選択肢連動加点は**廃止**し、ポイント確定をシーン終了レビューの結果ベース評価に一本化（「事前にポイントが見えると面白味が半減」「独自行動にも同じ土俵で加点したい」という実プレイの知見）。「LLM に査定させない」は緩和し、定義ごとの変動幅（`deltaMin/deltaMax`＝プロンプト目安＋コードのクランプ）と世界観のレビュー指針（`reviewGuidance`）で暴走を抑制する。機械的保証が必要になったら「条件付き自動変動ルール」（コード実行）を次弾で検討（発展案）
 - **却下した代替（後で試す用）**:
   - **案B**: 進捗は主人公の数値スタットのみ・関係性は純 prose（キャラ別好感度ポイントなし）
   - **案C**: 純 prose 一本（進捗の可視的な楽しみを持たない・最小だが"レベル上げ感"が出ない）

@@ -94,7 +94,6 @@ export default function ChatPanel({ session }: Props) {
     startStory,
     continueLast,
     regenChoices,
-    applyChoiceEffects,
     editMessage,
     deleteMessage,
     regenerateFrom,
@@ -134,8 +133,6 @@ export default function ChatPanel({ session }: Props) {
   const anchorRef = useRef<HTMLDivElement>(null)
   // 自動スクロールは「自分の操作直後の1回」だけ（生成中は追従しない。FB3-A3）
   const lastScrolledRef = useRef<string | null>(null)
-  // 選択肢の連打による二重加点を防ぐ（適用済みメッセージ id を同期的に記録）
-  const choiceLockRef = useRef<string | null>(null)
   // ドックタブのトグル（同じタブを再クリックで閉じる。UI-3）
   const toggleDock = (tab: DockTab) => setUiPrefs({ dockTab: ui.dockTab === tab ? null : tab })
 
@@ -188,11 +185,6 @@ export default function ChatPanel({ session }: Props) {
       lastScrolledRef.current = last.id
       anchorRef.current?.scrollIntoView({ behavior: 'smooth' })
     }
-  }, [session.messages])
-
-  // メッセージ列が変わって再レンダーされたらロック解除（削除して選び直す等の正当な再選択を許す）
-  useEffect(() => {
-    choiceLockRef.current = null
   }, [session.messages])
 
   // ツリー行クリックの本文スクロール（FB7-B）。復元直後の末尾自動スクロール（上）より後に消化して勝たせる
@@ -817,26 +809,11 @@ export default function ChatPanel({ session }: Props) {
                     <button
                       key={i}
                       className="choice-btn"
-                      onClick={() => {
-                        if (choiceLockRef.current === lastMsg.id) return
-                        choiceLockRef.current = lastMsg.id
-                        if (c.effects?.length) applyChoiceEffects(c.effects)
-                        send(c.text, effectiveSpeaker)
-                      }}
+                      onClick={() => send(c.text, effectiveSpeaker)}
                       disabled={isStreaming}
                     >
                       <span className="choice-num">{i + 1}</span>
                       {c.text}
-                      {!!c.effects?.length && (
-                        <span className="choice-effects">
-                          {c.effects.map((e, j) => (
-                            <span key={j} className="choice-effect-badge">
-                              {e.delta > 0 ? '+' : ''}
-                              {e.delta} {e.name}
-                            </span>
-                          ))}
-                        </span>
-                      )}
                     </button>
                   ))}
                 </div>

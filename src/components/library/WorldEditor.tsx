@@ -963,10 +963,23 @@ export default function WorldEditor({ world, onClose }: Props) {
 
           {section === 'stats' && (
             <>
+          <div className="field">
+            <label>レビュー指針（毎レビュー注入・任意）</label>
+            <div className="desc">
+              シーン終了レビューにそのまま渡す状態変動の方針。条件つきの方針は、レビューが観測できる事実
+              （現在のステータス/カウンター値・関係フラグ・日付・本文の描写）に紐づけて書くと機能します。
+            </div>
+            <textarea
+              rows={3}
+              value={d.reviewGuidance ?? ''}
+              placeholder="例: 体力は毎シーン必ず消耗させる。フラグ『呪い』が立っている間は10〜20、外れていれば1〜5。"
+              onChange={(e) => patch({ reviewGuidance: e.target.value })}
+            />
+          </div>
           <div className="lore-head">
             <label>ステータス定義</label>
             <div className="desc">
-              好感度・レベル・所持金など「事実の数」。イベント/行動で加減算され、条件にも使えます。
+              好感度・レベル・所持金など「事実の数」。シーン終了レビューが実際に起きた出来事を評価して加減算し、条件にも使えます。
             </div>
           </div>
           {stats.map((s) => (
@@ -1040,6 +1053,36 @@ export default function WorldEditor({ world, onClose }: Props) {
                   />
                 </label>
               </div>
+              <div className="row2" style={{ marginTop: 6 }} title="レビュー1回で動かす場合の絶対値の下限〜上限。プロンプトの目安＋受領時のクランプに使われます（空欄=拘束なし）">
+                <label className="chk">
+                  変動幅/回 ±
+                  <input
+                    type="number"
+                    min={0}
+                    value={s.deltaMin ?? ''}
+                    placeholder="最小"
+                    style={{ width: 72, background: 'var(--bg)' }}
+                    onChange={(e) =>
+                      updateStat(s.id, {
+                        deltaMin: e.target.value === '' ? undefined : Number(e.target.value),
+                      })
+                    }
+                  />
+                  〜
+                  <input
+                    type="number"
+                    min={0}
+                    value={s.deltaMax ?? ''}
+                    placeholder="最大"
+                    style={{ width: 72, background: 'var(--bg)' }}
+                    onChange={(e) =>
+                      updateStat(s.id, {
+                        deltaMax: e.target.value === '' ? undefined : Number(e.target.value),
+                      })
+                    }
+                  />
+                </label>
+              </div>
             </div>
           ))}
           <button className="btn" style={{ marginTop: 8 }} onClick={addStat}>
@@ -1086,6 +1129,36 @@ export default function WorldEditor({ world, onClose }: Props) {
                 <button className="icon-btn small" onClick={() => removeCounter(c.id)} title="削除">
                   ✕
                 </button>
+              </div>
+              <div className="row2" style={{ marginTop: 6 }} title="レビュー1回で加算する場合の下限〜上限（既定 1〜1000 の中でさらに絞る。空欄=拘束なし）">
+                <label className="chk">
+                  加算/回
+                  <input
+                    type="number"
+                    min={1}
+                    value={c.amountMin ?? ''}
+                    placeholder="最小"
+                    style={{ width: 72, background: 'var(--bg)' }}
+                    onChange={(e) =>
+                      updateCounter(c.id, {
+                        amountMin: e.target.value === '' ? undefined : Number(e.target.value),
+                      })
+                    }
+                  />
+                  〜
+                  <input
+                    type="number"
+                    min={1}
+                    value={c.amountMax ?? ''}
+                    placeholder="最大"
+                    style={{ width: 72, background: 'var(--bg)' }}
+                    onChange={(e) =>
+                      updateCounter(c.id, {
+                        amountMax: e.target.value === '' ? undefined : Number(e.target.value),
+                      })
+                    }
+                  />
+                </label>
               </div>
             </div>
           ))}

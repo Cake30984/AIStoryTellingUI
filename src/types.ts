@@ -122,6 +122,13 @@ export interface StatDef {
   /** 数値型の下限・上限（任意。好感度メーターは 0〜100 など） */
   min?: number
   max?: number
+  /**
+   * レビュー1回あたりの変動幅（絶対値の下限・上限。任意。FB7-C）。
+   * プロンプトの目安＋受領時クランプの両方に使う。deltaMin は「動かすなら最低これだけ動く」の意味で、
+   * 変動しない（delta 0＝項目を出さない）ことは常に許される。
+   */
+  deltaMin?: number
+  deltaMax?: number
   /** 本編プロンプトに現在値を注入するか（好感度メーターは通常 false＝LLM は prose を読む） */
   inject: boolean
 }
@@ -133,6 +140,9 @@ export interface CounterDef {
   name: string
   /** character=キャラ別累計 / global=全体累計 */
   scope: StatScope
+  /** レビュー1回あたりの加算量の下限・上限（任意。既定 1..1000 の中でさらに絞る。FB7-C） */
+  amountMin?: number
+  amountMax?: number
   /** 本編プロンプトに現在値を注入するか */
   inject: boolean
 }
@@ -248,6 +258,13 @@ export interface World {
   counters: CounterDef[]
   /** 実績の定義（達成条件はコードが自動判定） */
   achievements: AchievementDef[]
+  /**
+   * レビュー指針（自由記述・任意。FB7-C）。シーン終了レビューの system に
+   * 【世界のレビュー指針】として毎回そのまま注入する世界固定の状態変動方針
+   * （例: 「体力は毎シーン必ず消耗させる。フラグ『呪い』が立っている間は10〜20、外れていれば1〜5」）。
+   * LLM 判断なので厳密保証はない（deltaMin/deltaMax のクランプで暴走は抑制）。
+   */
+  reviewGuidance?: string
   /** 世界観が定義する配役。未設定の旧データは空配列として扱う */
   roles?: WorldRole[]
   /** セッション開始テンプレート（世界を選んだ時にセッションへコピーされる推奨初期設定。素材側は不変） */
@@ -258,20 +275,13 @@ export interface World {
   updatedAt: number
 }
 
-/** 選択肢に紐づく小刻み加点（P5）。選んだ瞬間にコードが加算する事実（LLM は delta を提案するだけ） */
-export interface ChoiceEffect {
-  defId: string
-  name: string
-  /** scope=character のとき対象キャラ。global は undefined */
-  characterId?: string
-  charName?: string
-  delta: number
-}
-
-/** 物語モードの選択肢（P5から effects を持てる） */
+/**
+ * 物語モードの選択肢。
+ * 事前 effects（P5 の選択肢連動加点）は FB7-C で廃止＝ポイントはシーン終了レビューが
+ * 「実際に起きた結果」を評価して一本化（旧データの effects は読み捨て）。
+ */
 export interface Choice {
   text: string
-  effects?: ChoiceEffect[]
 }
 
 export interface Message {

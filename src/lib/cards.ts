@@ -252,6 +252,10 @@ function normalizeWorldFromData(raw: any): World {
     stats: Array.isArray(raw.stats) ? raw.stats : [],
     counters: Array.isArray(raw.counters) ? raw.counters : [],
     achievements: Array.isArray(raw.achievements) ? raw.achievements : [],
+    // カード往復でレビュー指針が消えないよう明示的に引き継ぐ（FB7-C）
+    ...(typeof raw.reviewGuidance === 'string' && raw.reviewGuidance
+      ? { reviewGuidance: raw.reviewGuidance }
+      : {}),
     roles: normalizeWorldRoles(raw.roles),
     // カード往復でエンディング定義が消えないよう明示的に引き継ぐ（E1）
     endings: Array.isArray(raw.endings) ? raw.endings : [],

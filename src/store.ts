@@ -8,7 +8,6 @@ import type {
   Cassette,
   Character,
   Choice,
-  ChoiceEffect,
   Clause,
   Condition,
   CounterDef,
@@ -124,6 +123,39 @@ function clampStat(v: number, def?: { min?: number; max?: number }): number {
   return x
 }
 
+/**
+ * レビュー statChanges の delta を定義の変動幅 deltaMin..deltaMax にクランプする（FB7-C。符号維持）。
+ * 0 は「変動なし＝項目を出さない」扱いで対象外（deltaMin は「動かすなら最低これだけ動く」の意味）。
+ * 未設定側は従来の ±1,000,000 安全クランプのみ。
+ */
+export function clampReviewDelta(
+  delta: number,
+  def?: { deltaMin?: number; deltaMax?: number },
+): number {
+  let x = Math.round(delta) || 0
+  if (x === 0) return 0
+  const sign = x < 0 ? -1 : 1
+  let abs = Math.abs(x)
+  if (def?.deltaMin != null) abs = Math.max(Math.abs(def.deltaMin), abs)
+  if (def?.deltaMax != null) abs = Math.min(Math.abs(def.deltaMax), abs)
+  abs = Math.min(1_000_000, abs)
+  return sign * abs
+}
+
+/**
+ * レビュー counterEvents の amount を定義の加算幅 amountMin..amountMax にクランプする
+ * （FB7-C。既定範囲 1..1000 の中でさらに絞る）。
+ */
+export function clampCounterAmount(
+  amount: number,
+  def?: { amountMin?: number; amountMax?: number },
+): number {
+  let x = Math.max(1, Math.min(1000, Math.round(amount) || 1))
+  if (def?.amountMin != null) x = Math.max(Math.max(1, def.amountMin), x)
+  if (def?.amountMax != null) x = Math.min(Math.min(1000, def.amountMax), x)
+  return x
+}
+
 function compareOp(a: number, op: Op, b: number): boolean {
   switch (op) {
     case '>=':
@@ -207,7 +239,7 @@ export function evalCondition(
 
 /**
  * World 定義の実績を state へ反復評価し、新規解除分を記録して返す（連鎖依存も1パスで解決）。
- * シーン確定時・選択肢の加点時など、state が変わり得るあらゆる場所から共通で呼ぶ。
+ * シーン確定時・状態の手動編集時など、state が変わり得るあらゆる場所から共通で呼ぶ。
  */
 function unlockAchievements(
   state: SessionState,
@@ -389,10 +421,10 @@ export function resolveEmotionUpdates(
 /**
  * モデルが返した JSON から選択肢を取り出す。
  * 素直な ["a","b"] のほか、`{"choices":[...]}` のラップや
- * `[{"text":"a","effects":[...]}]` のオブジェクト配列にも対応する（モデル差吸収）。
- * effects（P5・小刻み加点）はワールド定義のスタット名で解決し、未定義は無視する。
+ * `[{"text":"a"}]` のオブジェクト配列にも対応する（モデル差吸収）。
+ * 旧形式の effects（P5・選択肢連動加点）は FB7-C で廃止＝出てきても読み捨てる。
  */
-function coerceChoices(parsed: unknown, world: World | undefined, characters: Character[]): Choice[] {
+function coerceChoices(parsed: unknown): Choice[] {
   const arr: unknown[] = Array.isArray(parsed)
     ? parsed
     : parsed && typeof parsed === 'object'
@@ -414,31 +446,7 @@ function coerceChoices(parsed: unknown, world: World | undefined, characters: Ch
           : (Object.values(obj).find((v) => typeof v === 'string') as string | undefined)
       const text = textRaw?.trim()
       if (!text) return null
-      const rawEffects = Array.isArray(obj.effects) ? obj.effects : []
-      const effects: ChoiceEffect[] = rawEffects
-        .map((e: any) => {
-          const def = (world?.stats ?? []).find(
-            (d) => d.name === String(e?.stat ?? e?.name ?? '').trim(),
-          )
-          if (!def) return null
-          const charName = e?.character ? String(e.character) : undefined
-          const characterId =
-            def.scope === 'character' && charName
-              ? characters.find((c) => c.name === charName)?.id
-              : undefined
-          if (def.scope === 'character' && !characterId) return null
-          const delta = Math.round(Number(e?.delta) || 0)
-          if (!delta) return null
-          return {
-            defId: def.id,
-            name: def.name,
-            characterId,
-            charName: def.scope === 'character' ? charName : undefined,
-            delta,
-          }
-        })
-        .filter((e: any): e is NonNullable<typeof e> => !!e)
-      return { text, effects: effects.length ? effects : undefined }
+      return { text }
     })
     .filter((c): c is Choice => !!c)
     .slice(0, 4)
@@ -1023,8 +1031,6 @@ interface AppState {
   cancelReview: () => void
   /** 直近のアシスタント応答に対して選択肢を手動で生成し直す */
   regenChoices: () => Promise<void>
-  /** 選択肢に付いた小刻み加点（P5）を適用する（clamp加算＋実績再評価・通知） */
-  applyChoiceEffects: (effects: ChoiceEffect[]) => void
   /** 状態パネルの手動編集を保存する（スタットを clamp・実績を再評価して通知） */
   applyStatusEdit: (state: SessionState) => void
 
@@ -1843,13 +1849,10 @@ export const useStore = create<AppState>()(
         set({ isGeneratingChoices: true })
         try {
           const refs = resolveRefs(session)
-          const world = refs.world
-          // 本編に注入しないスタットも含め、ワールド定義の名前で effects を拘束する
-          const statNames = (world?.stats ?? []).map((d) => d.name).filter(Boolean)
           const base = buildMessages(session, refs)
           // 末尾に user の念押しを積み、本編の続き（地の文）ではなく JSON を出させる
           const msgs = [
-            { role: 'system' as const, content: choicesSystem(mode, statNames) },
+            { role: 'system' as const, content: choicesSystem(mode) },
             ...base.slice(1),
             { role: 'user' as const, content: choicesUserNudge(mode) },
           ]
@@ -1865,7 +1868,7 @@ export const useStore = create<AppState>()(
               { provider, model, messages: msgs, temperature: 0.5, maxTokens: 600, signal: choicesController.signal },
               () => {},
             )
-            const parsedChoices = coerceChoices(extractJson<unknown>(raw.text), world, refs.characters)
+            const parsedChoices = coerceChoices(extractJson<unknown>(raw.text))
             if (parsedChoices.length > bestChoices.length) bestChoices = parsedChoices
             const truncated = raw.finishReason === 'length'
             if (parsedChoices.length > 0 && !truncated) {
@@ -2529,15 +2532,66 @@ export const useStore = create<AppState>()(
                 `【次のシーンの方向性】特別イベント「${event.name}」が発生します。${event.note}\nsuggestions はこのイベントに沿った内容にしてください。`,
               )
             }
-            const context = ctxParts.join('\n')
-
-            // ワールド固定の関係次元・ステータス名（レビューを拘束）
+            // ワールド固定の関係次元・ステータス定義（レビューを拘束。変動幅つき列挙＝FB7-C）
             const world = refs.world
             const aspectNames = (world?.relationAspects ?? []).map((a) => a.name).filter(Boolean)
-            const statNames = (world?.stats ?? []).map((d) => d.name).filter(Boolean)
-            const counterNames = (world?.counters ?? []).map((d) => d.name).filter(Boolean)
+            const statSpecs = (world?.stats ?? [])
+              .filter((d) => d.name.trim())
+              .map((d) => ({ name: d.name, deltaMin: d.deltaMin, deltaMax: d.deltaMax }))
+            const counterSpecs = (world?.counters ?? [])
+              .filter((d) => d.name.trim())
+              .map((d) => ({ name: d.name, amountMin: d.amountMin, amountMax: d.amountMax }))
 
-            // 現在の関係性 prose（レビューが書き直すための起点）
+            // 現在のステータス/カウンター値（FB7-C。レビュー指針の条件参照
+            // 「フラグ『呪い』が立っている間は…」「所持金が尽きたら…」を可能にするため毎回注入）
+            const stateLines: string[] = []
+            for (const def of world?.stats ?? []) {
+              if (!def.name.trim()) continue
+              if (def.scope === 'global') {
+                const v =
+                  s.state?.stats.find((x) => x.defId === def.id && !x.characterId)?.value ??
+                  def.default
+                stateLines.push(`- ${def.name}: ${v}`)
+              } else {
+                const vals = s.characterIds
+                  .map((id) => {
+                    const c = get().characters.find((x) => x.id === id)
+                    if (!c) return ''
+                    const v =
+                      s.state?.stats.find((x) => x.defId === def.id && x.characterId === id)
+                        ?.value ?? def.default
+                    return `${c.name} ${v}`
+                  })
+                  .filter(Boolean)
+                if (vals.length) stateLines.push(`- ${def.name}: ${vals.join(' / ')}`)
+              }
+            }
+            for (const def of world?.counters ?? []) {
+              if (!def.name.trim()) continue
+              if (def.scope === 'global') {
+                const v =
+                  s.state?.counters.find((x) => x.defId === def.id && !x.characterId)?.value ?? 0
+                stateLines.push(`- ${def.name}: ${v}`)
+              } else {
+                const vals = s.characterIds
+                  .map((id) => {
+                    const c = get().characters.find((x) => x.id === id)
+                    if (!c) return ''
+                    const v =
+                      s.state?.counters.find((x) => x.defId === def.id && x.characterId === id)
+                        ?.value ?? 0
+                    return `${c.name} ${v}`
+                  })
+                  .filter(Boolean)
+                if (vals.length) stateLines.push(`- ${def.name}: ${vals.join(' / ')}`)
+              }
+            }
+            if (stateLines.length) {
+              ctxParts.push(`【現在のステータス・カウンター】\n${stateLines.join('\n')}`)
+            }
+            const context = ctxParts.join('\n')
+
+            // 現在の関係性 prose（レビューが書き直すための起点。フラグは指針の条件参照にも使う）
             const relNow = (s.state?.relations ?? [])
               .map((r) => {
                 const who = get().characters.find((c) => c.id === r.fromId)?.name ?? 'キャラ'
@@ -2548,13 +2602,19 @@ export const useStore = create<AppState>()(
                   })
                   .filter(Boolean)
                   .join(' / ')
-                return `- ${who}→主人公: ${r.stance}${asp ? `（${asp}）` : ''}`
+                const flags = r.flags.filter((f) => f.trim()).join('・')
+                return `- ${who}→主人公: ${r.stance}${asp ? `（${asp}）` : ''}${
+                  flags ? `【フラグ: ${flags}】` : ''
+                }`
               })
               .join('\n')
             const relBlock = relNow ? `\n\n【現在の関係性】\n${relNow}` : ''
 
             const reviewMessages = [
-              { role: 'system' as const, content: reviewSystem(aspectNames, statNames, counterNames) },
+              {
+                role: 'system' as const,
+                content: reviewSystem(aspectNames, statSpecs, counterSpecs, world?.reviewGuidance),
+              },
               {
                 role: 'user' as const,
                 content: `${context}${relBlock}\n\n【シーン「${scene.title}」の会話】\n${transcript}`,
@@ -2692,7 +2752,8 @@ export const useStore = create<AppState>()(
                         name: def.name,
                         characterId,
                         charName: def.scope === 'character' ? charName : undefined,
-                        delta: Math.max(-1_000_000, Math.min(1_000_000, Math.round(Number(x?.delta) || 0))),
+                        // 定義の変動幅 deltaMin..deltaMax にクランプ（FB7-C。0 は変動なしのまま除外）
+                        delta: clampReviewDelta(Number(x?.delta) || 0, def),
                         reason: String(x?.reason ?? ''),
                       }
                     })
@@ -2714,7 +2775,8 @@ export const useStore = create<AppState>()(
                         name: def.name,
                         characterId,
                         charName: def.scope === 'character' ? charName : undefined,
-                        amount: Math.max(1, Math.min(1000, Math.round(Number(x?.amount) || 1))),
+                        // 定義の加算幅 amountMin..amountMax にクランプ（FB7-C。既定 1..1000 の内側）
+                        amount: clampCounterAmount(Number(x?.amount) || 1, def),
                         reason: String(x?.reason ?? ''),
                       }
                     })
@@ -3109,31 +3171,11 @@ export const useStore = create<AppState>()(
           await genChoices(s, last.id)
         },
 
-        applyChoiceEffects: (effects) => {
-          const s = active()
-          if (!s || effects.length === 0) return
-          const world = get().worlds.find((w) => w.id === s.worldId)
-          const stats = s.state.stats.map((sv) => ({ ...sv }))
-          for (const eff of effects) {
-            const def = world?.stats.find((d) => d.id === eff.defId)
-            const idx = stats.findIndex(
-              (sv) => sv.defId === eff.defId && sv.characterId === eff.characterId,
-            )
-            const cur = idx >= 0 ? stats[idx].value : (def?.default ?? 0)
-            const val = clampStat(cur + eff.delta, def)
-            if (idx >= 0) stats[idx].value = val
-            else stats.push({ defId: eff.defId, characterId: eff.characterId, value: val })
-          }
-          const { state, unlocked } = unlockAchievements({ ...s.state, stats }, world, s.characterIds)
-          get().updateSession(s.id, { state })
-          if (unlocked.length) set({ newlyUnlockedAchievements: unlocked })
-        },
-
         applyStatusEdit: (edited) => {
           const s = active()
           if (!s) return
           const world = get().worlds.find((w) => w.id === s.worldId)
-          // 手動編集された絶対値も、レビュー適用・選択肢加点と同じく def の min..max に丸める
+          // 手動編集された絶対値も、レビュー適用と同じく def の min..max に丸める
           const stats = edited.stats.map((sv) => ({
             ...sv,
             value: clampStat(sv.value, world?.stats.find((d) => d.id === sv.defId)),
