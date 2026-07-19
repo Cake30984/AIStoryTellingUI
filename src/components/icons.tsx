@@ -42,6 +42,8 @@ export type IconName =
   | 'broom'
   | 'arrow-up'
   | 'maximize'
+  | 'chevron-right'
+  | 'chevron-down'
 
 const PATHS: Record<IconName, ReactNode> = {
   'more-horizontal': (
@@ -280,6 +282,8 @@ const PATHS: Record<IconName, ReactNode> = {
       <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
     </>
   ),
+  'chevron-right': <path d="M9 6l6 6-6 6" />,
+  'chevron-down': <path d="M6 9l6 6 6-6" />,
 }
 
 export function Icon({

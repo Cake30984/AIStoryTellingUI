@@ -986,6 +986,15 @@
   white-space: nowrap;
   flex: 0 1 auto;
 }
+/* 章折りたたみのトグルと件数（FB6-D） */
+.bg-fold {
+  flex-shrink: 0;
+}
+.bg-fold-count {
+  flex-shrink: 0;
+  color: var(--text-dim);
+  font-size: 12px;
+}
 /* ⑂ 明示分岐の名前チップ（FB6-C。しおりと同じ収まり方・アクセント系の枠色） */
 .bg-branch-badge {
   display: inline-block;

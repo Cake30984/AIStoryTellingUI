@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../store'
 import type { BranchNode, BranchTree, Session } from '../types'
 import { useImageUrl } from '../lib/imageStore'
@@ -55,6 +55,67 @@ function subtreeNodes(tree: BranchTree, rootId: string): BranchNode[] {
     for (const c of childIds.get(id) ?? []) stack.push(c)
   }
   return out
+}
+
+/* ---------- レビュー単位の折りたたみ（FB6-D） ---------- */
+
+/** 各ノードの属する章（最も近い祖先の 📖 scene ノード id。scene ノード自身は自分）を計算する */
+function chapterOf(nodes: BranchNode[]): Map<string, string | null> {
+  const byId = new Map(nodes.map((n) => [n.id, n]))
+  const memo = new Map<string, string | null>()
+  const resolve = (id: string): string | null => {
+    const cached = memo.get(id)
+    if (cached !== undefined) return cached
+    const n = byId.get(id)
+    const out = !n ? null : n.kind === 'scene' ? n.id : n.parentId ? resolve(n.parentId) : null
+    memo.set(id, out)
+    return out
+  }
+  for (const n of nodes) resolve(n.id)
+  return memo
+}
+
+/**
+ * 折りたたまれた章（expandedSceneIds に無い scene 章）内の「鎖の内部 action ノード」を非表示にし、
+ * 可視ノードだけの合成ツリーを作る（FB6-D。export はロジック検証用）。
+ * 分岐点（子2+）・葉・いまここ・★しおり・⑂名前・🏁・scene ノード自身は畳んでも常に表示＝
+ * 非表示になるのは必ず「親あり・子1」の鎖内部なので、可視の子の parentId を最寄りの
+ * 可視祖先へ付け替える辺縮約が一意に決まる。グラフ描画本体（buildGraph）は無改修で使える。
+ */
+export function condenseTree(
+  tree: BranchTree,
+  expandedSceneIds: Set<string>,
+): { tree: BranchTree; hiddenBySceneId: Map<string, number> } {
+  const byId = new Map(tree.nodes.map((n) => [n.id, n]))
+  const childCount = new Map<string, number>()
+  for (const n of tree.nodes) {
+    if (n.parentId) childCount.set(n.parentId, (childCount.get(n.parentId) ?? 0) + 1)
+  }
+  const chapters = chapterOf(tree.nodes)
+  const hidden = new Set<string>()
+  const hiddenBySceneId = new Map<string, number>()
+  for (const n of tree.nodes) {
+    if (n.kind !== 'action') continue
+    const chapter = chapters.get(n.id)
+    if (!chapter || expandedSceneIds.has(chapter)) continue
+    if (n.id === tree.currentId) continue
+    if (n.star || n.branchName || n.ending) continue
+    if ((childCount.get(n.id) ?? 0) !== 1) continue
+    hidden.add(n.id)
+    hiddenBySceneId.set(chapter, (hiddenBySceneId.get(chapter) ?? 0) + 1)
+  }
+  if (hidden.size === 0) return { tree, hiddenBySceneId }
+  const visibleAncestorOf = (id: string | null): string | null => {
+    let cur = id
+    while (cur && hidden.has(cur)) cur = byId.get(cur)?.parentId ?? null
+    return cur
+  }
+  const nodes = tree.nodes
+    .filter((n) => !hidden.has(n.id))
+    .map((n) =>
+      n.parentId && hidden.has(n.parentId) ? { ...n, parentId: visibleAncestorOf(n.parentId) } : n,
+    )
+  return { tree: { currentId: tree.currentId, nodes }, hiddenBySceneId }
 }
 
 /* ---------- コミットグラフのレイアウト（FB3-B2） ---------- */
@@ -197,6 +258,25 @@ export function BranchTreeBody({ session }: { session: Session }) {
   const busy = generating || busyAction
   const currentRef = useRef<HTMLDivElement>(null)
 
+  // レビュー単位の折りたたみ（FB6-D）。既定＝現在いる章だけ展開
+  const chapters = useMemo(() => (tree ? chapterOf(tree.nodes) : new Map<string, string | null>()), [tree])
+  const currentChapter = tree?.currentId ? (chapters.get(tree.currentId) ?? null) : null
+  const [expandedScenes, setExpandedScenes] = useState<Set<string>>(() =>
+    currentChapter ? new Set([currentChapter]) : new Set(),
+  )
+  // 現在地が別の章へ移ったら（復元・レビュー確定）その章を自動展開する
+  useEffect(() => {
+    if (!currentChapter) return
+    setExpandedScenes((prev) => (prev.has(currentChapter) ? prev : new Set([...prev, currentChapter])))
+  }, [currentChapter])
+  const toggleChapter = (sceneId: string) =>
+    setExpandedScenes((prev) => {
+      const next = new Set(prev)
+      if (next.has(sceneId)) next.delete(sceneId)
+      else next.add(sceneId)
+      return next
+    })
+
   // タブを開いた時／現在地が変わった時に「いまここ」を画面中央へ
   useEffect(() => {
     currentRef.current?.scrollIntoView({ block: 'center' })
@@ -293,7 +373,9 @@ export function BranchTreeBody({ session }: { session: Session }) {
 
   const totalBytes = tree ? tree.nodes.reduce((sum, n) => sum + n.bytes, 0) : 0
   const starred = tree ? starredNodesOf(tree) : []
-  const graph = tree ? buildGraph(tree, pathIds) : { rows: [], laneCount: 0 }
+  // 折りたたみ適用後の合成ツリーをグラフ化する（FB6-D。buildGraph 本体は無改修）
+  const condensed = tree ? condenseTree(tree, expandedScenes) : null
+  const graph = condensed ? buildGraph(condensed.tree, pathIds) : { rows: [], laneCount: 0 }
   const gutterW = Math.max(graph.laneCount, 1) * LANE_W
   const cy = ROW_H / 2
 
@@ -356,10 +438,24 @@ export function BranchTreeBody({ session }: { session: Session }) {
         </div>
 
         <div className="bg-body">
+          {isScene && (
+            <button
+              className="icon-btn small bg-fold"
+              title={expandedScenes.has(node.id) ? 'この章を畳む' : 'この章を展開する'}
+              onClick={() => toggleChapter(node.id)}
+            >
+              <Icon name={expandedScenes.has(node.id) ? 'chevron-down' : 'chevron-right'} size={13} />
+            </button>
+          )}
           <span className={'bg-label' + (isScene ? ' scene' : '')}>
             {node.ending ? node.label : isScene ? `📖 ${node.label}` : node.label}
             {node.timeLabel ? `（${node.timeLabel}）` : ''}
           </span>
+          {isScene &&
+            !expandedScenes.has(node.id) &&
+            (condensed?.hiddenBySceneId.get(node.id) ?? 0) > 0 && (
+              <span className="bg-fold-count">（{condensed!.hiddenBySceneId.get(node.id)}件）</span>
+            )}
           {node.branchName && <span className="badge bg-branch-badge">⑂ {node.branchName}</span>}
           {node.star && <span className="badge bg-star-badge">★ {node.star.name}</span>}
           {isCurrent && <span className="badge accent bg-current-badge">▶ いまここ</span>}
