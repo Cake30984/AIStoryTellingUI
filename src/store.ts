@@ -20,6 +20,7 @@ import type {
   ExportBundle,
   ImageProvider,
   LoreEntry,
+  Message,
   MoodChange,
   NextSceneSuggestion,
   Op,
@@ -1424,6 +1425,25 @@ function findReanchorTarget(tree: BranchTree | undefined, keptIds: Set<string>):
     id = n.parentId
   }
   return null
+}
+
+/**
+ * 巻き戻し後の kept メッセージに対応する scenes/currentSceneId を計算する（regenerateFrom 用。バグ修正）。
+ * kept の末尾メッセージが属するシーンが現在の currentSceneId と異なる＝シーン境界をまたいで巻き戻した場合、
+ * 置き去りになる後続シーン（scenes 配列上、そのシーンより後ろ）を落とし currentSceneId を戻す。
+ * またがない通常のケース（現在シーン内の巻き戻し）は変更なし。sceneId 未設定の旧データはシーンを動かさない。
+ */
+export function rewindScenesFor(
+  session: Pick<Session, 'scenes' | 'currentSceneId'>,
+  kept: Message[],
+): Pick<Session, 'scenes' | 'currentSceneId'> {
+  const lastSceneId = [...kept].reverse().find((m) => m.sceneId)?.sceneId
+  if (!lastSceneId || lastSceneId === session.currentSceneId) {
+    return { scenes: session.scenes, currentSceneId: session.currentSceneId }
+  }
+  const idx = session.scenes.findIndex((sc) => sc.id === lastSceneId)
+  if (idx < 0) return { scenes: session.scenes, currentSceneId: session.currentSceneId }
+  return { scenes: session.scenes.slice(0, idx + 1), currentSceneId: lastSceneId }
 }
 
 /** 枝の中で最も新しい葉（＝ほぼ確実に元の先端）。上書きガードの「⑂残す」の命名先に使う（FB6-C） */
@@ -3691,7 +3711,9 @@ export const useStore = create<AppState>()(
           const tree = get().branchTrees[s.id]
           if (!(await ensureLineTip(s.id, findReanchorTarget(tree, keptIds) ?? tree?.currentId))) return
           reanchorBranch(s.id, keptIds)
-          patchActive({ messages: kept })
+          // シーン境界をまたいで巻き戻した場合、置き去りの後続シーン（stale な見出し・あらすじ）を
+          // scenes/currentSceneId から落とす（バグ修正。跨がなければ変更なし）
+          patchActive({ messages: kept, ...rewindScenesFor(s, kept) })
           await runCompletion(speaker)
         },
 

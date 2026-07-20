@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import { currentScene, reviewModelOf, useStore } from '../store'
 import {
   CONTINUE_PROMPT,
@@ -225,35 +226,54 @@ export default function ChatPanel({ session }: Props) {
   useEffect(() => {
     if (!scrollTarget || scrollTarget.sessionId !== session.id) return
     const { messageId } = scrollTarget
-    // 対象メッセージの属するシーンが畳まれていれば展開してから
     const msg = session.messages.find((m) => m.id === messageId)
-    if (msg?.sceneId && msg.sceneId !== session.currentSceneId) {
-      const sceneId = msg.sceneId
-      setExpanded((prev) => (prev.has(sceneId) ? prev : new Set([...prev, sceneId])))
-    }
     // 末尾 user メッセージへの自動スクロール（FB3-A3）は消費済み扱いにして抑止する
     const last = session.messages[session.messages.length - 1]
     if (last) lastScrolledRef.current = last.id
+
+    let cancelled = false
+    let raf1 = 0
     let raf2 = 0
-    const raf1 = requestAnimationFrame(() => {
-      raf2 = requestAnimationFrame(() => {
-        // マーカー等で DOM に無い id は直前の描画メッセージへ、それも無ければ末尾へフォールバック
-        const idx = session.messages.findIndex((m) => m.id === messageId)
-        let el: Element | null = null
-        for (let i = idx; i >= 0 && !el; i--) {
-          el = document.querySelector(`[data-msg-id="${session.messages[i].id}"]`)
-        }
-        if (el) {
-          el.scrollIntoView({ block: 'center' })
-          el.classList.add('msg-flash')
-          window.setTimeout(() => el!.classList.remove('msg-flash'), 2000)
-        } else {
-          anchorRef.current?.scrollIntoView()
-        }
-        useStore.setState({ scrollTarget: null })
+    const scrollToTarget = () => {
+      raf1 = requestAnimationFrame(() => {
+        raf2 = requestAnimationFrame(() => {
+          if (cancelled) return
+          // マーカー等で DOM に無い id は直前の描画メッセージへ、それも無ければ末尾へフォールバック
+          const idx = session.messages.findIndex((m) => m.id === messageId)
+          let el: Element | null = null
+          for (let i = idx; i >= 0 && !el; i--) {
+            el = document.querySelector(`[data-msg-id="${session.messages[i].id}"]`)
+          }
+          if (el) {
+            el.scrollIntoView({ block: 'center' })
+            el.classList.add('msg-flash')
+            window.setTimeout(() => el!.classList.remove('msg-flash'), 2000)
+          } else {
+            anchorRef.current?.scrollIntoView()
+          }
+          useStore.setState({ scrollTarget: null })
+        })
       })
-    })
+    }
+
+    if (msg?.sceneId && msg.sceneId !== session.currentSceneId) {
+      const sceneId = msg.sceneId
+      // 対象メッセージの属するシーンが畳まれていれば展開してから。flushSync はレンダリング中に
+      // 呼ぶと React の警告（無視できない）になるため、現在のコミットが終わるマイクロタスクへ逃がし、
+      // 直後の rAF での DOM 検索が「展開前」の古い DOM を見てしまう競合を防ぐ
+      queueMicrotask(() => {
+        if (cancelled) return
+        flushSync(() => {
+          setExpanded((prev) => (prev.has(sceneId) ? prev : new Set([...prev, sceneId])))
+        })
+        scrollToTarget()
+      })
+    } else {
+      scrollToTarget()
+    }
+
     return () => {
+      cancelled = true
       cancelAnimationFrame(raf1)
       cancelAnimationFrame(raf2)
     }
