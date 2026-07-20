@@ -16,6 +16,7 @@ import type {
   EmotionId,
   EndingDef,
   EndingRecord,
+  ExactGroupCandidate,
   ExportBundle,
   GroupSubClause,
   ImageProvider,
@@ -315,6 +316,9 @@ function mergeRoleParties(parties: RoleParty[]): RoleParty[] {
  * group 節1つを評価する（docs/設計_ロールグループと定量条件.md B-2）。
  * members はロールへ配役された参加キャラ（参加キャラ順）。quantifier で成立を判定し、
  * subject なら当事者（exactly は候補から n 人に絞る。それ以外は satisfying 全員）を返す。
+ * exactly な subject 節は満たした全員を `exactCandidates` としても返す（エンディングレビューの
+ * n 人選択 UI 用。B-5）。`exactSelections[roleId]` に有効な選択（satisfying の部分集合・ちょうど n 人）
+ * があればそれを当事者にし、無ければ参加キャラ順の先頭 n 人を既定にする。
  */
 function evalGroupClause(
   clause: Extract<Clause, { kind: 'group' }>,
@@ -323,7 +327,8 @@ function evalGroupClause(
   characterIds: string[],
   roleAssignments: RoleAssignment[] | undefined,
   characters: { id: string; name: string }[],
-): { ok: boolean; subjects: RoleParty[] } {
+  exactSelections?: Record<string, string[]>,
+): { ok: boolean; subjects: RoleParty[]; exactCandidates: ExactGroupCandidate[] } {
   const role = world?.roles?.find((r) => r.id === clause.roleId)
   const memberIds = new Set(
     (roleAssignments ?? [])
@@ -339,11 +344,25 @@ function evalGroupClause(
     q.kind === 'all'
       ? members.length > 0 && satisfying.length === members.length
       : satisfying.length >= q.n
-  if (!clause.subject || !ok) return { ok, subjects: [] }
-  const chosenIds = q.kind === 'exactly' ? satisfying.slice(0, q.n) : satisfying
+  if (!clause.subject || !ok) return { ok, subjects: [], exactCandidates: [] }
+  if (q.kind !== 'exactly') {
+    return {
+      ok,
+      subjects: [{ roleId: clause.roleId, roleName: role?.name ?? '', members: partnersOf(satisfying, characters) }],
+      exactCandidates: [],
+    }
+  }
+  const picked = exactSelections?.[clause.roleId]
+  const chosenIds =
+    picked && picked.length === q.n && picked.every((id) => satisfying.includes(id))
+      ? picked
+      : satisfying.slice(0, q.n)
   return {
     ok,
     subjects: [{ roleId: clause.roleId, roleName: role?.name ?? '', members: partnersOf(chosenIds, characters) }],
+    exactCandidates: [
+      { roleId: clause.roleId, roleName: role?.name ?? '', n: q.n, candidates: partnersOf(satisfying, characters) },
+    ],
   }
 }
 
@@ -360,19 +379,24 @@ export function matchGroups(
   characterIds: string[],
   roleAssignments: RoleAssignment[] | undefined,
   characters: { id: string; name: string }[] = [],
-): { ok: boolean; subjects: RoleParty[] } {
-  if (!cond) return { ok: false, subjects: [] }
+  exactSelections?: Record<string, string[]>,
+): { ok: boolean; subjects: RoleParty[]; exactCandidates: ExactGroupCandidate[] } {
+  if (!cond) return { ok: false, subjects: [], exactCandidates: [] }
   const clauses = 'all' in cond ? cond.all : cond.any
-  if (clauses.length === 0) return { ok: false, subjects: [] }
+  if (clauses.length === 0) return { ok: false, subjects: [], exactCandidates: [] }
   const isAll = 'all' in cond
   const results = clauses.map((c) =>
     c.kind === 'group'
-      ? evalGroupClause(c, state, world, characterIds, roleAssignments, characters)
-      : { ok: evalClause(c, state, world, characterIds), subjects: [] as RoleParty[] },
+      ? evalGroupClause(c, state, world, characterIds, roleAssignments, characters, exactSelections)
+      : { ok: evalClause(c, state, world, characterIds), subjects: [] as RoleParty[], exactCandidates: [] as ExactGroupCandidate[] },
   )
   const ok = isAll ? results.every((r) => r.ok) : results.some((r) => r.ok)
   const contributing = isAll ? results : results.filter((r) => r.ok)
-  return { ok, subjects: mergeRoleParties(contributing.flatMap((r) => r.subjects)) }
+  return {
+    ok,
+    subjects: mergeRoleParties(contributing.flatMap((r) => r.subjects)),
+    exactCandidates: contributing.flatMap((r) => r.exactCandidates),
+  }
 }
 
 /**
@@ -478,11 +502,12 @@ export function checkEndings(
   characterIds: string[],
   roleAssignments: RoleAssignment[] | undefined,
   characters: { id: string; name: string }[] = [],
-): { def: EndingDef; subjects: RoleParty[] } | undefined {
+  exactSelections?: Record<string, string[]>,
+): { def: EndingDef; subjects: RoleParty[]; exactCandidates: ExactGroupCandidate[] } | undefined {
   for (const e of endings ?? []) {
     if (e.fallback || !e.condition) continue
-    const result = matchGroups(e.condition, state, world, characterIds, roleAssignments, characters)
-    if (result.ok) return { def: e, subjects: result.subjects }
+    const result = matchGroups(e.condition, state, world, characterIds, roleAssignments, characters, exactSelections)
+    if (result.ok) return { def: e, subjects: result.subjects, exactCandidates: result.exactCandidates }
   }
   return undefined
 }
@@ -1261,6 +1286,8 @@ interface AppState {
     moodChangeIdx: number[]
     /** 到達エンディングへ進む場合の EndingDef.id（レビューで「エンディングへ進む」を選んだとき。E2） */
     endingDefId?: string
+    /** exactly な subject group 節の n 人選択（roleId→選んだ characterId 配列。レビューのプルダウン。B-5） */
+    endingExactSelections?: Record<string, string[]>
   }) => void
   /**
    * エピローグシーンを締めて物語を完結する（E2）。レビューをスキップして scene.endedAt をセットし、
@@ -3247,7 +3274,15 @@ export const useStore = create<AppState>()(
           // checkEndings は「最上位成立エンディング」の当事者組を返す
           const topMatch = s.ending
             ? undefined
-            : checkEndings(endings, newState, stateWorld, s.characterIds, s.roleAssignments, characters)
+            : checkEndings(
+                endings,
+                newState,
+                stateWorld,
+                s.characterIds,
+                s.roleAssignments,
+                characters,
+                opts.endingExactSelections,
+              )
           // 満了モード：確定後に進む先が totalDays を超えるか（enabled かつ totalDays 指定時のみ）
           const isExpiry =
             !s.ending &&
@@ -3268,7 +3303,15 @@ export const useStore = create<AppState>()(
               if (chosen?.fallback) {
                 if (isExpiry) firing = chosen
               } else if (chosen) {
-                const result = matchGroups(chosen.condition, newState, stateWorld, s.characterIds, s.roleAssignments, characters)
+                const result = matchGroups(
+                  chosen.condition,
+                  newState,
+                  stateWorld,
+                  s.characterIds,
+                  s.roleAssignments,
+                  characters,
+                  opts.endingExactSelections,
+                )
                 if (result.ok) {
                   firing = chosen
                   firingSubjects = result.subjects

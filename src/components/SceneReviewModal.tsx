@@ -73,6 +73,8 @@ export default function SceneReviewModal() {
   )
   // 到達エンディングへ「進む」か（auto は選択なし＝常に進む。既定は保守側＝まだ続ける／満了時は進む）
   const [endingGo, setEndingGo] = useState(false)
+  // exactly な subject group 節の n 人選択（roleId→選んだ characterId 配列。エンディングレビューのプルダウン。B-5）
+  const [exactPicks, setExactPicks] = useState<Record<string, string[]>>({})
 
   // 到達プレビュー（E2）。選択を確定した場合の次 state を applyReviewToState で計算し、
   // checkEndings＋満了判定でどの結末に到達するかを求める。編集後の値と一致させるため
@@ -95,8 +97,16 @@ export default function SceneReviewModal() {
       session.roleAssignments,
       characters,
     )
-    // checkEndings は最上位成立エンディングの当事者組を返す
-    const top = checkEndings(endings, applied.state, world, session.characterIds, session.roleAssignments, characters)
+    // checkEndings は最上位成立エンディングの当事者組を返す（exactPicks の n 人選択を反映）
+    const top = checkEndings(
+      endings,
+      applied.state,
+      world,
+      session.characterIds,
+      session.roleAssignments,
+      characters,
+      exactPicks,
+    )
     const tlNext = session.timeline.enabled ? advanceTimeline(session.timeline) : null
     const isExpiry = !!(
       tlNext &&
@@ -113,13 +123,32 @@ export default function SceneReviewModal() {
       isExpiry,
       isFallback: !!candidate.fallback,
       subjects: top?.def.id === candidate.id ? top.subjects : [],
+      exactCandidates: top?.def.id === candidate.id ? top.exactCandidates : [],
     }
-  }, [session, isPastScene, world, characters, draft, relUpdSel, statSel, counterSel, moodSel])
+  }, [session, isPastScene, world, characters, draft, relUpdSel, statSel, counterSel, moodSel, exactPicks])
 
   // 候補が変わったら既定選択を更新（満了時は「進む」・通常は「まだ続ける」を既定にする）
   useEffect(() => {
     if (endingPreview && !endingPreview.auto) setEndingGo(endingPreview.isExpiry)
   }, [endingPreview?.candidate.id, endingPreview?.isExpiry, endingPreview?.auto])
+
+  // exactly な subject group 節の既定選択（参加キャラ順の先頭 n 人）を埋める。
+  // 既にユーザーが選んだ分（長さが n と一致）はそのまま保持する
+  useEffect(() => {
+    const ec = endingPreview?.exactCandidates ?? []
+    if (ec.length === 0) return
+    setExactPicks((prev) => {
+      let changed = false
+      const next = { ...prev }
+      for (const c of ec) {
+        if (!next[c.roleId] || next[c.roleId].length !== c.n) {
+          next[c.roleId] = c.candidates.slice(0, c.n).map((p) => p.characterId)
+          changed = true
+        }
+      }
+      return changed ? next : prev
+    })
+  }, [endingPreview?.exactCandidates])
 
   // 別のレビュー（別シーン）に切り替わったときだけ全体をリセット。
   // 候補だけ再生成した場合は編集中の内容を保持する。
@@ -134,6 +163,7 @@ export default function SceneReviewModal() {
     setStatSel(new Set(review.statChanges.map((_, i) => i)))
     setCounterSel(new Set(review.counterEvents.map((_, i) => i)))
     setMoodSel(new Set(review.moodChanges.map((_, i) => i)))
+    setExactPicks({})
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [review.sceneId])
 
@@ -173,6 +203,14 @@ export default function SceneReviewModal() {
   const updMood = (i: number, mood: string) =>
     setDraft((d) => ({ ...d, moodChanges: mapAt(d.moodChanges, i, { mood }) }))
 
+  // exactly な subject group 節の n 人目の選択を差し替える（同ロールの他の枠と重複はさせない。UI 側で候補を除外）
+  const setExactPick = (roleId: string, idx: number, characterId: string) =>
+    setExactPicks((prev) => {
+      const arr = [...(prev[roleId] ?? [])]
+      arr[idx] = characterId
+      return { ...prev, [roleId]: arr }
+    })
+
   // エンディングへ進むか（auto は強制。それ以外は endingGo で選択）
   const goEnding = !!endingPreview && (endingPreview.auto || endingGo)
 
@@ -194,6 +232,7 @@ export default function SceneReviewModal() {
       counterEventIdx: [...counterSel],
       moodChangeIdx: [...moodSel],
       endingDefId: goEnding ? endingPreview!.candidate.id : undefined,
+      endingExactSelections: goEnding ? exactPicks : undefined,
     })
   }
 
@@ -315,6 +354,41 @@ export default function SceneReviewModal() {
                   )}
                 </div>
               )}
+
+              {/* exactly な subject group 節の当事者選択（B-5）。満たした全員から n 人をプルダウンで選ぶ */}
+              {endingPreview &&
+                endingPreview.exactCandidates.map((c) => (
+                  <div className="field" key={c.roleId}>
+                    <label>
+                      👥 {c.roleName || '無名ロール'}を{c.n}人選択
+                    </label>
+                    <div className="desc">
+                      条件を満たした{c.candidates.length}人からエピローグの当事者にする{c.n}人を選びます。
+                    </div>
+                    <div className="review-cards">
+                      {Array.from({ length: c.n }).map((_, idx) => {
+                        const picks = exactPicks[c.roleId] ?? []
+                        const current = picks[idx] ?? ''
+                        return (
+                          <select
+                            key={idx}
+                            value={current}
+                            style={{ background: 'var(--bg)' }}
+                            onChange={(e) => setExactPick(c.roleId, idx, e.target.value)}
+                          >
+                            {c.candidates
+                              .filter((p) => p.characterId === current || !picks.includes(p.characterId))
+                              .map((p) => (
+                                <option key={p.characterId} value={p.characterId}>
+                                  {p.name}
+                                </option>
+                              ))}
+                          </select>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))}
 
               {/* 特別イベントの発生（FB3-C。世界観イベントに一本化・自動発生の告知のみ） */}
               {review.scheduledEventName && (

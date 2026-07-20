@@ -204,6 +204,18 @@ export interface PartyRef {
   characterIds: string[]
 }
 
+/**
+ * `exactly n` な subject group 節の候補集合（`matchGroups` が返す）。
+ * 満たしたメンバー全員（`candidates`）から n 人を選ぶ UI（エンディングレビューのプルダウン。B-5）に使う。
+ * 実績は自動解除で選択 UI が無いため `exactly` を `atLeast` へ読み替え、候補は出ない。
+ */
+export interface ExactGroupCandidate {
+  roleId: string
+  roleName: string
+  n: number
+  candidates: Partner[]
+}
+
 /** 実績の定義（ワールド固定）。condition を満たすとコードが自動で達成記録する。 */
 export interface AchievementDef {
   id: string
