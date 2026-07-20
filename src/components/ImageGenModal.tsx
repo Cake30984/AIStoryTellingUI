@@ -37,8 +37,10 @@ interface Props {
   title: string
   /** プロンプト起案に使う文脈（system/user）。省略時は起案ボタン非表示 */
   draftContext?: { system: string; user: string; modelRef: string }
-  /** 初期プロンプト（キャラの imagePrompt 等） */
+  /** 初期プロンプト（キャラの imagePrompt 等。再生成時は元の記録のプロンプト） */
   initialPrompt?: string
+  /** 初期ネガティブプロンプト（再生成時は元の記録のネガティブ） */
+  initialNegative?: string
   /** 生成ジョブの保存先。採用時に store の applyImageJobResult が保存先ごとに分岐する */
   target: ImageJobTarget
   /** ジョブ一覧・通知に出すラベル（例: '挿絵: 放課後の屋上'） */
@@ -50,7 +52,17 @@ interface Props {
   onClose: () => void
 }
 
-export default function ImageGenModal({ title, draftContext, initialPrompt, target, label, defaultSizeIdx, pinTags, onClose }: Props) {
+export default function ImageGenModal({
+  title,
+  draftContext,
+  initialPrompt,
+  initialNegative,
+  target,
+  label,
+  defaultSizeIdx,
+  pinTags,
+  onClose,
+}: Props) {
   const {
     imageProviders,
     providers,
@@ -70,7 +82,7 @@ export default function ImageGenModal({ title, draftContext, initialPrompt, targ
   const [sizeIdx, setSizeIdx] = useState(defaultSizeIdx ?? 0)
   const [count, setCount] = useState(1)
   const [prompt, setPrompt] = useState(initialPrompt ?? '')
-  const [negative, setNegative] = useState('')
+  const [negative, setNegative] = useState(initialNegative ?? '')
   const [draftModel, setDraftModel] = useState(lastDraftModel || draftContext?.modelRef || '')
   const [showModelPicker, setShowModelPicker] = useState(false)
   const [drafting, setDrafting] = useState(false)

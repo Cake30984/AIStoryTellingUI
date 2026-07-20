@@ -13,6 +13,8 @@ interface Props {
   session: Session
   onEditStatus: () => void
   onEditDiscovery: (scope: DiscoveryScope) => void
+  onRegenerateIllustration: (sceneId: string, messageId: string | undefined, prompt: string, negative?: string) => void
+  onRegenerateBackground: (sceneId: string, prompt: string, negative?: string) => void
 }
 
 const TITLES: Record<DockTab, string> = {
@@ -27,7 +29,13 @@ const DOCK_MIN = 300
 const DOCK_MAX = 560
 
 /** 右コンテキストドック（UI-3）。状態・発見・ギャラリー・分岐・ジョブを1タブぶん常駐表示する */
-export default function ContextDock({ session, onEditStatus, onEditDiscovery }: Props) {
+export default function ContextDock({
+  session,
+  onEditStatus,
+  onEditDiscovery,
+  onRegenerateIllustration,
+  onRegenerateBackground,
+}: Props) {
   const { ui, setUiPrefs } = useStore()
   const tab = ui.dockTab
   const dockRef = useRef<HTMLDivElement>(null)
@@ -73,7 +81,13 @@ export default function ContextDock({ session, onEditStatus, onEditDiscovery }: 
       <div className="dock-body">
         {tab === 'status' && <StatusView session={session} />}
         {tab === 'discovery' && <DiscoveryView session={session} onEdit={onEditDiscovery} />}
-        {tab === 'gallery' && <GalleryBody session={session} />}
+        {tab === 'gallery' && (
+          <GalleryBody
+            session={session}
+            onRegenerateIllustration={onRegenerateIllustration}
+            onRegenerateBackground={onRegenerateBackground}
+          />
+        )}
         {tab === 'branch' && <BranchTreeBody session={session} />}
         {tab === 'jobs' && <ImageJobsBody />}
       </div>

@@ -20,13 +20,66 @@ const THUMB_BADGE_STYLE: CSSProperties = {
   color: '#fff',
 }
 
-/** ギャラリー内の挿絵1枚（サムネイル→クリックで拡大・保存・本文から外す） */
+/**
+ * 拡大表示のキャプション共通部（プロンプト・日時・再生成ボタン）。
+ * positive/negative それぞれ見出し＋グレー背景ボックスで表示する（FB7-A追修）。
+ * GalleryModal・ChatPanel の挿絵表示から共用する。
+ */
+export function PromptCaption({
+  heading,
+  prompt,
+  negative,
+  createdAt,
+  onRegenerate,
+}: {
+  heading?: string
+  prompt?: string
+  negative?: string
+  createdAt?: number
+  onRegenerate?: () => void
+}) {
+  return (
+    <>
+      {heading && (
+        <p className="desc" style={{ marginTop: 8 }}>
+          {heading}
+        </p>
+      )}
+      {prompt && (
+        <div className="prompt-box">
+          <div className="prompt-box-label">positive:</div>
+          <div className="prompt-box-text">{prompt}</div>
+        </div>
+      )}
+      {negative && (
+        <div className="prompt-box">
+          <div className="prompt-box-label">negative:</div>
+          <div className="prompt-box-text">{negative}</div>
+        </div>
+      )}
+      {onRegenerate && (prompt || negative) && (
+        <button className="btn" style={{ marginTop: 8 }} onClick={onRegenerate}>
+          <Icon name="refresh-cw" size={13} /> 同じプロンプトで再生成
+        </button>
+      )}
+      {createdAt !== undefined && (
+        <p className="desc" style={{ marginTop: 8 }}>
+          {new Date(createdAt).toLocaleString()}
+        </p>
+      )}
+    </>
+  )
+}
+
+/** ギャラリー内の挿絵1枚（サムネイル→クリックで拡大・保存・本文から外す・再生成） */
 function GalleryThumb({
   ill,
   onRemove,
+  onRegenerate,
 }: {
   ill: SceneIllustration
   onRemove: () => void
+  onRegenerate: () => void
 }) {
   const url = useImageUrl(ill.imageId)
   const [zoom, setZoom] = useState(false)
@@ -66,17 +119,15 @@ function GalleryThumb({
           url={url}
           onClose={() => setZoom(false)}
           caption={
-            <>
-              <p className="desc" style={{ marginTop: 8, whiteSpace: 'pre-wrap' }}>
-                {ill.prompt}
-              </p>
-              {ill.negative && (
-                <p className="desc" style={{ whiteSpace: 'pre-wrap' }}>
-                  ネガティブ: {ill.negative}
-                </p>
-              )}
-              <p className="desc">{new Date(ill.createdAt).toLocaleString()}</p>
-            </>
+            <PromptCaption
+              prompt={ill.prompt}
+              negative={ill.negative}
+              createdAt={ill.createdAt}
+              onRegenerate={() => {
+                setZoom(false)
+                onRegenerate()
+              }}
+            />
           }
         />
       )}
@@ -84,8 +135,21 @@ function GalleryThumb({
   )
 }
 
-/** ギャラリー内の背景1枚（サムネイル→クリックで拡大・保存・外す。V5b） */
-function BackgroundThumb({ imageId, sceneId, onRemove }: { imageId: string; sceneId: string; onRemove: () => void }) {
+/** ギャラリー内の背景1枚（サムネイル→クリックで拡大・保存・外す・再生成。V5b） */
+function BackgroundThumb({
+  imageId,
+  sceneId,
+  record,
+  onRemove,
+  onRegenerate,
+}: {
+  imageId: string
+  sceneId: string
+  /** 採用時の永続記録（プロンプト・ネガティブの参照元。旧データ等で見つからない場合あり） */
+  record?: SessionImageRecord
+  onRemove: () => void
+  onRegenerate: () => void
+}) {
   const url = useImageUrl(imageId)
   const [zoom, setZoom] = useState(false)
   if (!url) return null
@@ -120,7 +184,23 @@ function BackgroundThumb({ imageId, sceneId, onRemove }: { imageId: string; scen
           <Icon name="trash-2" size={14} />
         </button>
       </div>
-      {zoom && <ZoomOverlay url={url} onClose={() => setZoom(false)} />}
+      {zoom && (
+        <ZoomOverlay
+          url={url}
+          onClose={() => setZoom(false)}
+          caption={
+            <PromptCaption
+              prompt={record?.prompt}
+              negative={record?.negative}
+              createdAt={record?.createdAt}
+              onRegenerate={() => {
+                setZoom(false)
+                onRegenerate()
+              }}
+            />
+          }
+        />
+      )}
     </div>
   )
 }
@@ -130,11 +210,14 @@ function RecordThumb({
   record,
   placed,
   onRemove,
+  onRegenerate,
 }: {
   record: SessionImageRecord
   /** 現在の分岐の本文に配置されているか */
   placed: boolean
   onRemove: () => void
+  /** 対象シーンが現存する場合のみ渡される（再生成の投入先が無いと開けないため） */
+  onRegenerate?: () => void
 }) {
   const url = useImageUrl(record.imageId)
   const [zoom, setZoom] = useState(false)
@@ -180,24 +263,20 @@ function RecordThumb({
           url={url}
           onClose={() => setZoom(false)}
           caption={
-            <>
-              {heading && (
-                <p className="desc" style={{ marginTop: 8 }}>
-                  {heading}
-                </p>
-              )}
-              {record.prompt && (
-                <p className="desc" style={{ whiteSpace: 'pre-wrap' }}>
-                  {record.prompt}
-                </p>
-              )}
-              {record.negative && (
-                <p className="desc" style={{ whiteSpace: 'pre-wrap' }}>
-                  ネガティブ: {record.negative}
-                </p>
-              )}
-              <p className="desc">{new Date(record.createdAt).toLocaleString()}</p>
-            </>
+            <PromptCaption
+              heading={heading}
+              prompt={record.prompt}
+              negative={record.negative}
+              createdAt={record.createdAt}
+              onRegenerate={
+                onRegenerate
+                  ? () => {
+                      setZoom(false)
+                      onRegenerate()
+                    }
+                  : undefined
+              }
+            />
           }
         />
       )}
@@ -209,7 +288,17 @@ function RecordThumb({
  * シーンごとに挿絵・背景をグリッド表示するギャラリー本体（V3・V5b。UI-3 でコンテキストドックへ移設）。
  * FB6-A で「この分岐（従来表示）／すべての記録（分岐から独立した永続アルバム）」のタブ切替を追加。
  */
-export function GalleryBody({ session }: { session: Session }) {
+export function GalleryBody({
+  session,
+  onRegenerateIllustration,
+  onRegenerateBackground,
+}: {
+  session: Session
+  /** 再生成モーダルを開く（挿絵）。messageId は元の記録のアンカー */
+  onRegenerateIllustration: (sceneId: string, messageId: string | undefined, prompt: string, negative?: string) => void
+  /** 再生成モーダルを開く（背景） */
+  onRegenerateBackground: (sceneId: string, prompt: string, negative?: string) => void
+}) {
   const { removeIllustration, removeSceneBackground, deleteImageRecord, sessionImageLogs } = useStore()
   const [tab, setTab] = useState<'branch' | 'all'>('branch')
 
@@ -219,6 +308,14 @@ export function GalleryBody({ session }: { session: Session }) {
   )
 
   const sceneHeading = (sc: Scene) => [sc.timeLabel, sc.title].filter(Boolean).join('｜') || 'シーン'
+
+  // 背景の採用記録は Scene に直接持たないため、永続記録から imageId で引く（最新のものを優先）
+  const backgroundRecordByImageId = new Map<string, SessionImageRecord>()
+  for (const r of records) {
+    if (r.kind === 'background' && !backgroundRecordByImageId.has(r.imageId)) {
+      backgroundRecordByImageId.set(r.imageId, r)
+    }
+  }
 
   const branchView = () =>
     scenesWithImages.length === 0 ? (
@@ -235,7 +332,12 @@ export function GalleryBody({ session }: { session: Session }) {
                 <BackgroundThumb
                   imageId={sc.backgroundImageId}
                   sceneId={sc.id}
+                  record={backgroundRecordByImageId.get(sc.backgroundImageId)}
                   onRemove={() => removeSceneBackground(session.id, sc.id)}
+                  onRegenerate={() => {
+                    const r = backgroundRecordByImageId.get(sc.backgroundImageId!)
+                    onRegenerateBackground(sc.id, r?.prompt ?? '', r?.negative)
+                  }}
                 />
               )}
               {(sc.illustrations ?? []).map((ill) => (
@@ -243,6 +345,7 @@ export function GalleryBody({ session }: { session: Session }) {
                   key={ill.id}
                   ill={ill}
                   onRemove={() => removeIllustration(session.id, sc.id, ill.id)}
+                  onRegenerate={() => onRegenerateIllustration(sc.id, ill.messageId, ill.prompt, ill.negative)}
                 />
               ))}
             </div>
@@ -260,17 +363,30 @@ export function GalleryBody({ session }: { session: Session }) {
       )
     }
     const placedIds = new Set(sessionImageIds(session))
+    const sceneIds = new Set(session.scenes.map((sc) => sc.id))
     const sorted = [...records].sort((a, b) => b.createdAt - a.createdAt)
     return (
       <div className="job-thumbs">
-        {sorted.map((r) => (
-          <RecordThumb
-            key={r.id}
-            record={r}
-            placed={placedIds.has(r.imageId)}
-            onRemove={() => deleteImageRecord(session.id, r.id)}
-          />
-        ))}
+        {sorted.map((r) => {
+          // 記録元のシーンが現存する時のみ再生成を出す（削除済みシーンには投入先が無い）
+          const canRegenerate = !!r.sceneId && sceneIds.has(r.sceneId)
+          return (
+            <RecordThumb
+              key={r.id}
+              record={r}
+              placed={placedIds.has(r.imageId)}
+              onRemove={() => deleteImageRecord(session.id, r.id)}
+              onRegenerate={
+                canRegenerate
+                  ? () =>
+                      r.kind === 'illustration'
+                        ? onRegenerateIllustration(r.sceneId!, r.messageId, r.prompt, r.negative)
+                        : onRegenerateBackground(r.sceneId!, r.prompt, r.negative)
+                  : undefined
+              }
+            />
+          )
+        })}
       </div>
     )
   }

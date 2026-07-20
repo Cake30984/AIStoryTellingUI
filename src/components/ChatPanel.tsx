@@ -30,6 +30,7 @@ import ContextDock from './ContextDock'
 import ReaderSettings from './ReaderSettings'
 import { StructuredChatBody, StructuredNovelBody } from './StructuredMessage'
 import ZoomOverlay from './ZoomOverlay'
+import { PromptCaption } from './GalleryModal'
 import { Icon } from './icons'
 import MenuPopover from './MenuPopover'
 import ActivityIndicator from './ActivityIndicator'
@@ -38,8 +39,16 @@ interface Props {
   session: Session
 }
 
-/** 挿絵1枚の表示（保存・削除・クリック拡大） */
-function IllustrationView({ ill, onRemove }: { ill: SceneIllustration; onRemove: () => void }) {
+/** 挿絵1枚の表示（保存・削除・クリック拡大・再生成） */
+function IllustrationView({
+  ill,
+  onRemove,
+  onRegenerate,
+}: {
+  ill: SceneIllustration
+  onRemove: () => void
+  onRegenerate: () => void
+}) {
   const url = useImageUrl(ill.imageId)
   const [zoom, setZoom] = useState(false)
   if (!url) return null
@@ -78,7 +87,23 @@ function IllustrationView({ ill, onRemove }: { ill: SceneIllustration; onRemove:
           <Icon name="trash-2" size={14} />
         </button>
       </div>
-      {zoom && <ZoomOverlay url={url} onClose={() => setZoom(false)} />}
+      {zoom && (
+        <ZoomOverlay
+          url={url}
+          onClose={() => setZoom(false)}
+          caption={
+            <PromptCaption
+              prompt={ill.prompt}
+              negative={ill.negative}
+              createdAt={ill.createdAt}
+              onRegenerate={() => {
+                setZoom(false)
+                onRegenerate()
+              }}
+            />
+          }
+        />
+      )}
     </figure>
   )
 }
@@ -125,8 +150,12 @@ export default function ChatPanel({ session }: Props) {
   const [showStatus, setShowStatus] = useState(false)
   const [discoveryScope, setDiscoveryScope] = useState<DiscoveryScope | null>(null)
   // 挿絵・背景の生成対象（FB6-B。null=閉。過去シーン・任意メッセージをアンカーに後付け生成できる）
-  const [illustGenFor, setIllustGenFor] = useState<{ sceneId: string; messageId?: string } | null>(null)
-  const [bgGenFor, setBgGenFor] = useState<{ sceneId: string } | null>(null)
+  const [illustGenFor, setIllustGenFor] = useState<
+    { sceneId: string; messageId?: string; regenPrompt?: string; regenNegative?: string } | null
+  >(null)
+  const [bgGenFor, setBgGenFor] = useState<
+    { sceneId: string; regenPrompt?: string; regenNegative?: string } | null
+  >(null)
   const [showCassetteEditor, setShowCassetteEditor] = useState(false)
   const [showMenu, setShowMenu] = useState(false)
   const [showFinale, setShowFinale] = useState(false)
@@ -500,7 +529,14 @@ export default function ChatPanel({ session }: Props) {
       }
     }
     const illView = (ill: SceneIllustration) => (
-      <IllustrationView key={ill.id} ill={ill} onRemove={() => removeIllustration(session.id, sc.id, ill.id)} />
+      <IllustrationView
+        key={ill.id}
+        ill={ill}
+        onRemove={() => removeIllustration(session.id, sc.id, ill.id)}
+        onRegenerate={() =>
+          setIllustGenFor({ sceneId: sc.id, messageId: ill.messageId, regenPrompt: ill.prompt, regenNegative: ill.negative })
+        }
+      />
     )
     // マーカーは本文を持たず、ターンの境目に薄い水平線（.gen-divider）だけを描く。
     // 小説形式ではユーザー入力の前にも線を1本入れる。シーン先頭（＝直前に本文が無い）では線を出さない（A2）
@@ -988,6 +1024,12 @@ export default function ChatPanel({ session }: Props) {
           session={session}
           onEditStatus={() => setShowStatus(true)}
           onEditDiscovery={(scope) => setDiscoveryScope(scope)}
+          onRegenerateIllustration={(sceneId, messageId, prompt, negative) =>
+            setIllustGenFor({ sceneId, messageId, regenPrompt: prompt, regenNegative: negative })
+          }
+          onRegenerateBackground={(sceneId, prompt, negative) =>
+            setBgGenFor({ sceneId, regenPrompt: prompt, regenNegative: negative })
+          }
         />
       </div>
 
@@ -1037,7 +1079,13 @@ export default function ChatPanel({ session }: Props) {
           }
           return (
             <ImageGenModal
-              title={illustGenFor.messageId ? 'この位置に挿絵を生成' : 'この場面の挿絵を生成'}
+              title={
+                illustGenFor.regenPrompt
+                  ? '同じプロンプトで挿絵を再生成'
+                  : illustGenFor.messageId
+                    ? 'この位置に挿絵を生成'
+                    : 'この場面の挿絵を生成'
+              }
               draftContext={{
                 system: illustrationPromptSystem(),
                 user: illustrationContextUser({
@@ -1053,7 +1101,10 @@ export default function ChatPanel({ session }: Props) {
                 }),
                 modelRef: reviewModelOf(session),
               }}
-              initialPrompt={cast.map((c) => c.imagePrompt).filter(Boolean).join(', ')}
+              initialPrompt={
+                illustGenFor.regenPrompt ?? cast.map((c) => c.imagePrompt).filter(Boolean).join(', ')
+              }
+              initialNegative={illustGenFor.regenNegative}
               target={{
                 type: 'scene-illustration',
                 sessionId: session.id,
@@ -1071,7 +1122,7 @@ export default function ChatPanel({ session }: Props) {
           if (!sc) return null
           return (
             <ImageGenModal
-              title="場面の背景を生成"
+              title={bgGenFor.regenPrompt ? '同じプロンプトで背景を再生成' : '場面の背景を生成'}
               draftContext={{
                 system: backgroundPromptSystem(),
                 user: backgroundContextUser({
@@ -1086,6 +1137,8 @@ export default function ChatPanel({ session }: Props) {
                 modelRef: reviewModelOf(session),
               }}
               defaultSizeIdx={1}
+              initialPrompt={bgGenFor.regenPrompt}
+              initialNegative={bgGenFor.regenNegative}
               target={{ type: 'scene-background', sessionId: session.id, sceneId: sc.id }}
               label={`背景: ${sc.title || 'シーン'}`}
               onClose={() => setBgGenFor(null)}
