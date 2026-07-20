@@ -10,6 +10,8 @@ import CassetteEditor from './CassetteEditor'
 import ModalShell from './ModalShell'
 import { Icon } from './icons'
 import CastingFields from './CastingFields'
+import IntroTagDefEditor from './IntroTagDefEditor'
+import IntroTagFields from './IntroTagFields'
 
 type PickerTarget = 'review' | 'choices' | 'bulk'
 type Tab = 'basic' | 'progress' | 'model' | 'output'
@@ -66,6 +68,7 @@ export default function SessionEditor({ session, onClose }: Props) {
       worldId: d.worldId,
       personaId: d.personaId,
       roleAssignments: d.roleAssignments,
+      introBindings: d.introBindings,
       authorNote: d.authorNote,
       story: d.story,
       scenes,
@@ -288,6 +291,18 @@ export default function SessionEditor({ session, onClose }: Props) {
                       onChange={(e) => patch({ story: { ...d.story, opening: e.target.value } })}
                     />
                   </div>
+                  <IntroTagDefEditor
+                    tags={d.story.introTags ?? []}
+                    onChange={(introTags) => patch({ story: { ...d.story, introTags } })}
+                    opening={d.story.opening}
+                    onOpeningChange={(opening) => patch({ story: { ...d.story, opening } })}
+                  />
+                  <IntroTagFields
+                    session={d}
+                    characters={characters}
+                    personas={personas}
+                    onChange={(introBindings) => patch({ introBindings })}
+                  />
                   <CastingFields
                     session={d}
                     world={worlds.find((world) => world.id === d.worldId)}

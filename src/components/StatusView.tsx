@@ -1,4 +1,5 @@
 import { bindPartnerNames, partnersOf, useStore } from '../store'
+import { roleMembers } from '../lib/casting'
 import type { Session } from '../types'
 import EntityAvatar from './EntityAvatar'
 
@@ -15,10 +16,10 @@ export default function StatusView({ session }: Props) {
     .map((id) => characters.find((c) => c.id === id))
     .filter((c): c is NonNullable<typeof c> => !!c)
   const aspectName = (id: string) => world?.relationAspects.find((a) => a.id === id)?.name ?? ''
-  const assignmentByRole = new Map((session.roleAssignments ?? []).map((assignment) => [assignment.roleId, assignment.characterId]))
+  const membersByRole = roleMembers(world?.roles, session.roleAssignments, characters)
   const rolesOf = (characterId: string) =>
     (world?.roles ?? [])
-      .filter((role) => assignmentByRole.get(role.id) === characterId)
+      .filter((role) => (membersByRole.get(role.id) ?? []).some((c) => c.id === characterId))
       .map((role) => role.name)
       .filter(Boolean)
 

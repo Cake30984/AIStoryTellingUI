@@ -8,6 +8,8 @@ import ModalShell from './ModalShell'
 import EntityAvatar from './EntityAvatar'
 import { Icon } from './icons'
 import CastingFields from './CastingFields'
+import IntroTagDefEditor from './IntroTagDefEditor'
+import IntroTagFields from './IntroTagFields'
 
 type Tab = 'basic' | 'world' | 'cast' | 'persona' | 'start'
 
@@ -332,6 +334,18 @@ export default function CassetteEditor({ cassette, seedSession, onClose }: Props
                   onChange={(e) => patchSession({ story: { ...s.story, opening: e.target.value } })}
                 />
               </div>
+              <IntroTagDefEditor
+                tags={s.story.introTags ?? []}
+                onChange={(introTags) => patchSession({ story: { ...s.story, introTags } })}
+                opening={s.story.opening}
+                onOpeningChange={(opening) => patchSession({ story: { ...s.story, opening } })}
+              />
+              <IntroTagFields
+                session={s}
+                characters={characters}
+                personas={personas}
+                onChange={(introBindings) => patchSession({ introBindings })}
+              />
               <CastingFields
                 session={s}
                 world={world}

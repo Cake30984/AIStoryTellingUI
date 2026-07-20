@@ -90,9 +90,11 @@ import { extractJson } from './lib/json'
 import { defaultOpenRouterProvider, parseModelRef } from './lib/providers'
 import {
   castingIssueLabel,
+  normalizeIntroBindings,
+  normalizeIntroTags,
   normalizeRoleAssignments,
   normalizeWorldRoles,
-  resolveCasting,
+  resolveIntroText,
   validateCasting,
 } from './lib/casting'
 
@@ -698,6 +700,7 @@ export function hasStartPreset(world: World | undefined | null): boolean {
     p.openingTitle?.trim() ||
     p.initialDirective?.trim() ||
     p.authorNote?.trim() ||
+    (p.introTags?.length ?? 0) > 0 ||
     (p.timeline && p.timeline.slots.length > 0)
   )
 }
@@ -737,6 +740,10 @@ export function startPresetPatch(d: Session, world: World, overwrite: boolean): 
     }
     if (p.initialDirective?.trim() && (overwrite || !(d.story.initialDirective ?? '').trim())) {
       story.initialDirective = p.initialDirective
+      changed = true
+    }
+    if ((p.introTags?.length ?? 0) > 0 && (overwrite || !(d.story.introTags?.length ?? 0))) {
+      story.introTags = p.introTags
       changed = true
     }
     if (changed) patch.story = story
@@ -869,6 +876,7 @@ function newSession(mode: SessionMode): Session {
     worldId: null,
     personaId: null,
     roleAssignments: [],
+    introBindings: [],
     authorNote: '',
     story: { premise: '', genre: '', opening: '', openingTitle: '', initialDirective: '' },
     scenes: [scene],
@@ -3546,12 +3554,12 @@ export const useStore = create<AppState>()(
           const scene = currentScene(s)
           if (!scene) return
 
-          // 導入文は開始前にだけ配役を実名へ解決する。未解決のまま履歴・チェックポイント・イベント消化を
-          // 作らないことで、@ロール名が few-shot としてモデルへ流れるのを防ぐ。
+          // 導入文は開始前にだけ置換タグを実名へ解決する。未解決のまま履歴・チェックポイント・イベント消化を
+          // 作らないことで、@タグが few-shot としてモデルへ流れるのを防ぐ（A-1）。
           const openingTemplate = s.mode === 'story' ? s.story.opening.trim() : ''
           const refs = resolveRefs(s)
           let opening = openingTemplate
-          // roleplay では導入文を掲載しないため、残存する導入文中の @ロール名 で開始をブロックしない
+          // roleplay では導入文を掲載しないため、残存する導入文中の @タグ で開始をブロックしない
           // （required ロールは opening 非依存なので、そのまま開始ブロッカーとして機能する）
           const validationSession =
             s.mode === 'story' ? s : { ...s, story: { ...s.story, opening: '' } }
@@ -3561,9 +3569,9 @@ export const useStore = create<AppState>()(
             return
           }
           if (openingTemplate) {
-            const resolved = resolveCasting(openingTemplate, {
-              roles: refs.world?.roles,
-              assignments: s.roleAssignments,
+            const resolved = resolveIntroText(openingTemplate, {
+              tags: s.story.introTags,
+              bindings: s.introBindings,
               characters: get().characters.filter((c) => s.characterIds.includes(c.id)),
               persona: refs.persona,
             })
@@ -3879,10 +3887,15 @@ export const useStore = create<AppState>()(
             achievements: Array.isArray(w.achievements) ? w.achievements : [],
             roles: normalizeWorldRoles(w.roles),
             endings: Array.isArray(w.endings) ? w.endings : [],
+            ...(w.startPreset
+              ? { startPreset: { ...w.startPreset, introTags: normalizeIntroTags(w.startPreset.introTags) } }
+              : {}),
           }))
           const incomingSessions = (bundle.sessions ?? []).map((sess: any) => ({
             ...sess,
             roleAssignments: normalizeRoleAssignments(sess.roleAssignments),
+            introBindings: normalizeIntroBindings(sess.introBindings),
+            story: { ...sess.story, introTags: normalizeIntroTags(sess.story?.introTags) },
             overlay:
               sess.overlay && Array.isArray(sess.overlay.lore) && Array.isArray(sess.overlay.characterDevelopments)
                 ? sess.overlay
@@ -3908,6 +3921,11 @@ export const useStore = create<AppState>()(
                     ? {
                         ...cassette.session,
                         roleAssignments: normalizeRoleAssignments(cassette.session.roleAssignments),
+                        introBindings: normalizeIntroBindings(cassette.session.introBindings),
+                        story: {
+                          ...cassette.session.story,
+                          introTags: normalizeIntroTags(cassette.session.story?.introTags),
+                        },
                       }
                     : cassette.session,
                 })),
@@ -4384,27 +4402,44 @@ export const useStore = create<AppState>()(
         merged.worlds = (merged.worlds ?? []).map((world) => ({
           ...world,
           roles: normalizeWorldRoles(world.roles),
+          ...(world.startPreset
+            ? { startPreset: { ...world.startPreset, introTags: normalizeIntroTags(world.startPreset.introTags) } }
+            : {}),
         }))
         merged.sessions = (merged.sessions ?? []).map((s) => {
-          // story に opening/openingTitle を後方補完（旧セッションは undefined のため .trim() が例外になる。FB2-B）
+          // story に opening/openingTitle を後方補完（旧セッションは undefined のため .trim() が例外になる。FB2-B）。
+          // s.story を先に spread してから既定値を当てることで initialDirective 等の他フィールドを落とさない。
           const story = {
+            ...s.story,
             premise: s.story?.premise ?? '',
             genre: s.story?.genre ?? '',
             opening: s.story?.opening ?? '',
             openingTitle: s.story?.openingTitle ?? '',
+            introTags: normalizeIntroTags(s.story?.introTags),
           }
           const messages = s.messages.some((m) => m.pending)
             ? s.messages
                 .filter((m) => !(m.pending && !m.content.trim()))
                 .map((m) => (m.pending ? { ...m, pending: false, truncated: true } : m))
             : s.messages
-          return { ...s, story, roleAssignments: normalizeRoleAssignments(s.roleAssignments), messages }
+          return {
+            ...s,
+            story,
+            roleAssignments: normalizeRoleAssignments(s.roleAssignments),
+            introBindings: normalizeIntroBindings(s.introBindings),
+            messages,
+          }
         })
         merged.cassettes = (merged.cassettes ?? []).map((cassette) => ({
           ...cassette,
           session: {
             ...cassette.session,
             roleAssignments: normalizeRoleAssignments(cassette.session?.roleAssignments),
+            introBindings: normalizeIntroBindings(cassette.session?.introBindings),
+            story: {
+              ...cassette.session?.story,
+              introTags: normalizeIntroTags(cassette.session?.story?.introTags),
+            },
           },
         }))
         return merged

@@ -1,5 +1,6 @@
 import type { Character, Partner, Persona, Session, World } from '../types'
 import type { ChatMessage } from './openrouter'
+import { roleMembers } from './casting'
 import { selectLoreEntries } from './lorebook'
 import { SCENE_WIND_DOWN_TOKENS, SCENE_WRAP_UP_TOKENS, sceneTokensOf } from './tokens'
 
@@ -39,29 +40,18 @@ function characterBlock(c: Character, label?: string): string {
   return lines.join('\n')
 }
 
-/** 配役済みロールを毎ターン実名で注入する。@記法はモデルへ渡さない。 */
+/** 配役済みロール（グループ）を毎ターン実名で注入する。@記法はモデルへ渡さない（A-2）。 */
 function castingBlock(session: Session, refs: ResolvedRefs): string | undefined {
   const roles = (refs.world?.roles ?? []).filter((role) => role.id.trim() && role.name.trim())
   if (roles.length === 0) return undefined
-  const roleIds = new Set(roles.map((role) => role.id))
-  const charactersById = new Map(refs.allCharacters.map((character) => [character.id, character]))
-  const byRole = new Map<string, Character>()
-  for (const assignment of session.roleAssignments ?? []) {
-    if (!roleIds.has(assignment.roleId)) continue
-    const character = charactersById.get(assignment.characterId)
-    if (!character?.name.trim()) {
-      byRole.delete(assignment.roleId)
-      continue
-    }
-    // 同 roleId の重複は後勝ち（v1 は1ロール1人）
-    byRole.set(assignment.roleId, character)
-  }
+  const members = roleMembers(roles, session.roleAssignments, refs.allCharacters)
   const safe = (text: string) => text.trim().replaceAll('@', '＠')
   const lines = roles.flatMap((role) => {
-    const character = byRole.get(role.id)
-    if (!character) return []
+    const characters = members.get(role.id) ?? []
+    if (characters.length === 0) return []
+    const names = characters.map((character) => safe(character.name)).join('・')
     const description = safe(role.description)
-    return [`- ${safe(character.name)} —「${safe(role.name)}」${description ? `: ${description}` : ''}`]
+    return [`- ${names} —「${safe(role.name)}」${description ? `: ${description}` : ''}`]
   })
   return lines.length ? `【配役】\nこの物語における各キャラクターの立ち位置:\n${lines.join('\n')}` : undefined
 }

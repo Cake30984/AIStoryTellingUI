@@ -27,6 +27,7 @@ import type {
   WorldStartPreset,
 } from '../../types'
 import CsvInput from '../CsvInput'
+import IntroTagDefEditor from '../IntroTagDefEditor'
 import { exportWorldCard } from '../../lib/cards'
 import { appConfirm } from '../../lib/dialogs'
 import { advanceTimeline, timeLabelOf } from '../../lib/timeline'
@@ -34,8 +35,6 @@ import { Icon } from '../icons'
 import { NARRATION_NAMES } from '../../lib/structured'
 
 const OPS: Op[] = ['>=', '>', '<=', '<', '==', '!=']
-
-const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 type Section =
   | 'basic'
@@ -268,33 +267,6 @@ export default function WorldEditor({ world, onClose }: Props) {
   const removeRole = (id: string) => {
     setRoleError('')
     patch({ roles: roles.filter((role) => role.id !== id) })
-  }
-  // 導入文の @旧名 追従は「フォーカス開始時の名前 → 確定時の名前」を blur で1回だけ適用する。
-  // onChange ごとに追従すると、名前欄が空を経由した瞬間に同期チェーンが切れ、@ロール名 が孤児化する。
-  const roleRenameFrom = useRef<Record<string, string>>({})
-  const beginRoleRename = (role: WorldRole) => {
-    roleRenameFrom.current[role.id] = role.name
-  }
-  const commitRoleRename = (role: WorldRole) => {
-    const from = roleRenameFrom.current[role.id]
-    delete roleRenameFrom.current[role.id]
-    if (from === undefined) return
-    const oldName = from.trim()
-    const nextTrimmed = role.name.trim()
-    if (!oldName || !nextTrimmed || oldName === nextTrimmed || !d.startPreset?.opening) return
-    // 別ロールの長い名前（例: ライバルの師匠）を先に除外して、@旧名だけを追従させる。
-    const longerSuffixes = roles
-      .filter((item) => item.id !== role.id && item.name.startsWith(oldName) && item.name !== oldName)
-      .map((item) => item.name.slice(oldName.length))
-      .sort((a, b) => b.length - a.length)
-    const suffixGuard = longerSuffixes.length
-      ? `(?!${longerSuffixes.map(escapeRegExp).join('|')})`
-      : ''
-    const opening = d.startPreset.opening.replace(
-      new RegExp(`[@＠]${escapeRegExp(oldName)}${suffixGuard}`, 'g'),
-      () => `@${nextTrimmed}`,
-    )
-    if (opening !== d.startPreset.opening) patchPreset({ opening })
   }
   const roleValidationError = (): string | undefined => {
     const seen = new Set<string>()
@@ -595,6 +567,12 @@ export default function WorldEditor({ world, onClose }: Props) {
                   onChange={(e) => patchPreset({ opening: e.target.value })}
                 />
               </div>
+              <IntroTagDefEditor
+                tags={sp.introTags ?? []}
+                onChange={(introTags) => patchPreset({ introTags })}
+                opening={sp.opening ?? ''}
+                onOpeningChange={(opening) => patchPreset({ opening })}
+              />
               <div className="field">
                 <label>最初の方向付け（非表示・任意）</label>
                 <div className="desc">
@@ -730,10 +708,11 @@ export default function WorldEditor({ world, onClose }: Props) {
           {section === 'roles' && (
             <>
               <div className="lore-head">
-                <label>配役</label>
+                <label>配役（ロールグループ）</label>
                 <div className="desc">
-                  この世界で必要な立ち位置を定義します。説明には「宿屋の主人。旅人に情報を売る」のような立場を書き、性格はキャラクター側に書いてください。
-                  導入文では <code>@ロール名</code> を使うと、開始時に配役したキャラ名へ置き換わります。
+                  この世界で必要な立ち位置をグループとして定義します。説明には「宿屋の主人。旅人に情報を売る」のような立場を書き、性格はキャラクター側に書いてください。
+                  1つのロールに複数人を配役でき（例: ヒロイン全員）、1人が複数ロールを兼任することもできます。
+                  プロンプトへは毎ターン【配役】として実名で注入されます（導入文の @名前 置換は「開始テンプレート」の置換タグが担当します）。
                 </div>
               </div>
               {roleError && <p className="notice">{roleError}</p>}
@@ -747,9 +726,7 @@ export default function WorldEditor({ world, onClose }: Props) {
                       className="lore-keys"
                       value={role.name}
                       placeholder="ロール名（例: ライバル）"
-                      onFocus={() => beginRoleRename(role)}
                       onChange={(event) => updateRole(role.id, { name: event.target.value })}
-                      onBlur={() => commitRoleRename(role)}
                     />
                     <label className="chk">
                       <input

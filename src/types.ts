@@ -233,6 +233,11 @@ export interface WorldStartPreset {
   /** 固定メモ（→ session.authorNote） */
   authorNote?: string
   /**
+   * 置換タグの定義（→ session.story.introTags。A-1）。世界選択時に他項目と同じ規則でセッションへ
+   * コピーされ、以後はセッション側で自由に追加・削除できる（素材＝再利用資源のため実名は焼き込まない）。
+   */
+  introTags?: IntroTag[]
+  /**
    * タイムライン定義（→ session.timeline。反映時は enabled=true）。
    * startDay/startSlot があれば開始時点も指定できる（省略時は1日目・先頭スロット）。
    */
@@ -245,17 +250,37 @@ export interface WorldStartPreset {
   }
 }
 
-/** 世界観が求める物語上の立ち位置（配役は Session 側で結ぶ） */
+/**
+ * 世界観が求める物語上の立ち位置（ロールグループ。1..N人のメンバーを持てる。A-2）。
+ * @名前 による導入文置換は担わない（→ IntroTag へ分離）。プロンプト注入（【配役】）専用。
+ */
 export interface WorldRole {
   /** リネームしても配役を維持するための安定 ID */
   id: string
-  /** 導入文の @置換キー・配役 UI の表示名 */
+  /** 配役 UI・プロンプト注入での表示名 */
   name: string
   /** 性格ではなく、世界における立場・物語上の機能 */
   description: string
-  /** 未配役では開始できないロール */
+  /** メンバーが1人も配役されていないと開始できないロール */
   required?: boolean
 }
+
+/**
+ * 導入文専用の置換タグ（A-1）。世界の開始テンプレートで定義する自由な @文字列
+ * （実名を含まない・世界選択時にセッションへコピーされる）。実キャラ/ペルソナへの対応付けは
+ * セッション/カセット側の `Session.introBindings` が持つ（参照のみ・実名を焼き込まない）。
+ */
+export interface IntroTag {
+  id: string
+  /** @ を除いた表示名（例: ヒロイン）。導入文では @ヒロイン のように書く */
+  tag: string
+  note?: string
+}
+
+/** 置換タグ（`IntroTag.tag`）→ 実キャラ/ペルソナ の対応付け（セッション/カセット固有。A-1） */
+export type IntroTagBinding =
+  | { tag: string; kind: 'persona' }
+  | { tag: string; kind: 'character'; characterId: string }
 
 /** 世界観（ロアブック＋ゲームシステム定義） */
 export interface World {
@@ -420,6 +445,12 @@ export interface StorySetup {
    * 2シーン目以降は自動的に効かなくなる。
    */
   initialDirective?: string
+  /**
+   * 置換タグの定義（A-1）。世界選択時に `WorldStartPreset.introTags` からコピーされ、
+   * 以後はセッション側で自由に編集できる（World 素材は不変）。導入文の `@タグ` はここで定義した
+   * タグのみを対象に解決する。
+   */
+  introTags?: IntroTag[]
 }
 
 /**
@@ -488,7 +519,10 @@ export interface SessionState {
   achievements: { defId: string; unlockedAt: number; characterIds?: string[] }[]
 }
 
-/** 世界観ロールと参加キャラクターの対応。1ロール1人、同じキャラの複数ロールは許可する */
+/**
+ * 世界観ロール（グループ）と参加キャラクターの対応（多対多。A-2）。
+ * 同一 roleId に複数行＝ロールの複数メンバー、同一 characterId が複数ロール＝兼任。どちらも許可する。
+ */
 export interface RoleAssignment {
   roleId: string
   characterId: string
@@ -507,8 +541,10 @@ export interface Session {
   characterIds: string[]
   worldId: string | null
   personaId: string | null
-  /** 世界観ロールへの配役。無効な参照は保存したまま開始時には無視する */
+  /** 世界観ロール（グループ）への配役。多対多。無効な参照は保存したまま開始時には無視する */
   roleAssignments?: RoleAssignment[]
+  /** 置換タグ（`story.introTags`）→ 実キャラ/ペルソナ の対応付け（A-1） */
+  introBindings?: IntroTagBinding[]
   /** 常に記憶させたい固定メモ（作者ノート） */
   authorNote: string
   story: StorySetup

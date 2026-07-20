@@ -314,6 +314,15 @@
 .casting-role select {
   width: 100%;
 }
+.casting-role-members {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: center;
+}
+.casting-role-members .chk {
+  white-space: nowrap;
+}
 .casting-role.unresolved,
 .casting-persona.unresolved {
   color: var(--danger);

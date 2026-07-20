@@ -4,7 +4,7 @@ import { getImage, putImage } from './imageStore'
 import { generateDefaultAvatar, normalizeImage } from './avatarGen'
 import { downloadBlob } from './io'
 import { appConfirm } from './dialogs'
-import { normalizeRoleAssignments, normalizeWorldRoles } from './casting'
+import { normalizeIntroBindings, normalizeIntroTags, normalizeRoleAssignments, normalizeWorldRoles } from './casting'
 
 function uid(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
@@ -227,6 +227,8 @@ function normalizeStartPreset(raw: any): WorldStartPreset | undefined {
   if (typeof raw.openingTitle === 'string') p.openingTitle = raw.openingTitle
   if (typeof raw.initialDirective === 'string') p.initialDirective = raw.initialDirective
   if (typeof raw.authorNote === 'string') p.authorNote = raw.authorNote
+  const introTags = normalizeIntroTags(raw.introTags)
+  if (introTags.length > 0) p.introTags = introTags
   if (raw.timeline && Array.isArray(raw.timeline.slots)) {
     p.timeline = {
       slots: raw.timeline.slots.filter((s: any) => typeof s === 'string'),
@@ -450,7 +452,12 @@ function normalizeSessionBundle(raw: any): SessionCardBundle | null {
       ? { ...norm, avatar: { ...norm.avatar, imageId: src.avatar.imageId } }
       : norm
   return {
-    session: { ...raw.session, roleAssignments: normalizeRoleAssignments(raw.session?.roleAssignments) },
+    session: {
+      ...raw.session,
+      roleAssignments: normalizeRoleAssignments(raw.session?.roleAssignments),
+      introBindings: normalizeIntroBindings(raw.session?.introBindings),
+      story: { ...raw.session.story, introTags: normalizeIntroTags(raw.session?.story?.introTags) },
+    },
     characters: Array.isArray(raw.characters)
       ? raw.characters.map((c: any) => keepImageId(normalizeCharacterFromExtension(c), c))
       : [],
