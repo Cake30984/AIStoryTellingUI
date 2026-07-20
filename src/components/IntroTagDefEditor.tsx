@@ -50,28 +50,32 @@ export default function IntroTagDefEditor({ tags, onChange, opening, onOpeningCh
     <div className="field">
       <label>置換タグ定義</label>
       <div className="desc">
-        導入文で <code>@タグ名</code> の形で使う自由なプレースホルダを定義します（実名は含めません）。
+        導入文で使う自由なプレースホルダを定義します（実名は含めません）。タグ名には <code>@</code> を付けません
+        （入力しても自動で外れます）。導入文の本文では <code>@タグ名</code> のように @ を付けて書いてください。
         対応する実キャラ・ペルソナはセッション/カセット側の「置換タグの対応付け」で割り当てます。
       </div>
       {tags.length === 0 && <p className="inline-empty">置換タグはまだありません。</p>}
       {tags.map((tag) => (
-        <div key={tag.id} className="lore-entry-top" style={{ marginBottom: 6 }}>
+        <div key={tag.id} className="lore-entry">
+          <div className="lore-entry-top">
+            <input
+              className="lore-keys"
+              value={tag.tag}
+              placeholder="タグ名（@は付けません。例: ヒロイン）"
+              onFocus={() => beginRename(tag)}
+              onChange={(e) => updateTag(tag.id, { tag: e.target.value.replace(/^[@＠]+/, '') })}
+              onBlur={() => commitRename(tag)}
+            />
+            <button className="icon-btn small" onClick={() => removeTag(tag.id)} title="タグを削除">
+              ✕
+            </button>
+          </div>
           <input
-            className="lore-keys"
-            value={tag.tag}
-            placeholder="タグ名（例: ヒロイン）"
-            onFocus={() => beginRename(tag)}
-            onChange={(e) => updateTag(tag.id, { tag: e.target.value.replace(/^[@＠]+/, '') })}
-            onBlur={() => commitRename(tag)}
-          />
-          <input
+            className="lore-content"
             value={tag.note ?? ''}
             placeholder="メモ（任意）"
             onChange={(e) => updateTag(tag.id, { note: e.target.value })}
           />
-          <button className="icon-btn small" onClick={() => removeTag(tag.id)} title="タグを削除">
-            ✕
-          </button>
         </div>
       ))}
       <button className="btn" style={{ marginTop: 4 }} onClick={addTag}>
