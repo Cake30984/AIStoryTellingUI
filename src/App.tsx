@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { bindPartnerNames, useStore } from './store'
+import { bindRoleNames, useStore } from './store'
 import Rail from './components/Rail'
 import Sidebar from './components/Sidebar'
 import ChatPanel from './components/ChatPanel'
@@ -233,7 +233,7 @@ export default function App() {
           <ToastItem
             className="toast achievement"
             text={`🏆 実績解除: ${newlyUnlockedAchievements
-              .map((a) => bindPartnerNames(a.def.name, a.partners) || '無名')
+              .map((a) => bindRoleNames(a.def.name, a.subjects) || '無名')
               .join(' / ')}`}
             onClose={dismissNewAchievements}
             autoCloseMs={6000}

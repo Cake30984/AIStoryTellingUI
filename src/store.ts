@@ -10,7 +10,6 @@ import type {
   Choice,
   Clause,
   Condition,
-  CharVar,
   CounterDef,
   CounterEvent,
   Development,
@@ -18,6 +17,7 @@ import type {
   EndingDef,
   EndingRecord,
   ExportBundle,
+  GroupSubClause,
   ImageProvider,
   LoreEntry,
   Message,
@@ -25,11 +25,14 @@ import type {
   NextSceneSuggestion,
   Op,
   Partner,
+  PartyRef,
   OpenRouterModel,
   Persona,
   Provider,
   RelationAspectDef,
   RelationUpdate,
+  RoleAssignment,
+  RoleParty,
   Scene,
   ScheduledEvent,
   StatChange,
@@ -230,117 +233,6 @@ function evalClause(
   }
 }
 
-/**
- * キャラ系の節か（characterId/fromId 未指定＝キャラ変数に属する。FB7-D）。
- * global スタット/カウンター・明示キャラ・実績は false。
- */
-function isCharClause(clause: Clause, world: World | undefined): boolean {
-  switch (clause.kind) {
-    case 'stat': {
-      const def = world?.stats.find((d) => d.id === clause.defId)
-      return !!def && def.scope === 'character' && !clause.characterId
-    }
-    case 'counter': {
-      const def = world?.counters.find((d) => d.id === clause.defId)
-      return !!def && def.scope === 'character' && !clause.characterId
-    }
-    case 'relationFlag':
-      return !clause.fromId
-    default:
-      return false
-  }
-}
-
-/** 節が属するキャラ変数（未指定＝相手1） */
-const charVarOf = (c: Clause): CharVar =>
-  ((c.kind === 'stat' || c.kind === 'counter' || c.kind === 'relationFlag'
-    ? c.charVar
-    : undefined) ?? 1)
-
-/** キャラ変数→キャラの割り当て（相手1=v1・相手2=v2・相手3=v3。FB7-D） */
-export type CharAssignment = { v1?: string; v2?: string; v3?: string }
-
-/** 割り当てを変数順（相手1,相手2,相手3）のキャラ id 配列にする */
-export function assignmentIds(a: CharAssignment): string[] {
-  return [a.v1, a.v2, a.v3].filter((x): x is string => !!x)
-}
-
-/**
- * 条件が成立する「キャラ変数→キャラ」の割り当てを列挙する純関数（FB7-D）。
- * - all: キャラ系でない節（global・明示キャラ・実績）が全て成立し、かつキャラ変数ごとに
- *   相異なるキャラを割り当てて「その変数の全キャラ系節」を満たせる組み合わせを全列挙する。
- *   → A の好感度と B のフラグの合成では成立しない（同一キャラで全節満たす必要がある）。
- * - any: 節単位。成立した各節の割り当て（キャラ系ならそのキャラ・それ以外は空）を返す。
- * 参加キャラ順（characterIds の順）を保つ。成立が無ければ空配列。
- */
-export function matchAssignments(
-  cond: Condition | undefined,
-  state: SessionState,
-  world: World | undefined,
-  characterIds: string[],
-): CharAssignment[] {
-  if (!cond) return []
-  const clauses = 'all' in cond ? cond.all : cond.any
-  if (clauses.length === 0) return []
-
-  if ('any' in cond) {
-    const out: CharAssignment[] = []
-    const seen = new Set<string>()
-    const push = (a: CharAssignment) => {
-      const k = JSON.stringify(a)
-      if (!seen.has(k)) {
-        seen.add(k)
-        out.push(a)
-      }
-    }
-    for (const c of clauses) {
-      if (isCharClause(c, world)) {
-        const v = charVarOf(c)
-        for (const cid of characterIds) {
-          if (evalClause(c, state, world, [cid])) push({ [`v${v}`]: cid } as CharAssignment)
-        }
-      } else if (evalClause(c, state, world, characterIds)) {
-        push({})
-      }
-    }
-    return out
-  }
-
-  // all：キャラ系でない節が全て成立するのが前提
-  const charClauses = clauses.filter((c) => isCharClause(c, world))
-  const otherClauses = clauses.filter((c) => !isCharClause(c, world))
-  if (!otherClauses.every((c) => evalClause(c, state, world, characterIds))) return []
-  const usedVars = Array.from(new Set(charClauses.map(charVarOf))).sort((a, b) => a - b)
-  if (usedVars.length === 0) return [{}]
-  // 変数ごとの候補キャラ（その変数の全キャラ系節を満たす cid・参加キャラ順）
-  const cands: Record<number, string[]> = {}
-  for (const v of usedVars) {
-    const cs = charClauses.filter((c) => charVarOf(c) === v)
-    const list = characterIds.filter((cid) => cs.every((c) => evalClause(c, state, world, [cid])))
-    if (list.length === 0) return []
-    cands[v] = list
-  }
-  // 相異なるキャラの割り当てを全列挙（バックトラッキング）
-  const results: CharAssignment[] = []
-  const rec = (i: number, used: Set<string>, acc: CharAssignment) => {
-    if (i === usedVars.length) {
-      results.push({ ...acc })
-      return
-    }
-    const v = usedVars[i]
-    for (const cid of cands[v]) {
-      if (used.has(cid)) continue
-      used.add(cid)
-      ;(acc as Record<string, string>)[`v${v}`] = cid
-      rec(i + 1, used, acc)
-      used.delete(cid)
-      delete (acc as Record<string, string>)[`v${v}`]
-    }
-  }
-  rec(0, new Set(), {})
-  return results
-}
-
 /** 割り当てキャラ id を Partner（名前つき）へ。名前が引けなければ id を仮名にする */
 export function partnersOf(ids: string[], characters: { id: string; name: string }[]): Partner[] {
   return ids.map((id) => ({
@@ -349,73 +241,226 @@ export function partnersOf(ids: string[], characters: { id: string; name: string
   }))
 }
 
-/**
- * `@相手1`・`@相手2`・`@相手3`（変数が1つだけなら `@相手` も同義）を当事者名へ置換する（FB7-D）。
- * partners は変数順（相手1,相手2…）。当事者が居ないプレースホルダはそのまま残す。
- */
-export function bindPartnerNames(text: string, partners: Partner[] | undefined): string {
-  if (!text || !partners || partners.length === 0) return text
-  let out = text
-  partners.forEach((p, i) => {
-    out = out.split(`@相手${i + 1}`).join(p.name)
-  })
-  // 数字なしの @相手 は相手1 と同義（後続が 1〜3 の数字のものは対象外＝未束縛の @相手2 等を壊さない）
-  out = out.replace(/@相手(?![1-3])/g, partners[0].name)
-  return out
+/** RoleParty（名前つき当事者組）を永続化用の PartyRef（参照のみ）へ落とす。メンバー0人の群は含めない */
+export function partiesOf(subjects: RoleParty[]): PartyRef[] {
+  return subjects
+    .filter((p) => p.members.length > 0)
+    .map((p) => ({ roleId: p.roleId, characterIds: p.members.map((m) => m.characterId) }))
+}
+
+/** 永続化された PartyRef を表示・置換用の RoleParty（ロール名・現在の実名つき）へ解決する */
+export function resolveParties(
+  parties: PartyRef[] | undefined,
+  world: World | undefined,
+  characters: { id: string; name: string }[],
+): RoleParty[] {
+  return (parties ?? []).map((p) => ({
+    roleId: p.roleId,
+    roleName: world?.roles?.find((r) => r.id === p.roleId)?.name || '',
+    members: partnersOf(p.characterIds, characters),
+  }))
+}
+
+/** group 節の下位条件（GroupSubClause）を1キャラについて評価する */
+function evalGroupSubClause(
+  sub: GroupSubClause,
+  characterId: string,
+  state: SessionState,
+  world: World | undefined,
+): boolean {
+  switch (sub.kind) {
+    case 'stat': {
+      const def = world?.stats.find((d) => d.id === sub.defId)
+      if (!def) return false
+      const v =
+        state.stats.find((s) => s.defId === sub.defId && s.characterId === characterId)?.value ??
+        def.default
+      return compareOp(v, sub.op, sub.value)
+    }
+    case 'counter': {
+      const def = world?.counters.find((d) => d.id === sub.defId)
+      if (!def) return false
+      const v =
+        state.counters.find((c) => c.defId === sub.defId && c.characterId === characterId)?.value ?? 0
+      return compareOp(v, sub.op, sub.value)
+    }
+    case 'relationFlag': {
+      const has = !!state.relations
+        .find((r) => r.fromId === characterId && r.toId === 'hero')
+        ?.flags.includes(sub.flag)
+      return has === sub.have
+    }
+    default:
+      return false
+  }
+}
+
+/** ロール当事者組をロール単位でマージする（同一 roleId は members を id 重複無しで合併） */
+function mergeRoleParties(parties: RoleParty[]): RoleParty[] {
+  const byRole = new Map<string, RoleParty>()
+  for (const p of parties) {
+    const cur = byRole.get(p.roleId)
+    if (!cur) {
+      byRole.set(p.roleId, { ...p, members: [...p.members] })
+      continue
+    }
+    for (const m of p.members) {
+      if (!cur.members.some((x) => x.characterId === m.characterId)) cur.members.push(m)
+    }
+  }
+  return Array.from(byRole.values())
 }
 
 /**
- * 条件式を評価する（成立する割り当てが1つ以上あるか）。`matchAssignments` の互換窓口。
- * 節が空なら不成立扱い。
+ * group 節1つを評価する（docs/設計_ロールグループと定量条件.md B-2）。
+ * members はロールへ配役された参加キャラ（参加キャラ順）。quantifier で成立を判定し、
+ * subject なら当事者（exactly は候補から n 人に絞る。それ以外は satisfying 全員）を返す。
  */
+function evalGroupClause(
+  clause: Extract<Clause, { kind: 'group' }>,
+  state: SessionState,
+  world: World | undefined,
+  characterIds: string[],
+  roleAssignments: RoleAssignment[] | undefined,
+  characters: { id: string; name: string }[],
+): { ok: boolean; subjects: RoleParty[] } {
+  const role = world?.roles?.find((r) => r.id === clause.roleId)
+  const memberIds = new Set(
+    (roleAssignments ?? [])
+      .filter((ra) => ra.roleId === clause.roleId)
+      .map((ra) => ra.characterId),
+  )
+  const members = characterIds.filter((cid) => memberIds.has(cid))
+  const satisfying = members.filter((cid) =>
+    clause.clauses.every((sub) => evalGroupSubClause(sub, cid, state, world)),
+  )
+  const q = clause.quantifier
+  const ok =
+    q.kind === 'all'
+      ? members.length > 0 && satisfying.length === members.length
+      : satisfying.length >= q.n
+  if (!clause.subject || !ok) return { ok, subjects: [] }
+  const chosenIds = q.kind === 'exactly' ? satisfying.slice(0, q.n) : satisfying
+  return {
+    ok,
+    subjects: [{ roleId: clause.roleId, roleName: role?.name ?? '', members: partnersOf(chosenIds, characters) }],
+  }
+}
+
+/**
+ * 条件式を評価する純関数（docs/設計_ロールグループと定量条件.md B-2）。
+ * 平の節（stat/counter/relationFlag/achievement）は「参加キャラの誰か1人が満たす（∃）」のゲートとして
+ * evalClause で判定し、当事者にはならない。group 節は evalGroupClause でロールの当事者を求める。
+ * all は全節が真、any はいずれかの節が真で成立。当事者は「成立に寄与した」subject な group 節の合併。
+ */
+export function matchGroups(
+  cond: Condition | undefined,
+  state: SessionState,
+  world: World | undefined,
+  characterIds: string[],
+  roleAssignments: RoleAssignment[] | undefined,
+  characters: { id: string; name: string }[] = [],
+): { ok: boolean; subjects: RoleParty[] } {
+  if (!cond) return { ok: false, subjects: [] }
+  const clauses = 'all' in cond ? cond.all : cond.any
+  if (clauses.length === 0) return { ok: false, subjects: [] }
+  const isAll = 'all' in cond
+  const results = clauses.map((c) =>
+    c.kind === 'group'
+      ? evalGroupClause(c, state, world, characterIds, roleAssignments, characters)
+      : { ok: evalClause(c, state, world, characterIds), subjects: [] as RoleParty[] },
+  )
+  const ok = isAll ? results.every((r) => r.ok) : results.some((r) => r.ok)
+  const contributing = isAll ? results : results.filter((r) => r.ok)
+  return { ok, subjects: mergeRoleParties(contributing.flatMap((r) => r.subjects)) }
+}
+
+/**
+ * `@ロール名` をその subject ロールの当事者メンバー名（複数は「・」連結）へ置換する。
+ * `@相手` は全 subject 当事者名の連結（単一群の簡易記法）。当事者が居ないプレースホルダはそのまま残す。
+ */
+export function bindRoleNames(text: string, subjects: RoleParty[] | undefined): string {
+  if (!text || !subjects || subjects.length === 0) return text
+  let out = text
+  for (const party of subjects) {
+    if (!party.roleName) continue
+    const names = party.members.map((m) => m.name).join('・')
+    if (!names) continue
+    out = out.split(`@${party.roleName}`).join(names)
+  }
+  const allNames = subjects.flatMap((p) => p.members.map((m) => m.name))
+  if (allNames.length > 0) out = out.split('@相手').join(allNames.join('・'))
+  return out
+}
+
+/** 条件式を評価する（成立するか）。`matchGroups` の互換窓口。節が空なら不成立扱い。 */
 export function evalCondition(
   cond: Condition | undefined,
   state: SessionState,
   world: World | undefined,
   characterIds: string[],
+  roleAssignments: RoleAssignment[] | undefined,
 ): boolean {
-  return matchAssignments(cond, state, world, characterIds).length > 0
+  return matchGroups(cond, state, world, characterIds, roleAssignments).ok
 }
 
-/** 新規解除された実績1件（当事者つき。トースト・`@相手` 置換に使う。FB7-D） */
+/** 新規解除された実績1件（当事者つき。トースト・`@ロール名` 置換に使う） */
 export interface UnlockedAchievement {
   def: AchievementDef
-  partners: Partner[]
+  subjects: RoleParty[]
+}
+
+/**
+ * 実績条件の group 節で `exactly n` を `atLeast n` に読み替える（実績は自動解除で n 人選択 UI が無いため。
+ * docs/設計_ロールグループと定量条件.md B-5：exactly は atLeast と同視し当事者＝satisfying 全員とする）。
+ */
+function degradeExactlyForAchievement(cond: Condition): Condition {
+  const map = (c: Clause): Clause =>
+    c.kind === 'group' && c.quantifier.kind === 'exactly'
+      ? { ...c, quantifier: { kind: 'atLeast', n: c.quantifier.n } }
+      : c
+  return 'all' in cond ? { all: cond.all.map(map) } : { any: cond.any.map(map) }
 }
 
 /**
  * World 定義の実績を state へ反復評価し、新規解除分を記録して返す（連鎖依存も1パスで解決）。
- * キャラ系条件を含む定義はキャラの組ごとに独立に解除する（FB7-D）＝解除記録は (defId, 当事者組) 単位。
+ * subject な group 節を含む定義は当事者の組ごとに独立に解除する＝解除記録は (defId, 当事者組) 単位。
  * シーン確定時・状態の手動編集時など、state が変わり得るあらゆる場所から共通で呼ぶ。
  */
 function unlockAchievements(
   state: SessionState,
   world: World | undefined,
   characterIds: string[],
+  roleAssignments: RoleAssignment[] | undefined,
   characters: { id: string; name: string }[] = [],
 ): { state: SessionState; unlocked: UnlockedAchievement[] } {
   const achievements = state.achievements.map((a) => ({ ...a }))
   const candidate: SessionState = { ...state, achievements }
   const unlocked: UnlockedAchievement[] = []
-  const keyOf = (defId: string, ids: string[]) => `${defId}@${ids.join('+')}`
-  const done = new Set(achievements.map((a) => keyOf(a.defId, a.characterIds ?? [])))
+  const keyOf = (defId: string, parties: PartyRef[]) =>
+    `${defId}@${parties
+      .map((p) => `${p.roleId}:${[...p.characterIds].sort().join('+')}`)
+      .sort()
+      .join('|')}`
+  const done = new Set(achievements.map((a) => keyOf(a.defId, a.parties ?? [])))
   let progressed = true
   while (progressed) {
     progressed = false
     for (const def of world?.achievements ?? []) {
-      for (const a of matchAssignments(def.condition, candidate, world, characterIds)) {
-        const ids = assignmentIds(a)
-        const key = keyOf(def.id, ids)
-        if (done.has(key)) continue
-        done.add(key)
-        achievements.push({
-          defId: def.id,
-          unlockedAt: Date.now(),
-          ...(ids.length ? { characterIds: ids } : {}),
-        })
-        unlocked.push({ def, partners: partnersOf(ids, characters) })
-        progressed = true
-      }
+      const cond = degradeExactlyForAchievement(def.condition)
+      const result = matchGroups(cond, candidate, world, characterIds, roleAssignments, characters)
+      if (!result.ok) continue
+      const parties = partiesOf(result.subjects)
+      const key = keyOf(def.id, parties)
+      if (done.has(key)) continue
+      done.add(key)
+      achievements.push({
+        defId: def.id,
+        unlockedAt: Date.now(),
+        ...(parties.length ? { parties } : {}),
+      })
+      unlocked.push({ def, subjects: result.subjects })
+      progressed = true
     }
   }
   return { state: candidate, unlocked }
@@ -431,15 +476,15 @@ export function checkEndings(
   state: SessionState,
   world: World | undefined,
   characterIds: string[],
+  roleAssignments: RoleAssignment[] | undefined,
   characters: { id: string; name: string }[] = [],
-): { def: EndingDef; partners: Partner[] }[] {
+): { def: EndingDef; subjects: RoleParty[] } | undefined {
   for (const e of endings ?? []) {
     if (e.fallback || !e.condition) continue
-    const assigns = matchAssignments(e.condition, state, world, characterIds)
-    if (assigns.length > 0)
-      return assigns.map((a) => ({ def: e, partners: partnersOf(assignmentIds(a), characters) }))
+    const result = matchGroups(e.condition, state, world, characterIds, roleAssignments, characters)
+    if (result.ok) return { def: e, subjects: result.subjects }
   }
-  return []
+  return undefined
 }
 
 /** 画像記録をセッション単位で record id の dedupe 追記マージする（FB6-A。importBundle 用） */
@@ -492,6 +537,7 @@ export function applyReviewToState(
     counterEvents: CounterEvent[]
     moodChanges: MoodChange[]
   },
+  roleAssignments: RoleAssignment[] | undefined,
   characters: { id: string; name: string }[] = [],
 ): { state: SessionState; unlocked: UnlockedAchievement[] } {
   const prev = base ?? { relations: [], moods: [], stats: [], counters: [], achievements: [] }
@@ -555,6 +601,7 @@ export function applyReviewToState(
     { relations, moods, stats, counters, achievements: prev.achievements ?? [] },
     world,
     characterIds,
+    roleAssignments,
     characters,
   )
 }
@@ -806,6 +853,31 @@ export function newClause(kind: Clause['kind'], world: World): Clause {
       return { kind: 'relationFlag', flag: '', have: true }
     case 'achievement':
       return { kind: 'achievement', defId: '', have: true }
+    case 'group':
+      return {
+        kind: 'group',
+        roleId: world.roles?.[0]?.id ?? '',
+        quantifier: { kind: 'all' },
+        subject: false,
+        clauses: [],
+      }
+  }
+}
+
+/** group 節の下位条件（GroupSubClause）の既定値（kind 選択時の初期形。キャラ別スタット/カウンターのみ対象） */
+export function newGroupSubClause(kind: GroupSubClause['kind'], world: World): GroupSubClause {
+  switch (kind) {
+    case 'stat':
+      return { kind: 'stat', defId: world.stats.find((d) => d.scope === 'character')?.id ?? '', op: '>=', value: 0 }
+    case 'counter':
+      return {
+        kind: 'counter',
+        defId: world.counters.find((d) => d.scope === 'character')?.id ?? '',
+        op: '>=',
+        value: 1,
+      }
+    case 'relationFlag':
+      return { kind: 'relationFlag', flag: '', have: true }
   }
 }
 
@@ -1189,8 +1261,6 @@ interface AppState {
     moodChangeIdx: number[]
     /** 到達エンディングへ進む場合の EndingDef.id（レビューで「エンディングへ進む」を選んだとき。E2） */
     endingDefId?: string
-    /** 複数の割り当てが成立した際にレビューで選んだ当事者（FB7-D。未指定＝参加キャラ順の最初） */
-    endingPartners?: Partner[]
   }) => void
   /**
    * エピローグシーンを締めて物語を完結する（E2）。レビューをスキップして scene.endedAt をセットし、
@@ -1556,19 +1626,21 @@ function buildStateInfo(session: Session, characters: Character[], world?: World
 }
 
 /**
- * 特別イベントの消化キー（FB7-D）。global 条件は素の eventId、キャラ変数条件は
- * `eventId@charId1[+charId2]`。キャラの組ごとに独立発火させるためのキー。
+ * 特別イベントの消化キー。global・当事者無し条件は素の eventId、当事者ありは
+ * `eventId@charId1[+charId2]`。当事者の組ごとに独立発火させるためのキー。
  */
-export function eventUsedKey(eventId: string, partnerIds: string[]): string {
-  return partnerIds.length ? `${eventId}@${partnerIds.join('+')}` : eventId
+export function eventUsedKey(eventId: string, subjects: RoleParty[]): string {
+  const ids = subjects.flatMap((p) => p.members.map((m) => m.characterId))
+  return ids.length ? `${eventId}@${ids.join('+')}` : eventId
 }
 
 /**
  * 次シーンの特別イベントを決める（FB3-C。演出タイプ抽選は廃止し、世界観イベントに一本化）。
- * 未消化かつ day/slot 到来かつ条件成立の「(イベント, キャラ割り当て)」を日時順・参加キャラ順で1つ返す
- * （FB7-D。キャラ変数条件はキャラの組ごとに独立発火）。slot はラベル一致で解決し、不一致または
- * タイムライン無効時は時間帯条件を無視する（FB4-C）。人の承認なしでコードが自動判定して発火する（ADR-1）。
- * `session.eventAutoFire === false` なら発火しない。旧データの素の eventId は「全組み消化済み」として扱う。
+ * 未消化かつ day/slot 到来かつ条件成立のイベントを日時順・参加キャラ順で1つ返す（subject な group 節を
+ * 含む条件は当事者の組ごとに独立発火＝当事者の組が変われば別キーとして再度候補になる）。
+ * slot はラベル一致で解決し、不一致またはタイムライン無効時は時間帯条件を無視する（FB4-C）。
+ * 人の承認なしでコードが自動判定して発火する（ADR-1）。`session.eventAutoFire === false` なら発火しない。
+ * 旧データの素の eventId は「全組み消化済み」として扱う。
  */
 function nextScheduledEvent(
   session: Session,
@@ -1576,11 +1648,11 @@ function nextScheduledEvent(
   nextDay: number | null,
   nextSlot: number | null,
   characters: { id: string; name: string }[] = [],
-): { eventId?: string; eventName?: string; eventKey?: string; eventPartners?: Partner[] } {
+): { eventId?: string; eventName?: string; eventKey?: string; eventSubjects?: RoleParty[] } {
   if (!world || session.eventAutoFire === false) return {}
   const slotIndexOf = (slot: string | undefined) =>
     slot == null ? -1 : session.timeline.slots.indexOf(slot)
-  type Cand = { event: ScheduledEvent; ids: string[]; key: string }
+  type Cand = { event: ScheduledEvent; subjects: RoleParty[]; key: string }
   const cands: Cand[] = []
   for (const e of world.scheduledEvents ?? []) {
     // 素の eventId が消化済み＝旧データ・global 発火済み。全割り当てを消化済み扱いにする（安全側）
@@ -1595,15 +1667,13 @@ function nextScheduledEvent(
     )
       continue
     if (e.condition) {
-      const asgs = matchAssignments(e.condition, session.state, world, session.characterIds)
-      for (const a of asgs) {
-        const ids = assignmentIds(a)
-        const key = eventUsedKey(e.id, ids)
-        if (session.usedEventIds.includes(key)) continue
-        cands.push({ event: e, ids, key })
-      }
+      const result = matchGroups(e.condition, session.state, world, session.characterIds, session.roleAssignments, characters)
+      if (!result.ok) continue
+      const key = eventUsedKey(e.id, result.subjects)
+      if (session.usedEventIds.includes(key)) continue
+      cands.push({ event: e, subjects: result.subjects, key })
     } else {
-      cands.push({ event: e, ids: [], key: e.id })
+      cands.push({ event: e, subjects: [], key: e.id })
     }
   }
   cands.sort((a, b) => {
@@ -1612,7 +1682,10 @@ function nextScheduledEvent(
     const slotDiff = slotIndexOf(a.event.slot) - slotIndexOf(b.event.slot)
     if (slotDiff !== 0) return slotDiff
     // 同日時は参加キャラ順で安定化（当事者の先頭キャラの参加インデックス）
-    const idx = (c: Cand) => (c.ids.length ? session.characterIds.indexOf(c.ids[0]) : -1)
+    const idx = (c: Cand) => {
+      const firstId = c.subjects[0]?.members[0]?.characterId
+      return firstId ? session.characterIds.indexOf(firstId) : -1
+    }
     return idx(a) - idx(b)
   })
   const pick = cands[0]
@@ -1621,7 +1694,7 @@ function nextScheduledEvent(
     eventId: pick.event.id,
     eventName: pick.event.name,
     eventKey: pick.key,
-    eventPartners: partnersOf(pick.ids, characters),
+    eventSubjects: pick.subjects,
   }
 }
 
@@ -1859,15 +1932,18 @@ export const useStore = create<AppState>()(
           // エピローグシーン滞在中だけエンディング指示を注入する（他シーンでは自由な文体へ戻る）
           ending:
             session.ending && scene?.id === session.ending.epilogueSceneId
-              ? {
-                  name: session.ending.name,
-                  // エピローグ指針の @相手 を当事者名へ置換して注入（FB7-D）
-                  guidance: bindPartnerNames(
-                    effWorld?.endings?.find((e) => e.id === session.ending!.defId)?.epilogueGuidance ?? '',
-                    session.ending.partners,
-                  ),
-                  partners: session.ending.partners,
-                }
+              ? (() => {
+                  const subjects = resolveParties(session.ending!.parties, effWorld, characters)
+                  return {
+                    name: session.ending!.name,
+                    // エピローグ指針の @ロール名/@相手 を当事者名へ置換して注入
+                    guidance: bindRoleNames(
+                      effWorld?.endings?.find((e) => e.id === session.ending!.defId)?.epilogueGuidance ?? '',
+                      subjects,
+                    ),
+                    subjects,
+                  }
+                })()
               : undefined,
         }
       }
@@ -2755,9 +2831,9 @@ export const useStore = create<AppState>()(
               ? refs.world?.scheduledEvents.find((e) => e.id === pick.eventId)
               : undefined
             if (event) {
-              // note の @相手 を当事者名へ置換して文脈に載せる（FB7-D）
-              const evNote = bindPartnerNames(event.note, pick.eventPartners)
-              const evName = bindPartnerNames(event.name, pick.eventPartners)
+              // note の @ロール名/@相手 を当事者名へ置換して文脈に載せる
+              const evNote = bindRoleNames(event.note, pick.eventSubjects)
+              const evName = bindRoleNames(event.name, pick.eventSubjects)
               ctxParts.push(
                 `【次のシーンの方向性】特別イベント「${evName}」が発生します。${evNote}\nsuggestions はこのイベントに沿った内容にしてください。`,
               )
@@ -3024,7 +3100,7 @@ export const useStore = create<AppState>()(
               scheduledEventId: event?.id,
               scheduledEventName: event?.name,
               scheduledEventKey: pick.eventKey,
-              scheduledEventPartners: pick.eventPartners,
+              scheduledEventSubjects: pick.eventSubjects,
             }
             set({ sceneReview: review })
           } catch (e) {
@@ -3082,10 +3158,11 @@ export const useStore = create<AppState>()(
               counterEvents: selectedCounters,
               moodChanges: selectedMoods,
             },
+            s.roleAssignments,
             characters,
           )
           const newState = applied.state
-          // このレビュー適用で新規解除された実績（通知用・当事者つき。FB7-D）
+          // このレビュー適用で新規解除された実績（通知用・当事者つき）
           const newlyUnlocked: UnlockedAchievement[] = [...applied.unlocked]
 
           // 発見ロア・キャラ成長はセッションのオーバーレイへ積む（元 Character/World は不変に保つ）
@@ -3127,9 +3204,9 @@ export const useStore = create<AppState>()(
                   .find((w) => w.id === s.worldId)
                   ?.scheduledEvents.find((e) => e.id === review.scheduledEventId)
               : undefined
-            const evPartners = review.scheduledEventPartners
-            const evName = event ? bindPartnerNames(event.name, evPartners) : ''
-            const evNote = event ? bindPartnerNames(event.note, evPartners) : ''
+            const evSubjects = review.scheduledEventSubjects
+            const evName = event ? bindRoleNames(event.name, evSubjects) : ''
+            const evNote = event ? bindRoleNames(event.note, evSubjects) : ''
             set((st) => ({
               sessions: st.sessions.map((sess) =>
                 sess.id === s.id
@@ -3167,11 +3244,10 @@ export const useStore = create<AppState>()(
           // ── エンディング判定（E2）。session.ending が既 set なら判定・発火しない（到達済み）。
           // 判定は newState（このレビュー適用後の state）に対して行い、モーダルのプレビューと一致させる。
           const endings = stateWorld?.endings ?? []
-          // checkEndings は「最上位成立エンディング」の当事者割り当てを列挙して返す（FB7-D）
-          const matches = s.ending
-            ? []
-            : checkEndings(endings, newState, stateWorld, s.characterIds, characters)
-          const topMatch = matches[0]
+          // checkEndings は「最上位成立エンディング」の当事者組を返す
+          const topMatch = s.ending
+            ? undefined
+            : checkEndings(endings, newState, stateWorld, s.characterIds, s.roleAssignments, characters)
           // 満了モード：確定後に進む先が totalDays を超えるか（enabled かつ totalDays 指定時のみ）
           const isExpiry =
             !s.ending &&
@@ -3182,26 +3258,20 @@ export const useStore = create<AppState>()(
           //  1) 最上位成立が auto なら opts に依らず強制突入
           //  2) それ以外は opts.endingDefId が渡され、確定後 state で実際に成立（または満了 fallback）する時のみ
           let firing: EndingDef | undefined
-          let firingPartners: Partner[] = []
+          let firingSubjects: RoleParty[] = []
           if (!s.ending) {
             if (topMatch?.def.auto) {
               firing = topMatch.def
-              firingPartners = topMatch.partners
+              firingSubjects = topMatch.subjects
             } else if (opts.endingDefId) {
               const chosen = endings.find((e) => e.id === opts.endingDefId)
               if (chosen?.fallback) {
                 if (isExpiry) firing = chosen
               } else if (chosen) {
-                const asgs = matchAssignments(chosen.condition, newState, stateWorld, s.characterIds)
-                if (asgs.length > 0) {
+                const result = matchGroups(chosen.condition, newState, stateWorld, s.characterIds, s.roleAssignments, characters)
+                if (result.ok) {
                   firing = chosen
-                  // プレビューで選んだ相手を優先。無効/未指定なら参加キャラ順の最初の割り当て
-                  const chosenIds = opts.endingPartners?.map((p) => p.characterId) ?? []
-                  const valid = asgs.find((a) => {
-                    const ids = assignmentIds(a)
-                    return ids.length === chosenIds.length && ids.every((id, i) => id === chosenIds[i])
-                  })
-                  firingPartners = partnersOf(assignmentIds(valid ?? asgs[0]), characters)
+                  firingSubjects = result.subjects
                 }
               }
             }
@@ -3210,11 +3280,12 @@ export const useStore = create<AppState>()(
           if (firing) {
             // ── エピローグシーンへ突入（E2）。タイムラインは進めない（もう時間の意味が無い）。
             const ending = firing
-            const partners = firingPartners
-            const endingName = bindPartnerNames(ending.name, partners)
+            const subjects = firingSubjects
+            const parties = partiesOf(subjects)
+            const endingName = bindRoleNames(ending.name, subjects)
             const epiScene = newScene(`エピローグ：${endingName}`, scene.activeCharacterIds, 'エピローグ')
-            // エピローグ指針の @相手 を当事者名へ置換して注入（FB7-D）
-            epiScene.note = bindPartnerNames(ending.epilogueGuidance, partners)
+            // エピローグ指針の @ロール名/@相手 を当事者名へ置換して注入
+            epiScene.note = bindRoleNames(ending.epilogueGuidance, subjects)
             const reachedAt = Date.now()
             set((st) => ({
               sessions: st.sessions.map((sess) =>
@@ -3238,7 +3309,7 @@ export const useStore = create<AppState>()(
                         name: endingName,
                         reachedAt,
                         epilogueSceneId: epiScene.id,
-                        ...(partners.length ? { partners } : {}),
+                        ...(parties.length ? { parties } : {}),
                       },
                       updatedAt: reachedAt,
                     }
@@ -3256,7 +3327,7 @@ export const useStore = create<AppState>()(
                       endingDefId: ending.id,
                       sessionId: s.id,
                       reachedAt,
-                      ...(partners.length ? { characterIds: partners.map((p) => p.characterId) } : {}),
+                      ...(parties.length ? { parties } : {}),
                     },
                   ]
                 : st.endingRecords,
@@ -3281,10 +3352,10 @@ export const useStore = create<AppState>()(
                 .find((w) => w.id === s.worldId)
                 ?.scheduledEvents.find((e) => e.id === review.scheduledEventId)
             : undefined
-          // イベントの当事者名で @相手 を置換（タイトル・note。FB7-D）
-          const evPartners = review.scheduledEventPartners
-          const evName = event ? bindPartnerNames(event.name, evPartners) : ''
-          const evNote = event ? bindPartnerNames(event.note, evPartners) : ''
+          // イベントの当事者名で @ロール名/@相手 を置換（タイトル・note）
+          const evSubjects = review.scheduledEventSubjects
+          const evName = event ? bindRoleNames(event.name, evSubjects) : ''
+          const evNote = event ? bindRoleNames(event.note, evSubjects) : ''
           // ユーザーが編集/記入したタイトルをイベント名より優先する（FB5-C。note と同じ優先順）
           const base = sug?.title || evName || ''
           const title =
@@ -3455,6 +3526,7 @@ export const useStore = create<AppState>()(
             { ...edited, stats },
             world,
             s.characterIds,
+            s.roleAssignments,
             get().characters,
           )
           get().updateSession(s.id, { state })
@@ -3592,8 +3664,8 @@ export const useStore = create<AppState>()(
           const event = pick.eventId
             ? refs.world?.scheduledEvents.find((e) => e.id === pick.eventId)
             : undefined
-          const evName = event ? bindPartnerNames(event.name, pick.eventPartners) : ''
-          const evNote = event ? bindPartnerNames(event.note, pick.eventPartners) : ''
+          const evName = event ? bindRoleNames(event.name, pick.eventSubjects) : ''
+          const evNote = event ? bindRoleNames(event.note, pick.eventSubjects) : ''
           const label = s.timeline.enabled ? timeLabelOf(s.timeline) : undefined
           const baseName = evName || ''
           const drafted = [label, baseName].filter(Boolean).join('：') || scene.title

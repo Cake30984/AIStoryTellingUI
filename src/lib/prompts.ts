@@ -1,4 +1,4 @@
-import type { Character, Partner, Persona, Session, World } from '../types'
+import type { Character, Persona, RoleParty, Session, World } from '../types'
 import type { ChatMessage } from './openrouter'
 import { roleMembers } from './casting'
 import { selectLoreEntries } from './lorebook'
@@ -24,7 +24,7 @@ export interface ResolvedRefs {
   /** 関係性 prose・気分・注入対象スタットの現在値（空なら無効） */
   stateInfo: string
   /** エピローグシーン滞在中のみ設定（到達した結末のトーン指示。docs/設計_エンディング.md） */
-  ending?: { name: string; guidance: string; partners?: Partner[] }
+  ending?: { name: string; guidance: string; subjects?: RoleParty[] }
 }
 
 /** キャラ1人の定義ブロックを作る */
@@ -115,10 +115,12 @@ export function buildSystemPrompt(
 
   // 1.8 エンディング（エピローグシーン滞在中のみ。nearEnd はこの間スキップ済み）
   if (refs.ending) {
-    // 相手つきエンディング（キャラ変数条件・FB7-D）は「誰との結末か」を明示する
-    const partnerNames = (refs.ending.partners ?? []).map((p) => p.name).filter(Boolean)
-    const partnerLine = partnerNames.length
-      ? `\n相手: ${partnerNames.join('・')}。この結末は ${partnerNames.join('・')} との関係の帰結として描いてください。`
+    // 当事者つきエンディング（subject な group 節）は「誰との結末か」をロールごとに明示する
+    const subjects = (refs.ending.subjects ?? []).filter((p) => p.members.length > 0)
+    const subjectLines = subjects.map((p) => `${p.roleName}: ${p.members.map((m) => m.name).join('・')}`)
+    const allNames = subjects.flatMap((p) => p.members.map((m) => m.name))
+    const partnerLine = subjectLines.length
+      ? `\n相手: ${subjectLines.join(' / ')}。この結末は ${allNames.join('・')} との関係の帰結として描いてください。`
       : ''
     parts.push(
       `【エンディング】\nこの物語は結末「${refs.ending.name}」のエピローグに入っています。` +

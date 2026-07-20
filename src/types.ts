@@ -151,33 +151,57 @@ export interface CounterDef {
 export type Op = '>=' | '>' | '<=' | '<' | '==' | '!='
 
 /**
- * キャラ変数（相手1・相手2・相手3。FB7-D）。キャラ系の節（characterId/fromId 未指定）が属する変数。
- * 同じ変数の節は同一キャラで評価し、変数ごとに相異なるキャラを割り当てる。未指定は相手1。
+ * 数量詞（ロールグループの何人が下位条件を満たすべきか。docs/設計_ロールグループと定量条件.md B-1）。
+ * exactly は成立ゲートとしては atLeast と同じ（satisfying.length >= n）。当事者を n 人に絞る点だけが違う
+ * （エンディングはレビューで n 人選択・実績は自動解除のため atLeast と同視。B-5）。
  */
-export type CharVar = 1 | 2 | 3
+export type Quantifier = { kind: 'all' } | { kind: 'atLeast'; n: number } | { kind: 'exactly'; n: number }
+
+/** group 節の下位条件（ロールの各メンバーに課す。キャラ限定＝characterId/charVar は持たない） */
+export type GroupSubClause =
+  | { kind: 'stat'; defId: string; op: Op; value: number }
+  | { kind: 'counter'; defId: string; op: Op; value: number }
+  | { kind: 'relationFlag'; flag: string; have: boolean }
 
 /**
- * 条件の最小単位（節）。prose は読まない＝数・フラグ・実績のみで判定（再現性のため）。
- * World はセッション横断の再利用素材で特定キャラを固定できないため、
- * characterId/fromId 省略時は「キャラ変数（相手1・相手2・相手3）」に属する（FB7-D）。
- * 同じ変数の節は同一キャラで、別変数は相異なるキャラで評価する（`matchAssignments`）。
+ * 条件の最小単位（節）。prose は読まない＝数・フラグ・実績・グループのみで判定（再現性のため）。
+ * characterId/fromId 省略時は「参加キャラの誰か1人が満たす（∃）」の存在条件＝判定専用のゲートとして
+ * 残る（当事者にはならない）。特定ロールのメンバーに対する定量条件・当事者指定は `group` 節で書く
+ * （docs/設計_ロールグループと定量条件.md）。
  */
 export type Clause =
-  | { kind: 'stat'; defId: string; characterId?: string; charVar?: CharVar; op: Op; value: number }
-  | { kind: 'counter'; defId: string; characterId?: string; charVar?: CharVar; op: Op; value: number }
-  | { kind: 'relationFlag'; fromId?: string; toId?: string; charVar?: CharVar; flag: string; have: boolean }
+  | { kind: 'stat'; defId: string; characterId?: string; op: Op; value: number }
+  | { kind: 'counter'; defId: string; characterId?: string; op: Op; value: number }
+  | { kind: 'relationFlag'; fromId?: string; toId?: string; flag: string; have: boolean }
   | { kind: 'achievement'; defId: string; have: boolean }
+  | { kind: 'group'; roleId: string; quantifier: Quantifier; subject?: boolean; clauses: GroupSubClause[] }
 
 /** 条件式（all=すべて満たす / any=いずれか満たす）。節が空なら不成立扱い。 */
 export type Condition = { all: Clause[] } | { any: Clause[] }
 
-/**
- * 条件を満たした当事者（キャラ変数→キャラの割り当て・FB7-D）。変数順で並ぶ
- * （相手1・相手2…）。`@相手1`/`@相手2` プレースホルダの置換名にも使う。
- */
+/** 割り当てキャラ1人（id＋現在の実名）。`RoleParty.members` の要素、`bindRoleNames` の置換名にも使う。 */
 export interface Partner {
   characterId: string
   name: string
+}
+
+/**
+ * 条件成立時の「ロールの当事者組」（`matchGroups` が返す・名前つき）。
+ * `subject: true` の group 節が成立したロールごとに1つ。`@ロール名` 置換・エピローグ注入に使う。
+ */
+export interface RoleParty {
+  roleId: string
+  roleName: string
+  members: Partner[]
+}
+
+/**
+ * 永続化用の当事者組（名前を持たない参照のみ。リネーム追従のため表示時に `resolveParties` で名前解決する）。
+ * `SessionState.achievements[].parties` / `Session.ending.parties` / `EndingRecord.parties` が持つ。
+ */
+export interface PartyRef {
+  roleId: string
+  characterIds: string[]
 }
 
 /** 実績の定義（ワールド固定）。condition を満たすとコードが自動で達成記録する。 */
@@ -512,11 +536,11 @@ export interface SessionState {
   /** 行動カウンターの累計 */
   counters: CounterValue[]
   /**
-   * 達成済みの実績。キャラ系条件を含む定義はキャラの組ごとに独立に解除する（FB7-D）。
-   * `characterIds`＝当事者キャラ id（変数順・相手1,相手2…）。同じ (defId, characterIds) は再解除しない。
-   * キャラ系の節を含まない定義は characterIds を持たず defId 単位で1回。旧データ（未設定）も同扱い。
+   * 達成済みの実績。subject な group 節を含む定義は当事者の組ごとに独立に解除する
+   * （docs/設計_ロールグループと定量条件.md B-4）。`parties`＝ロール別の当事者組。
+   * 同じ (defId, parties) は再解除しない。当事者を持たない定義は parties を持たず defId 単位で1回。
    */
-  achievements: { defId: string; unlockedAt: number; characterIds?: string[] }[]
+  achievements: { defId: string; unlockedAt: number; parties?: PartyRef[] }[]
 }
 
 /**
@@ -585,8 +609,8 @@ export interface Session {
     reachedAt: number
     /** エピローグシーンの id。このシーンが currentScene の間だけエンディング指示を注入する */
     epilogueSceneId: string
-    /** この結末の当事者キャラ（キャラ変数条件のとき。FB7-D）。エピローグ注入・`@相手` 置換に使う */
-    partners?: Partner[]
+    /** この結末の当事者組（ロール別。docs/設計_ロールグループと定量条件.md）。エピローグ注入・`@ロール名`/`@相手` 置換に使う */
+    parties?: PartyRef[]
   }
   messages: Message[]
   temperature: number
@@ -738,10 +762,10 @@ export interface SceneReview {
   /** 発火する特別イベント */
   scheduledEventId?: string
   scheduledEventName?: string
-  /** 消化キー（`eventId` or `eventId@charId1[+charId2]`。FB7-D。確定時の消化記録に使う） */
+  /** 消化キー（`eventId` or `eventId@charId1[+charId2]`。確定時の消化記録に使う） */
   scheduledEventKey?: string
-  /** 特別イベントの当事者キャラ（キャラ変数条件のとき。FB7-D。note の `@相手` 置換に使う） */
-  scheduledEventPartners?: Partner[]
+  /** 特別イベントの当事者組（ロール別。note/name の `@ロール名`/`@相手` 置換に使う） */
+  scheduledEventSubjects?: RoleParty[]
 }
 
 /** 分岐ツリーの1ノード（C1）。チェックポイント実体は CheckpointStore に nodeId で保存する */
@@ -881,8 +905,8 @@ export interface EndingRecord {
   endingDefId: string
   sessionId: string
   reachedAt: number
-  /** 当事者キャラ id（キャラ変数条件のとき。FB7-D。周回記録で「誰との結末か」を残す） */
-  characterIds?: string[]
+  /** 当事者の組（ロール別。周回記録で「誰との結末か」を残す） */
+  parties?: PartyRef[]
 }
 
 /** エクスポート/インポート用のデータ束 */

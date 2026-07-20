@@ -1,4 +1,4 @@
-import { bindPartnerNames, partnersOf, useStore } from '../store'
+import { bindRoleNames, resolveParties, useStore } from '../store'
 import { roleMembers } from '../lib/casting'
 import type { Session } from '../types'
 import EntityAvatar from './EntityAvatar'
@@ -122,8 +122,8 @@ export default function StatusView({ session }: Props) {
             const recs = unlockedRecordsOf(a.id)
             const unlocked = recs.length > 0
             const conceal = a.hidden && !unlocked
-            // キャラの組ごとの解除行（相手1=… の名前で表示。FB7-D）
-            const groups = recs.filter((r) => (r.characterIds?.length ?? 0) > 0)
+            // 当事者の組ごとの解除行（ロール名: 実名 で表示）
+            const groups = recs.filter((r) => (r.parties?.length ?? 0) > 0)
             return (
               <div key={a.id} style={{ marginBottom: 4 }}>
                 <div className="desc" style={{ opacity: unlocked ? 1 : 0.55 }}>
@@ -131,12 +131,16 @@ export default function StatusView({ session }: Props) {
                   {!conceal && a.description && <span> — {a.description}</span>}
                 </div>
                 {!conceal &&
-                  groups.map((r, i) => (
-                    <div key={i} className="desc" style={{ marginLeft: 16, opacity: 0.8 }}>
-                      ・{bindPartnerNames(a.name || '無名', partnersOf(r.characterIds!, characters))}
-                      <span className="growth-keys">（{r.characterIds!.map(nameOf).join('・')}）</span>
-                    </div>
-                  ))}
+                  groups.map((r, i) => {
+                    const subjects = resolveParties(r.parties, world, characters)
+                    const ids = r.parties!.flatMap((p) => p.characterIds)
+                    return (
+                      <div key={i} className="desc" style={{ marginLeft: 16, opacity: 0.8 }}>
+                        ・{bindRoleNames(a.name || '無名', subjects)}
+                        <span className="growth-keys">（{ids.map(nameOf).join('・')}）</span>
+                      </div>
+                    )
+                  })}
               </div>
             )
           })}
