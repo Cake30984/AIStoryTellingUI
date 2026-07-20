@@ -1001,7 +1001,7 @@ export default function WorldEditor({ world, onClose }: Props) {
               （現在のステータス/カウンター値・関係フラグ・日付・本文の描写）に紐づけて書くと機能します。
             </div>
             <textarea
-              rows={3}
+              rows={8}
               value={d.reviewGuidance ?? ''}
               placeholder="例: 体力は毎シーン必ず消耗させる。フラグ『呪い』が立っている間は10〜20、外れていれば1〜5。"
               onChange={(e) => patch({ reviewGuidance: e.target.value })}
