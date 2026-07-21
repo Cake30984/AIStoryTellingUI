@@ -758,6 +758,8 @@ export interface MoodChange {
 
 /** シーン終了レビューの生成結果（runtime） */
 export interface SceneReview {
+  /** このレビューが属するセッション id（FB8-B #14: 該当セッションを Play で開いている時だけモーダルを出す） */
+  sessionId: string
   sceneId: string
   summary: string
   suggestions: NextSceneSuggestion[]

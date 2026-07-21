@@ -1294,6 +1294,8 @@ interface AppState {
    * チェックポイントを記録する。次シーンは作らない。
    */
   finalizeStory: () => void
+  /** 完結した分岐から新しい世界線を切って続きを描けるようにする（#3/#15）。完結を解除した子ノードを積む */
+  branchToContinue: () => Promise<void>
   /** 現在の方向性で次シーン候補だけを再生成する */
   regenerateSuggestions: () => Promise<void>
   cancelReview: () => void
@@ -1549,6 +1551,17 @@ export function rewindScenesFor(
   const idx = session.scenes.findIndex((sc) => sc.id === lastSceneId)
   if (idx < 0) return { scenes: session.scenes, currentSceneId: session.currentSceneId }
   return { scenes: session.scenes.slice(0, idx + 1), currentSceneId: lastSceneId }
+}
+
+/**
+ * この物語（分岐）が完結済みか。`ending` が設定され、そのエピローグシーンに `endedAt` が付いた状態。
+ * FB8-B（#3/#15）: 完結した分岐では続ける/やり直す/入力を止め、「⑂ ここから分岐して続ける」でのみ
+ * 継続できるようにする（明確な終わりを保ちつつ、続きは新しい世界線＝分岐で描く）。
+ */
+export function isSessionFinalized(s: Session): boolean {
+  if (!s.ending) return false
+  const ep = s.scenes.find((sc) => sc.id === s.ending!.epilogueSceneId)
+  return !!ep?.endedAt
 }
 
 /** 枝の中で最も新しい葉（＝ほぼ確実に元の先端）。上書きガードの「⑂残す」の命名先に使う（FB6-C） */
@@ -3000,6 +3013,7 @@ export const useStore = create<AppState>()(
                 .find((c) => c && c.name === name)?.id
 
             const review: SceneReview = {
+              sessionId: s.id,
               sceneId: scene.id,
               summary: (() => {
                 if (typeof parsed?.summary === 'string' && parsed.summary.trim())
@@ -3474,6 +3488,23 @@ export const useStore = create<AppState>()(
           )
         },
 
+        branchToContinue: async () => {
+          const s = active()
+          if (!s || !s.ending) return
+          if (get().isStreaming || get().isReviewing || get().isGeneratingChoices) return
+          const epId = s.ending.epilogueSceneId
+          const ep = s.scenes.find((sc) => sc.id === epId)
+          if (!ep?.endedAt) return // 完結済みでなければ何もしない
+          // 完結を解除してこの分岐でのみ継続可能にする。元の🏁ノードのスナップショットには完結が
+          // 残り、ending により保護されるので上書きされない（＝続きは新しい世界線として枝分かれ。#3/#15）
+          const before = s
+          get().updateSession(s.id, {
+            ending: undefined,
+            scenes: s.scenes.map((sc) => (sc.id === epId ? { ...sc, endedAt: undefined } : sc)),
+          })
+          void recordCheckpoint(s.id, 'action', '⑂ 続きを描く', before)
+        },
+
         regenerateSuggestions: async () => {
           const review = get().sceneReview
           const s = active()
@@ -3602,7 +3633,7 @@ export const useStore = create<AppState>()(
 
         send: async (text, speakerId) => {
           const s = active()
-          if (!s || get().isStreaming) return
+          if (!s || get().isStreaming || isSessionFinalized(s)) return
           const trimmed = text.trim()
           if (!trimmed) return
           // 復元で線の途中に居る場合の上書きガード（FB6-C）
@@ -3624,7 +3655,7 @@ export const useStore = create<AppState>()(
 
         continueStory: async (speakerId) => {
           const s = active()
-          if (!s || get().isStreaming) return
+          if (!s || get().isStreaming || isSessionFinalized(s)) return
           if (!(await ensureLineTip(s.id, get().branchTrees[s.id]?.currentId))) return
           patchActive({
             messages: [
@@ -3643,7 +3674,7 @@ export const useStore = create<AppState>()(
 
         regenerate: async (speakerId) => {
           const s = active()
-          if (!s || get().isStreaming) return
+          if (!s || get().isStreaming || isSessionFinalized(s)) return
           const curId = s.currentSceneId
           const msgs = [...s.messages]
           // 現在シーン内の末尾アシスタント応答のみ取り消す
@@ -3782,7 +3813,7 @@ export const useStore = create<AppState>()(
 
         continueLast: async () => {
           const s = active()
-          if (!s || get().isStreaming) return
+          if (!s || get().isStreaming || isSessionFinalized(s)) return
           const last = [...s.messages].reverse().find((m) => m.role === 'assistant')
           if (!last) return
           if (!(await ensureLineTip(s.id, get().branchTrees[s.id]?.currentId))) return
@@ -3820,7 +3851,7 @@ export const useStore = create<AppState>()(
 
         regenerateFrom: async (messageId) => {
           const s = active()
-          if (!s || get().isStreaming) return
+          if (!s || get().isStreaming || isSessionFinalized(s)) return
           const idx = s.messages.findIndex((m) => m.id === messageId)
           if (idx < 0) return
           const target = s.messages[idx]

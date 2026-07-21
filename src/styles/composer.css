@@ -90,6 +90,16 @@
   padding: 8px 8px 8px 14px;
   transition: 0.15s;
 }
+/* 完結した分岐で入力欄の代わりに出すロック表示（FB8-B #3/#15） */
+.finalized-lock {
+  background: var(--bg-elev2);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  color: var(--text-faint);
+  font-size: 13px;
+  line-height: 1.6;
+}
 .input-row:focus-within {
   border-color: var(--accent);
 }

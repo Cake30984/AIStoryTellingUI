@@ -122,6 +122,7 @@ export default function ChatPanel({ session }: Props) {
     stopReview,
     prepareSceneReview,
     finalizeStory,
+    branchToContinue,
     startStory,
     continueLast,
     regenChoices,
@@ -430,16 +431,21 @@ export default function ChatPanel({ session }: Props) {
         <button onClick={() => startEdit(m)}>
           <Icon name="pencil" size={13} /> 編集
         </button>
-        <button onClick={() => regenerateFrom(m.id)} title="この発言以降を作り直す">
-          <Icon name="rotate-ccw" size={13} /> ここから
-        </button>
-        {/* ⑂ 明示分岐（FB6-C）: 今の続きに名前を付けて残してから、ここから作り直す */}
-        <button
-          onClick={() => branchFromMessage(m.id)}
-          title="今の続きを分岐として残してから、ここから作り直す"
-        >
-          <Icon name="git-branch" size={13} /> 分岐
-        </button>
+        {/* 完結分岐では在庫の生成系（作り直し・分岐再開）を隠す。続きは「⑂ ここから分岐して続ける」に一本化（FB8-B #3/#15） */}
+        {!isFinalized && (
+          <>
+            <button onClick={() => regenerateFrom(m.id)} title="この発言以降を作り直す">
+              <Icon name="rotate-ccw" size={13} /> ここから
+            </button>
+            {/* ⑂ 明示分岐（FB6-C）: 今の続きに名前を付けて残してから、ここから作り直す */}
+            <button
+              onClick={() => branchFromMessage(m.id)}
+              title="今の続きを分岐として残してから、ここから作り直す"
+            >
+              <Icon name="git-branch" size={13} /> 分岐
+            </button>
+          </>
+        )}
         <button onClick={() => deleteMessage(m.id)}>
           <Icon name="trash-2" size={13} /> 削除
         </button>
@@ -454,8 +460,8 @@ export default function ChatPanel({ session }: Props) {
             <Icon name="palette" size={13} /> 挿絵
           </button>
         )}
-        {/* 末尾のアシスタント本文にだけ「選択肢を生成」（FB3-A6） */}
-        {m.id === lastAssistantId && session.choiceMode !== 'off' && (
+        {/* 末尾のアシスタント本文にだけ「選択肢を生成」（FB3-A6）。完結分岐では出さない（FB8-B） */}
+        {!isFinalized && m.id === lastAssistantId && session.choiceMode !== 'off' && (
           <button
             onClick={() => regenChoices()}
             disabled={isGeneratingChoices}
@@ -874,7 +880,7 @@ export default function ChatPanel({ session }: Props) {
                   </button>
                 </div>
               )}
-              {showChoices && (
+              {!isFinalized && showChoices && (
                 <div className="choices">
                   {lastMsg.choices!.map((c, i) => (
                     <button
@@ -909,7 +915,8 @@ export default function ChatPanel({ session }: Props) {
               )}
               {/* コンポーザーの操作行（常時レンダリング。高さが跳ねないよう左右にツールをまとめる） */}
               <div className="composer-tools">
-                {session.mode === 'story' &&
+                {!isFinalized &&
+                  session.mode === 'story' &&
                   (storyStarted ? (
                     <button className="btn primary" onClick={() => continueStory(effectiveSpeaker)} disabled={isStreaming}>
                       <Icon name="fast-forward" size={14} /> 続ける
@@ -919,7 +926,7 @@ export default function ChatPanel({ session }: Props) {
                       <Icon name="play" size={14} /> 物語をはじめる
                     </button>
                   ))}
-                {showRegen && (
+                {!isFinalized && showRegen && (
                   <button
                     className="composer-tool-btn"
                     onClick={() => regenerate(effectiveSpeaker)}
@@ -928,7 +935,7 @@ export default function ChatPanel({ session }: Props) {
                     <Icon name="rotate-ccw" size={14} /> {groupMode ? '直前をやり直す' : 'やり直す'}
                   </button>
                 )}
-                {!isStreaming && lastMsg?.role === 'assistant' && lastMsg.truncated && (
+                {!isFinalized && !isStreaming && lastMsg?.role === 'assistant' && lastMsg.truncated && (
                   <button
                     className="composer-tool-btn"
                     onClick={() => continueLast()}
@@ -938,7 +945,8 @@ export default function ChatPanel({ session }: Props) {
                   </button>
                 )}
                 {/* 選択肢が出ない時の手動生成（モデル出力が想定外でも復旧できる） */}
-                {!isStreaming &&
+                {!isFinalized &&
+                  !isStreaming &&
                   !isGeneratingChoices &&
                   session.choiceMode !== 'off' &&
                   lastMsg?.role === 'assistant' &&
@@ -973,7 +981,16 @@ export default function ChatPanel({ session }: Props) {
                 <button className="composer-tool-btn" onClick={() => setShowSceneEditor(true)}>
                   <Icon name="pencil" size={14} /> シーン編集
                 </button>
-                {isEpilogue && !isFinalized ? (
+                {isFinalized ? (
+                  <button
+                    className="scene-btn"
+                    onClick={() => branchToContinue()}
+                    disabled={isStreaming}
+                    title="この完結地点から新しい分岐（世界線）を作り、続きを描く"
+                  >
+                    ⑂ ここから分岐して続ける
+                  </button>
+                ) : isEpilogue ? (
                   <button
                     className="scene-btn end"
                     onClick={() => {
@@ -989,14 +1006,8 @@ export default function ChatPanel({ session }: Props) {
                   <button
                     className="scene-btn end"
                     onClick={() => (isReviewing ? stopReview() : prepareSceneReview())}
-                    disabled={isStreaming || isFinalized}
-                    title={
-                      isFinalized
-                        ? 'この物語は完結しています'
-                        : isReviewing
-                          ? 'レビュー生成を中止'
-                          : 'このシーンを振り返って次のシーンへ'
-                    }
+                    disabled={isStreaming}
+                    title={isReviewing ? 'レビュー生成を中止' : 'このシーンを振り返って次のシーンへ'}
                   >
                     {isReviewing ? (
                       <>
@@ -1011,32 +1022,38 @@ export default function ChatPanel({ session }: Props) {
                 )}
               </div>
 
-              <div className="input-row">
-                <textarea
-                  ref={taRef}
-                  rows={1}
-                  value={text}
-                  placeholder={
-                    session.mode === 'roleplay'
-                      ? 'メッセージや行動を入力（Enter で送信 / Shift+Enter で改行）'
-                      : '物語への介入や方向づけを入力（任意）'
-                  }
-                  onChange={(e) => {
-                    setText(e.target.value)
-                    autoGrow()
-                  }}
-                  onKeyDown={onKey}
-                />
-                {isStreaming ? (
-                  <button className="send-btn stop" onClick={stop} title="停止">
-                    <Icon name="square" size={13} />
-                  </button>
-                ) : (
-                  <button className="send-btn" onClick={submit} disabled={!text.trim()} title="送信">
-                    <Icon name="arrow-up" size={16} />
-                  </button>
-                )}
-              </div>
+              {isFinalized ? (
+                <div className="finalized-lock">
+                  🏁 この物語は完結しました。続きを描くには、上の「⑂ ここから分岐して続ける」で新しい分岐（世界線）を作成してください。
+                </div>
+              ) : (
+                <div className="input-row">
+                  <textarea
+                    ref={taRef}
+                    rows={1}
+                    value={text}
+                    placeholder={
+                      session.mode === 'roleplay'
+                        ? 'メッセージや行動を入力（Enter で送信 / Shift+Enter で改行）'
+                        : '物語への介入や方向づけを入力（任意）'
+                    }
+                    onChange={(e) => {
+                      setText(e.target.value)
+                      autoGrow()
+                    }}
+                    onKeyDown={onKey}
+                  />
+                  {isStreaming ? (
+                    <button className="send-btn stop" onClick={stop} title="停止">
+                      <Icon name="square" size={13} />
+                    </button>
+                  ) : (
+                    <button className="send-btn" onClick={submit} disabled={!text.trim()} title="送信">
+                      <Icon name="arrow-up" size={16} />
+                    </button>
+                  )}
+                </div>
+              )}
               {/* ヒントは会話開始前のみ（常時表示だと本文を1行ぶん間延びさせる。F0/A2） */}
               {session.messages.length === 0 && (
                 <div className="hint">

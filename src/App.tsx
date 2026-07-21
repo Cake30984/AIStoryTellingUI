@@ -205,7 +205,9 @@ export default function App() {
         </div>
       )}
 
-      {sceneReview && <SceneReviewModal />}
+      {/* レビュー完了モーダルは、該当セッションを Play で開いている時だけ出す（FB8-B #14）。
+          他画面・他セッション表示中は sceneReview を保持したまま待たせ、戻ってきたら表示する */}
+      {sceneReview && view === 'sessions' && sceneReview.sessionId === activeId && <SceneReviewModal />}
 
       {castingSessionId && <CastingModal sessionId={castingSessionId} />}
 
