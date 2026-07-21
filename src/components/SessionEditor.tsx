@@ -10,6 +10,7 @@ import CassetteEditor from './CassetteEditor'
 import ModalShell from './ModalShell'
 import { Icon } from './icons'
 import CastingFields from './CastingFields'
+import NumberInput from './NumberInput'
 import IntroTagDefEditor from './IntroTagDefEditor'
 import IntroTagFields from './IntroTagFields'
 
@@ -372,15 +373,11 @@ export default function SessionEditor({ session, onClose }: Props) {
                       </div>
                       <div className="sub-field">
                         <span className="sub-label">{d.messages.length === 0 ? '開始する日' : '現在の日'}</span>
-                        <input
-                          type="number"
+                        <NumberInput
                           min={1}
+                          integer
                           value={d.timeline.currentDay}
-                          onChange={(e) =>
-                            patch({
-                              timeline: { ...d.timeline, currentDay: Math.max(1, Number(e.target.value)) },
-                            })
-                          }
+                          onChange={(currentDay) => patch({ timeline: { ...d.timeline, currentDay } })}
                         />
                       </div>
                     </div>

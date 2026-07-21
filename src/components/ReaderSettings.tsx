@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useStore } from '../store'
 import MenuPopover from './MenuPopover'
+import NumberInput from './NumberInput'
 import { DEFAULT_UI, UI_LIMITS, type Session } from '../types'
 
 interface Props {
@@ -9,7 +10,7 @@ interface Props {
 
 /**
  * ラベル＋数値入力（上段）＋スライダー（下段）の共通行。数値入力・スライダーどちらでも変更できる（F2）。
- * 数値入力はフォーカス中はローカル文字列で保持し blur/Enter で確定＋クランプする（「18」等を途中で丸めず打てる）。
+ * 数値入力は共通部品 `NumberInput`（フォーカス中は文字列保持・blur/Enter で確定＋クランプ）を使う（FB8-A #13）。
  */
 function RsField({
   label,
@@ -27,37 +28,19 @@ function RsField({
   onChange: (v: number) => void
 }) {
   const clamp = (n: number) => Math.min(max, Math.max(min, n))
-  const [text, setText] = useState(String(value))
-  const [editing, setEditing] = useState(false)
-  // 編集中でなければ外部変更（スライダー・リセット）を数値入力へ反映
-  useEffect(() => {
-    if (!editing) setText(String(value))
-  }, [value, editing])
-
-  const commit = () => {
-    const n = Number(text)
-    if (Number.isFinite(n)) onChange(clamp(n))
-    else setText(String(value))
-    setEditing(false)
-  }
 
   return (
     <div className="rs-field">
       <div className="rs-field-top">
         <span className="rs-label">{label}</span>
-        <input
+        <NumberInput
           className="rs-num"
-          type="number"
+          value={value}
           min={min}
           max={max}
           step={step}
-          value={text}
-          onFocus={() => setEditing(true)}
-          onChange={(e) => setText(e.target.value)}
-          onBlur={commit}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
-          }}
+          onChange={onChange}
+          aria-label={label}
         />
       </div>
       <input

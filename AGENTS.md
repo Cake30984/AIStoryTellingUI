@@ -65,6 +65,7 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist`。storage は
 - `ActivityIndicator.tsx` — 本編/選択肢/レビュー/画像生成/表情判定の進行状態を1チップに集約。クリックで内訳＋中止
 - `LibraryBar.tsx` — Library（作る）画面用の細いトップバー（`ActivityIndicator`＋インポートボタン＋ジョブボタン）。画像生成の進行/採用を Play に行かず確認できるよう App.tsx が各 Library ビューを `.main` でラップして表示（F6）。ジョブ一覧はドックが無いので `ModalShell`＋`ImageJobsBody`。インポートは PNG カード/JSON バンドルを `store.importAnyFile` で種別自動判別し、結果は `infoNotice` トーストに出す
 - `EntityAvatar.tsx` — 画像 or 色＋イニシャルの共通アバター（全画面で統一）
+- `NumberInput.tsx` — 数値入力の共通部品（FB8-A #13）。フォーカス中はローカル文字列で保持し blur/Enter で確定＋クランプ（`min`/`max`/`step`/`integer`）＝「0 を backspace で空欄化してから打ち直す」ができる。`RsField`（ReaderSettings）が持っていたパターンの一般化
 - `CastingFields.tsx` — セッション設定・カセット・開始時モーダルで共有する、世界観ロール（グループ）への配役欄。ロールごとに参加キャラをチェックボックスで複数選択（1ロール複数人・1人が複数ロール兼任も可。A-2）
 - `IntroTagDefEditor.tsx` — 置換タグの定義編集（追加・削除・メモ）。WorldEditor 開始テンプレート／SessionEditor／CassetteEditor で共有。`opening`/`onOpeningChange` を渡すとタグ名変更時に本文中の `@旧タグ名` を追従書き換えする（A-1）
 - `IntroTagFields.tsx` — 置換タグ（`@タグ`）→ ペルソナ/参加キャラ の対応付け欄＋導入文の実名解決プレビュー。セッション設定・カセット・開始時モーダルで共有（A-1）
@@ -120,6 +121,7 @@ Play 領域:
 - `設計_フィードバック反映5.md` — 実使用フィードバック第5弾（2026-07-18 合意）。シーン区切りのペース制御・時間帯固定・最初の方向付け・既定モデル・Library インポート・レビュー編集モード（FB5-A〜C）の決定と手順書。③ステージ透かし改善は見送り（別途検討）
 - `設計_フィードバック反映6.md` — 実使用フィードバック第6弾（2026-07-19 合意・**全フェーズ未着手**）。FB6-A（セッション画像記録=分岐から独立した生成画像アルバム・全チェックポイント走査バックフィル・ギャラリー「すべての記録」タブ）／B（挿絵・背景の後付け生成=メッセージ単位アンカー・過去シーン・起案文脈をアンカーまでに変更）／C（明示分岐=自動フォーク廃止・上書き方式・⑂ボタン・保護ルール・大きい巻き戻しのみ3択確認）／D（分岐ツリーのレビュー単位折りたたみ=既定折りたたみ・condenseTree 辺縮約）の決定と手順書。実装順は A→B→C→D 固定（C の削除は A の画像保全が前提）
 - `設計_フィードバック反映7.md` — 実使用フィードバック第7弾（2026-07-19 合意・**A〜C実装済み・D は `設計_ロールグループと定量条件.md` で作り直され撤去・E未着手**）。FB7-A（即効修正=画像ズームのポータル化＋等倍トグル・「スタット」→「ステータス」表記統一・最初の方向付けの開始テンプレート化）／B（分岐ツリーの履歴リンク化=行クリック＝移動・`lineTipOf`・`navigateToNode`・スクロールアンカー）／C（ポイントのレビュー確定一本化=選択肢 effects 廃止・変動幅 deltaMin/deltaMax・世界観レビュー指針 `reviewGuidance`）／D（条件エンジンのキャラ変数化=`Clause.charVar` 相手1/2/3・`matchAssignments`。2026-07-20 破棄・後継は `設計_ロールグループと定量条件.md`）／E（発見キャラ=新キャラ登場ポリシー・未解決話者の？バッジ→キャラ化・ライブラリ直行保存・未着手）の決定と手順書
+- `設計_フィードバック反映8.md` — 実使用フィードバック第8弾（2026-07-21 合意）。15項目を5バッチ A〜E に整理し実装順 A→B→C→D→E で合意。**FB8-A 実装済み**（#4 空シーン見出し・#13 数値入力 `NumberInput`・#9 スクロール再中央寄せ・#11「当事者」→「主要登場人物」）／B〜E 未着手（B=完結ロック＋レビュー popup 画面待機・C=ModelsLab＋生成パラメータ・D=会話折りたたみ/現在パス絞り/挿絵→本文リンク・E=条件UI/文言の平易化）
 - `設計_フィードバック反映4.md` — 実使用フィードバック第4弾（2026-07-12 合意）。FB4-A（開始時間帯の防御的修正=クランプ＋開始→次シーンのプレビュー行。※繰り上げロジック自体は正しいことを全経路確認済み・症状は「夜が先頭の区切り定義」疑い）／B（選択肢の既定を auto に）／C（特別イベントの時間帯指定 `ScheduledEvent.slot`）／D（タイムライン設定欄のグレーアウト化=チェック OFF でも常時表示・fieldset disabled）／E（物語設定3欄の説明強化=3欄維持を決定）の手順書
 - `設計_UI改善_フィードバック反映.md` — UI-0〜UI-7 実装後の実使用フィードバック＋コード再監査（2026-07-10）に基づく修正フェーズ F0〜F5 の実装手順書。問題インベントリ（報告 R1〜R19・監査発見 A1〜A13、根本原因の診断付き）→ F0=即効バグ修正（没入グリッド崩壊・checkbox全幅化・System幅等）／F1=分岐ツリー刷新（主線を現在で止める・章折りたたみ・⑂/▷展開・行アクション⋯集約・ドック幅リサイズ `ui.dockWidth`）／F2=リーダー設定の数値化（UiPrefs を number 化・`normalizeUiPrefs`）＋没入案内トースト（`infoNotice`）／F3=動線（生成ボタンをコンポーザーへ・タイトル鉛筆・セッション右クリックメニュー・新規作成→設定自動オープン・ブランド撤去）／F4=発見ログのタブ化＋編集スコープ分割／F5=密度・面の階層（`--bg-rail`・余白締め・railラベル）
 
@@ -192,6 +194,8 @@ Play 領域:
 
 ## 規約・落とし穴
 - **カンマ区切り入力は必ず `CsvInput`**（タグ・ロアのキーワード・timeline slots）。生の `value=arr.join`＋split はカンマが消えるバグの原因
+- **typeable な必須数値欄は `NumberInput`**（FB8-A #13）。生の `type="number"`＋`Number(e.target.value)` は「0 を消して空欄→1」ができない（`Number('')` が 0/NaN に化けて即スナップ）。任意欄（`=== '' ? undefined`）・プルダウン・スライダーは対象外。onChange は blur/Enter 確定発火なので即時反映が要る経路には使わない
+- **シーン見出し（`.scene-divider`）は「本文 or 要約があるとき」だけ出す**（FB8-A #4）。`showDivider` に `session.scenes.length > 1` を足すと、本文を全削除した空シーンでもタイトルだけ残る。空シーンの Scene オブジェクト自体は消さない（`currentSceneId`・タイムライン結合のため表示層で抑止）
 - マーカー疑似メッセージ（`CONTINUE_PROMPT`/`SCENE_START_PROMPT`）は user として積むが、UI では本文を描かず**ターン境界の薄い水平線 `.gen-divider`** で表現（続ける＝線、シーン導入＝見出しが担うので線なし）。小説形式ではユーザー入力の前にも `.gen-divider` を1本入れる（`renderSceneContent` の `seenContent` 判定・FB3-A2）。`isMarker` で判定
 - API キーは localStorage のみ。エクスポートバンドルに providers は含めない
 - **画像 id を持つフィールドを増やしたら `sessionImageIds`（store.ts）に追加する**。入れ忘れると GC で使用中画像が消える／チェックポイント参照画像が誤回収される。カセットの画像収集（`collectCardImages`）・remap にも追加が必要。**セッション外のデータに画像 id を持たせる場合は `collectUsedImageIds` の引数に追加する**（`sessionImageLogs` が前例。FB6-A）
@@ -239,10 +243,12 @@ Play 領域:
 - エンディング定義（`EndingDef`＝条件・エピローグ指針・auto/hidden/fallback／`checkEndings`＋`applyReviewToState` の純関数判定／レビュー内到達プレビュー・エピローグシーン・【エンディング】注入・`finalizeStory`・完結演出／周回横断到達記録 `endingRecords`・ツリー🏁・カセット棚バッジ。E1〜E3）
 - フィードバック反映5（シーン区切りのペース制御＋時間帯固定・最初の方向付け `initialDirective`・既定モデル `defaultModelRef`・Library インポート・レビュー編集モード。FB5-A〜C）
 - フィードバック反映6（セッション画像記録 `sessionImageLogs`＋全チェックポイント走査バックフィル＋ギャラリー「すべての記録」タブ／挿絵・背景の後付け生成＝メッセージ単位アンカー・過去シーン／明示分岐＝上書き方式・`ensureLineTip` ガード・⑂ボタン・保護ルール・シーン跨ぎ3択／分岐ツリーのレビュー単位折りたたみ `condenseTree`。FB6-A〜D）
+- フィードバック反映8-A（即効バグ修正＝空シーンの見出し残り修正〔`showDivider` から `scenes.length>1` を除去〕・数値入力の共通部品 `NumberInput`〔文字列保持・blur確定＝backspace で空欄化可〕・ツリーリンクの再中央寄せ補正・UI 表記「当事者」→「主要登場人物」。FB8-A）
 
 各フェーズの詳細・検証記録は対応する `docs/設計_*.md` を参照。
 
 ## 未着手・残タスク
+- **フィードバック反映8（FB8・A実装済み 2026-07-21・B〜E未着手）**: 手順書 → `docs/設計_フィードバック反映8.md`。15項目を5バッチへ整理、実装順 A→B→C→D→E で合意。A=即効バグ修正（#4 空シーン見出し・#13 数値入力 `NumberInput`・#9 スクロール再中央寄せ・#11「当事者」→「主要登場人物」。**実装済み**）／B=完結の作法（完結分岐で入力/続ける/やり直す/シーン終了をロック＋「⑂ ここから分岐して続ける」・レビュー popup を Play＋該当セッション表示時のみ表示し他画面では保留 #14）／C=画像生成の強化（`imageGen.ts` に `kind:'modelslab'`＋`ImageGenModal` に steps/sampler/ネガティブ/自由サイズを種別で出し分け）／D=読書・ナビUX（会話折りたたみ作り直し・分岐ツリーで現在パス以外を非表示・挿絵→本文リンク）／E=設定のわかりやすさ（条件エディタ・見出し/文言の平易化）。**B〜E未着手**
 - **ロールグループと定量条件（Part A・B実装済み 2026-07-20・拡張未着手）**: 手順書 → `docs/設計_ロールグループと定量条件.md`。Part A=名前置換の分離（`IntroTag`/`IntroTagBinding`・`findIntroTagRefs`/`resolveIntroText`・`IntroTagDefEditor`/`IntroTagFields`）＋ロールのグループ化（`roleMembers`・`CastingFields` 複数選択・【配役】注入一本化。**実装済み**）／Part B=`Clause.group`＋`matchGroups`＋`charVar`/`matchAssignments` 撤去＋`subject`＋`@ロール名`/`@相手` 置換（`bindRoleNames`）＋実績（`unlockAchievements`）/エンディング（`checkEndings`）/イベント（`nextScheduledEvent`）適用＋条件エディタに「グループ条件」行（ロール・数量詞・下位条件・当事者チェック。`WorldEditor.tsx`）。**実装済み**（数量詞 UI は 全員/N人以上 のみ。node直叩きで matchGroups/bindRoleNames/eventUsedKey 検証済み）／拡張=N人ぴったりの UI＋エンディングレビューでのプルダウン選択（未着手）
 - **フィードバック反映7（FB7・A〜C実装済み 2026-07-19・D は上記で作り直され撤去・E未着手）**: 手順書 → `docs/設計_フィードバック反映7.md`。A=即効修正（画像ズームのポータル化＋等倍トグル・表記統一・方向付けテンプレート。**実装済み**）／B=分岐ツリーの履歴リンク化（行クリック＝移動 `navigateToNode`・`lineTipOf`・`scrollTarget`。**実装済み**）／C=ポイントのレビュー確定一本化＋変動幅＋レビュー指針（選択肢 effects 廃止・`deltaMin/deltaMax`・`reviewGuidance`。**実装済み**）／D=条件エンジンのキャラ変数化（`Clause.charVar`＝相手1〜3・`matchAssignments`。2026-07-20、上記「ロールグループと定量条件」Part B により撤去・後継へ移行）／E=発見キャラ（未着手）
 - **フィードバック反映6（FB6・A〜D すべて実装済み・2026-07-19）**: 手順書 → `docs/設計_フィードバック反映6.md`。A=セッション画像記録／B=挿絵・背景の後付け生成／C=明示分岐（上書き方式）／D=ツリーのレビュー単位折りたたみ

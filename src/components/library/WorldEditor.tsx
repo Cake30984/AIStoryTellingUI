@@ -31,6 +31,7 @@ import type {
 } from '../../types'
 import CsvInput from '../CsvInput'
 import IntroTagDefEditor from '../IntroTagDefEditor'
+import NumberInput from '../NumberInput'
 import { exportWorldCard } from '../../lib/cards'
 import { appConfirm } from '../../lib/dialogs'
 import { advanceTimeline, timeLabelOf } from '../../lib/timeline'
@@ -119,11 +120,10 @@ function GroupSubClauseRow({
               </option>
             ))}
           </select>
-          <input
-            type="number"
+          <NumberInput
             value={sub.value}
             style={{ width: 80, background: 'var(--bg)' }}
-            onChange={(e) => onChange({ ...sub, value: Number(e.target.value) })}
+            onChange={(value) => onChange({ ...sub, value })}
           />
         </>
       )}
@@ -208,11 +208,10 @@ function ClauseRow({
                 </option>
               ))}
             </select>
-            <input
-              type="number"
+            <NumberInput
               value={clause.value}
               style={{ width: 80, background: 'var(--bg)' }}
-              onChange={(e) => onChange({ ...clause, value: Number(e.target.value) })}
+              onChange={(value) => onChange({ ...clause, value })}
             />
           </>
         )}
@@ -292,24 +291,23 @@ function ClauseRow({
               <option value="exactly">N人ぴったり</option>
             </select>
             {clause.quantifier.kind !== 'all' && (
-              <input
-                type="number"
+              <NumberInput
                 min={1}
+                integer
                 value={clause.quantifier.n}
                 style={{ width: 60, background: 'var(--bg)' }}
-                onChange={(e) => {
-                  const n = Math.max(1, Number(e.target.value) || 1)
+                onChange={(n) =>
                   onChange({ ...clause, quantifier: { ...clause.quantifier, n } as Quantifier })
-                }}
+                }
               />
             )}
-            <label className="chk" title="このロールのメンバーを結果の当事者にする（@ロール名/@相手 置換・エピローグ注入の対象）">
+            <label className="chk" title="このロールのメンバーを結果の主要登場人物にする（@ロール名/@相手 置換・エピローグ注入の対象）">
               <input
                 type="checkbox"
                 checked={!!clause.subject}
                 onChange={(e) => onChange({ ...clause, subject: e.target.checked })}
               />
-              当事者にする
+              主要登場人物にする
             </label>
           </>
         )}
@@ -787,13 +785,11 @@ export default function WorldEditor({ world, onClose }: Props) {
                     <div className="row2">
                       <div className="sub-field">
                         <span className="sub-label">開始する日</span>
-                        <input
-                          type="number"
+                        <NumberInput
                           min={1}
+                          integer
                           value={timelineDraft.startDay ?? 1}
-                          onChange={(e) =>
-                            patchTimeline({ startDay: Math.max(1, Number(e.target.value)) })
-                          }
+                          onChange={(startDay) => patchTimeline({ startDay })}
                         />
                       </div>
                       {timelineDraft.slots.length > 1 && (
@@ -1040,7 +1036,7 @@ export default function WorldEditor({ world, onClose }: Props) {
                 </button>
                 <div className="desc" style={{ marginTop: 4 }}>
                   {clauses.length > 0
-                    ? ' 条件を満たし、指定日時も到来していれば自動的に発火します（承認不要）。グループ条件で「当事者にする」を付けたロールのメンバー名は、note に @ロール名 または @相手 と書くとそこに置換されます。N人ぴったりも自動発火のため選択 UI は無く、満たした先頭 n 人が当事者になります。判定だけに使うゲート条件（ラスボス撃破等）は当事者にしないでください。'
+                    ? ' 条件を満たし、指定日時も到来していれば自動的に発火します（承認不要）。グループ条件で「主要登場人物にする」を付けたロールのメンバー名は、note に @ロール名 または @相手 と書くとそこに置換されます。N人ぴったりも自動発火のため選択 UI は無く、満たした先頭 n 人が主要登場人物になります。判定だけに使うゲート条件（ラスボス撃破等）は主要登場人物にしないでください。'
                     : '指定日時で判定します（両方空欄なら常に候補）。'}
                 </div>
               </div>
@@ -1161,11 +1157,10 @@ export default function WorldEditor({ world, onClose }: Props) {
               <div className="row2" style={{ marginTop: 6 }}>
                 <label className="chk">
                   初期
-                  <input
-                    type="number"
+                  <NumberInput
                     value={s.default}
                     style={{ width: 72, background: 'var(--bg)' }}
-                    onChange={(e) => updateStat(s.id, { default: Number(e.target.value) })}
+                    onChange={(v) => updateStat(s.id, { default: v })}
                   />
                 </label>
                 <label className="chk">
@@ -1318,11 +1313,11 @@ export default function WorldEditor({ world, onClose }: Props) {
               ステータス・カウンター・関係フラグ・他の実績のしきい値を満たすと、承認なしで自動的に解除されます。
               「グループ条件」でロール（配役）のメンバーに対する全員/N人以上/N人ぴったりの条件を課せます。
               実績は自動解除で人を選べないため、<strong>N人ぴったりは N人以上と同じ扱い</strong>
-              （満たした全員が当事者）になります。
-              「当事者にする」を付けたロールのメンバー名は、実績名・内容に <code>@ロール名</code> または{' '}
-              <code>@相手</code> と書くとそこに置換されます。当事者の組ごとに独立に解除されます
+              （満たした全員が主要登場人物）になります。
+              「主要登場人物にする」を付けたロールのメンバー名は、実績名・内容に <code>@ロール名</code> または{' '}
+              <code>@相手</code> と書くとそこに置換されます。主要登場人物の組ごとに独立に解除されます
               （A で解除→後日 A・B の組でも同じ実績が解除）。判定だけに使うゲート条件（ラスボス撃破等）は
-              当事者にしないでください。
+              主要登場人物にしないでください。
             </div>
           </div>
           {achievements.map((a) => {
@@ -1398,11 +1393,11 @@ export default function WorldEditor({ world, onClose }: Props) {
               prose は読みません）。<strong>上にあるほど優先</strong>されます（複数成立時は最上位の1つ）。
               「fallback」は期間満了時に条件成立エンディングが無い場合の受け皿です。
               「グループ条件」でロール（配役）のメンバーに対する全員/N人以上/N人ぴったりの条件を課せます。
-              N人ぴったりを「当事者にする」と、満たした人数が n を超える場合にレビュー画面で誰を当事者にするか
-              プルダウンで選べます。
-              「当事者にする」を付けたロールのメンバー名は、名前・エピローグ指針に <code>@ロール名</code>{' '}
+              N人ぴったりを「主要登場人物にする」と、満たした人数が n を超える場合にレビュー画面で誰を
+              主要登場人物にするかプルダウンで選べます。
+              「主要登場人物にする」を付けたロールのメンバー名は、名前・エピローグ指針に <code>@ロール名</code>{' '}
               または <code>@相手</code> と書くとそこに置換されます。判定だけに使うゲート条件（ラスボス撃破等）は
-              当事者にしないでください。
+              主要登場人物にしないでください。
             </div>
           </div>
           {endings.map((e, idx) => {

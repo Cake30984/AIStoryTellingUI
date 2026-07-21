@@ -234,6 +234,7 @@ export default function ChatPanel({ session }: Props) {
     let cancelled = false
     let raf1 = 0
     let raf2 = 0
+    let recenterTimer = 0
     const scrollToTarget = () => {
       raf1 = requestAnimationFrame(() => {
         raf2 = requestAnimationFrame(() => {
@@ -245,9 +246,15 @@ export default function ChatPanel({ session }: Props) {
             el = document.querySelector(`[data-msg-id="${session.messages[i].id}"]`)
           }
           if (el) {
-            el.scrollIntoView({ block: 'center' })
-            el.classList.add('msg-flash')
-            window.setTimeout(() => el!.classList.remove('msg-flash'), 2000)
+            const target = el
+            target.scrollIntoView({ block: 'center' })
+            target.classList.add('msg-flash')
+            window.setTimeout(() => target.classList.remove('msg-flash'), 2000)
+            // 挿絵などが後から読み込まれて上のレイアウトが伸びると中央からずれるので、
+            // 少し置いてもう一度だけ中央合わせして補正する（FB8-A #9）
+            recenterTimer = window.setTimeout(() => {
+              if (!cancelled) target.scrollIntoView({ block: 'center' })
+            }, 240)
           } else {
             anchorRef.current?.scrollIntoView()
           }
@@ -276,6 +283,7 @@ export default function ChatPanel({ session }: Props) {
       cancelled = true
       cancelAnimationFrame(raf1)
       cancelAnimationFrame(raf2)
+      window.clearTimeout(recenterTimer)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scrollTarget])
@@ -789,9 +797,11 @@ export default function ChatPanel({ session }: Props) {
                   const castNames = sc.activeCharacterIds
                     .map((id) => characters.find((c) => c.id === id)?.name)
                     .filter(Boolean)
-                  // シーンに本文（マーカー以外）か要約があれば1シーン目でも見出しを表示（FB3-A1）
+                  // シーンに本文（マーカー以外）か要約があれば見出しを表示（FB3-A1）。
+                  // 「複数シーンあれば無条件で見出し」は、本文を全削除した空シーンでもタイトルだけ残る
+                  // 原因だったので外した（FB8-A #4）。健全なシーンは本文か要約を必ず持つのでこれで十分。
                   const hasRealContent = msgs.some((m) => m.content.trim() && m.content !== CONTINUE_PROMPT && m.content !== SCENE_START_PROMPT)
-                  const showDivider = hasRealContent || !!sc.summary || session.scenes.length > 1
+                  const showDivider = hasRealContent || !!sc.summary
                   return (
                     <Fragment key={sc.id}>
                       {showDivider && (

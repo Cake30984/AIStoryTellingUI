@@ -3,6 +3,7 @@ import { useStore } from '../store'
 import type { Session, SessionState } from '../types'
 import EntityAvatar from './EntityAvatar'
 import ModalShell from './ModalShell'
+import NumberInput from './NumberInput'
 
 interface Props {
   session: Session
@@ -127,22 +128,20 @@ export default function StatusPanel({ session, onClose }: Props) {
                 {globalStats.map((d) => (
                   <label key={d.id} className="chk">
                     {d.name}
-                    <input
-                      type="number"
+                    <NumberInput
                       value={statValue(d.id)}
                       style={{ width: 90, background: 'var(--bg)' }}
-                      onChange={(e) => setStat(d.id, undefined, Number(e.target.value))}
+                      onChange={(v) => setStat(d.id, undefined, v)}
                     />
                   </label>
                 ))}
                 {globalCounters.map((d) => (
                   <label key={d.id} className="chk">
                     {d.name}
-                    <input
-                      type="number"
+                    <NumberInput
                       value={counterValue(d.id)}
                       style={{ width: 90, background: 'var(--bg)' }}
-                      onChange={(e) => setCounter(d.id, undefined, Number(e.target.value))}
+                      onChange={(v) => setCounter(d.id, undefined, v)}
                     />
                   </label>
                 ))}
@@ -166,22 +165,20 @@ export default function StatusPanel({ session, onClose }: Props) {
                     {charStats.map((d) => (
                       <label key={d.id} className="chk">
                         {d.name}
-                        <input
-                          type="number"
+                        <NumberInput
                           value={statValue(d.id, c.id)}
                           style={{ width: 80, background: 'var(--bg)' }}
-                          onChange={(e) => setStat(d.id, c.id, Number(e.target.value))}
+                          onChange={(v) => setStat(d.id, c.id, v)}
                         />
                       </label>
                     ))}
                     {charCounters.map((d) => (
                       <label key={d.id} className="chk">
                         {d.name}
-                        <input
-                          type="number"
+                        <NumberInput
                           value={counterValue(d.id, c.id)}
                           style={{ width: 80, background: 'var(--bg)' }}
-                          onChange={(e) => setCounter(d.id, c.id, Number(e.target.value))}
+                          onChange={(v) => setCounter(d.id, c.id, v)}
                         />
                       </label>
                     ))}

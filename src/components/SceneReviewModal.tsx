@@ -11,6 +11,7 @@ import type {
 } from '../types'
 import ModalShell from './ModalShell'
 import CsvInput from './CsvInput'
+import NumberInput from './NumberInput'
 import { Icon } from './icons'
 
 /** 編集用 draft はストアの review から分離した深コピー（編集途中で元を汚さない。FB5-C） */
@@ -363,7 +364,7 @@ export default function SceneReviewModal() {
                       👥 {c.roleName || '無名ロール'}を{c.n}人選択
                     </label>
                     <div className="desc">
-                      条件を満たした{c.candidates.length}人からエピローグの当事者にする{c.n}人を選びます。
+                      条件を満たした{c.candidates.length}人からエピローグの主要登場人物にする{c.n}人を選びます。
                     </div>
                     <div className="review-cards">
                       {Array.from({ length: c.n }).map((_, idx) => {
@@ -634,11 +635,10 @@ export default function SceneReviewModal() {
                               {c.charName && `${c.charName} の `}
                               {c.name}
                             </strong>
-                            <input
-                              type="number"
+                            <NumberInput
                               className="num"
                               value={c.delta}
-                              onChange={(e) => updStat(i, { delta: Number(e.target.value) || 0 })}
+                              onChange={(delta) => updStat(i, { delta })}
                             />
                           </div>
                           <input
@@ -684,16 +684,12 @@ export default function SceneReviewModal() {
                               {c.charName && `${c.charName} の `}
                               {c.name}
                             </strong>
-                            <input
-                              type="number"
+                            <NumberInput
                               className="num"
                               min={0}
+                              integer
                               value={c.amount}
-                              onChange={(e) =>
-                                updCounter(i, {
-                                  amount: Math.max(0, Math.round(Number(e.target.value) || 0)),
-                                })
-                              }
+                              onChange={(amount) => updCounter(i, { amount })}
                             />
                           </div>
                           <input
