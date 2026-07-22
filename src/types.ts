@@ -670,7 +670,7 @@ export interface Provider {
 }
 
 /** 画像生成の接続先種別 */
-export type ImageProviderKind = 'comfyui' | 'openai-image'
+export type ImageProviderKind = 'comfyui' | 'openai-image' | 'modelslab'
 
 /** 画像生成の接続先（LLM の Provider とは別系統）。localStorage のみ保存・エクスポート除外 */
 export interface ImageProvider {
@@ -679,15 +679,15 @@ export interface ImageProvider {
   kind: ImageProviderKind
   /** ComfyUI: http://127.0.0.1:8188 / OpenAI互換: https://api.openai.com/v1 等 */
   baseUrl: string
-  /** openai-image のみ使用（comfyui は通常不要） */
+  /** openai-image / modelslab で使用（comfyui は通常不要） */
   apiKey: string
-  /** openai-image のみ: モデル名（dall-e-3 / grok-2-image 等） */
+  /** openai-image: モデル名（dall-e-3 等） / modelslab: model_id（コミュニティモデル。空ならデフォルト） */
   model: string
   /** comfyui のみ: API Format の workflow JSON（%PROMPT% 等のプレースホルダ入り文字列） */
   workflowJson: string
   /** 生成時にプロンプト先頭へ自動結合される定型タグ（品質・画風・LoRA トリガー等。プロンプト欄には表示しない） */
   defaultPositive?: string
-  /** 生成時にネガティブ先頭へ自動結合される定型タグ（comfyui のみ有効） */
+  /** 生成時にネガティブ先頭へ自動結合される定型タグ（comfyui / modelslab で有効。openai-image は API 非対応） */
   defaultNegative?: string
 }
 

@@ -8,6 +8,8 @@ import { useBlobUrl, type ImageJobTarget } from '../lib/imageJobs'
 import ModelPicker from './ModelPicker'
 import ModalShell from './ModalShell'
 import ZoomOverlay from './ZoomOverlay'
+import NumberInput from './NumberInput'
+import { MODELSLAB_SCHEDULERS } from '../lib/imageGen'
 
 /** サイズプリセット（openai系は API 側の許容値に依存。エラーはそのまま表示する） */
 const SIZE_PRESETS = [
@@ -79,10 +81,16 @@ export default function ImageGenModal({
   const [providerId, setProviderId] = useState(
     imageProviders.some((p) => p.id === lastImageProviderId) ? lastImageProviderId! : imageProviders[0]?.id ?? '',
   )
-  const [sizeIdx, setSizeIdx] = useState(defaultSizeIdx ?? 0)
+  const [sizeIdx, setSizeIdx] = useState(defaultSizeIdx ?? 0) // -1 = カスタム
+  const [customW, setCustomW] = useState(SIZE_PRESETS[defaultSizeIdx ?? 0]?.width ?? 1024)
+  const [customH, setCustomH] = useState(SIZE_PRESETS[defaultSizeIdx ?? 0]?.height ?? 1024)
   const [count, setCount] = useState(1)
   const [prompt, setPrompt] = useState(initialPrompt ?? '')
   const [negative, setNegative] = useState(initialNegative ?? '')
+  // ModelsLab 用パラメータ（他種別では未使用・欄も出さない）
+  const [steps, setSteps] = useState(30)
+  const [cfg, setCfg] = useState(7)
+  const [sampler, setSampler] = useState(MODELSLAB_SCHEDULERS[0])
   const [draftModel, setDraftModel] = useState(lastDraftModel || draftContext?.modelRef || '')
   const [showModelPicker, setShowModelPicker] = useState(false)
   const [drafting, setDrafting] = useState(false)
@@ -92,6 +100,8 @@ export default function ImageGenModal({
 
   const provider = imageProviders.find((p) => p.id === providerId)
   const job = imageJobs.find((j) => j.id === jobId)
+  const isModelsLab = provider?.kind === 'modelslab'
+  const showNegative = provider?.kind === 'comfyui' || isModelsLab
 
   const draft = async () => {
     if (!draftContext) return
@@ -156,7 +166,7 @@ export default function ImageGenModal({
       return
     }
     if (jobId) dismissImageJob(jobId)
-    const size = SIZE_PRESETS[sizeIdx]
+    const size = sizeIdx >= 0 ? SIZE_PRESETS[sizeIdx] : { width: customW, height: customH }
     setError('')
     setLastImageProviderId(provider.id)
     const id = startImageJob({
@@ -164,9 +174,12 @@ export default function ImageGenModal({
       target,
       providerId: provider.id,
       prompt: prompt.trim(),
-      negative: negative.trim() || undefined,
+      negative: showNegative ? negative.trim() || undefined : undefined,
       width: size.width,
       height: size.height,
+      steps: isModelsLab ? steps : undefined,
+      sampler: isModelsLab ? sampler : undefined,
+      cfg: isModelsLab ? cfg : undefined,
       count,
     })
     setJobId(id)
@@ -200,7 +213,7 @@ export default function ImageGenModal({
     >
           {imageProviders.length === 0 ? (
             <p className="desc">
-              画像生成の接続先が未設定です。「⚙ 設定・データ管理」から ComfyUI または画像 API を追加してください。
+              画像生成の接続先が未設定です。「⚙ 設定・データ管理」から ComfyUI・ModelsLab・画像 API のいずれかを追加してください。
             </p>
           ) : (
             <>
@@ -210,7 +223,8 @@ export default function ImageGenModal({
                   <select value={providerId} onChange={(e) => setProviderId(e.target.value)} style={{ flex: 1 }}>
                     {imageProviders.map((p) => (
                       <option key={p.id} value={p.id}>
-                        {p.label || (p.kind === 'comfyui' ? 'ComfyUI' : '画像API')}
+                        {p.label ||
+                          (p.kind === 'comfyui' ? 'ComfyUI' : p.kind === 'modelslab' ? 'ModelsLab' : '画像API')}
                       </option>
                     ))}
                   </select>
@@ -220,6 +234,7 @@ export default function ImageGenModal({
                         {s.label}
                       </option>
                     ))}
+                    <option value={-1}>カスタム（数値指定）</option>
                   </select>
                   <select value={count} onChange={(e) => setCount(Number(e.target.value))} style={{ width: 90 }}>
                     {[1, 2, 3, 4].map((n) => (
@@ -229,6 +244,15 @@ export default function ImageGenModal({
                     ))}
                   </select>
                 </div>
+                {sizeIdx < 0 && (
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6 }}>
+                    <span className="desc" style={{ margin: 0 }}>幅</span>
+                    <NumberInput value={customW} min={64} max={2048} step={64} integer onChange={setCustomW} style={{ width: 90 }} />
+                    <span className="desc" style={{ margin: 0 }}>× 高さ</span>
+                    <NumberInput value={customH} min={64} max={2048} step={64} integer onChange={setCustomH} style={{ width: 90 }} />
+                    <span className="desc" style={{ margin: 0 }}>px</span>
+                  </div>
+                )}
               </div>
 
               <div className="field">
@@ -249,13 +273,35 @@ export default function ImageGenModal({
                 )}
               </div>
 
-              {provider?.kind === 'comfyui' && (
+              {showNegative && (
                 <div className="field">
                   <label>ネガティブプロンプト（任意）</label>
                   <textarea rows={2} value={negative} placeholder="例: lowres, bad anatomy" onChange={(e) => setNegative(e.target.value)} />
                   {provider?.defaultNegative?.trim() && (
                     <div className="desc">🏷 生成時に自動付加: {provider.defaultNegative}</div>
                   )}
+                </div>
+              )}
+
+              {isModelsLab && (
+                <div className="field">
+                  <label>生成パラメータ（ModelsLab）</label>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <span className="desc" style={{ margin: 0 }}>サンプラー</span>
+                    <select value={sampler} onChange={(e) => setSampler(e.target.value)} style={{ flex: 1 }}>
+                      {MODELSLAB_SCHEDULERS.map((s) => (
+                        <option key={s} value={s}>
+                          {s}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6 }}>
+                    <span className="desc" style={{ margin: 0 }}>ステップ数</span>
+                    <NumberInput value={steps} min={1} max={100} step={1} integer onChange={setSteps} style={{ width: 80 }} />
+                    <span className="desc" style={{ margin: 0 }}>CFG（ガイダンス）</span>
+                    <NumberInput value={cfg} min={1} max={20} step={0.5} onChange={setCfg} style={{ width: 80 }} />
+                  </div>
                 </div>
               )}
 

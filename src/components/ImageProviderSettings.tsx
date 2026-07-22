@@ -51,7 +51,7 @@ export default function ImageProviderSettings() {
               onChange={(e) => upsertImageProvider({ ...p, label: e.target.value })}
             />
             <span className="badge" style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>
-              {p.kind === 'comfyui' ? 'ComfyUI' : '画像API'}
+              {p.kind === 'comfyui' ? 'ComfyUI' : p.kind === 'modelslab' ? 'ModelsLab' : '画像API'}
             </span>
             <button
               className="icon-btn small"
@@ -65,12 +65,18 @@ export default function ImageProviderSettings() {
 
           <input
             style={inputStyle}
-            placeholder={p.kind === 'comfyui' ? 'Base URL（例: http://127.0.0.1:8188）' : 'Base URL（例: https://api.openai.com/v1）'}
+            placeholder={
+              p.kind === 'comfyui'
+                ? 'Base URL（例: http://127.0.0.1:8188）'
+                : p.kind === 'modelslab'
+                  ? 'Base URL（例: https://modelslab.com/api/v6）'
+                  : 'Base URL（例: https://api.openai.com/v1）'
+            }
             value={p.baseUrl}
             onChange={(e) => upsertImageProvider({ ...p, baseUrl: e.target.value })}
           />
 
-          {p.kind === 'openai-image' && (
+          {(p.kind === 'openai-image' || p.kind === 'modelslab') && (
             <>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
                 <input
@@ -90,7 +96,11 @@ export default function ImageProviderSettings() {
               </div>
               <input
                 style={inputStyle}
-                placeholder="モデル名（例: dall-e-3 / grok-2-image）"
+                placeholder={
+                  p.kind === 'modelslab'
+                    ? 'モデルID（model_id・空欄でデフォルト）'
+                    : 'モデル名（例: dall-e-3 / grok-2-image）'
+                }
                 value={p.model}
                 onChange={(e) => upsertImageProvider({ ...p, model: e.target.value })}
               />
@@ -123,7 +133,7 @@ export default function ImageProviderSettings() {
             value={p.defaultPositive ?? ''}
             onChange={(e) => upsertImageProvider({ ...p, defaultPositive: e.target.value })}
           />
-          {p.kind === 'comfyui' && (
+          {(p.kind === 'comfyui' || p.kind === 'modelslab') && (
             <textarea
               rows={2}
               style={inputStyle}
@@ -150,6 +160,9 @@ export default function ImageProviderSettings() {
       <div style={{ display: 'flex', gap: 8 }}>
         <button className="btn" style={{ flex: 1 }} onClick={() => upsertImageProvider(newImageProvider('comfyui'))}>
           <Icon name="plus" size={14} /> ComfyUI を追加
+        </button>
+        <button className="btn" style={{ flex: 1 }} onClick={() => upsertImageProvider(newImageProvider('modelslab'))}>
+          <Icon name="plus" size={14} /> ModelsLab を追加
         </button>
         <button
           className="btn"

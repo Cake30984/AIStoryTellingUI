@@ -14,7 +14,31 @@ export interface ImageGenRequest {
   width?: number
   /** 既定 1024 */
   height?: number
+  /** サンプリングステップ数（modelslab: num_inference_steps。comfyui/openai は未使用） */
+  steps?: number
+  /** サンプラー／スケジューラ名（modelslab: scheduler。comfyui/openai は未使用） */
+  sampler?: string
+  /** ガイダンススケール／CFG（modelslab: guidance_scale。comfyui/openai は未使用） */
+  cfg?: number
 }
+
+/** ModelsLab の scheduler（サンプラー）候補。UI のプルダウンで使う */
+export const MODELSLAB_SCHEDULERS = [
+  'UniPCMultistepScheduler',
+  'EulerDiscreteScheduler',
+  'EulerAncestralDiscreteScheduler',
+  'DPMSolverMultistepScheduler',
+  'DPMSolverSinglestepScheduler',
+  'DDPMScheduler',
+  'DDIMScheduler',
+  'PNDMScheduler',
+  'LMSDiscreteScheduler',
+  'HeunDiscreteScheduler',
+  'KDPM2DiscreteScheduler',
+  'KDPM2AncestralDiscreteScheduler',
+  'DEISMultistepScheduler',
+  'LCMScheduler',
+]
 
 /** ComfyUI 用デフォルト workflow（API Format・プレースホルダ入り）。ckpt_name は各自の環境に合わせて書き換える */
 export const DEFAULT_COMFY_WORKFLOW = `{
@@ -40,6 +64,20 @@ export function newImageProvider(kind: ImageProviderKind): ImageProvider {
       defaultPositive: 'masterpiece, best quality, very aesthetic, absurdres',
       defaultNegative:
         'low quality, worst quality, bad anatomy, bad hands, extra fingers, missing fingers, extra digits, jpeg artifacts, signature, watermark, username',
+    }
+  }
+  if (kind === 'modelslab') {
+    return {
+      id: uid(),
+      label: 'ModelsLab',
+      kind,
+      baseUrl: 'https://modelslab.com/api/v6',
+      apiKey: '',
+      model: '',
+      workflowJson: '',
+      defaultPositive: 'masterpiece, best quality, very aesthetic, absurdres',
+      defaultNegative:
+        'low quality, worst quality, bad anatomy, bad hands, extra fingers, missing fingers, jpeg artifacts, signature, watermark',
     }
   }
   return {
@@ -180,6 +218,70 @@ async function generateOpenAiImage(p: ImageProvider, req: ImageGenRequest, signa
   throw new Error('画像データが返されませんでした。')
 }
 
+/**
+ * ModelsLab（v6 text2img）。OpenAI 互換ではないので専用パス。
+ * - 認証はヘッダではなく body の `key`。モデルは `model_id`（空ならプロバイダ既定）
+ * - status:'processing' なら `fetch_result`（または /images/fetch/{id}）を success までポーリング
+ * - 出力は URL 配列。先頭を取得して Blob 化（Web は CORS 制限で失敗しうる＝デスクトップ版は appFetch で回避）
+ */
+async function generateModelslab(p: ImageProvider, req: ImageGenRequest, signal?: AbortSignal): Promise<Blob> {
+  const base = stripSlash(p.baseUrl)
+  const body: Record<string, unknown> = {
+    key: p.apiKey,
+    prompt: req.prompt,
+    negative_prompt: req.negative ?? '',
+    width: req.width ?? 1024,
+    height: req.height ?? 1024,
+    samples: 1,
+    num_inference_steps: req.steps ?? 30,
+    guidance_scale: req.cfg ?? 7.5,
+    scheduler: req.sampler || 'UniPCMultistepScheduler',
+    safety_checker: false,
+    enhance_prompt: false,
+    seed: null,
+  }
+  if (p.model.trim()) body.model_id = p.model.trim()
+
+  const res = await appFetch(`${base}/images/text2img`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal,
+  })
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new Error(`ModelsLab エラー (${res.status}): ${text || res.statusText}`)
+  }
+  let json = await res.json()
+
+  // processing の間は fetch_result をポーリング（最大5分）
+  const deadline = Date.now() + 5 * 60_000
+  while (json?.status === 'processing' && Date.now() < deadline) {
+    if (signal?.aborted) throw new DOMException('中断されました', 'AbortError')
+    const eta = Math.min(Math.max(Number(json.eta) || 3, 1), 15)
+    await sleep(eta * 1000)
+    const fetchUrl = json.fetch_result || `${base}/images/fetch/${encodeURIComponent(json.id)}`
+    const fr = await appFetch(fetchUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: p.apiKey }),
+      signal,
+    })
+    if (!fr.ok) continue
+    json = await fr.json()
+  }
+
+  if (json?.status !== 'success') {
+    // ModelsLab は message を "messege" と綴ることがある
+    throw new Error(`ModelsLab: ${json?.message || json?.messege || `生成に失敗しました（status: ${json?.status}）`}`)
+  }
+  const url = Array.isArray(json?.output) ? json.output[0] : undefined
+  if (!url) throw new Error('ModelsLab から画像 URL が返されませんでした。')
+  const img = await appFetch(url, { signal })
+  if (!img.ok) throw new Error(`生成画像の取得に失敗しました (${img.status})`)
+  return img.blob()
+}
+
 /** プロバイダ種別を吸収して1枚生成する。接続先のデフォルトタグをここで結合する。失敗は throw（呼び出し側で表示） */
 export async function generateImage(p: ImageProvider, req: ImageGenRequest, signal?: AbortSignal): Promise<Blob> {
   const merged: ImageGenRequest = {
@@ -188,6 +290,7 @@ export async function generateImage(p: ImageProvider, req: ImageGenRequest, sign
     negative: combineWithDefaults(p.defaultNegative, req.negative ?? '') || undefined,
   }
   if (p.kind === 'comfyui') return generateComfy(p, merged, signal)
+  if (p.kind === 'modelslab') return generateModelslab(p, merged, signal)
   return generateOpenAiImage(p, merged, signal)
 }
 
@@ -199,6 +302,11 @@ export async function testImageProvider(p: ImageProvider): Promise<{ ok: boolean
       const res = await appFetch(`${base}/system_stats`)
       if (res.ok) return { ok: true, message: 'ComfyUI に接続できました。' }
       return { ok: false, message: `応答はありますがエラーです (${res.status})` }
+    }
+    if (p.kind === 'modelslab') {
+      // ModelsLab は無料の疎通確認エンドポイントが無い（生成はクレジット消費）。キー有無だけ確認する
+      if (!p.apiKey.trim()) return { ok: false, message: 'API キーを入力してください。' }
+      return { ok: true, message: 'API キーが設定されています。実際の生成でキー・モデルの有効性を確認します。' }
     }
     const res = await appFetch(`${base}/models`, {
       headers: p.apiKey ? { Authorization: `Bearer ${p.apiKey}` } : undefined,

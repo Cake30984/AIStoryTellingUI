@@ -1350,6 +1350,9 @@ interface AppState {
     negative?: string
     width: number
     height: number
+    steps?: number
+    sampler?: string
+    cfg?: number
     count: number
   }) => string
   cancelImageJob: (jobId: string) => void
@@ -2253,7 +2256,17 @@ export const useStore = create<AppState>()(
        */
       async function runImageJobLoop(
         id: string,
-        args: { providerId: string; prompt: string; negative?: string; width: number; height: number; count: number },
+        args: {
+          providerId: string
+          prompt: string
+          negative?: string
+          width: number
+          height: number
+          steps?: number
+          sampler?: string
+          cfg?: number
+          count: number
+        },
       ): Promise<void> {
         const ctrl = new AbortController()
         registerJobAbort(id, ctrl)
@@ -2269,7 +2282,15 @@ export const useStore = create<AppState>()(
           try {
             const blob = await generateImage(
               provider,
-              { prompt: args.prompt, negative: args.negative, width: args.width, height: args.height },
+              {
+                prompt: args.prompt,
+                negative: args.negative,
+                width: args.width,
+                height: args.height,
+                steps: args.steps,
+                sampler: args.sampler,
+                cfg: args.cfg,
+              },
               ctrl.signal,
             )
             set((st) => ({
@@ -4287,6 +4308,9 @@ export const useStore = create<AppState>()(
             negative: args.negative,
             width: args.width,
             height: args.height,
+            steps: args.steps,
+            sampler: args.sampler,
+            cfg: args.cfg,
             count: args.count,
             status: 'running',
             results: [],
