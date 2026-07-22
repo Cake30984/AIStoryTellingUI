@@ -215,7 +215,7 @@ Play 領域:
 - **分岐の自動削除は必ず保護判定（`subtreeHasProtection`）を通し、`recordCheckpoint` 内では剪定しない**（fail-open。ガード＝`ensureLineTip` を通らない経路で兄弟ができたら従来どおり表示され、取り漏らしをバグとして発見できる。FB6-C）
 - **ツリー行クリックは移動（`navigateToNode`）**。ツリーは「読む・移動する」装置で、分岐を作る操作は本文の操作行（⑂・ここから・編集・削除）に集約。復元＝「↩ この時点に戻す」は ⋯ メニューのみ（FB7-B）
 - **選択肢は加点を持たない**（P5 廃止・FB7-C）。状態の書き手はシーン終了レビュー（＋状態パネルの手動編集）のみ。選択肢生成・表示に effects 系の分岐を復活させない
-- **完結分岐は `isSessionFinalized(s)` でロック**（FB8-B・#3/#15）。生成/継続系の物語操作を増やしたら、その冒頭でも `isSessionFinalized` ガードを足す（UI で隠すだけでは `Ctrl+G` 等の経路を塞げない。現状ガード済み＝`send`/`continueStory`/`continueLast`/`regenerate`/`regenerateFrom`）。続きは `branchToContinue`（完結解除した子ノードを積む）に一本化し、🏁 ノードは `ending` で保護されるので温存される。`endingRecords`（周回到達記録）は分岐継続でも消さない
+- **完結分岐は `isSessionFinalized(s)` でロック**（FB8-B・#3/#15）。生成/継続系の物語操作を増やしたら、その冒頭でも `isSessionFinalized` ガードを足す（UI で隠すだけでは `Ctrl+G` 等の経路を塞げない。現状ガード済み＝`send`/`continueStory`/`continueLast`/`regenerate`/`regenerateFrom`）。続きは `branchToContinue` に一本化＝`endedAt` **だけ**解除して `ending` は残し（分岐先は `isEpilogue` のまま＝普通のシーンにせず「完結する」で再締め可）、続きノードを **🏁 の親（分岐点）の子＝🏁 の兄弟**として積む（`recordCheckpoint` 直前に `currentId` を `🏁.parentId` へ移す）＝ツリーで枝分かれ表示。🏁 ノードは `ending` で保護され温存。`endingRecords`（周回到達記録）は分岐継続でも消さない
 - **レビュー完了モーダルは `SceneReview.sessionId`＋Play 表示中でゲート**（FB8-B・#14）。`App.tsx` は `view==='sessions' && sceneReview.sessionId === activeId` の時だけ `SceneReviewModal` を出す。`SceneReview` を新規構築する箇所を増やしたら `sessionId` を必ず刻む（`prepareSceneReview` が前例）
 - **条件のロール判定は `matchGroups` に一本化**（`docs/設計_ロールグループと定量条件.md` Part B）。平の節（`stat`/`counter` scope=character・characterId 未指定／`relationFlag` fromId 未指定）は「参加キャラの誰か1人が満たす（∃）」のゲート専用で当事者にはならない。特定ロールのメンバーに対する全員/N人以上/N人ぴったりの条件と当事者指定は `Clause.group`（`roleId`＋`quantifier`＋`subject?`＋`clauses: GroupSubClause[]`）で書く。`evalCondition` は「成立するか」の互換窓口。他所で「いずれかのキャラ」判定をコピーしない
 - **実績・イベントの発火記録は「定義×当事者の組（ロール別 `parties`）」単位**（subject な group 節を含む場合）。実績＝`SessionState.achievements[].parties`、イベント消化＝`usedEventIds` のキー `eventId@charId1[+charId2]`（`eventUsedKey`）。当事者の組ごとに独立発火（A・Bで解除→後日 A・B・C の組でも同じ定義が再発火）。素の `eventId` は「全組み消化済み」扱い（旧データ安全側）
@@ -246,7 +246,7 @@ Play 領域:
 - フィードバック反映5（シーン区切りのペース制御＋時間帯固定・最初の方向付け `initialDirective`・既定モデル `defaultModelRef`・Library インポート・レビュー編集モード。FB5-A〜C）
 - フィードバック反映6（セッション画像記録 `sessionImageLogs`＋全チェックポイント走査バックフィル＋ギャラリー「すべての記録」タブ／挿絵・背景の後付け生成＝メッセージ単位アンカー・過去シーン／明示分岐＝上書き方式・`ensureLineTip` ガード・⑂ボタン・保護ルール・シーン跨ぎ3択／分岐ツリーのレビュー単位折りたたみ `condenseTree`。FB6-A〜D）
 - フィードバック反映8-A（即効バグ修正＝空シーンの見出し残り修正〔`showDivider` から `scenes.length>1` を除去〕・数値入力の共通部品 `NumberInput`〔文字列保持・blur確定＝backspace で空欄化可〕・ツリーリンクの再中央寄せ補正・UI 表記「当事者」→「主要登場人物」。FB8-A）
-- フィードバック反映8-B（完結の作法＝完結分岐のロック〔`isSessionFinalized`・入力/続ける/やり直す/選択肢/メッセージ生成系を隠し `send`/`continueStory`/`continueLast`/`regenerate`/`regenerateFrom` を store でもガード〕＋「⑂ ここから分岐して続ける」`branchToContinue`〔完結解除した子ノードを積む・🏁 線は保護され温存〕／レビュー完了モーダルを `SceneReview.sessionId`＋`view==='sessions'` で該当セッション表示時のみ表示。FB8-B）
+- フィードバック反映8-B（完結の作法＝完結分岐のロック〔`isSessionFinalized`・入力/続ける/やり直す/選択肢/メッセージ生成系を隠し `send`/`continueStory`/`continueLast`/`regenerate`/`regenerateFrom` を store でもガード〕＋「⑂ ここから分岐して続ける」`branchToContinue`〔`endedAt` だけ解除し `ending` は残す＝分岐先は `isEpilogue` のまま「完結する」で再締め可・続きは 🏁 の兄弟として積み枝分かれ表示・🏁 は `ending` で保護され温存〕／レビュー完了モーダルを `SceneReview.sessionId`＋`view==='sessions'` で該当セッション表示時のみ表示。FB8-B）
 
 各フェーズの詳細・検証記録は対応する `docs/設計_*.md` を参照。
 

@@ -3495,13 +3495,26 @@ export const useStore = create<AppState>()(
           const epId = s.ending.epilogueSceneId
           const ep = s.scenes.find((sc) => sc.id === epId)
           if (!ep?.endedAt) return // 完結済みでなければ何もしない
-          // 完結を解除してこの分岐でのみ継続可能にする。元の🏁ノードのスナップショットには完結が
-          // 残り、ending により保護されるので上書きされない（＝続きは新しい世界線として枝分かれ。#3/#15）
           const before = s
+          // 完結（endedAt）だけ解除する。ending は残すので分岐先は「エピローグ継続中（未完結）」の
+          // まま扱われ（isEpilogue のまま＝普通のシーンにならない）、「🏁 物語を完結する」で再び
+          // 締められる。元の🏁ノードのスナップショットには完結が残り、ending で保護されるので温存される
           get().updateSession(s.id, {
-            ending: undefined,
             scenes: s.scenes.map((sc) => (sc.id === epId ? { ...sc, endedAt: undefined } : sc)),
           })
+          // 続きは 🏁（完結ノード）の兄弟として積む＝ツリーで枝分かれして見える（一直線にしない）。
+          // recordCheckpoint は currentId の子に積むので、いったん currentId を 🏁 の親（＝分岐点）へ
+          // 移してから記録する。🏁 ノードは ending により保護（subtreeHasProtection）され温存される
+          const tree = get().branchTrees[s.id]
+          const forkParent = tree?.nodes.find((n) => n.id === tree.currentId)?.parentId
+          if (forkParent && tree) {
+            set((st) => ({
+              branchTrees: {
+                ...st.branchTrees,
+                [s.id]: { ...st.branchTrees[s.id]!, currentId: forkParent },
+              },
+            }))
+          }
           void recordCheckpoint(s.id, 'action', '⑂ 続きを描く', before)
         },
 
