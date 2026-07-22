@@ -839,7 +839,21 @@ export default function ChatPanel({ session }: Props) {
                           <div className="scene-summary-body">{sc.summary}</div>
                         </div>
                       )}
-                      {open && renderSceneContent(sc, msgs)}
+                      {open &&
+                        (isCurrent ? (
+                          renderSceneContent(sc, msgs)
+                        ) : (
+                          // 過去シーンは右側の縦スパイン（] ブラケット）でどこからでも折りたためる（FB8-D #7）
+                          <div className="scene-block">
+                            <button
+                              className="scene-spine"
+                              onClick={() => toggleScene(sc.id)}
+                              title="クリックで会話を隠す"
+                              aria-label="会話を隠す"
+                            />
+                            {renderSceneContent(sc, msgs)}
+                          </div>
+                        ))}
                     </Fragment>
                   )
                 })}

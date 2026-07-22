@@ -1248,6 +1248,8 @@ interface AppState {
    * 生成中はパス外への移動（復元）は restoreCheckpoint が例外を投げる（パス上スクロールは常時可）。
    */
   navigateToNode: (sessionId: string, nodeId: string) => Promise<void>
+  /** 現在の分岐の本文を、指定メッセージへスクロールさせる（挿絵→本文リンク等。FB8-D #2） */
+  revealMessage: (sessionId: string, messageId: string) => void
   /**
    * 指定ノード以下のサブツリーを削除する（チェックポイント実体も削除。C2）。
    * 現在パス（root→currentId）上のノードは削除不可（例外を投げる。UI 側で confirm 済みの前提）。
@@ -2651,6 +2653,11 @@ export const useStore = create<AppState>()(
             }))
           }
         },
+
+        revealMessage: (sessionId, messageId) =>
+          set((st) => ({
+            scrollTarget: { sessionId, messageId, seq: (st.scrollTarget?.seq ?? 0) + 1 },
+          })),
 
         deleteBranchSubtree: async (sessionId, nodeId) => {
           const tree = get().branchTrees[sessionId]

@@ -76,10 +76,13 @@ function GalleryThumb({
   ill,
   onRemove,
   onRegenerate,
+  onGoToText,
 }: {
   ill: SceneIllustration
   onRemove: () => void
   onRegenerate: () => void
+  /** 本文の該当箇所（挿絵のアンカー messageId）へスクロールする。messageId が無い挿絵では未指定 */
+  onGoToText?: () => void
 }) {
   const url = useImageUrl(ill.imageId)
   const [zoom, setZoom] = useState(false)
@@ -88,6 +91,11 @@ function GalleryThumb({
     <div className="job-thumb">
       <img src={url} alt={ill.prompt} onClick={() => setZoom(true)} />
       <div className="illustration-actions" style={{ position: 'static', opacity: 1 }}>
+        {onGoToText && (
+          <button className="icon-btn small" title="本文の該当箇所へ移動" onClick={onGoToText}>
+            <Icon name="book-open" size={14} />
+          </button>
+        )}
         <button
           className="icon-btn small"
           title="画像を保存"
@@ -299,7 +307,8 @@ export function GalleryBody({
   /** 再生成モーダルを開く（背景） */
   onRegenerateBackground: (sceneId: string, prompt: string, negative?: string) => void
 }) {
-  const { removeIllustration, removeSceneBackground, deleteImageRecord, sessionImageLogs } = useStore()
+  const { removeIllustration, removeSceneBackground, deleteImageRecord, sessionImageLogs, revealMessage } =
+    useStore()
   const [tab, setTab] = useState<'branch' | 'all'>('branch')
 
   const records = sessionImageLogs[session.id] ?? []
@@ -346,6 +355,7 @@ export function GalleryBody({
                   ill={ill}
                   onRemove={() => removeIllustration(session.id, sc.id, ill.id)}
                   onRegenerate={() => onRegenerateIllustration(sc.id, ill.messageId, ill.prompt, ill.negative)}
+                  onGoToText={ill.messageId ? () => revealMessage(session.id, ill.messageId!) : undefined}
                 />
               ))}
             </div>

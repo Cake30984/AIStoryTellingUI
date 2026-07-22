@@ -256,6 +256,8 @@ export function BranchTreeBody({ session }: { session: Session }) {
   const [busyAction, setBusyAction] = useState(false)
   const [tab, setTab] = useState<'tree' | 'starred'>('tree')
   const [menuFor, setMenuFor] = useState<string | null>(null)
+  // 「現在の分岐だけ表示」（非破壊のビュー絞り込み。FB8-D #8）
+  const [onlyCurrentPath, setOnlyCurrentPath] = useState(false)
   const busy = generating || busyAction
   const currentRef = useRef<HTMLDivElement>(null)
 
@@ -389,8 +391,13 @@ export function BranchTreeBody({ session }: { session: Session }) {
 
   const totalBytes = tree ? tree.nodes.reduce((sum, n) => sum + n.bytes, 0) : 0
   const starred = tree ? starredNodesOf(tree) : []
+  // 「現在の分岐だけ表示」は off-path ノードを描画から外すだけ（非破壊・いつでも戻せる。FB8-D #8）
+  const viewTree =
+    onlyCurrentPath && tree
+      ? { currentId: tree.currentId, nodes: tree.nodes.filter((n) => pathIds.has(n.id)) }
+      : tree
   // 折りたたみ適用後の合成ツリーをグラフ化する（FB6-D。buildGraph 本体は無改修）
-  const condensed = tree ? condenseTree(tree, expandedScenes) : null
+  const condensed = viewTree ? condenseTree(viewTree, expandedScenes) : null
   const graph = condensed ? buildGraph(condensed.tree, pathIds) : { rows: [], laneCount: 0 }
   const gutterW = Math.max(graph.laneCount, 1) * LANE_W
   const cy = ROW_H / 2
@@ -581,6 +588,17 @@ export function BranchTreeBody({ session }: { session: Session }) {
             合計 {tree.nodes.length} 件・{formatBytes(totalBytes)}
           </span>
         </div>
+      )}
+
+      {tree && pruneCount > 0 && tab === 'tree' && (
+        <label className="chk" style={{ marginBottom: 8 }}>
+          <input
+            type="checkbox"
+            checked={onlyCurrentPath}
+            onChange={(e) => setOnlyCurrentPath(e.target.checked)}
+          />
+          現在の分岐だけ表示（他 {pruneCount} 件を隠す・消さない）
+        </label>
       )}
 
       {tree && pruneCount > 0 && tab === 'tree' && (
