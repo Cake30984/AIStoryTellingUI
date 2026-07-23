@@ -126,7 +126,7 @@ export default function DiscoveryPanel({ session, scope, onClose }: Props) {
 
   return (
     <ModalShell
-      title={isLore ? '📖 発見ロア（世界観）' : `📖 「${charName(scopeCharId!)}」の発見設定`}
+      title={isLore ? '発見ロア（世界観）' : `「${charName(scopeCharId!)}」の発見設定`}
       onClose={onClose}
       dirty={dirty}
       footer={

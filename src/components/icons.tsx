@@ -44,6 +44,15 @@ export type IconName =
   | 'maximize'
   | 'chevron-right'
   | 'chevron-down'
+  | 'flag'
+  | 'trophy'
+  | 'lock'
+  | 'dice'
+  | 'sparkles'
+  | 'folder'
+  | 'gamepad'
+  | 'alert-triangle'
+  | 'panel-right'
 
 const PATHS: Record<IconName, ReactNode> = {
   'more-horizontal': (
@@ -284,6 +293,68 @@ const PATHS: Record<IconName, ReactNode> = {
   ),
   'chevron-right': <path d="M9 6l6 6-6 6" />,
   'chevron-down': <path d="M6 9l6 6 6-6" />,
+  flag: (
+    <>
+      <path d="M5 21V4" />
+      <path d="M5 4c4-2 6 2 10 0v9c-4 2-6-2-10 0" />
+    </>
+  ),
+  trophy: (
+    <>
+      <path d="M7 4h10v5a5 5 0 0 1-10 0z" />
+      <path d="M7 6H4a3 3 0 0 0 3.2 4" />
+      <path d="M17 6h3a3 3 0 0 1-3.2 4" />
+      <path d="M12 14v4" />
+      <path d="M8 21h8" />
+      <path d="M9 21c0-2 1.2-3 3-3s3 1 3 3" />
+    </>
+  ),
+  lock: (
+    <>
+      <rect x="5" y="11" width="14" height="9" rx="2" />
+      <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+    </>
+  ),
+  dice: (
+    <>
+      <rect x="4" y="4" width="16" height="16" rx="3" />
+      <circle cx="8.5" cy="8.5" r="1.2" fill="currentColor" stroke="none" />
+      <circle cx="15.5" cy="8.5" r="1.2" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none" />
+      <circle cx="8.5" cy="15.5" r="1.2" fill="currentColor" stroke="none" />
+      <circle cx="15.5" cy="15.5" r="1.2" fill="currentColor" stroke="none" />
+    </>
+  ),
+  sparkles: (
+    <>
+      <path d="M11 4l1.6 4.4L17 10l-4.4 1.6L11 16l-1.6-4.4L5 10l4.4-1.6z" />
+      <path d="M18 14l.8 2.2L21 17l-2.2.8L18 20l-.8-2.2L15 17l2.2-.8z" />
+    </>
+  ),
+  folder: (
+    <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+  ),
+  gamepad: (
+    <>
+      <path d="M7 6h10a4 4 0 0 1 4 4v4a3.5 3.5 0 0 1-6.3 2.1L13.5 14h-3l-1.2 2.1A3.5 3.5 0 0 1 3 14v-4a4 4 0 0 1 4-4z" />
+      <path d="M7 10v3M5.5 11.5h3" />
+      <circle cx="16" cy="12.5" r="1" fill="currentColor" stroke="none" />
+      <circle cx="18.5" cy="10" r="1" fill="currentColor" stroke="none" />
+    </>
+  ),
+  'alert-triangle': (
+    <>
+      <path d="M12 3 2.5 20h19z" />
+      <line x1="12" y1="9" x2="12" y2="14" />
+      <circle cx="12" cy="17" r="1" fill="currentColor" stroke="none" />
+    </>
+  ),
+  'panel-right': (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <line x1="15" y1="4" x2="15" y2="20" />
+    </>
+  ),
 }
 
 export function Icon({

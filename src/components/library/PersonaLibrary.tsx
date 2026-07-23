@@ -60,7 +60,10 @@ export default function PersonaLibrary() {
   return (
     <div className={'library' + (dragOver ? ' drag-over' : '')} {...dropProps}>
       <div className="library-head">
-        <h2>🙂 ペルソナ</h2>
+        <h2>
+          <Icon name="smile" size={18} className="head-icon" />
+          ペルソナ
+        </h2>
         <button className="btn primary" onClick={() => setEditing(newPersona())}>
           <Icon name="plus" size={14} /> ペルソナを作る
         </button>
@@ -108,7 +111,7 @@ export default function PersonaLibrary() {
                 setCtxMenu({ id: p.id, x: e.clientX, y: e.clientY })
               }}
             >
-              <EntityAvatar className="entity-avatar" avatar={p.avatar} name={p.name || '🙂'} />
+              <EntityAvatar className="entity-avatar" avatar={p.avatar} name={p.name || 'ペルソナ'} />
               <div className="entity-body">
                 <div className="entity-name">{p.name || '無名'}</div>
                 <div className="entity-desc">{p.description || '設定なし'}</div>

@@ -27,7 +27,7 @@ export default function ImageProviderSettings() {
     setTestingId(p.id)
     try {
       const { ok, message } = await testImageProvider(p)
-      setTestResults((r) => ({ ...r, [p.id]: (ok ? '✅ ' : '⚠️ ') + message }))
+      setTestResults((r) => ({ ...r, [p.id]: (ok ? '接続OK: ' : '接続エラー: ') + message }))
     } finally {
       setTestingId(null)
     }

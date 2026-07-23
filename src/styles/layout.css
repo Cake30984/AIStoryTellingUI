@@ -596,6 +596,14 @@
 .library-head h2 {
   margin: 0;
   font-size: 20px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+/* 見出し内の SVG アイコン（FB8-E2。絵文字見出しの置き換え） */
+.head-icon {
+  color: var(--text-dim);
+  flex-shrink: 0;
 }
 .library-empty {
   color: var(--text-dim);

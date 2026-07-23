@@ -4,6 +4,7 @@ import type { Session, SessionState } from '../types'
 import EntityAvatar from './EntityAvatar'
 import ModalShell from './ModalShell'
 import NumberInput from './NumberInput'
+import { Icon } from './icons'
 
 interface Props {
   session: Session
@@ -219,7 +220,9 @@ export default function StatusPanel({ session, onClose }: Props) {
           {/* 実績 */}
           {(world?.achievements ?? []).length > 0 && (
             <div className="field">
-              <label>🏆 実績</label>
+              <label>
+                <Icon name="trophy" size={13} className="label-icon" /> 実績
+              </label>
               {world!.achievements.map((a) => {
                 const unlocked = isUnlocked(a.id)
                 const conceal = a.hidden && !unlocked
@@ -249,7 +252,9 @@ export default function StatusPanel({ session, onClose }: Props) {
           {/* エンディング（v1 は表示のみ。外したい場合は分岐復元で代替） */}
           {(world?.endings ?? []).length > 0 && (
             <div className="field">
-              <label>🏁 エンディング</label>
+              <label>
+                <Icon name="flag" size={13} className="label-icon" /> エンディング
+              </label>
               {world!.endings!.map((e) => {
                 const reached = session.ending?.defId === e.id
                 const conceal = e.hidden && !reached
@@ -259,7 +264,12 @@ export default function StatusPanel({ session, onClose }: Props) {
                     className="desc"
                     style={{ opacity: reached ? 1 : 0.7, marginBottom: 4, fontWeight: reached ? 600 : undefined }}
                   >
-                    {reached ? '🏁' : '🔒'} {conceal ? '？？？' : e.name || '無名'}
+                    <Icon
+                      name={reached ? 'flag' : 'lock'}
+                      size={12}
+                      className={reached ? 'state-icon accent' : 'state-icon'}
+                    />{' '}
+                    {conceal ? '？？？' : e.name || '無名'}
                     {!conceal && e.description && <span> — {e.description}</span>}
                   </div>
                 )

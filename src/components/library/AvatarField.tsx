@@ -7,6 +7,7 @@ import { avatarContextUser, illustrationPromptSystem } from '../../lib/prompts'
 import { useStore } from '../../store'
 import EntityAvatar from '../EntityAvatar'
 import ImageGenModal from '../ImageGenModal'
+import { Icon } from '../icons'
 
 const COLORS = ['#7c5cff', '#ef6f6c', '#4cc9a4', '#f0a76b', '#5b8def', '#d77ad8', '#e0b341', '#8b95a7']
 
@@ -74,7 +75,13 @@ export default function AvatarField({ avatar, name, genContext, target, onChange
             onClick={() => fileRef.current?.click()}
             disabled={busy}
           >
-            {busy ? '処理中…' : '📁 画像を選ぶ'}
+            {busy ? (
+              '処理中…'
+            ) : (
+              <>
+                <Icon name="folder" size={13} /> 画像を選ぶ
+              </>
+            )}
           </button>
           {genContext && imageProviders.length > 0 && (
             <button
@@ -85,7 +92,7 @@ export default function AvatarField({ avatar, name, genContext, target, onChange
               disabled={!savedExists}
               title={savedExists ? undefined : '先に保存してから生成してください（未保存の新規素材には生成できません）'}
             >
-              ✨ 生成
+              <Icon name="sparkles" size={13} /> 生成
             </button>
           )}
           {avatar.imageId && (
@@ -95,7 +102,7 @@ export default function AvatarField({ avatar, name, genContext, target, onChange
               style={{ fontSize: 12, padding: '5px 12px' }}
               onClick={() => onChange({ ...avatar, imageId: undefined })}
             >
-              ✕ 画像を外す
+              <Icon name="x" size={13} /> 画像を外す
             </button>
           )}
           <input

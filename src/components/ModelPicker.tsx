@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useStore } from '../store'
 import { makeModelRef, splitRef } from '../lib/providers'
 import ModalShell from './ModalShell'
+import { Icon } from './icons'
 
 interface Props {
   current: string
@@ -131,7 +132,7 @@ export default function ModelPicker({ current, onPick, onClose }: Props) {
                     }}
                     title="お気に入り"
                   >
-                    {fav ? '★' : '☆'}
+                    <Icon name="star" size={14} filled={fav} />
                   </button>
                   <div className="m-name">
                     <div className="n">{m.name}</div>

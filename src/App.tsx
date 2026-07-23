@@ -15,16 +15,19 @@ import CastingModal from './components/CastingModal'
 import DialogHost from './components/DialogHost'
 import CommandPalette from './components/CommandPalette'
 import { useGlobalShortcuts } from './lib/shortcuts'
+import { Icon, type IconName } from './components/icons'
 
 // 積層トーストの1件。autoCloseMs があれば一定時間後に自動で onClose を呼ぶ（UI-0）
 function ToastItem({
   className,
   text,
+  icon,
   onClose,
   autoCloseMs,
 }: {
   className: string
   text: string
+  icon?: IconName
   onClose: () => void
   autoCloseMs?: number
 }) {
@@ -37,7 +40,10 @@ function ToastItem({
 
   return (
     <div className={className}>
-      <span>{text}</span>
+      <span>
+        {icon && <Icon name={icon} size={14} className="toast-icon" />}
+        {text}
+      </span>
       <button onClick={onClose}>閉じる</button>
     </div>
   )
@@ -172,7 +178,9 @@ export default function App() {
         <div className="library">
           <div className="page-narrow">
             <div className="library-head">
-              <h2>⚙ 設定・データ管理</h2>
+              <h2>
+                <Icon name="settings" size={18} className="head-icon" /> 設定・データ管理
+              </h2>
             </div>
             <SettingsBody />
           </div>
@@ -197,7 +205,7 @@ export default function App() {
               </div>
               {!hasApiKey && (
                 <p style={{ marginTop: 20, fontSize: 13, color: 'var(--text-faint)' }}>
-                  左のレール最下段 ⚙ から OpenRouter の API キーを登録してください。
+                  左のレール最下段の「設定」から OpenRouter の API キーを登録してください。
                 </p>
               )}
             </div>
@@ -234,7 +242,8 @@ export default function App() {
         {newlyUnlockedAchievements.length > 0 && (
           <ToastItem
             className="toast achievement"
-            text={`🏆 実績解除: ${newlyUnlockedAchievements
+            icon="trophy"
+            text={`実績解除: ${newlyUnlockedAchievements
               .map((a) => bindRoleNames(a.def.name, a.subjects) || '無名')
               .join(' / ')}`}
             onClose={dismissNewAchievements}
@@ -245,7 +254,8 @@ export default function App() {
         {endingToast && (
           <ToastItem
             className="toast achievement"
-            text={`🏁 エンディング「${endingToast.name}」へ`}
+            icon="flag"
+            text={`エンディング「${endingToast.name}」へ`}
             onClose={dismissEndingToast}
             autoCloseMs={6000}
           />
@@ -254,7 +264,8 @@ export default function App() {
         {imageJobToasts.length > 0 && (
           <ToastItem
             className="toast image"
-            text={`🖼 生成完了: ${imageJobToasts.map((t) => t.label).join(' / ')}`}
+            icon="image"
+            text={`生成完了: ${imageJobToasts.map((t) => t.label).join(' / ')}`}
             onClose={dismissImageJobToasts}
             autoCloseMs={6000}
           />

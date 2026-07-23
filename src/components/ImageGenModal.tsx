@@ -10,6 +10,7 @@ import ModalShell from './ModalShell'
 import ZoomOverlay from './ZoomOverlay'
 import NumberInput from './NumberInput'
 import { MODELSLAB_SCHEDULERS } from '../lib/imageGen'
+import { Icon } from './icons'
 
 /** サイズプリセット（openai系は API 側の許容値に依存。エラーはそのまま表示する） */
 const SIZE_PRESETS = [
@@ -158,7 +159,7 @@ export default function ImageGenModal({
 
   const generate = () => {
     if (!provider) {
-      setError('画像生成の接続先を設定してください（⚙ 設定・データ管理）。')
+      setError('画像生成の接続先を設定してください（設定・データ管理）。')
       return
     }
     if (!prompt.trim()) {
@@ -213,7 +214,7 @@ export default function ImageGenModal({
     >
           {imageProviders.length === 0 ? (
             <p className="desc">
-              画像生成の接続先が未設定です。「⚙ 設定・データ管理」から ComfyUI・ModelsLab・画像 API のいずれかを追加してください。
+              画像生成の接続先が未設定です。「設定・データ管理」から ComfyUI・ModelsLab・画像 API のいずれかを追加してください。
             </p>
           ) : (
             <>
@@ -260,7 +261,13 @@ export default function ImageGenModal({
                 {draftContext && (
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
                     <button className="btn" style={{ fontSize: 12, padding: '5px 12px' }} onClick={draft} disabled={drafting}>
-                      {drafting ? '起案中…' : '✨ プロンプトを起案'}
+                      {drafting ? (
+                        '起案中…'
+                      ) : (
+                        <>
+                          <Icon name="sparkles" size={13} /> プロンプトを起案
+                        </>
+                      )}
                     </button>
                     <button className="model-chip" style={{ flex: 1 }} onClick={() => setShowModelPicker(true)}>
                       {draftModel ? modelRefLabel(draftModel, providers) : '起案モデルを選択…'}
@@ -269,7 +276,7 @@ export default function ImageGenModal({
                 )}
                 <textarea rows={4} value={prompt} placeholder="例: 1girl, long black hair, school uniform, ..." onChange={(e) => setPrompt(e.target.value)} />
                 {provider?.defaultPositive?.trim() && (
-                  <div className="desc">🏷 生成時に自動付加: {provider.defaultPositive}</div>
+                  <div className="desc">生成時に自動付加: {provider.defaultPositive}</div>
                 )}
               </div>
 
@@ -278,7 +285,7 @@ export default function ImageGenModal({
                   <label>ネガティブプロンプト（任意）</label>
                   <textarea rows={2} value={negative} placeholder="例: lowres, bad anatomy" onChange={(e) => setNegative(e.target.value)} />
                   {provider?.defaultNegative?.trim() && (
-                    <div className="desc">🏷 生成時に自動付加: {provider.defaultNegative}</div>
+                    <div className="desc">生成時に自動付加: {provider.defaultNegative}</div>
                   )}
                 </div>
               )}
@@ -309,11 +316,11 @@ export default function ImageGenModal({
                 <div style={{ display: 'flex', gap: 8 }}>
                   {job?.status === 'running' ? (
                     <button className="btn" onClick={() => cancelImageJob(job.id)}>
-                      ✕ キャンセル
+                      <Icon name="x" size={13} /> キャンセル
                     </button>
                   ) : (
                     <button className="btn primary" onClick={generate} disabled={!provider}>
-                      🎨 {job ? 'もう一度生成' : '生成'}
+                      <Icon name="palette" size={13} /> {job ? 'もう一度生成' : '生成'}
                     </button>
                   )}
                   {job?.status === 'running' && (

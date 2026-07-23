@@ -64,7 +64,10 @@ export default function CharacterLibrary() {
   return (
     <div className={'library' + (dragOver ? ' drag-over' : '')} {...dropProps}>
       <div className="library-head">
-        <h2>🎭 キャラクター</h2>
+        <h2>
+          <Icon name="users" size={18} className="head-icon" />
+          キャラクター
+        </h2>
         <button className="btn primary" onClick={() => setEditing(newCharacter())}>
           <Icon name="plus" size={14} /> キャラクターを作る
         </button>

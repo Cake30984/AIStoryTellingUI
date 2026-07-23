@@ -26,7 +26,7 @@ export default function StoryLogModal({ session, onClose, onGenIllustration, onG
 
   return (
     <ModalShell
-      title="📜 あらすじ一覧"
+      title="あらすじ一覧"
       onClose={onClose}
       wide
       footer={

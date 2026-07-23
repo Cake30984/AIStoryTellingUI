@@ -2,6 +2,7 @@ import { bindRoleNames, resolveParties, useStore } from '../store'
 import { roleMembers } from '../lib/casting'
 import type { Session } from '../types'
 import EntityAvatar from './EntityAvatar'
+import { Icon } from './icons'
 
 interface Props {
   session: Session
@@ -117,7 +118,9 @@ export default function StatusView({ session }: Props) {
 
       {(world.achievements ?? []).length > 0 && (
         <div className="field">
-          <label>🏆 実績</label>
+          <label>
+            <Icon name="trophy" size={13} className="label-icon" /> 実績
+          </label>
           {world.achievements.map((a) => {
             const recs = unlockedRecordsOf(a.id)
             const unlocked = recs.length > 0
@@ -127,7 +130,12 @@ export default function StatusView({ session }: Props) {
             return (
               <div key={a.id} style={{ marginBottom: 4 }}>
                 <div className="desc" style={{ opacity: unlocked ? 1 : 0.55 }}>
-                  {unlocked ? '✅' : '🔒'} {conceal ? '？？？' : a.name || '無名'}
+                  <Icon
+                    name={unlocked ? 'check' : 'lock'}
+                    size={12}
+                    className={unlocked ? 'state-icon ok' : 'state-icon'}
+                  />{' '}
+                  {conceal ? '？？？' : a.name || '無名'}
                   {!conceal && a.description && <span> — {a.description}</span>}
                 </div>
                 {!conceal &&
@@ -159,7 +167,8 @@ export default function StatusView({ session }: Props) {
           return (
             <div className="field">
               <label>
-                🏁 エンディング（この世界で見た結末 {seen.size}/{endings.length}）
+                <Icon name="flag" size={13} className="label-icon" /> エンディング（この世界で見た結末{' '}
+                {seen.size}/{endings.length}）
               </label>
               {endings.map((e) => {
                 const reached = session.ending?.defId === e.id
@@ -175,7 +184,12 @@ export default function StatusView({ session }: Props) {
                       fontWeight: reached ? 600 : undefined,
                     }}
                   >
-                    {reached ? '🏁' : everSeen ? '✅' : '🔒'} {conceal ? '？？？' : e.name || '無名'}
+                    <Icon
+                      name={reached ? 'flag' : everSeen ? 'check' : 'lock'}
+                      size={12}
+                      className={reached ? 'state-icon accent' : everSeen ? 'state-icon ok' : 'state-icon'}
+                    />{' '}
+                    {conceal ? '？？？' : e.name || '無名'}
                     {reached && <span className="badge accent" style={{ marginLeft: 6 }}>到達</span>}
                     {!conceal && e.description && <span> — {e.description}</span>}
                   </div>

@@ -1887,7 +1887,7 @@ export const useStore = create<AppState>()(
             title: '上書きの確認',
             message: `ここから先の記録 ${total} 件（シーンの区切りを含む）が、この操作で上書きされて消えます。`,
             options: [
-              { label: '⑂ 分岐として残して進む', value: 'branch', primary: true },
+              { label: '分岐として残して進む', value: 'branch', primary: true },
               { label: '上書きして進む（記録を消す）', value: 'overwrite', danger: true },
             ],
           })
@@ -1897,7 +1897,7 @@ export const useStore = create<AppState>()(
               const tipId = newestLeafOf(tree, chain.nodeIds)
               const tip = tree.nodes.find((n) => n.id === tipId)
               const name = await appPrompt({
-                title: '⑂ 分岐の名前',
+                title: '分岐の名前',
                 message: '残しておく続きに名前を付けてください',
                 initial: (tip?.label ?? '分岐').slice(0, 24),
               })
@@ -3302,7 +3302,7 @@ export const useStore = create<AppState>()(
               ),
               sceneReview: null,
             }))
-            void recordCheckpoint(s.id, 'scene', `📖 ${scene.title}（再レビュー）`, s, scene.timeLabel)
+            void recordCheckpoint(s.id, 'scene', `${scene.title}（再レビュー）`, s, scene.timeLabel)
             return
           }
 
@@ -3420,7 +3420,7 @@ export const useStore = create<AppState>()(
             void recordCheckpoint(
               s.id,
               'scene',
-              `🏁 エピローグ：${endingName}`,
+              `エピローグ：${endingName}`,
               s,
               'エピローグ',
               undefined,
@@ -3508,7 +3508,7 @@ export const useStore = create<AppState>()(
           void recordCheckpoint(
             s.id,
             'scene',
-            `🏁 完結：${s.ending.name}`,
+            `完結：${s.ending.name}`,
             s,
             'エピローグ',
             undefined,
@@ -3543,7 +3543,7 @@ export const useStore = create<AppState>()(
               },
             }))
           }
-          void recordCheckpoint(s.id, 'action', '⑂ 続きを描く', before)
+          void recordCheckpoint(s.id, 'action', '続きを描く', before)
         },
 
         regenerateSuggestions: async () => {
@@ -3887,7 +3887,7 @@ export const useStore = create<AppState>()(
           if (!(await ensureLineTip(s.id, findReanchorTarget(tree, keptIds) ?? tree?.currentId))) return
           get().updateSession(s.id, { messages: remaining })
           reanchorBranch(s.id, keptIds)
-          void recordCheckpoint(s.id, 'action', '🗑 削除', s)
+          void recordCheckpoint(s.id, 'action', '削除', s)
         },
 
         regenerateFrom: async (messageId) => {
@@ -3922,7 +3922,7 @@ export const useStore = create<AppState>()(
           if (tree?.currentId) {
             const tip = tree.nodes.find((n) => n.id === tree.currentId)
             const name = await appPrompt({
-              title: '⑂ ここから分岐',
+              title: 'ここから分岐',
               message: '今の続きを分岐として残します。名前を付けてください',
               initial: (tip?.label ?? '分岐').slice(0, 24),
             })
@@ -3938,7 +3938,7 @@ export const useStore = create<AppState>()(
           if (tree.currentId) {
             const tip = tree.nodes.find((n) => n.id === tree.currentId)
             const name = await appPrompt({
-              title: '⑂ ここから分岐して再開',
+              title: 'ここから分岐して再開',
               message: 'いま進めている続きを分岐として残します。名前を付けてください',
               initial: (tip?.label ?? '分岐').slice(0, 24),
             })
@@ -4146,7 +4146,7 @@ export const useStore = create<AppState>()(
             }
             if (parsed.kind === 'cassette') {
               await get().importCassette(parsed.bundle, new Blob([bytes as BlobPart], { type: 'image/png' }))
-              return `🎮 ゲームカセット「${parsed.bundle.session.title || '無題'}」を棚に登録しました（「作る > カセット」から遊べます）。`
+              return `ゲームカセット「${parsed.bundle.session.title || '無題'}」を棚に登録しました（「作る > カセット」から遊べます）。`
             }
             get().importWorldCard(parsed.world)
             return `カードから「${parsed.world.name || '無名の世界'}」を追加しました。`

@@ -37,7 +37,9 @@ function CassetteCard({
         {coverUrl ? (
           <img src={coverUrl} alt="" />
         ) : (
-          <div className="cassette-cover-ph">🎮</div>
+          <div className="cassette-cover-ph">
+            <Icon name="gamepad" size={44} />
+          </div>
         )}
       </div>
       <div className="cassette-body">
@@ -45,7 +47,7 @@ function CassetteCard({
           {cas.title || '無題のカセット'}
           {endingTotal > 0 && (
             <span className="badge" style={{ marginLeft: 6 }} title="この世界で見た結末（周回横断）">
-              🏁 {endingSeen}/{endingTotal}
+              <Icon name="flag" size={11} /> {endingSeen}/{endingTotal}
             </span>
           )}
         </div>
@@ -84,7 +86,7 @@ export default function CassetteLibrary() {
         const parsed = parseCardPng(bytes)
         if (!parsed || parsed.kind !== 'cassette') throw new Error('ゲームカセットが見つかりません。')
         await importCassette(parsed.bundle, new Blob([bytes as BlobPart], { type: 'image/png' }))
-        setNotice(`🎮「${parsed.bundle.session.title || '無題'}」を棚に登録しました。`)
+        setNotice(`「${parsed.bundle.session.title || '無題'}」を棚に登録しました。`)
       } catch (e) {
         setNotice(`読み込み失敗：${(e as Error).message}`)
       }
@@ -130,7 +132,10 @@ export default function CassetteLibrary() {
   return (
     <div className={'library' + (dragOver ? ' drag-over' : '')} {...dropProps}>
       <div className="library-head">
-        <h2>🎮 ゲームカセット</h2>
+        <h2>
+          <Icon name="gamepad" size={18} className="head-icon" />
+          ゲームカセット
+        </h2>
         <button className="btn primary" onClick={() => setEditing({})}>
           <Icon name="plus" size={14} /> カセットを作る
         </button>

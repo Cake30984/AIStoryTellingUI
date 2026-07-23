@@ -19,7 +19,7 @@ export default function DiscoveryView({ session, onEdit }: Props) {
 
   // タブキー: 'lore' またはキャラ id
   const tabs: { key: string; label: string; count: number; charId?: string }[] = [
-    { key: 'lore', label: '🌍 世界観', count: ov.lore.length },
+    { key: 'lore', label: '世界観', count: ov.lore.length },
     ...devGroups.map((g) => ({
       key: g.characterId,
       label: characters.find((c) => c.id === g.characterId)?.name || '無名',
@@ -57,7 +57,9 @@ export default function DiscoveryView({ session, onEdit }: Props) {
               >
                 {c ? (
                   <EntityAvatar className="dot-avatar" avatar={c.avatar} name={c.name || '無名'} />
-                ) : null}
+                ) : (
+                  <Icon name="globe" size={13} />
+                )}
                 {t.label}
                 {t.count > 0 && <span className="disc-count">{t.count}</span>}
               </button>

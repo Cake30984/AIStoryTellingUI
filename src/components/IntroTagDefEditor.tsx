@@ -1,6 +1,7 @@
 import { useRef } from 'react'
 import { uid } from '../store'
 import type { IntroTag } from '../types'
+import { Icon } from './icons'
 
 interface Props {
   tags: IntroTag[]
@@ -67,7 +68,7 @@ export default function IntroTagDefEditor({ tags, onChange, opening, onOpeningCh
               onBlur={() => commitRename(tag)}
             />
             <button className="icon-btn small" onClick={() => removeTag(tag.id)} title="タグを削除">
-              ✕
+              <Icon name="x" size={14} />
             </button>
           </div>
           <input
@@ -79,7 +80,7 @@ export default function IntroTagDefEditor({ tags, onChange, opening, onOpeningCh
         </div>
       ))}
       <button className="btn" style={{ marginTop: 4 }} onClick={addTag}>
-        ＋ タグを追加
+        <Icon name="plus" size={13} /> タグを追加
       </button>
     </div>
   )

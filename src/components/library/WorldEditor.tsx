@@ -149,7 +149,7 @@ function GroupSubClauseRow({
       )}
 
       <button className="icon-btn small" onClick={onRemove} title="下位条件を削除">
-        ✕
+        <Icon name="x" size={14} />
       </button>
     </div>
   )
@@ -314,7 +314,7 @@ function ClauseRow({
         )}
 
         <button className="icon-btn small" onClick={onRemove} title="条件を削除">
-          ✕
+          <Icon name="x" size={14} />
         </button>
       </div>
 
@@ -336,7 +336,7 @@ function ClauseRow({
           style={{ marginTop: 4, marginLeft: 20 }}
           onClick={() => onChange({ ...clause, clauses: [...clause.clauses, newGroupSubClause('stat', world)] })}
         >
-          ＋ メンバーの下位条件を追加
+          <Icon name="plus" size={13} />メンバーの下位条件を追加
         </button>
       )}
     </div>
@@ -868,7 +868,7 @@ export default function WorldEditor({ world, onClose }: Props) {
                       開始に必須
                     </label>
                     <button className="icon-btn small" onClick={() => removeRole(role.id)} title="ロールを削除">
-                      ✕
+                      <Icon name="x" size={14} />
                     </button>
                   </div>
                   <textarea
@@ -881,7 +881,7 @@ export default function WorldEditor({ world, onClose }: Props) {
                 </div>
               ))}
               <button className="btn" style={{ marginTop: 8 }} onClick={addRole}>
-                ＋ ロールを追加
+                <Icon name="plus" size={13} />ロールを追加
               </button>
             </>
           )}
@@ -928,7 +928,7 @@ export default function WorldEditor({ world, onClose }: Props) {
                   有効
                 </label>
                 <button className="icon-btn small" onClick={() => removeEntry(e.id)} title="削除">
-                  ✕
+                  <Icon name="x" size={14} />
                 </button>
               </div>
               <textarea
@@ -942,7 +942,7 @@ export default function WorldEditor({ world, onClose }: Props) {
           ))}
 
           <button className="btn" style={{ marginTop: 8 }} onClick={addEntry}>
-            ＋ ロア項目を追加
+            <Icon name="plus" size={13} />ロア項目を追加
           </button>
             </>
           )}
@@ -1012,7 +1012,7 @@ export default function WorldEditor({ world, onClose }: Props) {
                     onChange={(ev) => updateEvent(e.id, { name: ev.target.value })}
                   />
                   <button className="icon-btn small" onClick={() => removeEvent(e.id)} title="削除">
-                    ✕
+                    <Icon name="x" size={14} />
                   </button>
                 </div>
                 <textarea
@@ -1045,7 +1045,7 @@ export default function WorldEditor({ world, onClose }: Props) {
                   />
                 ))}
                 <button className="btn" style={{ marginTop: 6 }} onClick={() => addEventClause(e)}>
-                  ＋ 発火条件を追加
+                  <Icon name="plus" size={13} />発火条件を追加
                 </button>
                 <div className="desc" style={{ marginTop: 4 }}>
                   {clauses.length > 0
@@ -1057,7 +1057,7 @@ export default function WorldEditor({ world, onClose }: Props) {
           })}
 
           <button className="btn" style={{ marginTop: 8 }} onClick={addEvent}>
-            ＋ 特別イベントを追加
+            <Icon name="plus" size={13} />特別イベントを追加
           </button>
             </>
           )}
@@ -1072,7 +1072,7 @@ export default function WorldEditor({ world, onClose }: Props) {
             <div className="pick-grid">
               {WORLD_PRESETS.map((p) => (
                 <button key={p.id} className="pick-chip" onClick={() => applyPreset(p.id)}>
-                  ＋ {p.label}
+                  <Icon name="plus" size={13} />{p.label}
                 </button>
               ))}
             </div>
@@ -1094,7 +1094,7 @@ export default function WorldEditor({ world, onClose }: Props) {
                   onChange={(e) => updateAspect(a.id, { name: e.target.value })}
                 />
                 <button className="icon-btn small" onClick={() => removeAspect(a.id)} title="削除">
-                  ✕
+                  <Icon name="x" size={14} />
                 </button>
               </div>
               <textarea
@@ -1107,7 +1107,7 @@ export default function WorldEditor({ world, onClose }: Props) {
             </div>
           ))}
           <button className="btn" style={{ marginTop: 8 }} onClick={addAspect}>
-            ＋ 次元を追加
+            <Icon name="plus" size={13} />次元を追加
           </button>
             </>
           )}
@@ -1143,7 +1143,7 @@ export default function WorldEditor({ world, onClose }: Props) {
                   onChange={(e) => updateStat(s.id, { name: e.target.value })}
                 />
                 <button className="icon-btn small" onClick={() => removeStat(s.id)} title="削除">
-                  ✕
+                  <Icon name="x" size={14} />
                 </button>
               </div>
               <div className="row2" style={{ marginTop: 6 }}>
@@ -1236,7 +1236,7 @@ export default function WorldEditor({ world, onClose }: Props) {
             </div>
           ))}
           <button className="btn" style={{ marginTop: 8 }} onClick={addStat}>
-            ＋ ステータスを追加
+            <Icon name="plus" size={13} />ステータスを追加
           </button>
             </>
           )}
@@ -1277,7 +1277,7 @@ export default function WorldEditor({ world, onClose }: Props) {
                   注入
                 </label>
                 <button className="icon-btn small" onClick={() => removeCounter(c.id)} title="削除">
-                  ✕
+                  <Icon name="x" size={14} />
                 </button>
               </div>
               <div className="row2" style={{ marginTop: 6 }} title="レビュー1回で加算する場合の下限〜上限（既定 1〜1000 の中でさらに絞る。空欄=拘束なし）">
@@ -1313,7 +1313,7 @@ export default function WorldEditor({ world, onClose }: Props) {
             </div>
           ))}
           <button className="btn" style={{ marginTop: 8 }} onClick={addCounter}>
-            ＋ カウンターを追加
+            <Icon name="plus" size={13} />カウンターを追加
           </button>
             </>
           )}
@@ -1364,7 +1364,7 @@ export default function WorldEditor({ world, onClose }: Props) {
                     未達成時は隠す
                   </label>
                   <button className="icon-btn small" onClick={() => removeAchievement(a.id)} title="削除">
-                    ✕
+                    <Icon name="x" size={14} />
                   </button>
                 </div>
                 <textarea
@@ -1396,13 +1396,13 @@ export default function WorldEditor({ world, onClose }: Props) {
                   />
                 ))}
                 <button className="btn" style={{ marginTop: 6 }} onClick={() => addClause(a)}>
-                  ＋ 条件を追加
+                  <Icon name="plus" size={13} />条件を追加
                 </button>
               </div>
             )
           })}
           <button className="btn" style={{ marginTop: 8 }} onClick={addAchievement}>
-            ＋ 実績を追加
+            <Icon name="plus" size={13} />実績を追加
           </button>
             </>
           )}
@@ -1468,7 +1468,7 @@ export default function WorldEditor({ world, onClose }: Props) {
                     ↓
                   </button>
                   <button className="icon-btn small" onClick={() => removeEnding(e.id)} title="削除">
-                    ✕
+                    <Icon name="x" size={14} />
                   </button>
                 </div>
                 <textarea
@@ -1549,7 +1549,7 @@ export default function WorldEditor({ world, onClose }: Props) {
                       style={{ marginTop: 6 }}
                       onClick={() => addEndingClause(e)}
                     >
-                      ＋ 条件を追加
+                      <Icon name="plus" size={13} />条件を追加
                     </button>
                   </>
                 )}
@@ -1557,7 +1557,7 @@ export default function WorldEditor({ world, onClose }: Props) {
             )
           })}
           <button className="btn" style={{ marginTop: 8 }} onClick={addEnding}>
-            ＋ エンディングを追加
+            <Icon name="plus" size={13} />エンディングを追加
           </button>
             </>
           )}

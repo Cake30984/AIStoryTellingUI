@@ -278,7 +278,15 @@ export default function SceneReviewModal() {
             onClick={confirm}
             disabled={isReviewing || isRegenSuggestions}
           >
-            {isPastScene ? '要約を更新' : goEnding ? '🏁 エンディングへ進む' : '確定して次のシーンへ'}
+            {isPastScene ? (
+              '要約を更新'
+            ) : goEnding ? (
+              <>
+                <Icon name="flag" size={14} /> エンディングへ進む
+              </>
+            ) : (
+              '確定して次のシーンへ'
+            )}
           </button>
         </>
       }
@@ -289,7 +297,7 @@ export default function SceneReviewModal() {
             <>
               {/* あらすじ（編集モードでのみ入力可。FB5-C） */}
               <div className="field">
-                <label>📝 このシーンのあらすじ</label>
+                <label>このシーンのあらすじ</label>
                 {editMode ? (
                   <textarea
                     rows={6}
@@ -298,7 +306,7 @@ export default function SceneReviewModal() {
                   />
                 ) : (
                   <div className="review-static-text">
-                    {draft.summary || '（要約なし。「✎ 編集」から記入できます）'}
+                    {draft.summary || '（要約なし。「編集」から記入できます）'}
                   </div>
                 )}
               </div>
@@ -306,7 +314,9 @@ export default function SceneReviewModal() {
               {/* 到達エンディングのプレビュー（E2）。選択した状態で成立する結末を予告する */}
               {endingPreview && (
                 <div className="field">
-                  <label>🏁 エンディング</label>
+                  <label>
+                    <Icon name="flag" size={13} className="label-icon" /> エンディング
+                  </label>
                   {endingPreview.auto ? (
                     <div className="desc">
                       エンディング「
@@ -480,7 +490,7 @@ export default function SceneReviewModal() {
                       <div className="review-card-note">
                         {hasCustom
                           ? customNote.trim() || '（見出しのみ指定。この見出しで次のシーンを用意します）'
-                          : '空のシーンを作成し、自由に始めます。「✎ 編集」で内容を直接記入できます。'}
+                          : '空のシーンを作成し、自由に始めます。「編集」で内容を直接記入できます。'}
                       </div>
                     </button>
                   )}
@@ -491,7 +501,7 @@ export default function SceneReviewModal() {
               {draft.characterGrowth.length > 0 && (
                 <div className="field">
                   <label>
-                    🎭 キャラクターの成長{editMode ? '（内容を編集）' : '（チェックした項目を設定に追記）'}
+                    キャラクターの成長{editMode ? '（内容を編集）' : '（チェックした項目を設定に追記）'}
                   </label>
                   <div className="growth-list">
                     {draft.characterGrowth.map((g, i) =>
@@ -525,7 +535,7 @@ export default function SceneReviewModal() {
               {draft.worldGrowth.length > 0 && (
                 <div className="field">
                   <label>
-                    🌍 世界設定の追加{editMode ? '（内容を編集）' : '（チェックした項目をロアに追加）'}
+                    世界設定の追加{editMode ? '（内容を編集）' : '（チェックした項目をロアに追加）'}
                   </label>
                   <div className="growth-list">
                     {draft.worldGrowth.map((g, i) =>
@@ -722,7 +732,7 @@ export default function SceneReviewModal() {
               {!isPastScene && draft.moodChanges.length > 0 && (
                 <div className="field">
                   <label>
-                    🎭 気分の更新{editMode ? '（内容を編集）' : '（チェックした項目を上書き）'}
+                    気分の更新{editMode ? '（内容を編集）' : '（チェックした項目を上書き）'}
                   </label>
                   <div className="growth-list">
                     {draft.moodChanges.map((m, i) =>

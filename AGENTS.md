@@ -60,7 +60,7 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist`。storage は
 - `DialogHost.tsx` — `dialogs.ts` のキューを描画する常駐ホスト（App.tsx に1つ）
 - `ModalShell.tsx` — 全モーダル共通シェル（overlay＋modal＋head＋body＋foot）。`dirty` が真の時のみオーバーレイクリック・Escape で破棄確認
 - `ZoomOverlay.tsx` — 画像クリック拡大の共通オーバーレイ（`caption` でキャプション付き対応）。**`document.body` へのポータル描画**（呼び出し元サムネイルの img セレクタ・stacking context の影響を受けない）でフィット表示。閉じるのは画像クリック・背景クリック・Escape（キャプションは本文選択のため stopPropagation）。FB7-A
-- `icons.tsx` — 自前 SVG アイコン（依存追加なし）。`<Icon name size? className? filled?/>`。`IconName` は機能ボタン用のみ（彩り用絵文字は対象外）
+- `icons.tsx` — 自前 SVG アイコン（依存追加なし）。`<Icon name size? className? filled?/>`。**UI の絵文字・文字記号（⑂★✕＋等）は FB8-E2 で全廃し本アイコンへ統一**（アイコン単独可は ×/⋯/✎ 等の普遍記号＋tooltip 必須のみ。約物用途の →・＋連結表記は対象外）。旧データのノードラベル接頭辞は `BranchTreeModal` の `stripLegacyMark` が表示時に剥がす
 - `MenuPopover.tsx` — 汎用ポップオーバー（親に `position:relative` 必要・外側クリック＋Escape で閉じる）
 - `ActivityIndicator.tsx` — 本編/選択肢/レビュー/画像生成/表情判定の進行状態を1チップに集約。クリックで内訳＋中止
 - `LibraryBar.tsx` — Library（作る）画面用の細いトップバー（`ActivityIndicator`＋インポートボタン＋ジョブボタン）。画像生成の進行/採用を Play に行かず確認できるよう App.tsx が各 Library ビューを `.main` でラップして表示（F6）。ジョブ一覧はドックが無いので `ModalShell`＋`ImageJobsBody`。インポートは PNG カード/JSON バンドルを `store.importAnyFile` で種別自動判別し、結果は `infoNotice` トーストに出す

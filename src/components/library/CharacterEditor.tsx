@@ -185,7 +185,7 @@ export default function CharacterEditor({ character, onClose }: Props) {
                       }
                       title="削除"
                     >
-                      ✕
+                      <Icon name="x" size={14} />
                     </button>
                   </div>
                 ))}

@@ -292,7 +292,7 @@ export function SettingsBody() {
               キャラクター・世界観・ペルソナ・セッションをまとめて JSON で保存／復元します。
               localStorage はブラウザ消去で失われるため、定期的なエクスポートを推奨します。
               キャラクター・世界観・ペルソナは単体を PNG カード（画像1枚に情報を埋め込み）でも入出力できます
-              （キャラクターは SillyTavern 互換）。インポートはセッションカード・🎮ゲームカセットの PNG も受け付けます。
+              （キャラクターは SillyTavern 互換）。インポートはセッションカード・ゲームカセットの PNG も受け付けます。
             </div>
             <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, fontSize: 13 }}>
               <input
@@ -300,7 +300,7 @@ export function SettingsBody() {
                 checked={includeImages}
                 onChange={(e) => setIncludeImages(e.target.checked)}
               />
-              🖼 画像も含める（アバター・立ち絵・挿絵・背景。容量が大きくなる場合があります）
+              画像も含める（アバター・立ち絵・挿絵・背景。容量が大きくなる場合があります）
             </label>
             <div style={{ display: 'flex', gap: 8 }}>
               <button className="btn" onClick={onExport}>

@@ -5,6 +5,7 @@ import { putImage, useImageUrl } from '../../lib/imageStore'
 import { normalizeImage } from '../../lib/avatarGen'
 import { avatarContextUser, illustrationPromptSystem } from '../../lib/prompts'
 import ImageGenModal from '../ImageGenModal'
+import { Icon } from '../icons'
 
 const SPRITE_BASE_TAGS = 'standing, upper body, simple background, solo'
 
@@ -57,7 +58,13 @@ function SpriteSlot({ characterId, name, appearance, imagePrompt, emotion, image
           disabled={!characterId || busy}
           title={characterId ? undefined : '先に保存してください'}
         >
-          {busy ? '処理中…' : '📁 画像を選ぶ'}
+          {busy ? (
+            '処理中…'
+          ) : (
+            <>
+              <Icon name="folder" size={12} /> 画像を選ぶ
+            </>
+          )}
         </button>
         <button
           type="button"
@@ -67,7 +74,7 @@ function SpriteSlot({ characterId, name, appearance, imagePrompt, emotion, image
           disabled={!characterId}
           title={characterId ? undefined : '先に保存してください'}
         >
-          ✨ 生成
+          <Icon name="sparkles" size={12} /> 生成
         </button>
         {imageId && (
           <button
@@ -76,7 +83,7 @@ function SpriteSlot({ characterId, name, appearance, imagePrompt, emotion, image
             style={{ fontSize: 11, padding: '3px 8px' }}
             onClick={() => setCharacterSprite(characterId, emotion, undefined)}
           >
-            ✕ 外す
+            <Icon name="x" size={12} /> 外す
           </button>
         )}
       </div>
@@ -153,9 +160,9 @@ export default function SpriteSetField({ characterId, name, appearance, imagePro
 
   return (
     <div className="field">
-      <label>🎭 立ち絵セット（6感情）</label>
+      <label>立ち絵セット（6感情）</label>
       <div className="desc">
-        会話中の感情に応じてステージ表示（ChatPanel の🎭）で自動的に切り替わります。
+        会話中の感情に応じて、本文背面のステージ表示で自動的に切り替わります。
       </div>
       <div className="sprite-grid">
         {EMOTIONS.map((e) => (

@@ -227,10 +227,13 @@ function StarThumb({ imageId, size = 28 }: { imageId?: string; size?: number }) 
   }
   return (
     <div className="star-thumb star-thumb-placeholder" style={style}>
-      ★
+      <Icon name="star" size={14} filled />
     </div>
   )
 }
+
+/** 旧データのノードラベルに残る記号接頭辞（📖/🏁/🗑/⑂ 等）を表示時に剥がす（FB8-E2） */
+const stripLegacyMark = (s: string) => s.replace(/^(?:📖|🏁|🗑|⑂|★)\s*/u, '')
 
 /**
  * 分岐ツリー本体（C2→F1→FB3-B2 で SourceTree 風コミットグラフに再設計）。
@@ -304,7 +307,7 @@ export function BranchTreeBody({ session }: { session: Session }) {
     if (busy) return
     if (
       !(await appConfirm(
-        'この地点に戻りますか？\nここから物語を進めると、この先の記録は上書きされて消えます（シーンをまたぐ大きな上書きになる場合は、その時に⑂分岐として残すか確認します）。',
+        'この地点に戻りますか？\nここから物語を進めると、この先の記録は上書きされて消えます（シーンをまたぐ大きな上書きになる場合は、その時に分岐として残すか確認します）。',
       ))
     )
       return
@@ -359,7 +362,7 @@ export function BranchTreeBody({ session }: { session: Session }) {
     if (busy || !tree || pruneCount <= 0) return
     if (
       !(await appConfirm({
-        message: `現在の分岐（${pathIds.size}件）以外の${pruneCount}件を削除します。\n⑂分岐・しおり付きの記録も含めてすべて消え、元に戻せません。よろしいですか？`,
+        message: `現在の分岐（${pathIds.size}件）以外の${pruneCount}件を削除します。\n名前付き分岐・しおり付きの記録も含めてすべて消え、元に戻せません。よろしいですか？`,
         danger: true,
       }))
     )
@@ -478,7 +481,9 @@ export function BranchTreeBody({ session }: { session: Session }) {
             </button>
           )}
           <span className={'bg-label' + (isScene ? ' scene' : '')}>
-            {node.ending ? node.label : isScene ? `📖 ${node.label}` : node.label}
+            {node.ending && <Icon name="flag" size={12} className="bg-label-icon" />}
+            {isScene && !node.ending && <Icon name="book-open" size={12} className="bg-label-icon" />}
+            {stripLegacyMark(node.label)}
             {node.timeLabel ? `（${node.timeLabel}）` : ''}
           </span>
           {isScene &&
@@ -486,12 +491,20 @@ export function BranchTreeBody({ session }: { session: Session }) {
             (condensed?.hiddenBySceneId.get(node.id) ?? 0) > 0 && (
               <span className="bg-fold-count">（{condensed!.hiddenBySceneId.get(node.id)}件）</span>
             )}
-          {node.branchName && <span className="badge bg-branch-badge">⑂ {node.branchName}</span>}
-          {node.star && <span className="badge bg-star-badge">★ {node.star.name}</span>}
-          {isCurrent && <span className="badge accent bg-current-badge">▶ いまここ</span>}
+          {node.branchName && (
+            <span className="badge bg-branch-badge">
+              <Icon name="git-branch" size={11} /> {node.branchName}
+            </span>
+          )}
+          {node.star && (
+            <span className="badge bg-star-badge">
+              <Icon name="star" size={11} filled /> {node.star.name}
+            </span>
+          )}
+          {isCurrent && <span className="badge accent bg-current-badge">いまここ</span>}
           <span className="bg-bytes">{formatBytes(node.bytes)}</span>
           <span className="bg-open" title="この地点を本文で開く（何も消えません）">
-            → 開く
+            開く
           </span>
           <div className="menu-anchor">
             <button
@@ -537,7 +550,7 @@ export function BranchTreeBody({ session }: { session: Session }) {
                       void doBranchFrom(node.id)
                     }}
                   >
-                    <Icon name="git-branch" size={14} /> ⑂ ここから分岐して再開
+                    <Icon name="git-branch" size={14} /> ここから分岐して再開
                   </button>
                 )}
                 {isScene && node.parentId && (
@@ -611,21 +624,27 @@ export function BranchTreeBody({ session }: { session: Session }) {
         <p className="desc">まだ記録がありません。物語を進めると、ここに時点が記録されていきます。</p>
       ) : tab === 'starred' ? (
         starred.length === 0 ? (
-          <p className="desc">まだしおりがありません。各ノードの ⋯ から名前を付けて登録できます。</p>
+          <p className="desc">まだしおりがありません。各行のメニューから名前を付けて登録できます。</p>
         ) : (
           <div className="star-list">
             {starred.map((n) => (
               <div className="star-row" key={n.id}>
                 <StarThumb imageId={n.star?.thumbImageId} size={56} />
                 <div className="star-row-info">
-                  <div className="star-row-name">★ {n.star?.name}</div>
+                  <div className="star-row-name">
+                    <Icon name="star" size={12} filled /> {n.star?.name}
+                  </div>
                   <div className="desc">
-                    {n.ending ? n.label : n.kind === 'scene' ? `📖 ${n.label}` : n.label}
+                    {n.ending && <Icon name="flag" size={11} className="bg-label-icon" />}
+                    {n.kind === 'scene' && !n.ending && (
+                      <Icon name="book-open" size={11} className="bg-label-icon" />
+                    )}
+                    {stripLegacyMark(n.label)}
                     {n.timeLabel ? `（${n.timeLabel}）` : ''}
                   </div>
                   <div className="branch-time">{new Date(n.createdAt).toLocaleString()}</div>
                 </div>
-                {tree.currentId === n.id && <span className="badge accent bg-current-badge">▶ いまここ</span>}
+                {tree.currentId === n.id && <span className="badge accent bg-current-badge">いまここ</span>}
                 <button
                   className="btn"
                   disabled={busy || tree.currentId === n.id}

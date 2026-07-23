@@ -62,7 +62,10 @@ export default function WorldLibrary() {
   return (
     <div className={'library' + (dragOver ? ' drag-over' : '')} {...dropProps}>
       <div className="library-head">
-        <h2>🌍 世界観</h2>
+        <h2>
+          <Icon name="globe" size={18} className="head-icon" />
+          世界観
+        </h2>
         <button className="btn primary" onClick={() => setEditing(newWorld())}>
           <Icon name="plus" size={14} /> 世界観を作る
         </button>
@@ -111,7 +114,7 @@ export default function WorldLibrary() {
               }}
             >
               <div className="entity-avatar" style={{ background: '#2f3346' }}>
-                🌍
+                <Icon name="globe" size={20} />
               </div>
               <div className="entity-body">
                 <div className="entity-name">{w.name || '無名の世界'}</div>

@@ -497,6 +497,27 @@
   border-radius: 6px;
   padding: 2px 8px;
 }
+/* トースト文頭の SVG アイコン（FB8-E2。絵文字の置き換え） */
+.toast .toast-icon {
+  vertical-align: -2px;
+  margin-right: 6px;
+}
+
+/* ラベル・状態行の SVG アイコン（FB8-E2。🏆✅🔒🏁 等の置き換え） */
+.label-icon {
+  vertical-align: -2px;
+  color: var(--text-dim);
+}
+.state-icon {
+  vertical-align: -1.5px;
+  color: var(--text-faint);
+}
+.state-icon.ok {
+  color: var(--ok);
+}
+.state-icon.accent {
+  color: var(--accent);
+}
 .toast.achievement {
   background: linear-gradient(135deg, #e0b341, #d77ad8);
 }
@@ -1083,7 +1104,21 @@
   color: var(--text-dim);
   font-size: 12px;
 }
-/* ⑂ 明示分岐の名前チップ（FB6-C。しおりと同じ収まり方・アクセント系の枠色） */
+/* ノードラベル先頭の種別アイコン（📖/🏁 絵文字の置き換え。FB8-E2） */
+.bg-label-icon {
+  vertical-align: -1.5px;
+  margin-right: 4px;
+  color: var(--text-dim);
+}
+.badge svg,
+.star-row-name svg {
+  vertical-align: -1.5px;
+}
+.star-thumb-placeholder svg {
+  color: var(--text-faint);
+}
+
+/* 明示分岐の名前チップ（FB6-C。しおりと同じ収まり方・アクセント系の枠色） */
 .bg-branch-badge {
   display: inline-block;
   min-width: 0;

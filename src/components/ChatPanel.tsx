@@ -636,7 +636,7 @@ export default function ChatPanel({ session }: Props) {
             onClick={() => setShowFinale(true)}
             title="この物語は完結しています（続きは分岐ツリーから復元できます）"
           >
-            🏁 完結：{session.ending.name}
+            <Icon name="flag" size={12} /> 完結：{session.ending.name}
           </button>
         )}
 
@@ -782,7 +782,7 @@ export default function ChatPanel({ session }: Props) {
                   <div className="chat-hint">
                     {!isConfigured ? (
                       <p>
-                        右上の ⋯ メニュー →「セッション設定」から
+                        右上のメニュー →「セッション設定」から
                         {session.mode === 'roleplay' ? '登場キャラクター' : '物語の前提'}を設定しましょう。
                       </p>
                     ) : session.mode === 'roleplay' ? (
@@ -812,7 +812,9 @@ export default function ChatPanel({ session }: Props) {
                     <Fragment key={sc.id}>
                       {showDivider && (
                         <div className="scene-divider">
-                          <span className="scene-title">📖 {sc.title}</span>
+                          <span className="scene-title">
+                            <Icon name="book-open" size={13} className="scene-title-icon" /> {sc.title}
+                          </span>
                           {castNames.length > 0 && (
                             <span className="scene-cast">{castNames.join('・')}</span>
                           )}
@@ -871,7 +873,7 @@ export default function ChatPanel({ session }: Props) {
                     className={'speaker-chip' + (speaker === undefined ? ' on' : '')}
                     onClick={() => setSpeaker(undefined)}
                   >
-                    🎲 おまかせ
+                    <Icon name="dice" size={13} /> おまかせ
                   </button>
                   {participants.map((c) => (
                     <button
@@ -982,7 +984,7 @@ export default function ChatPanel({ session }: Props) {
                   title={scene ? 'この場面の挿絵を生成' : '物語を開始すると生成できます'}
                   onClick={() => scene && setIllustGenFor({ sceneId: scene.id })}
                 >
-                  <Icon name="palette" size={14} />
+                  <Icon name="palette" size={14} /> 挿絵
                 </button>
                 <button
                   className="composer-tool-btn"
@@ -990,7 +992,7 @@ export default function ChatPanel({ session }: Props) {
                   title={scene ? 'この場面の背景を生成' : '物語を開始すると生成できます'}
                   onClick={() => scene && setBgGenFor({ sceneId: scene.id })}
                 >
-                  <Icon name="mountain" size={14} />
+                  <Icon name="mountain" size={14} /> 背景
                 </button>
                 <button className="composer-tool-btn" onClick={() => setShowSceneEditor(true)}>
                   <Icon name="pencil" size={14} /> シーン編集
@@ -1002,7 +1004,7 @@ export default function ChatPanel({ session }: Props) {
                     disabled={isStreaming}
                     title="この完結地点から新しい分岐（世界線）を作り、続きを描く"
                   >
-                    ⑂ ここから分岐して続ける
+                    <Icon name="git-branch" size={14} /> ここから分岐して続ける
                   </button>
                 ) : isEpilogue ? (
                   <button
@@ -1014,7 +1016,7 @@ export default function ChatPanel({ session }: Props) {
                     disabled={isStreaming}
                     title="エピローグを締めて物語を完結する"
                   >
-                    🏁 物語を完結する
+                    <Icon name="flag" size={14} /> 物語を完結する
                   </button>
                 ) : (
                   <button
@@ -1038,7 +1040,7 @@ export default function ChatPanel({ session }: Props) {
 
               {isFinalized ? (
                 <div className="finalized-lock">
-                  🏁 この物語は完結しました。続きを描くには、上の「⑂ ここから分岐して続ける」で新しい分岐（世界線）を作成してください。
+                  <Icon name="flag" size={13} /> この物語は完結しました。続きを描くには、上の「ここから分岐して続ける」で新しい分岐（世界線）を作成してください。
                 </div>
               ) : (
                 <div className="input-row">
@@ -1213,7 +1215,7 @@ export default function ChatPanel({ session }: Props) {
       {/* 完結オーバーレイ（簡素な演出。将来ここにエンディング CG・スタッフロールを足せる） */}
       {showFinale && session.ending && (
         <ModalShell
-          title="🏁 物語の完結"
+          title="物語の完結"
           onClose={() => setShowFinale(false)}
           footer={
             <button className="btn primary" onClick={() => setShowFinale(false)}>
@@ -1222,7 +1224,9 @@ export default function ChatPanel({ session }: Props) {
           }
         >
           <div className="field" style={{ textAlign: 'center', padding: '12px 0' }}>
-            <div style={{ fontSize: 40, marginBottom: 8 }}>🏁</div>
+            <div style={{ marginBottom: 8, color: 'var(--accent)' }}>
+              <Icon name="flag" size={40} />
+            </div>
             <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>
               {session.ending.name}
             </div>

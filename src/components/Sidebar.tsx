@@ -46,7 +46,7 @@ export default function Sidebar() {
         const parsed = parseCardPng(bytes)
         if (parsed?.kind === 'cassette') {
           await importCassette(parsed.bundle, new Blob([bytes as BlobPart], { type: 'image/png' }))
-          setNotice(`🎮 ゲームカセット「${parsed.bundle.session.title || '無題'}」を棚に登録しました（「作る > カセット」から遊べます）。`)
+          setNotice(`ゲームカセット「${parsed.bundle.session.title || '無題'}」を棚に登録しました（「作る > カセット」から遊べます）。`)
         } else {
           throw new Error('ゲームカセットではありません。')
         }

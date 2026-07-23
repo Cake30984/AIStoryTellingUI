@@ -33,7 +33,7 @@ export default function SceneEditor({ session, scene, onClose }: Props) {
 
   return (
     <ModalShell
-      title="📖 シーン設定"
+      title="シーン設定"
       onClose={onClose}
       dirty={dirty}
       footer={
