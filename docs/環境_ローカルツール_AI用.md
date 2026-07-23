@@ -6,6 +6,7 @@
 | コマンド | 内容 |
 | --- | --- |
 | `node` / `npm` / `npx` | Node.js 24.16 LTS |
+| `pnpm` | 11.15（※本プロジェクトは npm 運用） |
 | `python` / `py` | Python 3.14・3.12（Python Install Manager 経由） |
 | `uv` | Python パッケージ／仮想環境管理・`uv run` |
 | `cargo` / `rustc` / `rustup` | Rust（Tauri ビルド用） |
@@ -35,6 +36,7 @@
 | `sqlite3` / `sqldiff` / `sqlite3_analyzer` / `sqlite3_rsync` | SQLite 3.53 |
 | `psql` | PostgreSQL 16 クライアント |
 | `hexyl` | 16進ダンプ（PNG の tEXt チャンク調査など） |
+| `pandoc` | 3.10・ドキュメント形式変換（md/docx/html/pdf 等） |
 | `7z` | 圧縮・展開 |
 | `tar` / `curl` | Windows 内蔵 |
 | `restic` | バックアップ |
@@ -42,6 +44,7 @@
 ## メディア
 | コマンド | 内容 |
 | --- | --- |
+| `magick` | ImageMagick 7.1.2 Q16-HDRI（変換・リサイズ・合成） |
 | `ffmpeg` / `ffprobe` / `ffplay` | 8.1.1 |
 | `yt-dlp` | 動画取得 |
 
@@ -54,12 +57,8 @@
 | `code` | VS Code（`code -d a b` で差分） |
 | `winget` / `choco` | パッケージ管理 |
 | `claude` / `opencode` | AI コーディング CLI |
+| `hyperfine` | コマンドのベンチマーク |
 | Sysinternals Suite | `handle` / `procexp` / `pslist` 等（ファイルロック調査） |
 
 ## 対話用（エージェントからは非推奨）
 `fzf` / `bat` / `eza` / `zoxide` — 対話 UI 前提で出力がパイプに向かない。
-
-## 未インストール
-`magick`（ImageMagick）— chocolatey の `lib\imagemagick.app` に `.chocolateyPending` が残ったままで実体（`magick.exe`）が存在しない＝**インストール未完了**。画像処理は `ffmpeg` かブラウザ側 canvas（`src/lib/avatarGen.ts`）で行う。
-
-`pnpm` / `pandoc` / `hyperfine` も未インストール。
