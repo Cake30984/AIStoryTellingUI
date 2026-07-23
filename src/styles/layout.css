@@ -643,6 +643,22 @@
   flex-shrink: 0;
   width: 168px;
 }
+/* ナビのグループ見出し（FB8-E3。WorldEditor の10セクションを意味で束ねる） */
+.nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.nav-group + .nav-group {
+  margin-top: 14px;
+}
+.nav-group-heading {
+  font-size: 11px;
+  color: var(--text-faint);
+  letter-spacing: 0.04em;
+  padding: 0 2px;
+  user-select: none;
+}
 .section-content {
   flex: 1;
   min-width: 0;

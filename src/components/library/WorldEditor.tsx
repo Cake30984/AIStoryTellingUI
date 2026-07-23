@@ -41,6 +41,16 @@ import { NARRATION_NAMES } from '../../lib/structured'
 
 const OPS: Op[] = ['>=', '>', '<=', '<', '==', '!=']
 
+/** 比較演算子の日本語ラベル（FB8-E3。条件行を「〜が 2 以上」と文で読めるようにする） */
+const OP_LABELS: Record<Op, string> = {
+  '>=': '以上',
+  '>': 'を超える',
+  '<=': '以下',
+  '<': '未満',
+  '==': 'と等しい',
+  '!=': 'と等しくない',
+}
+
 type Section =
   | 'basic'
   | 'start'
@@ -53,17 +63,41 @@ type Section =
   | 'achievements'
   | 'endings'
 
-const SECTIONS: { id: Section; label: string }[] = [
-  { id: 'basic', label: '基本' },
-  { id: 'start', label: '開始テンプレート' },
-  { id: 'roles', label: '配役' },
-  { id: 'lore', label: 'ロア' },
-  { id: 'events', label: '特別イベント' },
-  { id: 'aspects', label: '関係性の次元' },
-  { id: 'stats', label: 'ステータス' },
-  { id: 'counters', label: 'カウンター' },
-  { id: 'achievements', label: '実績' },
-  { id: 'endings', label: 'エンディング' },
+/** ナビのグループ見出し（FB8-E3。10セクションのフラット並びに意味のまとまりを付ける） */
+const SECTION_GROUPS: { heading: string; items: { id: Section; label: string }[] }[] = [
+  {
+    heading: '世界の中身',
+    items: [
+      { id: 'basic', label: '基本' },
+      { id: 'lore', label: 'ロア' },
+      { id: 'events', label: '特別イベント' },
+    ],
+  },
+  {
+    heading: '登場のしくみ',
+    items: [
+      { id: 'roles', label: '配役' },
+      { id: 'aspects', label: '関係性の次元' },
+    ],
+  },
+  {
+    heading: '数値と記録',
+    items: [
+      { id: 'stats', label: 'ステータス' },
+      { id: 'counters', label: 'カウンター' },
+    ],
+  },
+  {
+    heading: 'ゴール',
+    items: [
+      { id: 'achievements', label: '実績' },
+      { id: 'endings', label: 'エンディング' },
+    ],
+  },
+  {
+    heading: 'セッションの雛形',
+    items: [{ id: 'start', label: '開始テンプレート' }],
+  },
 ]
 
 /** Condition から節配列・モードを取り出す（all/any の判別） */
@@ -110,6 +144,12 @@ function GroupSubClauseRow({
                 </option>
               ))}
           </select>
+          <span className="clause-joint">が</span>
+          <NumberInput
+            value={sub.value}
+            style={{ width: 80, background: 'var(--bg)' }}
+            onChange={(value) => onChange({ ...sub, value })}
+          />
           <select
             value={sub.op}
             style={{ background: 'var(--bg)' }}
@@ -117,15 +157,10 @@ function GroupSubClauseRow({
           >
             {OPS.map((op) => (
               <option key={op} value={op}>
-                {op}
+                {OP_LABELS[op]}
               </option>
             ))}
           </select>
-          <NumberInput
-            value={sub.value}
-            style={{ width: 80, background: 'var(--bg)' }}
-            onChange={(value) => onChange({ ...sub, value })}
-          />
         </>
       )}
 
@@ -137,6 +172,7 @@ function GroupSubClauseRow({
             className="lore-keys"
             onChange={(e) => onChange({ ...sub, flag: e.target.value })}
           />
+          <span className="clause-joint">を</span>
           <select
             value={sub.have ? 'have' : 'not'}
             style={{ background: 'var(--bg)' }}
@@ -198,6 +234,12 @@ function ClauseRow({
                 </option>
               ))}
             </select>
+            <span className="clause-joint">が</span>
+            <NumberInput
+              value={clause.value}
+              style={{ width: 80, background: 'var(--bg)' }}
+              onChange={(value) => onChange({ ...clause, value })}
+            />
             <select
               value={clause.op}
               style={{ background: 'var(--bg)' }}
@@ -205,15 +247,10 @@ function ClauseRow({
             >
               {OPS.map((op) => (
                 <option key={op} value={op}>
-                  {op}
+                  {OP_LABELS[op]}
                 </option>
               ))}
             </select>
-            <NumberInput
-              value={clause.value}
-              style={{ width: 80, background: 'var(--bg)' }}
-              onChange={(value) => onChange({ ...clause, value })}
-            />
           </>
         )}
 
@@ -225,6 +262,7 @@ function ClauseRow({
               className="lore-keys"
               onChange={(e) => onChange({ ...clause, flag: e.target.value })}
             />
+            <span className="clause-joint">を誰かが</span>
             <select
               value={clause.have ? 'have' : 'not'}
               style={{ background: 'var(--bg)' }}
@@ -252,6 +290,7 @@ function ClauseRow({
                   </option>
                 ))}
             </select>
+            <span className="clause-joint">が</span>
             <select
               value={clause.have ? 'have' : 'not'}
               style={{ background: 'var(--bg)' }}
@@ -277,20 +316,7 @@ function ClauseRow({
                 </option>
               ))}
             </select>
-            <select
-              value={clause.quantifier.kind}
-              style={{ background: 'var(--bg)' }}
-              onChange={(e) => {
-                const kind = e.target.value as Quantifier['kind']
-                const quantifier: Quantifier =
-                  kind === 'all' ? { kind: 'all' } : { kind, n: clause.quantifier.kind === 'all' ? 1 : clause.quantifier.n }
-                onChange({ ...clause, quantifier })
-              }}
-            >
-              <option value="all">全員</option>
-              <option value="atLeast">N人以上</option>
-              <option value="exactly">N人ぴったり</option>
-            </select>
+            <span className="clause-joint">の</span>
             {clause.quantifier.kind !== 'all' && (
               <NumberInput
                 min={1}
@@ -302,6 +328,21 @@ function ClauseRow({
                 }
               />
             )}
+            <select
+              value={clause.quantifier.kind}
+              style={{ background: 'var(--bg)' }}
+              onChange={(e) => {
+                const kind = e.target.value as Quantifier['kind']
+                const quantifier: Quantifier =
+                  kind === 'all' ? { kind: 'all' } : { kind, n: clause.quantifier.kind === 'all' ? 1 : clause.quantifier.n }
+                onChange({ ...clause, quantifier })
+              }}
+            >
+              <option value="all">全員</option>
+              <option value="atLeast">人以上</option>
+              <option value="exactly">人ぴったり</option>
+            </select>
+            <span className="clause-joint">が、下の条件をすべて満たす</span>
             <label className="chk" title="このロールのメンバーを結果の主要登場人物にする（@ロール名/@相手 置換・エピローグ注入の対象）">
               <input
                 type="checkbox"
@@ -614,14 +655,19 @@ export default function WorldEditor({ world, onClose }: Props) {
 
       <div className="page-body">
         <div className="section-nav nav-vertical">
-          {SECTIONS.map((s) => (
-            <button
-              key={s.id}
-              className={'nav-btn' + (section === s.id ? ' on' : '')}
-              onClick={() => setSection(s.id)}
-            >
-              {s.label}
-            </button>
+          {SECTION_GROUPS.map((g) => (
+            <div className="nav-group" key={g.heading}>
+              <div className="nav-group-heading">{g.heading}</div>
+              {g.items.map((s) => (
+                <button
+                  key={s.id}
+                  className={'nav-btn' + (section === s.id ? ' on' : '')}
+                  onClick={() => setSection(s.id)}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
           ))}
         </div>
 

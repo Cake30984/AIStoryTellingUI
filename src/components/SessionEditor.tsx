@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { currentScene, hasStartPreset, startPresetPatch, useStore } from '../store'
 import { advanceTimeline, timeLabelOf } from '../lib/timeline'
+import { modelRefLabel } from '../lib/providers'
 import { appConfirm } from '../lib/dialogs'
 import type { Session } from '../types'
 import CsvInput from './CsvInput'
@@ -8,14 +9,15 @@ import ModelPicker from './ModelPicker'
 import EntityAvatar from './EntityAvatar'
 import CassetteEditor from './CassetteEditor'
 import ModalShell from './ModalShell'
-import { Icon } from './icons'
+import { Icon, type IconName } from './icons'
 import CastingFields from './CastingFields'
 import NumberInput from './NumberInput'
 import IntroTagDefEditor from './IntroTagDefEditor'
 import IntroTagFields from './IntroTagFields'
 
-type PickerTarget = 'review' | 'choices' | 'bulk'
-type Tab = 'basic' | 'progress' | 'model' | 'output'
+type PickerTarget = 'main' | 'review' | 'choices' | 'bulk'
+/** FB8-E3: 「基本＝誰と・どの世界で」「物語＝どう始まるか」「進行」「AIと出力」の4タブ */
+type Tab = 'basic' | 'story' | 'progress' | 'ai'
 
 interface Props {
   session: Session
@@ -23,7 +25,8 @@ interface Props {
 }
 
 export default function SessionEditor({ session, onClose }: Props) {
-  const { updateSession, characters, worlds, personas, setView, bulkSetCharacterModel } = useStore()
+  const { updateSession, characters, worlds, personas, providers, setView, bulkSetCharacterModel } =
+    useStore()
   const [d, setD] = useState<Session>(session)
   const [tab, setTab] = useState<Tab>('basic')
   const [pickerTarget, setPickerTarget] = useState<PickerTarget | null>(null)
@@ -115,16 +118,16 @@ export default function SessionEditor({ session, onClose }: Props) {
             <nav className="se-nav">
               {(
                 [
-                  ['basic', '基本', 'settings'],
-                  ['progress', '進行', 'hourglass'],
-                  ['model', 'モデル', 'layers'],
-                  ['output', '出力', 'scroll-text'],
-                ] as const
-              ).map(([t, label, icon]) => (
+                  { key: 'basic', label: '基本', icon: 'settings' },
+                  ...(d.mode === 'story' ? [{ key: 'story', label: '物語', icon: 'book-open' }] : []),
+                  { key: 'progress', label: '進行', icon: 'hourglass' },
+                  { key: 'ai', label: 'AIと出力', icon: 'layers' },
+                ] as { key: Tab; label: string; icon: IconName }[]
+              ).map(({ key, label, icon }) => (
                 <button
-                  key={t}
-                  className={'se-nav-btn' + (tab === t ? ' on' : '')}
-                  onClick={() => setTab(t)}
+                  key={key}
+                  className={'se-nav-btn' + (tab === key ? ' on' : '')}
+                  onClick={() => setTab(key)}
                 >
                   <Icon name={icon} size={16} />
                   {label}
@@ -168,7 +171,7 @@ export default function SessionEditor({ session, onClose }: Props) {
                     </div>
                     {d.characterIds.length > 0 && d.narrativeStyle === 'chat' && (
                       <div className="desc" style={{ marginTop: 8 }}>
-                        キャラ別モデルの一括設定は「モデル」タブから行えます。
+                        キャラ別モデルの一括設定は「AIと出力」タブから行えます。
                       </div>
                     )}
                   </>
@@ -234,9 +237,27 @@ export default function SessionEditor({ session, onClose }: Props) {
                 </select>
               </div>
 
-              {/* 物語モード固有 */}
-              {d.mode === 'story' && (
-                <>
+              {/* 固定メモ（ロールプレイでは基本タブに置く。物語モードは「物語」タブ側） */}
+              {d.mode === 'roleplay' && (
+                <div className="field">
+                  <label>固定メモ（常に踏まえる重要事項・任意）</label>
+                  <div className="desc">
+                    毎回「常に踏まえる重要事項」として AI に渡されます。文体・禁則などの指示向きです。
+                  </div>
+                  <textarea
+                    rows={2}
+                    value={d.authorNote}
+                    placeholder="例: 残酷描写は避ける。主人公の心情を勝手に確定しない。"
+                    onChange={(e) => patch({ authorNote: e.target.value })}
+                  />
+                </div>
+              )}
+            </>
+          )}
+
+          {/* 物語タブ（FB8-E3: 物語モード固有＝どう始まり・何を守るか） */}
+          {tab === 'story' && d.mode === 'story' && (
+            <>
                   <div className="field">
                     <label>ジャンル・トーン</label>
                     <div className="desc">
@@ -311,13 +332,11 @@ export default function SessionEditor({ session, onClose }: Props) {
                     personas={personas}
                     onChange={(roleAssignments) => patch({ roleAssignments })}
                   />
-                </>
-              )}
 
               <div className="field">
                 <label>固定メモ（常に踏まえる重要事項・任意）</label>
                 <div className="desc">
-                  毎回「常に踏まえる重要事項」として AI に渡されます。文体・禁則などの指示向きで、ロールプレイモードでも有効です。
+                  毎回「常に踏まえる重要事項」として AI に渡されます。文体・禁則などの指示向きです。
                 </div>
                 <textarea
                   rows={2}
@@ -483,8 +502,26 @@ export default function SessionEditor({ session, onClose }: Props) {
             </>
           )}
 
-          {tab === 'model' && (
+          {tab === 'ai' && (
             <>
+              {/* 本編モデル（FB8-E3: メニューの「モデル:」項目から設定画面へ一本化） */}
+              <div className="field">
+                <label>本編モデル</label>
+                <div className="desc">
+                  物語本文の生成に使うモデル。未設定なら「設定・データ管理」の既定モデルを使います。
+                </div>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <button className="model-chip" style={{ flex: 1 }} onClick={() => setPickerTarget('main')}>
+                    {d.model ? modelRefLabel(d.model, providers) || d.model : '既定モデルを使用'}
+                  </button>
+                  {d.model && (
+                    <button className="btn" style={{ whiteSpace: 'nowrap' }} onClick={() => patch({ model: '' })}>
+                      クリア
+                    </button>
+                  )}
+                </div>
+              </div>
+
               {d.characterIds.length > 0 && d.narrativeStyle === 'chat' && (
                 <div className="field">
                   <label>登場キャラクターの一括モデル設定</label>
@@ -564,11 +601,7 @@ export default function SessionEditor({ session, onClose }: Props) {
                   </div>
                 </div>
               </div>
-            </>
-          )}
 
-          {tab === 'output' && (
-            <>
               {/* 文体スタイル */}
               <div className="field">
                 <label>文体スタイル</label>
@@ -609,6 +642,13 @@ export default function SessionEditor({ session, onClose }: Props) {
           </div>
     </ModalShell>
       {showCardModal && <CassetteEditor seedSession={session} onClose={() => setShowCardModal(false)} />}
+      {pickerTarget === 'main' && (
+        <ModelPicker
+          current={d.model}
+          onPick={(ref) => patch({ model: ref })}
+          onClose={() => setPickerTarget(null)}
+        />
+      )}
       {pickerTarget === 'review' && (
         <ModelPicker
           current={d.reviewModel}
