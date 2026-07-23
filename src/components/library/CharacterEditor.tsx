@@ -54,7 +54,7 @@ export default function CharacterEditor({ character, onClose }: Props) {
           <button
             className="btn danger"
             onClick={async () => {
-              if (await appConfirm({ message: 'このキャラを削除しますか？', danger: true })) {
+              if (await appConfirm({ message: 'このキャラクターを削除しますか？', danger: true })) {
                 deleteCharacter(d.id)
                 onClose()
               }
@@ -224,7 +224,7 @@ export default function CharacterEditor({ character, onClose }: Props) {
           <div className="field">
             <label>専用モデル（任意・会話劇の話者確定時のみ有効）</label>
             <div className="desc">
-              会話劇でこのキャラが話者として確定した場合のみ使用。小説形式・おまかせ生成はセッション本編モデルを使います。
+              会話劇でこのキャラクターが話者として確定した場合のみ使用。小説形式・おまかせ生成はセッション本編モデルを使います。
             </div>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
               <button className="model-chip" style={{ flex: 1 }} onClick={() => setShowModelPicker(true)}>

@@ -672,6 +672,35 @@
 .modal-wide {
   max-width: 680px;
 }
+
+/* 長い説明の折りたたみ（FB8-E1。見出し直下は要点1文＋「詳しい説明」） */
+.help-details {
+  margin: 4px 0 8px;
+}
+.help-details > summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-dim);
+  user-select: none;
+  width: fit-content;
+}
+.help-details > summary:hover {
+  color: var(--text);
+}
+.help-details-body {
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-left: 2px solid var(--border);
+  font-size: 12px;
+  line-height: 1.8;
+  color: var(--text-dim);
+}
+.help-details-body p {
+  margin: 0 0 6px;
+}
+.help-details-body p:last-child {
+  margin-bottom: 0;
+}
 .lore-head {
   margin: 6px 0 10px;
 }

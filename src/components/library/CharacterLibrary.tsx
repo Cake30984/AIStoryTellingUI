@@ -66,7 +66,7 @@ export default function CharacterLibrary() {
       <div className="library-head">
         <h2>🎭 キャラクター</h2>
         <button className="btn primary" onClick={() => setEditing(newCharacter())}>
-          <Icon name="plus" size={14} /> 新規キャラ
+          <Icon name="plus" size={14} /> キャラクターを作る
         </button>
       </div>
 
@@ -90,7 +90,7 @@ export default function CharacterLibrary() {
 
       {characters.length === 0 ? (
         <div className="library-empty">
-          <p>まだキャラクターがいません。「＋ 新規キャラ」から作成、またはカード画像をドロップしましょう。</p>
+          <p>まだキャラクターがいません。「キャラクターを作る」から作成、またはカード画像をドロップしましょう。</p>
         </div>
       ) : visible.length === 0 ? (
         <div className="library-empty">

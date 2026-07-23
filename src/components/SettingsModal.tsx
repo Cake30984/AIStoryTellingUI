@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
-import { DEFAULT_MODEL, useStore } from '../store'
+import { useStore } from '../store'
 import { downloadBundle } from '../lib/io'
-import { PROVIDER_PRESETS, newProvider } from '../lib/providers'
+import { PROVIDER_PRESETS, modelRefLabel, newProvider } from '../lib/providers'
 import ImageProviderSettings from './ImageProviderSettings'
 import ModelPicker from './ModelPicker'
 import { appConfirm } from '../lib/dialogs'
@@ -266,7 +266,9 @@ export function SettingsBody() {
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <button className="model-chip" style={{ flex: 1 }} onClick={() => setShowDefaultPicker(true)}>
-                {defaultModelRef || `未設定（${DEFAULT_MODEL}）`}
+                {defaultModelRef
+                  ? modelRefLabel(defaultModelRef, providers) || defaultModelRef
+                  : '未設定（OpenRouter におまかせ）'}
               </button>
               {defaultModelRef && (
                 <button className="btn" style={{ whiteSpace: 'nowrap' }} onClick={() => setDefaultModelRef('')}>
@@ -287,9 +289,9 @@ export function SettingsBody() {
           <div className="field">
             <label>データのバックアップ</label>
             <div className="desc">
-              キャラ・世界観・ペルソナ・セッションをまとめて JSON で保存／復元します。
+              キャラクター・世界観・ペルソナ・セッションをまとめて JSON で保存／復元します。
               localStorage はブラウザ消去で失われるため、定期的なエクスポートを推奨します。
-              キャラ・世界観・ペルソナは単体を PNG カード（画像1枚に情報を埋め込み）でも入出力できます
+              キャラクター・世界観・ペルソナは単体を PNG カード（画像1枚に情報を埋め込み）でも入出力できます
               （キャラクターは SillyTavern 互換）。インポートはセッションカード・🎮ゲームカセットの PNG も受け付けます。
             </div>
             <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, fontSize: 13 }}>
@@ -327,7 +329,7 @@ export function SettingsBody() {
           <div className="field">
             <label>未使用画像の整理</label>
             <div className="desc">
-              どのキャラ・セッション・分岐チェックポイントからも参照されなくなった画像（アバター・立ち絵・挿絵・背景）を
+              どのキャラクター・セッション・分岐チェックポイントからも参照されなくなった画像（アバター・立ち絵・挿絵・背景）を
               ストレージから完全に削除し、容量を空けます。使用中の画像が消えることはありません。
             </div>
             <button

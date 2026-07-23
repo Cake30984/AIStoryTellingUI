@@ -52,7 +52,7 @@ export default function IntroTagDefEditor({ tags, onChange, opening, onOpeningCh
       <div className="desc">
         導入文で使う自由なプレースホルダを定義します（実名は含めません）。タグ名には <code>@</code> を付けません
         （入力しても自動で外れます）。導入文の本文では <code>@タグ名</code> のように @ を付けて書いてください。
-        対応する実キャラ・ペルソナはセッション/カセット側の「置換タグの対応付け」で割り当てます。
+        対応するキャラクター・ペルソナはセッション/カセット側の「置換タグの対応付け」で割り当てます。
       </div>
       {tags.length === 0 && <p className="inline-empty">置換タグはまだありません。</p>}
       {tags.map((tag) => (

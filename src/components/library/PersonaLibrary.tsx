@@ -62,7 +62,7 @@ export default function PersonaLibrary() {
       <div className="library-head">
         <h2>🙂 ペルソナ</h2>
         <button className="btn primary" onClick={() => setEditing(newPersona())}>
-          <Icon name="plus" size={14} /> 新規ペルソナ
+          <Icon name="plus" size={14} /> ペルソナを作る
         </button>
       </div>
 

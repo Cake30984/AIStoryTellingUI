@@ -140,14 +140,14 @@ export default function SessionEditor({ session, onClose }: Props) {
                 <input value={d.title} onChange={(e) => patch({ title: e.target.value })} />
               </div>
 
-              {/* 参加キャラ（複数） */}
+              {/* 登場キャラクター（複数） */}
               <div className="field">
                 <label>
-                  参加キャラ {d.mode === 'roleplay' ? '（複数選択でグループ会話）' : '（登場人物）'}
+                  登場キャラクター {d.mode === 'roleplay' ? '（複数選択でグループ会話）' : ''}
                 </label>
                 {characters.length === 0 ? (
                   <p className="inline-empty">
-                    キャラがありません。
+                    キャラクターがありません。
                     <button className="link" onClick={() => { onClose(); setView('characters') }}>
                       キャラ管理で作成
                     </button>
@@ -487,10 +487,10 @@ export default function SessionEditor({ session, onClose }: Props) {
             <>
               {d.characterIds.length > 0 && d.narrativeStyle === 'chat' && (
                 <div className="field">
-                  <label>参加キャラの一括モデル設定</label>
-                  <div className="desc">会話劇の参加キャラ全員に同じモデルをまとめて設定します。</div>
+                  <label>登場キャラクターの一括モデル設定</label>
+                  <div className="desc">会話劇の登場キャラクター全員に同じモデルをまとめて設定します。</div>
                   <button className="btn" style={{ fontSize: 12 }} onClick={() => setPickerTarget('bulk')}>
-                    参加キャラに一括でモデルを設定
+                    登場キャラクターに一括でモデルを設定
                   </button>
                 </div>
               )}

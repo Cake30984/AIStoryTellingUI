@@ -64,7 +64,7 @@ export default function WorldLibrary() {
       <div className="library-head">
         <h2>🌍 世界観</h2>
         <button className="btn primary" onClick={() => setEditing(newWorld())}>
-          <Icon name="plus" size={14} /> 新規世界観
+          <Icon name="plus" size={14} /> 世界観を作る
         </button>
       </div>
 

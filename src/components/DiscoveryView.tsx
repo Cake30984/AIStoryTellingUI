@@ -101,7 +101,7 @@ export default function DiscoveryView({ session, onEdit }: Props) {
           ))}
         </div>
       ) : (
-        <p className="inline-empty">このキャラの発見はまだありません。</p>
+        <p className="inline-empty">このキャラクターの発見はまだありません。</p>
       )}
     </>
   )

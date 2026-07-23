@@ -65,6 +65,7 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist`。storage は
 - `ActivityIndicator.tsx` — 本編/選択肢/レビュー/画像生成/表情判定の進行状態を1チップに集約。クリックで内訳＋中止
 - `LibraryBar.tsx` — Library（作る）画面用の細いトップバー（`ActivityIndicator`＋インポートボタン＋ジョブボタン）。画像生成の進行/採用を Play に行かず確認できるよう App.tsx が各 Library ビューを `.main` でラップして表示（F6）。ジョブ一覧はドックが無いので `ModalShell`＋`ImageJobsBody`。インポートは PNG カード/JSON バンドルを `store.importAnyFile` で種別自動判別し、結果は `infoNotice` トーストに出す
 - `EntityAvatar.tsx` — 画像 or 色＋イニシャルの共通アバター（全画面で統一）
+- `HelpDetails.tsx` — 長い説明文の折りたたみ共通部品（FB8-E1）。見出し直下は要点1文（`.desc`）＋「詳しい説明」`<details>`。WorldEditor の実績・エンディング・特別イベントで使用
 - `NumberInput.tsx` — 数値入力の共通部品（FB8-A #13）。フォーカス中はローカル文字列で保持し blur/Enter で確定＋クランプ（`min`/`max`/`step`/`integer`）＝「0 を backspace で空欄化してから打ち直す」ができる。`RsField`（ReaderSettings）が持っていたパターンの一般化
 - `CastingFields.tsx` — セッション設定・カセット・開始時モーダルで共有する、世界観ロール（グループ）への配役欄。ロールごとに参加キャラをチェックボックスで複数選択（1ロール複数人・1人が複数ロール兼任も可。A-2）
 - `IntroTagDefEditor.tsx` — 置換タグの定義編集（追加・削除・メモ）。WorldEditor 開始テンプレート／SessionEditor／CassetteEditor で共有。`opening`/`onOpeningChange` を渡すとタグ名変更時に本文中の `@旧タグ名` を追従書き換えする（A-1）

@@ -246,7 +246,7 @@ export default function CassetteEditor({ cassette, seedSession, onClose }: Props
               <label>登場キャラ</label>
               {characters.length === 0 ? (
                 <p className="inline-empty">
-                  キャラがありません。
+                  キャラクターがありません。
                   <button className="link" onClick={() => { onClose(); setView('characters') }}>
                     キャラ管理で作成
                   </button>

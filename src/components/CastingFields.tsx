@@ -35,7 +35,7 @@ export default function CastingFields({ session, world, characters, personas, on
       <div className="casting-fields-head">
         <label>配役（ロールグループ）</label>
         <p className="desc">
-          世界観が定めた立ち位置へ、参加キャラを配役します。1つのロールに複数人、1人が複数のロールを兼任することもできます。
+          世界観が定めた立ち位置へ、登場キャラクターを配役します。1つのロールに複数人、1人が複数のロールを兼任することもできます。
         </p>
       </div>
 
@@ -53,7 +53,7 @@ export default function CastingFields({ session, world, characters, personas, on
               {role.description.trim() && <p>{role.description.trim()}</p>}
             </div>
             <div className="casting-role-members">
-              {participants.length === 0 && <span className="inline-empty">参加キャラがいません</span>}
+              {participants.length === 0 && <span className="inline-empty">登場キャラクターがいません</span>}
               {participants.map((character) => (
                 <label key={character.id} className="chk">
                   <input

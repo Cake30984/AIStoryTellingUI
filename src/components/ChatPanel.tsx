@@ -617,14 +617,14 @@ export default function ChatPanel({ session }: Props) {
         </div>
 
         {scene && (
-          <button className="scene-chip" onClick={() => setShowSceneEditor(true)} title="登場キャラ・シーン編集">
+          <button className="scene-chip" onClick={() => setShowSceneEditor(true)} title="登場キャラクター・シーン編集">
             <Icon name="book-open" size={14} />
             <span className="scene-chip-title">
               {scene.title}
               {scene.timeLabel ? `・${scene.timeLabel}` : ''}
             </span>
-            <span className={'token-badge ' + tokLvl} title="現在シーンのおおよそのトークン量">
-              ~{sceneTokens.toLocaleString()} tok{tokLvl === 'high' ? ' ・締め時' : ''}
+            <span className={'token-badge ' + tokLvl} title="現在シーンのおおよその文量（トークン換算）">
+              文量 ~{sceneTokens.toLocaleString()}{tokLvl === 'high' ? ' ・締め時' : ''}
             </span>
           </button>
         )}
@@ -783,7 +783,7 @@ export default function ChatPanel({ session }: Props) {
                     {!isConfigured ? (
                       <p>
                         右上の ⋯ メニュー →「セッション設定」から
-                        {session.mode === 'roleplay' ? '参加キャラ' : '物語の前提'}を設定しましょう。
+                        {session.mode === 'roleplay' ? '登場キャラクター' : '物語の前提'}を設定しましょう。
                       </p>
                     ) : session.mode === 'roleplay' ? (
                       <p>下の入力欄から話しかけてみましょう。</p>
@@ -913,7 +913,7 @@ export default function ChatPanel({ session }: Props) {
               {showWrapHint && scene && (
                 <div className="scene-wrap-hint">
                   <span className="scene-wrap-hint-text">
-                    シーンが長くなってきました（~{sceneTokens.toLocaleString()} tok）。区切りの良いところで締めるのがおすすめです。
+                    シーンが長くなってきました。区切りの良いところで締めるのがおすすめです。
                   </span>
                   <button className="link" onClick={() => prepareSceneReview()}>
                     シーン終了レビューへ
@@ -1075,7 +1075,7 @@ export default function ChatPanel({ session }: Props) {
                     ? '「次に話す」で発言者を選べます。登場キャラはシーン編集で絞れます。'
                     : session.mode === 'story'
                       ? '入力ありで介入、空のまま「続ける」で自動進行します。'
-                      : 'キャラになりきって応答します。設定は右上の ⋯ メニューから。'}
+                      : 'キャラクターになりきって応答します。設定は右上のメニューから。'}
                 </div>
               )}
             </div>

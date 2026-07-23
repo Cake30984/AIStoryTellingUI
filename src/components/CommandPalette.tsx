@@ -162,7 +162,7 @@ export default function CommandPalette({ onClose }: Props) {
         <input
           ref={inputRef}
           className="cmdk-input"
-          placeholder="セッション・キャラ・コマンドを検索…"
+          placeholder="セッション・キャラクター・コマンドを検索…"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={onKeyDown}

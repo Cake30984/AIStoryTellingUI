@@ -10,7 +10,7 @@ import SessionEditor from './SessionEditor'
 import CassetteEditor from './CassetteEditor'
 
 const LIBRARY_NAV: { key: View; label: string; icon: IconName }[] = [
-  { key: 'characters', label: 'キャラ', icon: 'users' },
+  { key: 'characters', label: 'キャラクター', icon: 'users' },
   { key: 'worlds', label: '世界観', icon: 'globe' },
   { key: 'personas', label: 'ペルソナ', icon: 'smile' },
   { key: 'cassettes', label: 'カセット', icon: 'library-big' },
@@ -104,7 +104,7 @@ export default function Sidebar() {
           <div className="sidebar-search">
             <input
               className="model-search"
-              placeholder="セッション名・キャラ名で検索"
+              placeholder="セッション名・キャラクター名で検索"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
@@ -179,7 +179,7 @@ export default function Sidebar() {
                     <span className={'badge ' + s.mode}>{s.mode === 'roleplay' ? 'RP' : '物語'}</span>
                     {s.archived && <span className="badge">アーカイブ</span>}
                     {cast.length > 0 && <span className="cast">{cast.join('・')}</span>}
-                    <span>· {s.messages.length}</span>
+                    <span title="このセッションの発言数">発言 {s.messages.length}</span>
                   </div>
                 </div>
               )

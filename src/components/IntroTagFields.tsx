@@ -43,7 +43,7 @@ export default function IntroTagFields({ session, characters, personas, onChange
     <div className="casting-fields">
       <div className="casting-fields-head">
         <label>置換タグの対応付け</label>
-        <p className="desc">導入文の @タグ を、ペルソナまたは参加キャラの実名へ対応付けます。</p>
+        <p className="desc">導入文の @タグ を、ペルソナまたは登場キャラクターの実名へ対応付けます。</p>
       </div>
 
       {tags.map((tag) => {

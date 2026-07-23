@@ -73,7 +73,7 @@ export default function SceneEditor({ session, scene, onClose }: Props) {
               選んだキャラだけが登場・発言します。空にすると全員が対象になります。
             </div>
             {roster.length === 0 ? (
-              <p className="inline-empty">セッション設定（⚙）で参加キャラを追加してください。</p>
+              <p className="inline-empty">セッション設定で登場キャラクターを追加してください。</p>
             ) : (
               <div className="pick-grid">
                 {roster.map((c) => (
