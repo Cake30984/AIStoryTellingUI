@@ -248,7 +248,7 @@ Play 領域:
 - フィードバック反映8-A（即効バグ修正＝空シーンの見出し残り修正〔`showDivider` から `scenes.length>1` を除去〕・数値入力の共通部品 `NumberInput`〔文字列保持・blur確定＝backspace で空欄化可〕・ツリーリンクの再中央寄せ補正・UI 表記「当事者」→「主要登場人物」。FB8-A）
 - フィードバック反映8-B（完結の作法＝完結分岐のロック〔`isSessionFinalized`・入力/続ける/やり直す/選択肢/メッセージ生成系を隠し `send`/`continueStory`/`continueLast`/`regenerate`/`regenerateFrom` を store でもガード〕＋「⑂ ここから分岐して続ける」`branchToContinue`〔`endedAt` だけ解除し `ending` は残す＝分岐先は `isEpilogue` のまま「完結する」で再締め可・続きは 🏁 の兄弟として積み枝分かれ表示・🏁 は `ending` で保護され温存〕／レビュー完了モーダルを `SceneReview.sessionId`＋`view==='sessions'` で該当セッション表示時のみ表示。FB8-B）
 - フィードバック反映8-C（画像生成の強化＝`imageGen.ts` に `kind:'modelslab'`〔text2img→processing なら fetch ポーリング→出力URL取得〕・`ImageGenRequest`/`ImageJob` に `steps?/sampler?/cfg?`・`ImageGenModal` で種別ごとに欄出し分け〔ネガティブ=comfyui/modelslab・steps/sampler/CFG=modelslab・自由サイズ「カスタム」を全種別に〕・`ImageProviderSettings` に ModelsLab 追加。FB8-C）
-- フィードバック反映8-D（読書・ナビUX＝会話折りたたみの右スパイン `.scene-block`/`.scene-spine`〔過去シーンを高さ全体クリックで畳む・見出し折返し崩れも修正〕／分岐ツリーの非破壊トグル「現在の分岐だけ表示」`onlyCurrentPath`〔off-path を隠すだけ・prune とは別〕／挿絵→本文リンク＝`revealMessage`＋ギャラリー「この分岐」の各挿絵に「本文へ」。FB8-D）
+- フィードバック反映8-D（読書・ナビUX＝会話折りたたみの右スパイン `.scene-block`/`.scene-spine`〔過去シーンを高さ全体クリックで畳む・見出し折返し崩れも修正〕／分岐ツリーの非破壊トグル「現在の分岐だけ表示」`onlyCurrentPath`〔off-path を隠すだけ・prune とは別〕／画像→本文リンク＝`revealMessage`＋ギャラリー両タブの全画像（挿絵・背景・すべての記録）に「本文へ」〔飛び先解決は `jumpTargetFor`＝アンカー現存→同シーン先頭→無ければ非表示〕。FB8-D）
 
 各フェーズの詳細・検証記録は対応する `docs/設計_*.md` を参照。
 

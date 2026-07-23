@@ -150,6 +150,7 @@ function BackgroundThumb({
   record,
   onRemove,
   onRegenerate,
+  onGoToText,
 }: {
   imageId: string
   sceneId: string
@@ -157,6 +158,8 @@ function BackgroundThumb({
   record?: SessionImageRecord
   onRemove: () => void
   onRegenerate: () => void
+  /** そのシーンの本文へ移動（FB8-D #2。背景は場面単位なのでシーン先頭が飛び先） */
+  onGoToText?: () => void
 }) {
   const url = useImageUrl(imageId)
   const [zoom, setZoom] = useState(false)
@@ -166,6 +169,11 @@ function BackgroundThumb({
       <span style={THUMB_BADGE_STYLE}>背景</span>
       <img src={url} alt="背景" onClick={() => setZoom(true)} />
       <div className="illustration-actions" style={{ position: 'static', opacity: 1 }}>
+        {onGoToText && (
+          <button className="icon-btn small" title="この場面の本文へ移動" onClick={onGoToText}>
+            <Icon name="book-open" size={14} />
+          </button>
+        )}
         <button
           className="icon-btn small"
           title="画像を保存"
@@ -219,6 +227,7 @@ function RecordThumb({
   placed,
   onRemove,
   onRegenerate,
+  onGoToText,
 }: {
   record: SessionImageRecord
   /** 現在の分岐の本文に配置されているか */
@@ -226,6 +235,8 @@ function RecordThumb({
   onRemove: () => void
   /** 対象シーンが現存する場合のみ渡される（再生成の投入先が無いと開けないため） */
   onRegenerate?: () => void
+  /** 記録元が現在の分岐に現存する場合のみ渡される（FB8-D #2） */
+  onGoToText?: () => void
 }) {
   const url = useImageUrl(record.imageId)
   const [zoom, setZoom] = useState(false)
@@ -239,6 +250,11 @@ function RecordThumb({
       {badge && <span style={THUMB_BADGE_STYLE}>{badge}</span>}
       <img src={url} alt={record.prompt || heading || '生成画像'} onClick={() => setZoom(true)} />
       <div className="illustration-actions" style={{ position: 'static', opacity: 1 }}>
+        {onGoToText && (
+          <button className="icon-btn small" title="本文の該当箇所へ移動" onClick={onGoToText}>
+            <Icon name="book-open" size={14} />
+          </button>
+        )}
         <button
           className="icon-btn small"
           title="画像を保存"
@@ -318,6 +334,22 @@ export function GalleryBody({
 
   const sceneHeading = (sc: Scene) => [sc.timeLabel, sc.title].filter(Boolean).join('｜') || 'シーン'
 
+  const msgIds = new Set(session.messages.map((m) => m.id))
+  /**
+   * 「本文へ」のジャンプ先を解決する（FB8-D #2。両タブ共用）。
+   * アンカー messageId が現在の分岐に残っていればそこ、消えていても同じシーンが残っていれば
+   * そのシーン先頭の本文へ。どちらも無い（別分岐・削除済み）なら undefined＝リンクを出さない。
+   */
+  const jumpTargetFor = (messageId?: string, sceneId?: string): string | undefined => {
+    if (messageId && msgIds.has(messageId)) return messageId
+    if (!sceneId || !session.scenes.some((sc) => sc.id === sceneId)) return undefined
+    return (
+      session.messages.find(
+        (m) => m.sceneId === sceneId && m.role === 'assistant' && m.content.trim(),
+      )?.id ?? session.messages.find((m) => m.sceneId === sceneId)?.id
+    )
+  }
+
   // 背景の採用記録は Scene に直接持たないため、永続記録から imageId で引く（最新のものを優先）
   const backgroundRecordByImageId = new Map<string, SessionImageRecord>()
   for (const r of records) {
@@ -347,6 +379,10 @@ export function GalleryBody({
                     const r = backgroundRecordByImageId.get(sc.backgroundImageId!)
                     onRegenerateBackground(sc.id, r?.prompt ?? '', r?.negative)
                   }}
+                  onGoToText={(() => {
+                    const jumpTo = jumpTargetFor(undefined, sc.id)
+                    return jumpTo ? () => revealMessage(session.id, jumpTo) : undefined
+                  })()}
                 />
               )}
               {(sc.illustrations ?? []).map((ill) => (
@@ -355,7 +391,10 @@ export function GalleryBody({
                   ill={ill}
                   onRemove={() => removeIllustration(session.id, sc.id, ill.id)}
                   onRegenerate={() => onRegenerateIllustration(sc.id, ill.messageId, ill.prompt, ill.negative)}
-                  onGoToText={ill.messageId ? () => revealMessage(session.id, ill.messageId!) : undefined}
+                  onGoToText={(() => {
+                    const jumpTo = jumpTargetFor(ill.messageId, sc.id)
+                    return jumpTo ? () => revealMessage(session.id, jumpTo) : undefined
+                  })()}
                 />
               ))}
             </div>
@@ -380,12 +419,14 @@ export function GalleryBody({
         {sorted.map((r) => {
           // 記録元のシーンが現存する時のみ再生成を出す（削除済みシーンには投入先が無い）
           const canRegenerate = !!r.sceneId && sceneIds.has(r.sceneId)
+          const jumpTo = jumpTargetFor(r.messageId, r.sceneId)
           return (
             <RecordThumb
               key={r.id}
               record={r}
               placed={placedIds.has(r.imageId)}
               onRemove={() => deleteImageRecord(session.id, r.id)}
+              onGoToText={jumpTo ? () => revealMessage(session.id, jumpTo) : undefined}
               onRegenerate={
                 canRegenerate
                   ? () =>
