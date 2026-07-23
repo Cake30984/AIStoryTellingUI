@@ -430,8 +430,8 @@
 .dock-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
+  gap: 6px;
+  padding: 4px 8px 0 8px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-elev);
 }
@@ -439,6 +439,47 @@
   font-weight: 600;
   font-size: 14px;
   flex: 1;
+}
+/* ドック内の常設ラベル付きタブ（FB8-E4 A案） */
+.dock-tabs {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  gap: 2px;
+}
+.dock-tab {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 7px 2px 6px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 6px 6px 0 0;
+  color: var(--text-faint);
+  font-size: 10.5px;
+  line-height: 1;
+  cursor: pointer;
+}
+.dock-tab:hover {
+  color: var(--text);
+  background: var(--bg-elev2);
+}
+.dock-tab.on {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+.dock-tab.on svg {
+  color: var(--accent);
+}
+/* タブ直下の操作行（状態タブの「編集」等） */
+.dock-subactions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 10px;
 }
 .dock-body {
   flex: 1;

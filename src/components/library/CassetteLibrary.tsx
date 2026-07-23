@@ -8,6 +8,7 @@ import { useCardDrop } from '../../lib/useCardDrop'
 import { appConfirm } from '../../lib/dialogs'
 import { Icon } from '../icons'
 import CassetteEditor from '../CassetteEditor'
+import HelpDetails from '../HelpDetails'
 import { castingIssueLabel, validateCasting } from '../../lib/casting'
 
 /** カセット1枚のカード（表紙・紹介文・遊ぶ/編集/書き出し/削除）。FB2-E / FB3-D */
@@ -141,11 +142,17 @@ export default function CassetteLibrary() {
         </button>
       </div>
 
-      <div className="desc">
-        1枚で最初から遊べる配布カード（PNG）の棚です。「カセットを作る」で世界観・キャラクター・ペルソナ・開始設定を
-        1つにまとめて作れます。PNG をここへドラッグ＆ドロップして取り込むこともできます。「遊ぶ」でいつでも
-        新しいセッションを始められます（何度でも最初から）。世界観・キャラは自動でライブラリにも登録されます。
-      </div>
+      <div className="desc">1枚で最初から遊べる配布カード（PNG）の棚です。</div>
+      <HelpDetails>
+        <p>
+          「カセットを作る」で世界観・キャラクター・ペルソナ・開始設定を1つにまとめて作れます。PNG
+          をここへドラッグ＆ドロップして取り込むこともできます。
+        </p>
+        <p>
+          「遊ぶ」でいつでも新しいセッションを始められます（何度でも最初から）。世界観・キャラクターは
+          自動でライブラリにも登録されます。
+        </p>
+      </HelpDetails>
       {notice && <p className="notice">{notice}</p>}
 
       {cassettes.length === 0 ? (

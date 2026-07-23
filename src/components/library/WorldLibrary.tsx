@@ -71,7 +71,9 @@ export default function WorldLibrary() {
         </button>
       </div>
 
-      <div className="desc">世界観カード（PNG）をここにドラッグ＆ドロップするとインポートできます。</div>
+      {worlds.length === 0 && (
+        <div className="desc">世界観カード（PNG）をここにドラッグ＆ドロップするとインポートできます。</div>
+      )}
       {worlds.length > 0 && (
         <input
           className="model-search"

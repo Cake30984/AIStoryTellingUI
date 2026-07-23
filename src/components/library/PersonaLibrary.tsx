@@ -69,7 +69,9 @@ export default function PersonaLibrary() {
         </button>
       </div>
 
-      <div className="desc">ペルソナカード（PNG）をここにドラッグ＆ドロップするとインポートできます。</div>
+      {personas.length === 0 && (
+        <div className="desc">ペルソナカード（PNG）をここにドラッグ＆ドロップするとインポートできます。</div>
+      )}
       {personas.length > 0 && (
         <input
           className="model-search"

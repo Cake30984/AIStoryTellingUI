@@ -29,11 +29,12 @@ export default function LibraryBar() {
       <ActivityIndicator />
       <div style={{ flex: 1 }} />
       <button
-        className="icon-btn"
+        className="btn"
+        style={{ fontSize: 12, padding: '5px 12px' }}
         onClick={() => fileRef.current?.click()}
         title="インポート（PNG カード / JSON バックアップ）"
       >
-        <Icon name="upload" />
+        <Icon name="upload" size={13} /> インポート
       </button>
       <input
         ref={fileRef}
@@ -47,11 +48,12 @@ export default function LibraryBar() {
         }}
       />
       <button
-        className={'icon-btn' + (selecting ? ' on' : '')}
+        className={'btn' + (selecting ? ' primary' : '')}
+        style={{ fontSize: 12, padding: '5px 12px', position: 'relative' }}
         onClick={() => setShowJobs(true)}
         title="画像生成ジョブ（進行中・選択待ち）"
       >
-        <Icon name="hourglass" />
+        <Icon name="hourglass" size={13} /> ジョブ
         {imageJobs.length > 0 && <span className="icon-badge">{imageJobs.length}</span>}
       </button>
       {showJobs && (

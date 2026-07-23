@@ -25,6 +25,15 @@ const TITLES: Record<DockTab, string> = {
   jobs: '画像生成ジョブ',
 }
 
+/** ドック内の常設タブ（FB8-E4 A案。トップバーの5トグルをやめ、切替はここで行う） */
+const DOCK_TABS: { key: DockTab; label: string; icon: Parameters<typeof Icon>[0]['name'] }[] = [
+  { key: 'status', label: '状態', icon: 'bar-chart-3' },
+  { key: 'discovery', label: '発見', icon: 'book-open' },
+  { key: 'gallery', label: '画像', icon: 'image' },
+  { key: 'branch', label: '分岐', icon: 'git-branch' },
+  { key: 'jobs', label: 'ジョブ', icon: 'hourglass' },
+]
+
 const DOCK_MIN = 300
 const DOCK_MAX = 560
 
@@ -67,19 +76,37 @@ export default function ContextDock({
     <div className="dock" ref={dockRef} style={{ width: ui.dockWidth }}>
       <div className="dock-resizer" onMouseDown={onResizeDown} title="ドラッグで幅を変更" />
       <div className="dock-head">
-        <span className="dock-head-title">{TITLES[tab]}</span>
-        {tab === 'status' && (
-          <button className="btn" onClick={onEditStatus}>
-            <Icon name="pencil" size={13} /> 編集
-          </button>
-        )}
-        {/* 発見タブの編集は DiscoveryView 内のタブ横に置く（選択スコープと編集対象を一致させる。F4） */}
-        <button className="icon-btn" onClick={() => setUiPrefs({ dockTab: null })} title="閉じる">
+        <div className="dock-tabs" role="tablist">
+          {DOCK_TABS.map((t) => (
+            <button
+              key={t.key}
+              role="tab"
+              aria-selected={tab === t.key}
+              className={'dock-tab' + (tab === t.key ? ' on' : '')}
+              onClick={() => setUiPrefs({ dockTab: t.key })}
+              title={TITLES[t.key]}
+            >
+              <Icon name={t.icon} size={15} />
+              <span>{t.label}</span>
+            </button>
+          ))}
+        </div>
+        <button className="icon-btn" onClick={() => setUiPrefs({ dockTab: null })} title="パネルを閉じる">
           <Icon name="x" />
         </button>
       </div>
       <div className="dock-body">
-        {tab === 'status' && <StatusView session={session} />}
+        {tab === 'status' && (
+          <>
+            {/* 状態の編集はタブ直下の右寄せボタン（旧 head から移設。FB8-E4） */}
+            <div className="dock-subactions">
+              <button className="btn" onClick={onEditStatus}>
+                <Icon name="pencil" size={13} /> 編集
+              </button>
+            </div>
+            <StatusView session={session} />
+          </>
+        )}
         {tab === 'discovery' && <DiscoveryView session={session} onEdit={onEditDiscovery} />}
         {tab === 'gallery' && (
           <GalleryBody

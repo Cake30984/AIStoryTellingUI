@@ -10,7 +10,6 @@ import {
   illustrationPromptSystem,
 } from '../lib/prompts'
 import { sceneTokensOf, tokenLevel } from '../lib/tokens'
-import { modelRefLabel } from '../lib/providers'
 import { getImage, useImageUrl } from '../lib/imageStore'
 import { downloadBlob } from '../lib/io'
 import { hasStructuredLines, plainTextOf } from '../lib/structured'
@@ -18,7 +17,6 @@ import { appConfirm } from '../lib/dialogs'
 import ImageGenModal from './ImageGenModal'
 import ModalShell from './ModalShell'
 import type { DockTab, Message, Scene, SceneIllustration, Session } from '../types'
-import ModelPicker from './ModelPicker'
 import SessionEditor from './SessionEditor'
 import SceneEditor from './SceneEditor'
 import StoryLogModal from './StoryLogModal'
@@ -137,7 +135,6 @@ export default function ChatPanel({ session }: Props) {
     imageJobs,
     characters,
     personas,
-    providers,
     worlds,
     ui,
     setUiPrefs,
@@ -145,7 +142,6 @@ export default function ChatPanel({ session }: Props) {
   } = useStore()
 
   const [text, setText] = useState('')
-  const [showModels, setShowModels] = useState(false)
   const [showEditor, setShowEditor] = useState(false)
   const [showSceneEditor, setShowSceneEditor] = useState(false)
   const [showLog, setShowLog] = useState(false)
@@ -169,8 +165,13 @@ export default function ChatPanel({ session }: Props) {
   const anchorRef = useRef<HTMLDivElement>(null)
   // 自動スクロールは「自分の操作直後の1回」だけ（生成中は追従しない。FB3-A3）
   const lastScrolledRef = useRef<string | null>(null)
-  // ドックタブのトグル（同じタブを再クリックで閉じる。UI-3）
-  const toggleDock = (tab: DockTab) => setUiPrefs({ dockTab: ui.dockTab === tab ? null : tab })
+  // パネル開閉（FB8-E4 A案: タブ切替はドック側。最後に開いていたタブを覚えて再開する）
+  const lastDockTabRef = useRef<DockTab>('status')
+  useEffect(() => {
+    if (ui.dockTab) lastDockTabRef.current = ui.dockTab
+  }, [ui.dockTab])
+  const toggleDock = () =>
+    setUiPrefs({ dockTab: ui.dockTab ? null : lastDockTabRef.current })
 
   const scene = currentScene(session)
   // エピローグ滞在中か／物語が完結済みか（設計_エンディング.md。完結は別フラグを持たず ending＋endedAt から導出）
@@ -642,44 +643,15 @@ export default function ChatPanel({ session }: Props) {
 
         <ActivityIndicator />
 
-        <div className="topbar-group">
-          <button
-            className={'icon-btn' + (ui.dockTab === 'status' ? ' on' : '')}
-            onClick={() => toggleDock('status')}
-            title="状態（関係性・ステータス）"
-          >
-            <Icon name="bar-chart-3" />
-          </button>
-          <button
-            className={'icon-btn' + (ui.dockTab === 'discovery' ? ' on' : '')}
-            onClick={() => toggleDock('discovery')}
-            title="発見ログ（このセッションで見つかった設定）"
-          >
-            <Icon name="book-open" />
-          </button>
-          <button
-            className={'icon-btn' + (ui.dockTab === 'gallery' ? ' on' : '')}
-            onClick={() => toggleDock('gallery')}
-            title="画像ギャラリー"
-          >
-            <Icon name="image" />
-          </button>
-          <button
-            className={'icon-btn' + (ui.dockTab === 'branch' ? ' on' : '')}
-            onClick={() => toggleDock('branch')}
-            title="分岐ツリー（セーブ/ロード）"
-          >
-            <Icon name="git-branch" />
-          </button>
-          <button
-            className={'icon-btn' + (ui.dockTab === 'jobs' ? ' on' : '')}
-            onClick={() => toggleDock('jobs')}
-            title="画像生成ジョブ（進行中・選択待ち）"
-          >
-            <Icon name="hourglass" />
-            {imageJobs.length > 0 && <span className="icon-badge">{imageJobs.length}</span>}
-          </button>
-        </div>
+        {/* パネル開閉（FB8-E4 A案: 状態/発見/画像/分岐/ジョブの切替はドック内のラベル付きタブ） */}
+        <button
+          className={'icon-btn' + (ui.dockTab ? ' on' : '')}
+          onClick={toggleDock}
+          title={ui.dockTab ? 'パネルを閉じる' : 'パネルを開く（状態・発見・画像・分岐・ジョブ）'}
+        >
+          <Icon name="panel-right" />
+          {imageJobs.length > 0 && <span className="icon-badge">{imageJobs.length}</span>}
+        </button>
 
         <ReaderSettings session={session} />
 
@@ -689,16 +661,8 @@ export default function ChatPanel({ session }: Props) {
           </button>
           {showMenu && (
             <MenuPopover onClose={() => setShowMenu(false)}>
-              <button
-                className="menu-item"
-                onClick={() => {
-                  setShowMenu(false)
-                  setShowModels(true)
-                }}
-              >
-                モデル: {modelRefLabel(session.model, providers) || session.model}
-              </button>
-              <div className="menu-sep" />
+              {/* FB8-E4: 参照系／管理系／破壊系の3グループに整理。モデルは「セッション設定 > AIと出力」へ、
+                  挿絵・背景はコンポーザーのボタンに一本化（重複導線を撤去） */}
               <button
                 className="menu-item"
                 onClick={() => {
@@ -707,26 +671,6 @@ export default function ChatPanel({ session }: Props) {
                 }}
               >
                 <Icon name="scroll-text" size={15} /> あらすじ
-              </button>
-              <button
-                className="menu-item"
-                disabled={!scene}
-                onClick={() => {
-                  setShowMenu(false)
-                  if (scene) setIllustGenFor({ sceneId: scene.id })
-                }}
-              >
-                <Icon name="palette" size={15} /> 挿絵を生成
-              </button>
-              <button
-                className="menu-item"
-                disabled={!scene}
-                onClick={() => {
-                  setShowMenu(false)
-                  if (scene) setBgGenFor({ sceneId: scene.id })
-                }}
-              >
-                <Icon name="mountain" size={15} /> 背景を生成
               </button>
               <button
                 className="menu-item"
@@ -1096,13 +1040,6 @@ export default function ChatPanel({ session }: Props) {
         />
       </div>
 
-      {showModels && (
-        <ModelPicker
-          current={session.model}
-          onPick={(id) => updateSession(session.id, { model: id })}
-          onClose={() => setShowModels(false)}
-        />
-      )}
       {showEditor && <SessionEditor session={session} onClose={() => setShowEditor(false)} />}
       {showSceneEditor && scene && (
         <SceneEditor session={session} scene={scene} onClose={() => setShowSceneEditor(false)} />

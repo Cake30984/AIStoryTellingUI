@@ -194,6 +194,12 @@
   color: var(--text-dim);
   flex-shrink: 0;
 }
+/* 数値の単位表示（%等。FB8-E4） */
+.rs-unit {
+  color: var(--text-dim);
+  font-size: 12px;
+  flex-shrink: 0;
+}
 .rs-num {
   width: 68px;
   flex-shrink: 0;

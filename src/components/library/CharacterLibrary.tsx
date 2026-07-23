@@ -73,7 +73,10 @@ export default function CharacterLibrary() {
         </button>
       </div>
 
-      <div className="desc">キャラカード（PNG）をここにドラッグ＆ドロップするとインポートできます。</div>
+      {/* D&D の案内は空の時だけ（普段は場所を取らない。FB8-E4） */}
+      {characters.length === 0 && (
+        <div className="desc">キャラカード（PNG）をここにドラッグ＆ドロップするとインポートできます。</div>
+      )}
       {characters.length > 0 && (
         <input
           className="model-search"

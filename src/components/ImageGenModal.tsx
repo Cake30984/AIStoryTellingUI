@@ -78,6 +78,7 @@ export default function ImageGenModal({
     cancelImageJob,
     dismissImageJob,
     applyImageJobResult,
+    setView,
   } = useStore()
   const [providerId, setProviderId] = useState(
     imageProviders.some((p) => p.id === lastImageProviderId) ? lastImageProviderId! : imageProviders[0]?.id ?? '',
@@ -213,9 +214,21 @@ export default function ImageGenModal({
       }
     >
           {imageProviders.length === 0 ? (
-            <p className="desc">
-              画像生成の接続先が未設定です。「設定・データ管理」から ComfyUI・ModelsLab・画像 API のいずれかを追加してください。
-            </p>
+            <>
+              <p className="desc">
+                画像生成の接続先が未設定です。ComfyUI・ModelsLab・画像 API のいずれかを追加すると生成できます。
+              </p>
+              {/* FB8-E4: 文章で案内するだけでなく、その場から設定へ直行できるようにする */}
+              <button
+                className="btn primary"
+                onClick={() => {
+                  onClose()
+                  setView('system')
+                }}
+              >
+                <Icon name="settings" size={14} /> 設定・データ管理を開く
+              </button>
+            </>
           ) : (
             <>
               <div className="field">

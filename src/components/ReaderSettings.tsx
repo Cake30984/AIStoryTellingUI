@@ -18,6 +18,7 @@ function RsField({
   min,
   max,
   step,
+  unit,
   onChange,
 }: {
   label: string
@@ -25,6 +26,8 @@ function RsField({
   min: number
   max: number
   step: number
+  /** 数値の後ろに添える単位表示（例: '%'。FB8-E4） */
+  unit?: string
   onChange: (v: number) => void
 }) {
   const clamp = (n: number) => Math.min(max, Math.max(min, n))
@@ -42,6 +45,7 @@ function RsField({
           onChange={onChange}
           aria-label={label}
         />
+        {unit && <span className="rs-unit">{unit}</span>}
       </div>
       <input
         type="range"
@@ -121,17 +125,24 @@ export default function ReaderSettings({ session }: Props) {
               />
               背景・立ち絵を表示
             </label>
+            {/* 濃さは 0.25 のような生小数でなく %で扱う（内部値は 0..1 のまま。FB8-E4） */}
             <RsField
               label="背景の濃さ"
-              value={ui.stageBgOpacity}
-              {...UI_LIMITS.stageBgOpacity}
-              onChange={(stageBgOpacity) => setUiPrefs({ stageBgOpacity })}
+              value={Math.round(ui.stageBgOpacity * 100)}
+              min={Math.round(UI_LIMITS.stageBgOpacity.min * 100)}
+              max={Math.round(UI_LIMITS.stageBgOpacity.max * 100)}
+              step={5}
+              unit="%"
+              onChange={(v) => setUiPrefs({ stageBgOpacity: v / 100 })}
             />
             <RsField
               label="立ち絵の濃さ"
-              value={ui.stageSpriteOpacity}
-              {...UI_LIMITS.stageSpriteOpacity}
-              onChange={(stageSpriteOpacity) => setUiPrefs({ stageSpriteOpacity })}
+              value={Math.round(ui.stageSpriteOpacity * 100)}
+              min={Math.round(UI_LIMITS.stageSpriteOpacity.min * 100)}
+              max={Math.round(UI_LIMITS.stageSpriteOpacity.max * 100)}
+              step={5}
+              unit="%"
+              onChange={(v) => setUiPrefs({ stageSpriteOpacity: v / 100 })}
             />
 
             <div className="menu-sep" />
