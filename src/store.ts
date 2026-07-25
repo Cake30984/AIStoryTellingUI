@@ -1296,8 +1296,6 @@ interface AppState {
    * チェックポイントを記録する。次シーンは作らない。
    */
   finalizeStory: () => void
-  /** 完結した分岐から新しい世界線を切って続きを描けるようにする（#3/#15）。完結を解除した子ノードを積む */
-  branchToContinue: () => Promise<void>
   /** 現在の方向性で次シーン候補だけを再生成する */
   regenerateSuggestions: () => Promise<void>
   cancelReview: () => void
@@ -1318,10 +1316,15 @@ interface AppState {
   editMessage: (messageId: string, content: string) => Promise<void>
   /** メッセージを削除する（FB6-C で async 化＝上書きガードを通す） */
   deleteMessage: (messageId: string) => Promise<void>
-  regenerateFrom: (messageId: string) => Promise<void>
+  /**
+   * この地点まで巻き戻して作り直す。完結した分岐では既定で拒否し、`opts.fromBranch` で明示的に
+   * 許可した時だけ通す（FB9-A。分岐＝新しい世界線を切る操作だけが完結後の続きを描ける）。
+   */
+  regenerateFrom: (messageId: string, opts?: { fromBranch?: boolean }) => Promise<void>
   /**
    * ⑂ ここから分岐（FB6-C・本文の操作行）。現在の線の先端（currentId）に名前を付けて保護してから
    * 通常の「ここから」（regenerateFrom）を実行する。名前プロンプトのキャンセルで中止。
+   * 完結した分岐でも実行でき、巻き戻し先に応じて ending / 完結を解除する（FB9-A）。
    */
   branchFromMessage: (messageId: string) => Promise<void>
   /**
@@ -1559,9 +1562,29 @@ export function rewindScenesFor(
 }
 
 /**
+ * 巻き戻し後の scenes を見て ending / 完結を整理する（FB9-A）。`rewindScenesFor` の結果に対して掛ける。
+ * - エピローグシーンごと消えた → `ending` を解除（普通の物語に戻り、続きを書ける）
+ * - エピローグシーンが残った   → `ending` は保ち `endedAt` だけ解除（エピローグ継続中＝再び締められる）
+ * `ending` が無ければ何もしないので、未完結の通常の巻き戻しでも無条件に通してよい。
+ */
+export function rewindEndingFor(
+  session: Pick<Session, 'ending'>,
+  scenes: Scene[],
+): { ending?: Session['ending']; scenes: Scene[] } {
+  if (!session.ending) return { scenes }
+  const epId = session.ending.epilogueSceneId
+  if (!scenes.some((sc) => sc.id === epId)) return { ending: undefined, scenes }
+  return {
+    ending: session.ending,
+    scenes: scenes.map((sc) => (sc.id === epId ? { ...sc, endedAt: undefined } : sc)),
+  }
+}
+
+/**
  * この物語（分岐）が完結済みか。`ending` が設定され、そのエピローグシーンに `endedAt` が付いた状態。
- * FB8-B（#3/#15）: 完結した分岐では続ける/やり直す/入力を止め、「⑂ ここから分岐して続ける」でのみ
- * 継続できるようにする（明確な終わりを保ちつつ、続きは新しい世界線＝分岐で描く）。
+ * FB8-B（#3/#15）: 完結した分岐では続ける/やり直す/入力を止める（明確な終わりを保つ）。
+ * FB9-A: 続きを描く手段は本文の「分岐」だけ＝`branchFromMessage`（`regenerateFrom` の `fromBranch`）。
+ * 一番最後の生成文からは分岐させない（同じ線の続きになり、廃止した branchToContinue と等価になるため）。
  */
 export function isSessionFinalized(s: Session): boolean {
   if (!s.ending) return false
@@ -3516,36 +3539,6 @@ export const useStore = create<AppState>()(
           )
         },
 
-        branchToContinue: async () => {
-          const s = active()
-          if (!s || !s.ending) return
-          if (get().isStreaming || get().isReviewing || get().isGeneratingChoices) return
-          const epId = s.ending.epilogueSceneId
-          const ep = s.scenes.find((sc) => sc.id === epId)
-          if (!ep?.endedAt) return // 完結済みでなければ何もしない
-          const before = s
-          // 完結（endedAt）だけ解除する。ending は残すので分岐先は「エピローグ継続中（未完結）」の
-          // まま扱われ（isEpilogue のまま＝普通のシーンにならない）、「🏁 物語を完結する」で再び
-          // 締められる。元の🏁ノードのスナップショットには完結が残り、ending で保護されるので温存される
-          get().updateSession(s.id, {
-            scenes: s.scenes.map((sc) => (sc.id === epId ? { ...sc, endedAt: undefined } : sc)),
-          })
-          // 続きは 🏁（完結ノード）の兄弟として積む＝ツリーで枝分かれして見える（一直線にしない）。
-          // recordCheckpoint は currentId の子に積むので、いったん currentId を 🏁 の親（＝分岐点）へ
-          // 移してから記録する。🏁 ノードは ending により保護（subtreeHasProtection）され温存される
-          const tree = get().branchTrees[s.id]
-          const forkParent = tree?.nodes.find((n) => n.id === tree.currentId)?.parentId
-          if (forkParent && tree) {
-            set((st) => ({
-              branchTrees: {
-                ...st.branchTrees,
-                [s.id]: { ...st.branchTrees[s.id]!, currentId: forkParent },
-              },
-            }))
-          }
-          void recordCheckpoint(s.id, 'action', '続きを描く', before)
-        },
-
         regenerateSuggestions: async () => {
           const review = get().sceneReview
           const s = active()
@@ -3890,9 +3883,11 @@ export const useStore = create<AppState>()(
           void recordCheckpoint(s.id, 'action', '削除', s)
         },
 
-        regenerateFrom: async (messageId) => {
+        regenerateFrom: async (messageId, opts) => {
           const s = active()
-          if (!s || get().isStreaming || isSessionFinalized(s)) return
+          if (!s || get().isStreaming) return
+          // 完結した分岐を作り直せるのは「分岐」経由だけ（FB9-A）。通常の「ここから」は拒否し続ける
+          if (isSessionFinalized(s) && !opts?.fromBranch) return
           const idx = s.messages.findIndex((m) => m.id === messageId)
           if (idx < 0) return
           const target = s.messages[idx]
@@ -3908,7 +3903,10 @@ export const useStore = create<AppState>()(
           reanchorBranch(s.id, keptIds)
           // シーン境界をまたいで巻き戻した場合、置き去りの後続シーン（stale な見出し・あらすじ）を
           // scenes/currentSceneId から落とす（バグ修正。跨がなければ変更なし）
-          patchActive({ messages: kept, ...rewindScenesFor(s, kept) })
+          const rewound = rewindScenesFor(s, kept)
+          // エピローグより前まで戻ったら ending を、エピローグ内なら完結だけを解除する（FB9-A。
+          // rewindScenesFor の後に掛けること＝順序が逆だと scenes が上書きされて解除が消える）
+          patchActive({ messages: kept, ...rewound, ...rewindEndingFor(s, rewound.scenes) })
           await runCompletion(speaker)
         },
 
@@ -3929,7 +3927,7 @@ export const useStore = create<AppState>()(
             if (name === null) return
             setBranchNameOn(s.id, tree.currentId, name.trim() || tip?.label || '分岐')
           }
-          await get().regenerateFrom(messageId)
+          await get().regenerateFrom(messageId, { fromBranch: true })
         },
 
         branchFromNode: async (sessionId, nodeId) => {

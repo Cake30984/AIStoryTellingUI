@@ -120,7 +120,6 @@ export default function ChatPanel({ session }: Props) {
     stopReview,
     prepareSceneReview,
     finalizeStory,
-    branchToContinue,
     startStory,
     continueLast,
     regenChoices,
@@ -333,6 +332,9 @@ export default function ChatPanel({ session }: Props) {
     participants.length > 0 || (session.mode === 'story' && !!session.story.premise)
 
   const lastMsg = session.messages[session.messages.length - 1]
+  // 完結後に「分岐」を出さない対象＝一番最後の生成文（FB9-A。ここからの分岐は「完結した線の続きを
+  // 同じ線で書く」ことと等価になり、廃止した branchToContinue の復活になるため）
+  const lastMessageId = lastMsg?.id
   // 「選択肢を生成」を出す対象＝末尾のアシスタント本文（FB3-A6）
   const lastAssistantId = useMemo(() => {
     for (let i = session.messages.length - 1; i >= 0; i--) {
@@ -429,27 +431,36 @@ export default function ChatPanel({ session }: Props) {
     if (isStreaming || m.pending) return null
     return (
       <div className="msg-actions">
-        <button onClick={() => startEdit(m)}>
-          <Icon name="pencil" size={13} /> 編集
-        </button>
-        {/* 完結分岐では在庫の生成系（作り直し・分岐再開）を隠す。続きは「⑂ ここから分岐して続ける」に一本化（FB8-B #3/#15） */}
+        {/* 完結した物語は書き換えない。続きを描く手段は「分岐」だけに絞る（FB9-A） */}
         {!isFinalized && (
           <>
+            <button onClick={() => startEdit(m)}>
+              <Icon name="pencil" size={13} /> 編集
+            </button>
             <button onClick={() => regenerateFrom(m.id)} title="この発言以降を作り直す">
               <Icon name="rotate-ccw" size={13} /> ここから
             </button>
-            {/* ⑂ 明示分岐（FB6-C）: 今の続きに名前を付けて残してから、ここから作り直す */}
-            <button
-              onClick={() => branchFromMessage(m.id)}
-              title="今の続きを分岐として残してから、ここから作り直す"
-            >
-              <Icon name="git-branch" size={13} /> 分岐
-            </button>
           </>
         )}
-        <button onClick={() => deleteMessage(m.id)}>
-          <Icon name="trash-2" size={13} /> 削除
-        </button>
+        {/* ⑂ 明示分岐（FB6-C）: 今の続きに名前を付けて残してから、ここから作り直す。
+            完結後も出す（唯一の続きを描く導線）が、一番最後の生成文からは分岐させない（FB9-A） */}
+        {(!isFinalized || m.id !== lastMessageId) && (
+          <button
+            onClick={() => branchFromMessage(m.id)}
+            title={
+              isFinalized
+                ? 'この地点から新しい世界線を作って続きを描く（完結した物語は分岐として残る）'
+                : '今の続きを分岐として残してから、ここから作り直す'
+            }
+          >
+            <Icon name="git-branch" size={13} /> 分岐
+          </button>
+        )}
+        {!isFinalized && (
+          <button onClick={() => deleteMessage(m.id)}>
+            <Icon name="trash-2" size={13} /> 削除
+          </button>
+        )}
         {/* 任意のメッセージをアンカーに後付け生成（過去シーンも可。FB6-B） */}
         {(m.sceneId ?? session.currentSceneId) && (
           <button
@@ -938,19 +949,13 @@ export default function ChatPanel({ session }: Props) {
                 >
                   <Icon name="mountain" size={14} /> 背景
                 </button>
-                <button className="composer-tool-btn" onClick={() => setShowSceneEditor(true)}>
-                  <Icon name="pencil" size={14} /> シーン編集
-                </button>
-                {isFinalized ? (
-                  <button
-                    className="scene-btn"
-                    onClick={() => branchToContinue()}
-                    disabled={isStreaming}
-                    title="この完結地点から新しい分岐（世界線）を作り、続きを描く"
-                  >
-                    <Icon name="git-branch" size={14} /> ここから分岐して続ける
+                {!isFinalized && (
+                  <button className="composer-tool-btn" onClick={() => setShowSceneEditor(true)}>
+                    <Icon name="pencil" size={14} /> シーン編集
                   </button>
-                ) : isEpilogue ? (
+                )}
+                {/* 完結後はシーンを進める操作自体を出さない（続きは本文の「分岐」だけ。FB9-A） */}
+                {isFinalized ? null : isEpilogue ? (
                   <button
                     className="scene-btn end"
                     onClick={() => {
@@ -984,7 +989,7 @@ export default function ChatPanel({ session }: Props) {
 
               {isFinalized ? (
                 <div className="finalized-lock">
-                  <Icon name="flag" size={13} /> この物語は完結しました。続きを描くには、上の「ここから分岐して続ける」で新しい分岐（世界線）を作成してください。
+                  <Icon name="flag" size={13} /> この物語は完結しました。続きを描くには、分かれ目にしたい場面の「分岐」から新しい世界線を作ってください。
                 </div>
               ) : (
                 <div className="input-row">
