@@ -125,7 +125,6 @@ function GroupSubClauseRow({
       >
         <option value="stat">ステータス</option>
         <option value="counter">カウンター</option>
-        <option value="relationFlag">関係フラグ</option>
       </select>
 
       {(sub.kind === 'stat' || sub.kind === 'counter') && (
@@ -150,6 +149,8 @@ function GroupSubClauseRow({
             style={{ width: 80, background: 'var(--bg)' }}
             onChange={(value) => onChange({ ...sub, value })}
           />
+          {/* カウンターは回数なので単位を出す＝「告白した が 1回 以上」と読める（FB9-C） */}
+          {sub.kind === 'counter' && <span className="clause-joint">回</span>}
           <select
             value={sub.op}
             style={{ background: 'var(--bg)' }}
@@ -160,26 +161,6 @@ function GroupSubClauseRow({
                 {OP_LABELS[op]}
               </option>
             ))}
-          </select>
-        </>
-      )}
-
-      {sub.kind === 'relationFlag' && (
-        <>
-          <input
-            value={sub.flag}
-            placeholder="フラグ名（例: 命を救われた）"
-            className="lore-keys"
-            onChange={(e) => onChange({ ...sub, flag: e.target.value })}
-          />
-          <span className="clause-joint">を</span>
-          <select
-            value={sub.have ? 'have' : 'not'}
-            style={{ background: 'var(--bg)' }}
-            onChange={(e) => onChange({ ...sub, have: e.target.value === 'have' })}
-          >
-            <option value="have">持っている</option>
-            <option value="not">持っていない</option>
           </select>
         </>
       )}
@@ -215,7 +196,6 @@ function ClauseRow({
         >
           <option value="stat">ステータス</option>
           <option value="counter">カウンター</option>
-          <option value="relationFlag">関係フラグ</option>
           <option value="achievement">実績</option>
           <option value="group">グループ条件</option>
         </select>
@@ -240,6 +220,8 @@ function ClauseRow({
               style={{ width: 80, background: 'var(--bg)' }}
               onChange={(value) => onChange({ ...clause, value })}
             />
+            {/* カウンターは回数なので単位を出す＝「告白した が 1回 以上」と読める（FB9-C） */}
+            {clause.kind === 'counter' && <span className="clause-joint">回</span>}
             <select
               value={clause.op}
               style={{ background: 'var(--bg)' }}
@@ -250,26 +232,6 @@ function ClauseRow({
                   {OP_LABELS[op]}
                 </option>
               ))}
-            </select>
-          </>
-        )}
-
-        {clause.kind === 'relationFlag' && (
-          <>
-            <input
-              value={clause.flag}
-              placeholder="フラグ名（例: 命を救われた）"
-              className="lore-keys"
-              onChange={(e) => onChange({ ...clause, flag: e.target.value })}
-            />
-            <span className="clause-joint">を誰かが</span>
-            <select
-              value={clause.have ? 'have' : 'not'}
-              style={{ background: 'var(--bg)' }}
-              onChange={(e) => onChange({ ...clause, have: e.target.value === 'have' })}
-            >
-              <option value="have">持っている</option>
-              <option value="not">持っていない</option>
             </select>
           </>
         )}
@@ -1164,7 +1126,7 @@ export default function WorldEditor({ world, onClose }: Props) {
             <label>レビュー指針（毎レビュー注入・任意）</label>
             <div className="desc">
               シーン終了レビューにそのまま渡す状態変動の方針。条件つきの方針は、レビューが観測できる事実
-              （現在のステータス/カウンター値・関係フラグ・日付・本文の描写）に紐づけて書くと機能します。
+              （現在のステータス/カウンター値・日付・本文の描写）に紐づけて書くと機能します。
             </div>
             <textarea
               rows={8}
@@ -1293,6 +1255,7 @@ export default function WorldEditor({ world, onClose }: Props) {
             <label>行動カウンター</label>
             <div className="desc">
               累計回数（例: デート回数 / 戦闘回数）。レビューで起きた行動を加算し、条件に使えます。
+              「告白した」のような一度きりの出来事も、1回以上の条件として書けます。
             </div>
           </div>
           {counters.map((c) => (
@@ -1326,6 +1289,14 @@ export default function WorldEditor({ world, onClose }: Props) {
                   <Icon name="x" size={14} />
                 </button>
               </div>
+              {/* 計上条件（FB9-C）。名前だけでは AI が計上タイミングを判断できないため、
+                  ここに書いた文をレビュープロンプトへそのまま渡す＝狙って条件に使えるようにする */}
+              <input
+                style={{ marginTop: 6 }}
+                value={c.note ?? ''}
+                placeholder="どんな時に数えるか（例: デートに出かけて最後まで一緒に過ごしたとき）"
+                onChange={(e) => updateCounter(c.id, { note: e.target.value })}
+              />
               <div className="row2" style={{ marginTop: 6 }} title="レビュー1回で加算する場合の下限〜上限（既定 1〜1000 の中でさらに絞る。空欄=拘束なし）">
                 <label className="chk">
                   加算/回
@@ -1373,7 +1344,7 @@ export default function WorldEditor({ world, onClose }: Props) {
             </div>
             <HelpDetails>
               <p>
-                条件にはステータス・カウンター・関係フラグ・他の実績を使えます。判定はシーン終了レビューを
+                条件にはステータス・カウンター・他の実績を使えます。判定はシーン終了レビューを
                 確定したときに自動で行われます。
               </p>
               <p>

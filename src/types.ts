@@ -140,6 +140,11 @@ export interface CounterDef {
   name: string
   /** character=キャラ別累計 / global=全体累計 */
   scope: StatScope
+  /**
+   * どんな時に計上するかの説明（FB9-C）。レビュープロンプトに名前と併記してそのまま渡す。
+   * 「一度きりの出来事」を 1回以上の条件として使う場合、これが狙って当てるための唯一の担保。
+   */
+  note?: string
   /** レビュー1回あたりの加算量の下限・上限（任意。既定 1..1000 の中でさらに絞る。FB7-C） */
   amountMin?: number
   amountMax?: number
@@ -161,10 +166,11 @@ export type Quantifier = { kind: 'all' } | { kind: 'atLeast'; n: number } | { ki
 export type GroupSubClause =
   | { kind: 'stat'; defId: string; op: Op; value: number }
   | { kind: 'counter'; defId: string; op: Op; value: number }
-  | { kind: 'relationFlag'; flag: string; have: boolean }
 
 /**
- * 条件の最小単位（節）。prose は読まない＝数・フラグ・実績・グループのみで判定（再現性のため）。
+ * 条件の最小単位（節）。prose は読まない＝数・実績・グループのみで判定（再現性のため）。
+ * 「一度きりの不可逆な出来事」はキャラ別カウンター 1回以上で書く（FB9-C。自由文字列の関係フラグは
+ * 作者が狙って当てられないため撤去した）。
  * characterId/fromId 省略時は「参加キャラの誰か1人が満たす（∃）」の存在条件＝判定専用のゲートとして
  * 残る（当事者にはならない）。特定ロールのメンバーに対する定量条件・当事者指定は `group` 節で書く
  * （docs/設計_ロールグループと定量条件.md）。
@@ -172,7 +178,6 @@ export type GroupSubClause =
 export type Clause =
   | { kind: 'stat'; defId: string; characterId?: string; op: Op; value: number }
   | { kind: 'counter'; defId: string; characterId?: string; op: Op; value: number }
-  | { kind: 'relationFlag'; fromId?: string; toId?: string; flag: string; have: boolean }
   | { kind: 'achievement'; defId: string; have: boolean }
   | { kind: 'group'; roleId: string; quantifier: Quantifier; subject?: boolean; clauses: GroupSubClause[] }
 
@@ -503,8 +508,6 @@ export interface Relation {
   stance: string
   /** ワールド固定の次元（aspect）ごとの記述。band（数値ティア）は持たない */
   aspects: { aspectId: string; note: string }[]
-  /** ゲート用に立った恒久事実（約束・秘密・不可逆な出来事）。例: ["命を救われた"] */
-  flags: string[]
   updatedAt: number
 }
 
@@ -726,8 +729,6 @@ export interface RelationUpdate {
   stance: string
   /** ワールド固定の次元ごとの記述（未知の次元名は解決時に除外済み） */
   aspects: { aspectId: string; name: string; note: string }[]
-  /** 追加する恒久フラグ（和集合で追加） */
-  flagsAdd: string[]
   reason: string
 }
 

@@ -362,6 +362,8 @@ export interface ReviewStatSpec {
 /** reviewSystem に渡すカウンター定義の要点（FB7-C） */
 export interface ReviewCounterSpec {
   name: string
+  /** どんな時に計上するかの作者メモ（FB9-C。そのままモデルへ渡す） */
+  note?: string
   amountMin?: number
   amountMax?: number
 }
@@ -381,7 +383,7 @@ function rangeLabel(prefix: string, min?: number, max?: number): string {
  * 選択肢経由・自由入力の独自行動を問わず「実際に起きた結果」を評価して加点する。
  * @param aspectNames ワールド固定の関係次元名。空でなければその次元のみ使うよう拘束。
  * @param stats    ワールド定義のステータス（名前＋変動幅）。空なら statChanges は空配列。
- * @param counters ワールド定義の行動カウンター（名前＋加算幅）。空なら counterEvents は空配列。
+ * @param counters ワールド定義の行動カウンター（名前＋計上条件メモ＋加算幅）。空なら counterEvents は空配列。
  * @param reviewGuidance 世界観のレビュー指針（自由記述）。あれば毎回そのまま注入する。
  */
 export function reviewSystem(
@@ -406,14 +408,17 @@ export function reviewSystem(
         ? `括弧内の範囲は「そのシーンの出来事の大きさ」の物差し＝平凡なシーンは下限寄り、決定的な出来事では上限近くまで使ってよい（変動させない場合は項目を出さない）。`
         : '')
     : `ステータス未定義のため statChanges は空配列。`
+  // note（計上条件）と加算幅を1つの括弧にまとめる＝括弧が二重にならないようにする（FB9-C）
   const counterList = counters
     .map((d) => {
-      const r = rangeLabel('', d.amountMin, d.amountMax)
-      return r ? `${d.name}（加算するなら${r}）` : d.name
+      const parts = [d.note?.trim(), rangeLabel('加算するなら', d.amountMin, d.amountMax)].filter(
+        Boolean,
+      )
+      return parts.length ? `${d.name}（${parts.join('。')}）` : d.name
     })
     .join('・')
   const counterLine = counters.length
-    ? `counterEvents.name は既存の【${counterList}】のみを使う。今シーンで実際に起きた行動の回数だけ計上（amount は通常1）。無ければ空配列。`
+    ? `counterEvents.name は既存の【${counterList}】のみを使う。括弧内はそのカウンターを計上する条件＝**そこに書かれた出来事が今シーンで実際に起きた時だけ**計上する（amount は通常1）。一度きりで十分な種類の出来事（告白した・秘密を知った等）は、既に計上済みなら重ねて出さない。無ければ空配列。`
     : `カウンター未定義のため counterEvents は空配列。`
   const guidanceBlock = reviewGuidance?.trim()
     ? `\n【世界のレビュー指針】\n${reviewGuidance.trim()}\n`
@@ -425,7 +430,7 @@ export function reviewSystem(
     `  "suggestions": [ {"title":"次シーンの短い見出し","note":"次シーンの状況・方向性の説明（2〜3文）"} ],\n` +
     `  "characterGrowth": [ {"name":"キャラ名","addition":"今回の展開で新たに判明/深化した性格・背景を一文で"} ],\n` +
     `  "worldGrowth": [ {"keys":["トリガー語"],"content":"新たに判明した世界設定"} ],\n` +
-    `  "relationUpdates": [ {"character":"キャラ名","stance":"そのキャラの主人公への関係の現在地を1〜2文で","aspects":[{"name":"次元名","note":"その次元の現在の機微（肯定・否定の両面を具体的に）"}],"flagsAdd":["立った恒久的事実"],"reason":"変化の根拠（一文）"} ],\n` +
+    `  "relationUpdates": [ {"character":"キャラ名","stance":"そのキャラの主人公への関係の現在地を1〜2文で","aspects":[{"name":"次元名","note":"その次元の現在の機微（肯定・否定の両面を具体的に）"}],"reason":"変化の根拠（一文）"} ],\n` +
     `  "moods": [ {"character":"キャラ名","mood":"終了時点の気分（一語〜短句）"} ],\n` +
     `  "statChanges": [ {"name":"ステータス名","character":"キャラ名（省略可＝主人公/全体）","delta":3,"reason":"変化の理由（一文）"} ],\n` +
     `  "counterEvents": [ {"name":"カウンター名","character":"キャラ名（省略可＝全体）","amount":1,"reason":"該当する行動（一文）"} ]\n` +
@@ -435,14 +440,13 @@ export function reviewSystem(
     `- suggestions は2〜3個。**各案はこのシーン終了直後の「同一の起点」から分岐する、相互に排他な"次シーンの候補"**。案どうしは時系列でつながってはならない。【次シーンの時間】があればその時刻にふさわしい状況で書く（直前の続きをそのまま続けない）。\n` +
     `- characterGrowth / worldGrowth は、既存設定に無い"新しく分かったこと"のみ。無ければ空配列。\n` +
     `- **relationUpdates**：各キャラが主人公（ユーザー）に抱く関係を、与えられた【現在の関係性】を踏まえて**書き直す**（差分でなく現時点の全文）。今シーンで変化していない機微（好悪・約束）は失わず維持して書く。変化が無いキャラは省略可。${aspectLine}\n` +
-    `- flagsAdd は「約束した」「秘密を知った」「命を救われた」など後で取り消されない事実だけ。無ければ空配列。\n` +
     `- moods は各キャラの終了時点の気分。変化が無いキャラは省略可。\n` +
     `- **statChanges**：行動・出来事に対応する数値の増減のみ（delta は相対値。例: デートした→好感度+3）。感情の"査定"ではなく、起きた事実に対応する固定的な変化として出す。${statLine}\n` +
     `- **counterEvents**：今シーンで実際に起きた行動の累計回数の計上（例: デートした→デート回数 amount:1）。起きていない行動は計上しない。${counterLine}\n` +
     `- 主人公の行動は、提示された選択肢を選んだ場合も自由入力の独自行動も同様に、実際に起きた結果に基づいて statChanges / counterEvents に反映し、reason にその行動と結果を書く。\n` +
     `- 推測の捏造はせず、会話に根拠があるものだけ。\n` +
     guidanceBlock +
-    `${guidanceBlock ? '上の【世界のレビュー指針】は状態変動の方針として毎回従うこと（条件つきの方針は、与えられた現在のステータス・カウンター・関係フラグ・日付・本文の描写から判断する）。' : ''}`
+    `${guidanceBlock ? '上の【世界のレビュー指針】は状態変動の方針として毎回従うこと（条件つきの方針は、与えられた現在のステータス・カウンター・日付・本文の描写から判断する）。' : ''}`
   )
 }
 

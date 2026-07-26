@@ -98,11 +98,6 @@ export default function StatusView({ session }: Props) {
                     <p className="desc">{a.note}</p>
                   </div>
                 ))}
-                {rel.flags.length > 0 && (
-                  <div className="desc" style={{ marginTop: 4 }}>
-                    🚩 {rel.flags.join('・')}
-                  </div>
-                )}
               </>
             ) : (
               <div className="desc">まだ関係性の記録はありません（シーンを終えると生成されます）。</div>

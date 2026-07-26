@@ -25,7 +25,6 @@ export default function StatusPanel({ session, onClose }: Props) {
     relations: session.state.relations.map((r) => ({
       ...r,
       aspects: r.aspects.map((a) => ({ ...a })),
-      flags: [...r.flags],
     })),
     moods: session.state.moods.map((m) => ({ ...m })),
     stats: session.state.stats.map((s) => ({ ...s })),
@@ -203,11 +202,6 @@ export default function StatusPanel({ session, onClose }: Props) {
                         />
                       </div>
                     ))}
-                    {rel.flags.length > 0 && (
-                      <div className="desc" style={{ marginTop: 4 }}>
-                        🚩 {rel.flags.join('・')}
-                      </div>
-                    )}
                   </>
                 ) : (
                   <div className="desc">まだ関係性の記録はありません（シーンを終えると生成されます）。</div>

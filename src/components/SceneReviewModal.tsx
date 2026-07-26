@@ -599,11 +599,6 @@ export default function SceneReviewModal() {
                               />
                             </div>
                           ))}
-                          <CsvInput
-                            value={u.flagsAdd}
-                            onChange={(flagsAdd) => updRel(i, { flagsAdd })}
-                            placeholder="追加する恒久フラグ（カンマ区切り・任意）"
-                          />
                         </div>
                       ) : (
                         <label key={i} className="growth-item">
@@ -619,9 +614,6 @@ export default function SceneReviewModal() {
                                 <em>{a.name}</em> {a.note}
                               </span>
                             ))}
-                            {u.flagsAdd.length > 0 && (
-                              <span className="growth-keys">＋{u.flagsAdd.join('・')}</span>
-                            )}
                           </span>
                         </label>
                       ),

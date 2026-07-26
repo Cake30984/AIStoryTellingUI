@@ -216,15 +216,6 @@ function evalClause(
       if (clause.characterId) return compareOp(valueOf(clause.characterId), clause.op, clause.value)
       return characterIds.some((cid) => compareOp(valueOf(cid), clause.op, clause.value))
     }
-    case 'relationFlag': {
-      const toId = clause.toId ?? 'hero'
-      const hasFlag = (fromId: string) =>
-        !!state.relations
-          .find((r) => r.fromId === fromId && r.toId === toId)
-          ?.flags.includes(clause.flag)
-      const has = clause.fromId ? hasFlag(clause.fromId) : characterIds.some(hasFlag)
-      return has === clause.have
-    }
     case 'achievement': {
       const has = state.achievements.some((a) => a.defId === clause.defId)
       return has === clause.have
@@ -284,12 +275,6 @@ function evalGroupSubClause(
       const v =
         state.counters.find((c) => c.defId === sub.defId && c.characterId === characterId)?.value ?? 0
       return compareOp(v, sub.op, sub.value)
-    }
-    case 'relationFlag': {
-      const has = !!state.relations
-        .find((r) => r.fromId === characterId && r.toId === 'hero')
-        ?.flags.includes(sub.flag)
-      return has === sub.have
     }
     default:
       return false
@@ -368,7 +353,7 @@ function evalGroupClause(
 
 /**
  * 条件式を評価する純関数（docs/設計_ロールグループと定量条件.md B-2）。
- * 平の節（stat/counter/relationFlag/achievement）は「参加キャラの誰か1人が満たす（∃）」のゲートとして
+ * 平の節（stat/counter/achievement）は「参加キャラの誰か1人が満たす（∃）」のゲートとして
  * evalClause で判定し、当事者にはならない。group 節は evalGroupClause でロールの当事者を求める。
  * all は全節が真、any はいずれかの節が真で成立。当事者は「成立に寄与した」subject な group 節の合併。
  */
@@ -426,6 +411,49 @@ export function evalCondition(
   roleAssignments: RoleAssignment[] | undefined,
 ): boolean {
   return matchGroups(cond, state, world, characterIds, roleAssignments).ok
+}
+
+/**
+ * 旧「関係フラグ」節（FB9-C で撤去）を World の条件式から取り除く純関数。persist の merge で通す。
+ * 残したままだと union から消えた kind が evalClause の `default: return false` に落ち、実績・
+ * エンディング・イベントが恒久的に発火しなくなる。節が空になった条件は `matchGroups` が不成立を
+ * 返す（空の節リストは false）ので、「条件が空＝常に成立」の事故は起きない。
+ * 旧節を持たない World は同一参照のまま返す（起動時の無駄なオブジェクト生成を避ける）。
+ */
+export function stripLegacyFlagClauses(world: World): World {
+  const isLegacy = (c: unknown): boolean =>
+    (c as { kind?: string } | null | undefined)?.kind === 'relationFlag'
+  const hasLegacy = (cond: Condition | undefined): boolean => {
+    if (!cond) return false
+    const clauses = ('all' in cond ? cond.all : cond.any) ?? []
+    return clauses.some((c) => isLegacy(c) || (c.kind === 'group' && c.clauses.some(isLegacy)))
+  }
+  const cleanOne = (cond: Condition): Condition => {
+    if (!hasLegacy(cond)) return cond
+    const clauses = ('all' in cond ? cond.all : cond.any) ?? []
+    const kept = clauses
+      .filter((c) => !isLegacy(c))
+      .map((c) => (c.kind === 'group' ? { ...c, clauses: c.clauses.filter((s) => !isLegacy(s)) } : c))
+    return 'all' in cond ? { all: kept } : { any: kept }
+  }
+  // AchievementDef.condition は必須・EndingDef/ScheduledEvent は任意なので入口を分ける
+  const cleanOpt = (cond: Condition | undefined): Condition | undefined =>
+    cond ? cleanOne(cond) : cond
+
+  const achievements = world.achievements ?? []
+  const endings = world.endings ?? []
+  const events = world.scheduledEvents ?? []
+  const touched =
+    achievements.some((a) => hasLegacy(a.condition)) ||
+    endings.some((e) => hasLegacy(e.condition)) ||
+    events.some((e) => hasLegacy(e.condition))
+  if (!touched) return world
+  return {
+    ...world,
+    achievements: achievements.map((a) => ({ ...a, condition: cleanOne(a.condition) })),
+    endings: endings.map((e) => ({ ...e, condition: cleanOpt(e.condition) })),
+    scheduledEvents: events.map((e) => ({ ...e, condition: cleanOpt(e.condition) })),
+  }
 }
 
 /** 新規解除された実績1件（当事者つき。トースト・`@ロール名` 置換に使う） */
@@ -573,13 +601,12 @@ export function applyReviewToState(
   characters: { id: string; name: string }[] = [],
 ): { state: SessionState; unlocked: UnlockedAchievement[] } {
   const prev = base ?? { relations: [], moods: [], stats: [], counters: [], achievements: [] }
-  // 関係性（fromId,toId で upsert。stance は全文置換、flags は和集合）
+  // 関係性（fromId,toId で upsert。stance は全文置換）
   const relations = prev.relations.map((r) => ({ ...r }))
   for (const u of sel.relationUpdates) {
     const idx = relations.findIndex((r) => r.fromId === u.fromId && r.toId === u.toId)
     const aspects = u.aspects.map((a) => ({ aspectId: a.aspectId, note: a.note }))
     if (idx >= 0) {
-      const flags = Array.from(new Set([...relations[idx].flags, ...u.flagsAdd]))
       // aspects は aspectId 単位でマージ：返ってきた次元のみ全文置換し、省略された次元は保持する
       const cur = relations[idx].aspects
       const merged = [
@@ -590,7 +617,6 @@ export function applyReviewToState(
         ...relations[idx],
         stance: u.stance || relations[idx].stance,
         aspects: merged,
-        flags,
         updatedAt: Date.now(),
       }
     } else {
@@ -599,7 +625,6 @@ export function applyReviewToState(
         toId: u.toId,
         stance: u.stance,
         aspects,
-        flags: u.flagsAdd,
         updatedAt: Date.now(),
       })
     }
@@ -881,8 +906,6 @@ export function newClause(kind: Clause['kind'], world: World): Clause {
       return { kind: 'stat', defId: world.stats[0]?.id ?? '', op: '>=', value: 0 }
     case 'counter':
       return { kind: 'counter', defId: world.counters[0]?.id ?? '', op: '>=', value: 1 }
-    case 'relationFlag':
-      return { kind: 'relationFlag', flag: '', have: true }
     case 'achievement':
       return { kind: 'achievement', defId: '', have: true }
     case 'group':
@@ -908,8 +931,6 @@ export function newGroupSubClause(kind: GroupSubClause['kind'], world: World): G
         op: '>=',
         value: 1,
       }
-    case 'relationFlag':
-      return { kind: 'relationFlag', flag: '', have: true }
   }
 }
 
@@ -2942,12 +2963,18 @@ export const useStore = create<AppState>()(
             const statSpecs = (world?.stats ?? [])
               .filter((d) => d.name.trim())
               .map((d) => ({ name: d.name, deltaMin: d.deltaMin, deltaMax: d.deltaMax }))
+            // note（どんな時に計上するか）も渡す＝作者が「一度きりの出来事」を狙って計上させる担保（FB9-C）
             const counterSpecs = (world?.counters ?? [])
               .filter((d) => d.name.trim())
-              .map((d) => ({ name: d.name, amountMin: d.amountMin, amountMax: d.amountMax }))
+              .map((d) => ({
+                name: d.name,
+                note: d.note,
+                amountMin: d.amountMin,
+                amountMax: d.amountMax,
+              }))
 
             // 現在のステータス/カウンター値（FB7-C。レビュー指針の条件参照
-            // 「フラグ『呪い』が立っている間は…」「所持金が尽きたら…」を可能にするため毎回注入）
+            // 「所持金が尽きたら…」「デート回数が3以上なら…」を可能にするため毎回注入）
             const stateLines: string[] = []
             for (const def of world?.stats ?? []) {
               if (!def.name.trim()) continue
@@ -2995,7 +3022,7 @@ export const useStore = create<AppState>()(
             }
             const context = ctxParts.join('\n')
 
-            // 現在の関係性 prose（レビューが書き直すための起点。フラグは指針の条件参照にも使う）
+            // 現在の関係性 prose（レビューが書き直すための起点）
             const relNow = (s.state?.relations ?? [])
               .map((r) => {
                 const who = get().characters.find((c) => c.id === r.fromId)?.name ?? 'キャラ'
@@ -3006,10 +3033,7 @@ export const useStore = create<AppState>()(
                   })
                   .filter(Boolean)
                   .join(' / ')
-                const flags = r.flags.filter((f) => f.trim()).join('・')
-                return `- ${who}→主人公: ${r.stance}${asp ? `（${asp}）` : ''}${
-                  flags ? `【フラグ: ${flags}】` : ''
-                }`
+                return `- ${who}→主人公: ${r.stance}${asp ? `（${asp}）` : ''}`
               })
               .join('\n')
             const relBlock = relNow ? `\n\n【現在の関係性】\n${relNow}` : ''
@@ -3133,9 +3157,6 @@ export const useStore = create<AppState>()(
                         toName: refs.persona?.name?.trim() || '主人公',
                         stance: String(x?.stance ?? '').trim(),
                         aspects,
-                        flagsAdd: Array.isArray(x?.flagsAdd)
-                          ? x.flagsAdd.map((f: any) => String(f).trim()).filter(Boolean)
-                          : [],
                         reason: String(x?.reason ?? ''),
                       }
                     })
@@ -4604,7 +4625,7 @@ export const useStore = create<AppState>()(
         const p = (persisted as Partial<AppState>) ?? {}
         // ui は normalizeUiPrefs で現行スキーマへ正規化（旧・段階式の文字列値を数値へ引き継ぐ。F2）
         const merged = { ...current, ...p, ui: normalizeUiPrefs({ ...current.ui, ...(p.ui ?? {}) }) }
-        merged.worlds = (merged.worlds ?? []).map((world) => ({
+        merged.worlds = (merged.worlds ?? []).map((w) => stripLegacyFlagClauses(w)).map((world) => ({
           ...world,
           roles: normalizeWorldRoles(world.roles),
           ...(world.startPreset
