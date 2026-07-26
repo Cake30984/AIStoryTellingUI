@@ -3,3 +3,6 @@ dist
 *.local
 .DS_Store
 src-tauri/target
+
+# 環境音ピンの音源作業フォルダ（試聴用・採用したものだけ src/assets/ambient へ移す）
+_ambient_work
