@@ -611,6 +611,11 @@ export interface Session {
   /** アーカイブ済み（セッション一覧から既定で除外。UI-5） */
   archived?: boolean
   /**
+   * 出自カセット（FB9-B）。`playCassette` が刻む。到達エンディングをカセット単位で集計するためだけの
+   * 参照で、プレイには影響しない。カセット下書きの種にする時は `freshSessionOf` が落とす。
+   */
+  originCassetteId?: string
+  /**
    * 到達したエンディング（セッション固有・チェックポイント対象＝分岐で戻れば未到達に戻る。
    * docs/設計_エンディング.md）。restoreCheckpoint の passthrough には入れない。
    * 「完結済み」は ending があり、かつ epilogueSceneId のシーンに endedAt が立つことから導出する。
@@ -911,13 +916,20 @@ export function normalizeUiPrefs(raw: unknown): UiPrefs {
 }
 
 /**
- * エンディング到達の周回横断記録（E3・AppState 直下）。エピローグ突入時に追記する。
- * セッションの外に置く＝セッション削除・複製・分岐巻き戻しでも「見た」事実は残す。
+ * エンディング到達の記録（E3・AppState 直下）。エピローグ突入時に追記する。
+ * セッションの外に置く＝セッション削除・複製・分岐巻き戻しでも「到達した」事実は残す。
+ * 集計は2軸（FB9-B）＝ステータス表示は `sessionId`（このセッションの回収率）、カセット棚は
+ * `cassetteId`（作品ごとの通算）。`worldId` は World 削除時の掃除にだけ使い、集計軸にはしない。
  */
 export interface EndingRecord {
   worldId: string
   endingDefId: string
   sessionId: string
+  /**
+   * 出自カセット（FB9-B）。カセット棚のコレクション表示（通算の到達エンディング数）の集計キー。
+   * カセット由来でないセッション（ライブラリから直接組んだもの）の記録には無い。
+   */
+  cassetteId?: string
   reachedAt: number
   /** 当事者の組（ロール別。周回記録で「誰との結末か」を残す） */
   parties?: PartyRef[]
@@ -934,7 +946,7 @@ export interface ExportBundle {
   sessions: Session[]
   /** ゲームカセット棚（FB2-E） */
   cassettes?: Cassette[]
-  /** エンディング到達の周回横断記録（E3。同値 dedupe でマージ） */
+  /** エンディング到達記録（E3。同値 dedupe でマージ＝キーは worldId|endingDefId|sessionId|reachedAt） */
   endingRecords?: EndingRecord[]
   /** セッションごとの生成画像の永続記録（FB6-A。record id でセッション単位に dedupe マージ） */
   sessionImageLogs?: Record<string, SessionImageRecord[]>

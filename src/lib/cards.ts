@@ -391,6 +391,9 @@ export function freshSessionOf(session: Session): Session {
     usedEventIds: [],
     // 到達エンディングを初期化（忘れるとカセット出力→新規プレイで即「完結済み」表示になる。E1）
     ending: undefined,
+    // 出自カセットは引き継がない（FB9-B。既存セッションを種に別のカセットを作った時、
+    // 到達エンディングが種のカセットへ集計されるのを防ぐ。playCassette が改めて刻む）
+    originCassetteId: undefined,
     spriteEmotions: [],
     // 開始時点（startDay/startSlot）へ巻き戻す。指定が無ければ従来どおり1日目・先頭スロット（FB2-B）。
     // 区切り編集後に範囲外となった開始時点は防御的にクランプ（FB4-A）

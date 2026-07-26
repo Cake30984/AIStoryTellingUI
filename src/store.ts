@@ -532,15 +532,22 @@ function mergeImageLogs(
 
 /** エンディング到達記録を同値 dedupe でマージする（E3。id を持たないため4フィールドの組で判定） */
 function mergeEndingRecords(cur: EndingRecord[], inc: EndingRecord[]): EndingRecord[] {
+  // 同一性は (世界観, エンディング, セッション, 到達時刻)。cassetteId はセッションから導かれる従属値
+  // なのでキーに含めない（含めると FB9-B 以前の記録と以後の記録が別物になり棚が二重計上する）
   const key = (r: EndingRecord) => `${r.worldId}|${r.endingDefId}|${r.sessionId}|${r.reachedAt}`
-  const seen = new Set(cur.map(key))
   const merged = [...cur]
+  const at = new Map(merged.map((r, i) => [key(r), i]))
   for (const r of inc) {
     if (!r || typeof r.worldId !== 'string' || typeof r.endingDefId !== 'string') continue
     const k = key(r)
-    if (seen.has(k)) continue
-    seen.add(k)
-    merged.push(r)
+    const i = at.get(k)
+    if (i == null) {
+      at.set(k, merged.length)
+      merged.push(r)
+      continue
+    }
+    // 既存が FB9-B 以前で出自を持たない場合だけ、取り込み側の cassetteId を補う（棚の取りこぼし防止）
+    if (r.cassetteId && !merged[i].cassetteId) merged[i] = { ...merged[i], cassetteId: r.cassetteId }
   }
   return merged
 }
@@ -1141,7 +1148,7 @@ interface AppState {
   sessions: Session[]
   /** ゲームカセット棚（配布物の素材化。FB2-E） */
   cassettes: Cassette[]
-  /** エンディング到達の周回横断記録（E3。エピローグ突入時に追記・persist・export/import 対象） */
+  /** エンディング到達記録（E3。エピローグ突入時に追記・persist・export/import 対象。集計はセッション単位／カセット単位＝FB9-B） */
   endingRecords: EndingRecord[]
   activeId: string | null
   /** セッションごとの分岐ツリー（軽量メタデータのみ。実体は checkpointStore。C1） */
@@ -3426,7 +3433,8 @@ export const useStore = create<AppState>()(
               sceneReview: null,
               newlyUnlockedAchievements: newlyUnlocked,
               endingToast: { name: endingName },
-              // 周回横断の到達記録（E3）。突入時に追記＝完結ボタンの押し忘れで漏れないため。再到達も追記し表示側で distinct
+              // 到達記録（E3）。突入時に追記＝完結ボタンの押し忘れで漏れないため。再到達も追記し表示側で distinct。
+              // 集計はセッション単位（ステータス）とカセット単位（棚の通算）の2軸（FB9-B）
               endingRecords: s.worldId
                 ? [
                     ...st.endingRecords,
@@ -3434,6 +3442,7 @@ export const useStore = create<AppState>()(
                       worldId: s.worldId,
                       endingDefId: ending.id,
                       sessionId: s.id,
+                      ...(s.originCassetteId ? { cassetteId: s.originCassetteId } : {}),
                       reachedAt,
                       ...(parties.length ? { parties } : {}),
                     },
@@ -4244,7 +4253,15 @@ export const useStore = create<AppState>()(
             cloned.model && cloned.model !== DEFAULT_MODEL
               ? cloned.model
               : get().defaultModelRef || DEFAULT_MODEL
-          const session: Session = { ...cloned, id: uid(), model, createdAt: now, updatedAt: now }
+          // 出自を刻む（FB9-B。カセット棚の到達エンディング数はこれを集計キーにする）
+          const session: Session = {
+            ...cloned,
+            id: uid(),
+            model,
+            originCassetteId: cas.id,
+            createdAt: now,
+            updatedAt: now,
+          }
           set((st) => ({
             sessions: [session, ...st.sessions],
             activeId: session.id,

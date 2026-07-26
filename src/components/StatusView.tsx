@@ -158,16 +158,18 @@ export default function StatusView({ session }: Props) {
       {(world.endings ?? []).length > 0 &&
         (() => {
           const endings = world.endings ?? []
-          // この世界で見た結末（周回横断・distinct）。E3
+          // このセッションで到達したエンディング（distinct）。FB9-B で世界観単位からセッション単位へ。
+          // 1セッションでも分岐で複数回収できるため n/m に意味がある。hidden の伏字もこれに従う
+          // ＝別セッションで到達した結末は、新しいセッションではまた ？？？ に戻る
           const seen = new Set(
             endingRecords
-              .filter((r) => r.worldId === world.id)
+              .filter((r) => r.sessionId === session.id)
               .map((r) => r.endingDefId),
           )
           return (
             <div className="field">
               <label>
-                <Icon name="flag" size={13} className="label-icon" /> エンディング（この世界で見た結末{' '}
+                <Icon name="flag" size={13} className="label-icon" /> エンディング（このセッションで到達{' '}
                 {seen.size}/{endings.length}）
               </label>
               {endings.map((e) => {

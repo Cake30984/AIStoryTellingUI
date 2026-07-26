@@ -22,7 +22,7 @@ function CassetteCard({
   onDelete,
 }: {
   cas: Cassette
-  /** この世界で見た結末数（周回横断・distinct。E3） */
+  /** このカセットで到達したエンディング数（全プレイの通算・distinct。E3 / FB9-B） */
   endingSeen: number
   /** この世界のエンディング総数（E3） */
   endingTotal: number
@@ -47,7 +47,7 @@ function CassetteCard({
         <div className="entity-name">
           {cas.title || '無題のカセット'}
           {endingTotal > 0 && (
-            <span className="badge" style={{ marginLeft: 6 }} title="この世界で見た結末（周回横断）">
+            <span className="badge" style={{ marginLeft: 6 }} title="到達エンディング（このカセットの通算）">
               <Icon name="flag" size={11} /> {endingSeen}/{endingTotal}
             </span>
           )}
@@ -165,9 +165,11 @@ export default function CassetteLibrary() {
             const wid = cas.session.worldId
             const casWorld = wid ? worlds.find((w) => w.id === wid) : undefined
             const endingTotal = casWorld?.endings?.length ?? 0
-            const endingSeen = wid
-              ? new Set(endingRecords.filter((r) => r.worldId === wid).map((r) => r.endingDefId)).size
-              : 0
+            // このカセットで到達したエンディング（全プレイの通算・distinct）。FB9-B で世界観単位から
+            // カセット単位へ＝同じ世界観から作った別のカセットの到達が混ざらない
+            const endingSeen = new Set(
+              endingRecords.filter((r) => r.cassetteId === cas.id).map((r) => r.endingDefId),
+            ).size
             return (
             <CassetteCard
               key={cas.id}
