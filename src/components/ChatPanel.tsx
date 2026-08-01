@@ -16,7 +16,7 @@ import { hasStructuredLines, plainTextOf } from '../lib/structured'
 import { appConfirm } from '../lib/dialogs'
 import { PIN_MARK_ATTR, pinsByAnchor, useAmbientScape } from '../lib/ambient'
 import { ambientSoundLabel } from '../lib/ambientSounds'
-import { ensureAudio } from '../lib/ambientAudio'
+import { ensureAudio, isAudioReady } from '../lib/ambientAudio'
 import ImageGenModal from './ImageGenModal'
 import AmbientPinModal from './AmbientPinModal'
 import AmbientPinLayer, { type AmbientDrag } from './AmbientPinLayer'
@@ -42,6 +42,12 @@ import ActivityIndicator from './ActivityIndicator'
 interface Props {
   session: Session
 }
+
+/**
+ * 自動再生の解錠案内を出したか（アプリ起動中1回だけ）。セッションを切り替えても出し直さないよう
+ * コンポーネントの外に置く。
+ */
+let ambientUnlockNoticeShown = false
 
 /**
  * 環境音ピンの不可視アンカー（AM1）。幅0・高さ0の span を本文フローの狙った行に差し込み、
@@ -229,6 +235,24 @@ export default function ChatPanel({ session }: Props) {
     [session.scenes, session.messages],
   )
   useAmbientScape(chatRef, ambientPins, ui.ambientEnabled)
+
+  // 自動再生ポリシーの案内（AM3）。ブラウザ／WebView は「一度も操作していないページ」では
+  // 音を鳴らせない。**ホイールのスクロールは操作として数えられない**ので、
+  // 「開き直して、クリックせずホイールだけで読み進める」と、ピンがあっても無音のままになる。
+  // その状況（＝解錠されていないままホイールが動いた時）に限って1回だけ案内する。
+  // クリック・キー入力で読み始めた人には出ない（App.tsx の解錠リスナで既に鳴る状態のため）。
+  useEffect(() => {
+    const el = chatRef.current
+    if (!el || !ui.ambientEnabled || ambientPins.length === 0 || ambientUnlockNoticeShown) return
+    const onWheel = () => {
+      if (isAudioReady()) return
+      ambientUnlockNoticeShown = true
+      useStore.getState().setInfoNotice('環境音は画面を一度クリックすると鳴りはじめます（ブラウザの自動再生制限）')
+      el.removeEventListener('wheel', onWheel)
+    }
+    el.addEventListener('wheel', onWheel, { passive: true })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [ui.ambientEnabled, ambientPins.length])
 
   const participants = useMemo(
     () =>

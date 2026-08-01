@@ -7,6 +7,8 @@ import ModelPicker from './ModelPicker'
 import { appConfirm } from '../lib/dialogs'
 import type { Provider } from '../types'
 import { Icon } from './icons'
+import HelpDetails from './HelpDetails'
+import { AMBIENT_CATEGORIES, AMBIENT_SOUNDS } from '../lib/ambientSounds'
 
 /** System ページ（設定・データ管理）の中身。UI-5でモーダルからページ化するため抽出。ロジックは無変更 */
 export function SettingsBody() {
@@ -344,6 +346,35 @@ export function SettingsBody() {
           </div>
 
           {notice && <p className="notice">{notice}</p>}
+
+          <hr className="divider" />
+
+          {/* 同梱素材のクレジット（AM3）。CC0/規約上は表示義務が無くても、
+              何を同梱しているか・出所はどこかを利用者が確認できる場所を1つ持つ */}
+          <div className="field">
+            <label>同梱素材のクレジット</label>
+            <div className="desc">
+              環境音は {AMBIENT_SOUNDS.length} 音を同梱しています（すべて VSQ plus+ の素材）。
+            </div>
+            <HelpDetails summary="同梱している環境音の一覧">
+              <p className="desc">
+                出所: VSQ plus+（https://vsq.co.jp/plus/）。
+                商用・非商用を問わず利用可能な素材を、ループ再生用に切り出し・音量調整・
+                継ぎ目のクロスフェード加工のうえ同梱しています。クレジット表記は任意です。
+              </p>
+              {AMBIENT_CATEGORIES.map((cat) => (
+                <div key={cat} className="credit-group">
+                  <div className="credit-cat">{cat}</div>
+                  {AMBIENT_SOUNDS.filter((s) => s.category === cat).map((s) => (
+                    <div className="credit-row" key={s.id}>
+                      <span className="credit-name">{s.label}</span>
+                      <span className="credit-src">{s.credit}</span>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </HelpDetails>
+          </div>
 
           {/* アプリ名はサイドバーから撤去し、ここに控えめに置く（F3/R19） */}
           <p className="desc" style={{ marginTop: 32, textAlign: 'center' }}>
