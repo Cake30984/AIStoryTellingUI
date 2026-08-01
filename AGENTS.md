@@ -39,7 +39,7 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist`。storage は
 - `lorebook.ts` — 世界観ロアのキーワード一致抽出
 - `timeline.ts` — `advanceTimeline`/`timeLabelOf`/`timelinePromptInfo`/`isNearEnd`
 - `json.ts` — `extractJson`（モデル出力からの堅牢な JSON 抽出）
-- `structured.ts` — 構造化出力（`@名前「セリフ」`行タグ）のパーサ。全て純粋関数。`parseLine`/`parseStructured`/`matchCharacterByName`（名前解決の一本化窓口）/`hasStructuredLines`（レンダラ分岐用・メッセージ単位）/`plainTextOf`（マークアップ除去）/`NARRATION_NAMES`（`地の文`等の予約話者名＝ラベル非表示救済）。パース失敗行は必ず narration に落とす（graceful degradation）。**名前直後の括弧は読み捨てる**＝旧データの感情タグ（`@美咲(joy)`）が残っており、履歴の few-shot でモデルが真似ることもあるため受理だけ続ける
+- `structured.ts` — 構造化出力（`@名前「セリフ」`行タグ）のパーサ。全て純粋関数。`parseLine`/`parseStructured`/`matchCharacterByName`（名前解決の一本化窓口）/`hasStructuredLines`（レンダラ分岐用・メッセージ単位）/`plainTextOf`（マークアップ除去）/`NARRATION_NAMES`（`地の文`等の予約話者名＝ラベル非表示救済）。パース失敗行は必ず narration に落とす（graceful degradation）。**話者名は行頭 `@` から最初の `「` まで**（`/^([^「]{1,24})/`）＝後方互換は持たない。旧データに残る感情タグ `@美咲(joy)「…」` は話者チップに `(joy)` が出る（`matchCharacterByName` の前方一致でアイコンは正しく解決される）、`@地の文(感情)「…」` はラベル非表示の救済が効かず話者行として描かれる
 - `tokens.ts` — `estimateTokens`/`tokenLevel`/`sceneTokensOf`（現在シーンの推定トークン）＋ペース制御閾値 `SCENE_WIND_DOWN_TOKENS`(3000)/`SCENE_WRAP_UP_TOKENS`(4500)。バッジ・提案チップ・ナッジの3者はこの閾値を共有する（FB5-①）
 - `io.ts` — `downloadBundle`/`downloadBlob`（内部で `saveBlob` を呼ぶ）/`parseBundle`（取り込み検証）。バンドル組み立て本体は `store.exportBundle`
 - `imageStore.ts` — アバター・カード画像ストア。`putImage`/`putImageAs`/`getImage`/`deleteImage`/`listImageIds`/`gcImages`＋`blobToBase64`/`base64ToBlob`＋表示用 `useImageUrl`。内部は `BlobStore` interface（Web:IndexedDB / Tauri:`data/images/<id>.<拡張子>`）。localStorage には画像を入れない
@@ -116,7 +116,7 @@ Play 領域:
 - `設計_Tauri化.md` — デスクトップ化（T0=画像込みエクスポート → T1=CORS-free HTTP → T2=アダプタ層 → T3=ファイルストレージ → T4=配布）
 - `設計_セーブロードと分岐.md` — チェックポイント方式（C1=基盤 → C2=ツリーUI → C3=しおり）
 - `設計_品質プロンプトのユーザー定義化.md` — スタイルプリセット廃止・接続先ごとのデフォルトタグ。Q1〜Q5
-- `設計_構造化出力.md` — `@名前「セリフ」`行タグ・graceful degradation（D-1〜D-6）。ST1〜ST5。**感情トークン `(感情)` は 2026-08-01 に廃止**（立ち絵と同時撤去＝唯一の消費先だったため。パーサは旧データ互換で括弧を読み捨てるのみ）
+- `設計_構造化出力.md` — `@名前「セリフ」`行タグ・graceful degradation（D-1〜D-6）。ST1〜ST5。**感情トークン `(感情)` は 2026-08-01 に廃止**（立ち絵と同時撤去＝唯一の消費先だったため。パーサにも後方互換を残していない）
 - `設計_UI全体再検討.md` — UI 全体の0ベース再検討・ADR-UI・ロードマップ UI-0〜UI-7
 - `設計_UI再設計_実装詳細.md` — UI-0〜UI-7 の実装者向けフェーズ別手順書。**UI 周りを触る時は該当節を読み直し、乖離が出たら本書も同コミットで修正**
 - `設計_開始テンプレートとゲームカセット.md` — 世界観の開始テンプレート（W1=実装済み・コピー方式）とゲームカセット専用カード `aist_cassette`（W2=未着手）。検討経緯・却下案（フォルダ方式・閉じたカセット等）含む

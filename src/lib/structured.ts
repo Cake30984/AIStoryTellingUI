@@ -42,10 +42,8 @@ export const NARRATION_NAMES = new Set(['地の文', '地文', 'ナレーショ�
 export function parseLine(line: string, characters: ParseCharacter[]): StructuredLine {
   if (!line.startsWith('@')) return { kind: 'narration', text: line }
   const body = line.slice(1)
-  // 名前 = 最初の ( / （ / 「 まで。どれも無い行・名前が空/長すぎる行は narration に落とす（D-1 の原則）
-  // 名前の直後の括弧は読み捨てる: 感情タグ（@美咲(joy)）を書かせるのは立ち絵と一緒に廃止したが、
-  // 旧メッセージには残っており、履歴の few-shot でモデルが真似ることもあるため受理だけは続ける。
-  const m = body.match(/^([^(（「]{1,24})(?:[(（][^)）]{0,12}[)）])?/)
+  // 名前 = 行頭 @ から最初の 「 まで。「 が無い行・名前が空/長すぎる行は narration に落とす（D-1 の原則）
+  const m = body.match(/^([^「]{1,24})/)
   const name = m?.[1]?.trim() ?? ''
   if (!name) return { kind: 'narration', text: line }
   const rest = body.slice((m?.[0] ?? '').length).trim()
