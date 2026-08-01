@@ -168,45 +168,74 @@ export function applyTargets(targets: { soundId: string; gain: number }[]): void
   }
 }
 
-/** 全部止める（セッション切替・機能 OFF・アンマウント時） */
+/** 全部止める（セッション切替・機能 OFF・アンマウント時）。試聴も含めて無音にする */
 export function stopAll(): void {
   for (const [soundId, v] of [...voices]) stopVoice(soundId, v)
   lastTick = 0
+  stopPreview()
 }
 
-let previewId: string | null = null
+/**
+ * 試聴は**ピンの再生とは別チャンネル**で持つ（`voices` に相乗りしない）。
+ * 相乗りすると、同じ音のピンが鳴っている最中に試聴すると互いの音量を奪い合い、
+ * 試聴を止めるとピンの音まで切れる。
+ */
+let preview: { soundId: string; src: AudioBufferSourceNode; gain: GainNode } | null = null
+/**
+ * 試聴の世代。`previewSound` は音源のデコードで await するので、その隙間に次のクリックや
+ * モーダルを閉じる操作が入りうる。**開始直前に世代が変わっていたら破棄する**ことで、
+ * 「連続でクリックすると前の音が止まらなくなる」不具合を防ぐ。
+ */
+let previewGen = 0
+
+function killPreview(): void {
+  if (!preview) return
+  try {
+    preview.src.stop()
+  } catch {
+    /* 既に停止済み */
+  }
+  preview.src.disconnect()
+  preview.gain.disconnect()
+  preview = null
+}
 
 /**
- * カタログからの試聴（AM1 の追加 UI 用）。ピンの音量制御とは独立に、指定の音だけを
- * master 音量で鳴らす。同じ id をもう一度呼ぶと停止（トグル）。
+ * カタログからの試聴（追加 UI 用）。指定の音だけを master 音量で鳴らす。
+ * 同じ id をもう一度呼ぶと停止（トグル）。
  */
 export async function previewSound(soundId: string): Promise<void> {
-  if (!ensureAudio() || !ctx) return
-  const same = previewId === soundId
-  if (previewId) {
-    const v = voices.get(previewId)
-    if (v) stopVoice(previewId, v)
-    previewId = null
-  }
-  if (same) return
+  const wasPlaying = preview?.soundId === soundId
+  // 何が起きても、まず今鳴っている試聴は止める（世代も進めて進行中の開始を無効化する）
+  previewGen++
+  killPreview()
+  if (wasPlaying) return
+  if (!ensureAudio() || !ctx || !master) return
+
+  const gen = previewGen
   const buf = await bufferOf(soundId)
-  if (!buf) return
-  const v = startVoice(soundId, buf)
-  if (!v) return
-  previewId = soundId
-  v.cur = 1
-  v.gain.gain.setTargetAtTime(1, ctx.currentTime, 0.08)
+  // await の間に別の音が押された／モーダルが閉じられたなら、もう鳴らさない
+  if (!buf || gen !== previewGen || !ctx || !master) return
+
+  const src = ctx.createBufferSource()
+  src.buffer = buf
+  src.loop = true
+  const gain = ctx.createGain()
+  gain.gain.value = 0
+  src.connect(gain)
+  gain.connect(master)
+  src.start(0, Math.random() * buf.duration)
+  gain.gain.setTargetAtTime(1, ctx.currentTime, 0.08)
+  preview = { soundId, src, gain }
 }
 
 /** 試聴中の音があれば止める（モーダルを閉じた時） */
 export function stopPreview(): void {
-  if (!previewId) return
-  const v = voices.get(previewId)
-  if (v) stopVoice(previewId, v)
-  previewId = null
+  previewGen++
+  killPreview()
 }
 
 /** 試聴中の soundId（UI のトグル表示用） */
 export function previewingSound(): string | null {
-  return previewId
+  return preview?.soundId ?? null
 }

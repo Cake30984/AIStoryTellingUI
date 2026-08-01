@@ -2,7 +2,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useStore } from '../store'
 import MenuPopover from './MenuPopover'
 import { Icon } from './icons'
-import { AMBIENT_DEFAULT_RADIUS, AMBIENT_RADIUS_CHOICES, PIN_MARK_ATTR } from '../lib/ambient'
+import { AMBIENT_DEFAULT_RADIUS, PIN_MARK_ATTR } from '../lib/ambient'
+import AmbientRadiusField from './AmbientRadiusField'
 import { ambientSoundLabel } from '../lib/ambientSounds'
 import type { AmbientPin } from '../types'
 
@@ -208,20 +209,10 @@ export default function AmbientPinLayer({ sessionId, pins, drag, onDragChange }:
                 </div>
                 <div className="ambient-menu-row">
                   <span className="rs-label">どこまで届くか</span>
-                  <div className="ap-radius">
-                    {AMBIENT_RADIUS_CHOICES.map((r) => (
-                      <button
-                        key={r.value}
-                        className={
-                          'scene-btn' +
-                          ((pin.radius ?? AMBIENT_DEFAULT_RADIUS) === r.value ? ' on' : '')
-                        }
-                        onClick={() => updateAmbientPin(sessionId, sceneId, pin.id, { radius: r.value })}
-                      >
-                        {r.label}
-                      </button>
-                    ))}
-                  </div>
+                  <AmbientRadiusField
+                    value={pin.radius ?? AMBIENT_DEFAULT_RADIUS}
+                    onChange={(radius) => updateAmbientPin(sessionId, sceneId, pin.id, { radius })}
+                  />
                 </div>
                 <div className="ambient-hint">上下にドラッグすると位置を動かせます</div>
                 <div className="menu-sep" />

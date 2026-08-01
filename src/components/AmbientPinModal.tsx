@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { useStore } from '../store'
 import ModalShell from './ModalShell'
 import { Icon } from './icons'
-import { AMBIENT_DEFAULT_RADIUS, AMBIENT_RADIUS_CHOICES } from '../lib/ambient'
+import { AMBIENT_DEFAULT_RADIUS } from '../lib/ambient'
+import AmbientRadiusField from './AmbientRadiusField'
 import { AMBIENT_CATEGORIES, AMBIENT_SOUNDS, ambientSoundLabel } from '../lib/ambientSounds'
 import { ensureAudio, previewSound, previewingSound, stopPreview } from '../lib/ambientAudio'
 import { plainTextOf } from '../lib/structured'
@@ -193,17 +194,7 @@ export default function AmbientPinModal({ sessionId, scene, message, onClose }: 
             </div>
 
             <div className="ap-section">どこまで届くか（到達半径）</div>
-            <div className="ap-radius">
-              {AMBIENT_RADIUS_CHOICES.map((r) => (
-                <button
-                  key={r.value}
-                  className={'scene-btn' + (radius === r.value ? ' on' : '')}
-                  onClick={() => setRadius(r.value)}
-                >
-                  {r.label}
-                </button>
-              ))}
-            </div>
+            <AmbientRadiusField value={radius} onChange={setRadius} />
 
             {minePins.length > 0 && (
               <>

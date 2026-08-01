@@ -11,12 +11,15 @@ import { ambientSoundById } from './ambientSounds'
 /** 到達半径の既定値＝チャット表示領域の高さの何倍か */
 export const AMBIENT_DEFAULT_RADIUS = 1.0
 
-/** 到達半径の選択肢（数値入力は作らない＝要望書 §3.2「調整子はせいぜい1つ」） */
+/** 到達半径のよく使う3段階（まずここから選ぶ。細かく詰めたい人はスライダー） */
 export const AMBIENT_RADIUS_CHOICES = [
   { value: 0.6, label: '狭い' },
   { value: 1.0, label: 'ふつう' },
   { value: 1.6, label: '広い' },
 ] as const
+
+/** 到達半径をスライダーで詰める時の範囲（単位＝チャット表示領域の高さの倍数） */
+export const AMBIENT_RADIUS_LIMITS = { min: 0.2, max: 3, step: 0.1 } as const
 
 /** 同時に鳴らす音の上限。近接ピンが増えても混ざって泥にならないよう上位だけ残す */
 export const AMBIENT_MAX_VOICES = 3

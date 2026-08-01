@@ -753,6 +753,11 @@
   background: color-mix(in srgb, var(--accent) 16%, transparent);
   color: var(--text);
 }
+/* 3段階で足りない人向けの微調整スライダー */
+.ap-radius-range {
+  width: 100%;
+  margin-top: 8px;
+}
 .ap-existing {
   display: flex;
   align-items: center;
