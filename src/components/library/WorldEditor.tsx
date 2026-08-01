@@ -1291,7 +1291,9 @@ export default function WorldEditor({ world, onClose }: Props) {
               </div>
               {/* 計上条件（FB9-C）。名前だけでは AI が計上タイミングを判断できないため、
                   ここに書いた文をレビュープロンプトへそのまま渡す＝狙って条件に使えるようにする */}
-              <input
+              <textarea
+                rows={3}
+                className="lore-content"
                 style={{ marginTop: 6 }}
                 value={c.note ?? ''}
                 placeholder="どんな時に数えるか（例: デートに出かけて最後まで一緒に過ごしたとき）"
@@ -1498,7 +1500,8 @@ export default function WorldEditor({ world, onClose }: Props) {
                 <div className="sub-field" style={{ marginTop: 6 }}>
                   <span className="sub-label">エピローグ指針</span>
                   <textarea
-                    rows={2}
+                    rows={3}
+                    className="lore-content"
                     value={e.epilogueGuidance}
                     placeholder="結末のトーン・締め方（到達後にのみ本編へ注入。プレイ中はリークしない）"
                     onChange={(ev) => updateEnding(e.id, { epilogueGuidance: ev.target.value })}
