@@ -34,7 +34,9 @@ interface BodyProps {
    * 描画は呼び出し側（`renderPins`）に任せる。
    */
   pinsByLine?: Map<number, AmbientPin[]>
-  renderPins?: (pins: AmbientPin[]) => ReactNode
+  /** ドラッグ中の落とし先候補として、全行にアンカーを描くか */
+  dropTarget?: boolean
+  renderPins?: (pins: AmbientPin[], lineAnchor?: number) => ReactNode
 }
 
 /**
@@ -55,6 +57,7 @@ export function StructuredNovelBody({
   persona,
   pending,
   pinsByLine,
+  dropTarget,
   renderPins,
 }: BodyProps) {
   const speakers = useSpeakers(participants, persona)
@@ -63,8 +66,10 @@ export function StructuredNovelBody({
   const settled = pending && !endsWithNewline ? lines.slice(0, -1) : lines
   const tail = pending && !endsWithNewline ? lines[lines.length - 1] : undefined
   const pinsAt = (i: number) => {
-    const pins = pinsByLine?.get(i)
-    return pins && pins.length > 0 && renderPins ? renderPins(pins) : null
+    if (!renderPins) return null
+    const pins = pinsByLine?.get(i) ?? []
+    if (pins.length === 0 && !dropTarget) return null
+    return renderPins(pins, dropTarget ? i : undefined)
   }
 
   return (

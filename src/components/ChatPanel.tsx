@@ -19,6 +19,7 @@ import { ambientSoundLabel } from '../lib/ambientSounds'
 import { ensureAudio } from '../lib/ambientAudio'
 import ImageGenModal from './ImageGenModal'
 import AmbientPinModal from './AmbientPinModal'
+import AmbientPinLayer, { type AmbientDrag } from './AmbientPinLayer'
 import ModalShell from './ModalShell'
 import type { AmbientPin, DockTab, Message, Scene, SceneIllustration, Session } from '../types'
 import SessionEditor from './SessionEditor'
@@ -43,17 +44,19 @@ interface Props {
 }
 
 /**
- * 環境音ピンの不可視マーカー（AM1）。幅0・高さ0の span を本文フローに差し込み、
- * これ自体を「音量計算のY測定点」と「左ガターの点の表示位置」の両方に使う。
- * CSS が絶対配置で点を左余白へ出すので、スクロール時に JS で位置を計算する必要がない。
+ * 環境音ピンの不可視アンカー（AM1）。幅0・高さ0の span を本文フローの狙った行に差し込み、
+ * これを音量計算の Y 測定点にする（見えるスピーカーは `AmbientPinLayer` が右側に置く）。
+ * `lineAnchor` はドラッグ中だけ描く「落とし先の候補」で、ピンが無い行にも付く。
  */
-export function PinMark({ pins }: { pins: AmbientPin[] }) {
+export function PinMark({ pins, lineAnchor }: { pins: AmbientPin[]; lineAnchor?: number }) {
+  if (pins.length === 0 && lineAnchor === undefined) return null
   return (
     <>
+      {lineAnchor !== undefined && <span className="ambient-anchor" data-line-anchor={lineAnchor} />}
       {pins.map((p) => (
         <span
           key={p.id}
-          className="ambient-mark"
+          className="ambient-anchor"
           {...{ [PIN_MARK_ATTR]: p.id }}
           title={`環境音: ${ambientSoundLabel(p.soundId)}`}
         />
@@ -215,6 +218,12 @@ export default function ChatPanel({ session }: Props) {
     () => session.scenes.flatMap((sc) => sc.ambientPins ?? []),
     [session.scenes],
   )
+  // スピーカーの表示・移動・設定に使う（更新にはピンが属するシーンが要る）
+  const ambientPinsWithScene = useMemo(
+    () => session.scenes.flatMap((sc) => (sc.ambientPins ?? []).map((pin) => ({ pin, sceneId: sc.id }))),
+    [session.scenes],
+  )
+  const [ambientDrag, setAmbientDrag] = useState<AmbientDrag | null>(null)
   const pinIndex = useMemo(
     () => pinsByAnchor(session.scenes, session.messages),
     [session.scenes, session.messages],
@@ -546,11 +555,15 @@ export default function ChatPanel({ session }: Props) {
    * 行分割するとその1本だけ色分けが切れる。影響をピン付きメッセージだけに閉じ込めるため、
    * ピンが無いメッセージは従来どおり分割せずに描く。
    */
-  const renderProseWithPins = (content: string, byLine: Map<number, AmbientPin[]>) => {
-    if (byLine.size === 0) return renderProse(content)
+  const renderProseWithPins = (
+    content: string,
+    byLine: Map<number, AmbientPin[]>,
+    dropTarget: boolean,
+  ) => {
+    if (byLine.size === 0 && !dropTarget) return renderProse(content)
     return content.split('\n').map((line, i) => (
       <Fragment key={i}>
-        <PinMark pins={byLine.get(i) ?? []} />
+        <PinMark pins={byLine.get(i) ?? []} lineAnchor={dropTarget ? i : undefined} />
         {renderProse(line)}
         {'\n'}
       </Fragment>
@@ -560,6 +573,8 @@ export default function ChatPanel({ session }: Props) {
   const renderNovelMessage = (m: Message) => {
     if (editingId === m.id) return <div className="prose-block" data-msg-id={m.id} key={m.id}>{editBox()}</div>
     const byLine = pinIndex.get(m.id) ?? new Map<number, AmbientPin[]>()
+    // ドラッグ中は、カーソルが乗っているメッセージにだけ行アンカーを増やす（落とし先の候補）
+    const dropTarget = ambientDrag?.overMessageId === m.id
     if (m.role === 'assistant') {
       const structured = hasStructuredLines(m.content, participants)
       return (
@@ -571,11 +586,12 @@ export default function ChatPanel({ session }: Props) {
               persona={persona}
               pending={!!m.pending && isStreaming}
               pinsByLine={byLine}
-              renderPins={(pins) => <PinMark pins={pins} />}
+              dropTarget={dropTarget}
+              renderPins={(pins, lineAnchor) => <PinMark pins={pins} lineAnchor={lineAnchor} />}
             />
           ) : (
             <>
-              {renderProseWithPins(m.content, byLine)}
+              {renderProseWithPins(m.content, byLine, dropTarget)}
               {m.pending && isStreaming && <span className="cursor" />}
             </>
           )}
@@ -895,6 +911,13 @@ export default function ChatPanel({ session }: Props) {
                   )
                 })}
                 <div ref={anchorRef} className="scroll-anchor" />
+                {/* 環境音のスピーカーは本文カラムの右側に絶対配置する（本文を汚さない） */}
+                <AmbientPinLayer
+                  sessionId={session.id}
+                  pins={ambientPinsWithScene}
+                  drag={ambientDrag}
+                  onDragChange={setAmbientDrag}
+                />
               </div>
             </div>
           </div>

@@ -14,14 +14,19 @@ import type { AmbientSoundDef } from '../types'
  * 実装を非同期に進められる。ライセンス確認待ちの音もここに宣言だけしておける。
  */
 
-/** Vite のアセットグラフ経由で同梱音源の URL を解決する（Web / Tauri で同じ結果になる） */
-const FILES = import.meta.glob('../assets/ambient/*.ogg', {
+/**
+ * Vite のアセットグラフ経由で同梱音源の URL を解決する（Web / Tauri で同じ結果になる）。
+ * 形式は **FLAC（可逆）**。元素材が 320kbps の MP3 なので、そこから非可逆で再エンコードすると
+ * 世代劣化が乗る。加工（切り出し・ラウドネス調整・ループのクロスフェード）だけを掛けて
+ * 可逆で格納する。ステレオ・48kHz も素材のまま（モノラル化・リサンプルは劣化なので行わない）。
+ */
+const FILES = import.meta.glob('../assets/ambient/*.flac', {
   query: '?url',
   import: 'default',
   eager: true,
 }) as Record<string, string>
 
-const urlOf = (id: string): string | undefined => FILES[`../assets/ambient/${id}.ogg`]
+const urlOf = (id: string): string | undefined => FILES[`../assets/ambient/${id}.flac`]
 
 /** 音源ファイルの有無に関わらない宣言。実体が無いものは `AMBIENT_SOUNDS` から落ちる */
 interface CatalogEntry {
@@ -32,44 +37,47 @@ interface CatalogEntry {
 }
 
 /**
- * カタログ宣言。`credit` は表示義務のためではなく**ライセンス根拠を後から辿るため**に持つ
- * （出所と加工の記録は `_ambient_work/出所と帰属.md`）。
- * すべて 48kHz モノラル・約 -23 LUFS・末尾クロスフェードでループ化済み。
+ * カタログ宣言。すべて **VSQ plus+** の素材（利用規約の確認結果は
+ * `docs/環境音_音源調達リスト.md` §0.2）。`credit` は表示義務のためではなく
+ * **ライセンス根拠を後から辿るため**に持つ。
+ * 加工＝切り出し → -23 LUFS 正規化（一定ゲイン）→ 末尾クロスフェードでループ化。
+ * ステレオ・48kHz のまま可逆（FLAC）で格納している。
+ *
+ * ⚠ 波が7本あるが、**ラベルは測定（低域/高域のバランス）で機械的に付けた暫定名**。
+ * 実際に聴いて違えば張り替えること。
  */
 const CATALOG: CatalogEntry[] = [
   // ── 天候 ───────────────────────────────────────────────
   { id: 'rain-soft', label: '雨（弱）', category: '天候', credit: 'VSQ plus+ (VSQSE_0354_rain_03)' },
+  { id: 'rain-mid', label: '雨', category: '天候', credit: 'VSQ plus+ (VSQSE_0992_rain_08)' },
   { id: 'rain-heavy', label: '雨（強）', category: '天候', credit: 'VSQ plus+ (VSQSE_0651_rain_05)' },
-  { id: 'blizzard', label: '吹雪', category: '天候', credit: '効果音ラボ（吹雪）' },
+  { id: 'thunder', label: '雷', category: '天候', credit: 'VSQ plus+ (VSQSE_0988_thunder_02)' },
   // ── 風 ─────────────────────────────────────────────────
   { id: 'wind-plain', label: '風（草原）', category: '風', credit: 'VSQ plus+ (VSQSE_0611_wind_02)' },
   { id: 'wind-gust', label: '風（吹きすさぶ）', category: '風', credit: 'VSQ plus+ (VSQSE_0613_wind_04)' },
   { id: 'wind-rumble', label: '風（低くうなる）', category: '風', credit: 'VSQ plus+ (VSQSE_0612_wind_03)' },
-  { id: 'wind-blow-1', label: '風が吹く（1）', category: '風', credit: '効果音ラボ（風が吹く1）' },
-  { id: 'wind-blow-2', label: '風が吹く（2）', category: '風', credit: '効果音ラボ（風が吹く2）' },
-  { id: 'leaves-rustle-1', label: '風に揺れる草木（1）', category: '風', credit: '効果音ラボ（風に揺れる草木1）' },
-  { id: 'leaves-rustle-2', label: '風に揺れる草木（2）', category: '風', credit: '効果音ラボ（風に揺れる草木2）' },
   // ── 水辺 ───────────────────────────────────────────────
-  { id: 'waves-shore', label: '波（浜辺）', category: '水辺', credit: '効果音ラボ（海岸3）' },
-  { id: 'waves-calm', label: '波（穏やか）', category: '水辺', credit: '効果音ラボ（海岸4）' },
-  { id: 'pond-mountain', label: '山奥の池', category: '水辺', credit: '効果音ラボ（山奥の池）' },
-  { id: 'cave-drips', label: '水のしたたる洞窟', category: '水辺', credit: '効果音ラボ（水のしたたる洞窟）' },
-  // ── 自然・季節 ─────────────────────────────────────────
-  { id: 'spring-mountain', label: '春の山', category: '自然', credit: '効果音ラボ（春の山）' },
-  { id: 'summer-mountain', label: '夏の山', category: '自然', credit: '効果音ラボ（夏の山2）' },
-  { id: 'summer-countryside', label: '夏の田舎道', category: '自然', credit: '効果音ラボ（夏の田舎道）' },
-  // ── 生き物 ─────────────────────────────────────────────
-  { id: 'cicada-summer', label: '蝉（ミンミンゼミ）', category: '生き物', credit: '効果音ラボ（ミンミンゼミが鳴く雑木林）' },
-  { id: 'crow-evening', label: 'カラスの鳴く夕方', category: '生き物', credit: '効果音ラボ（カラスが鳴く夕方）' },
+  { id: 'waves-shore', label: '波（浜辺）', category: '水辺', credit: 'VSQ plus+ (VSQSE_0588_wave_02)' },
+  { id: 'waves-calm', label: '波（穏やか）', category: '水辺', credit: 'VSQ plus+ (VSQSE_0648_wave_04)' },
+  { id: 'waves-close', label: '波（間近）', category: '水辺', credit: 'VSQ plus+ (VSQSE_0866_wave_14)' },
+  { id: 'waves-ripple', label: 'さざ波', category: '水辺', credit: 'VSQ plus+ (VSQSE_0868_wave_16)' },
+  { id: 'waves-steady', label: '波（絶え間なく）', category: '水辺', credit: 'VSQ plus+ (VSQSE_0872_wave_20)' },
+  { id: 'waves-fine', label: '波（細かい）', category: '水辺', credit: 'VSQ plus+ (VSQSE_0981_wave_26)' },
+  { id: 'waves-heavy', label: '大波', category: '水辺', credit: 'VSQ plus+ (VSQSE_1189_wave_35)' },
+  { id: 'river', label: '川', category: '水辺', credit: 'VSQ plus+ (VSQSE_0966_river_18)' },
   // ── 火・屋内 ───────────────────────────────────────────
-  { id: 'campfire', label: '焚き火', category: '火・屋内', credit: '効果音ラボ（たき火）' },
-  { id: 'furin-house', label: '風鈴の鳴る家', category: '火・屋内', credit: '効果音ラボ（風鈴が鳴る家1）' },
-  { id: 'furin-room', label: '風鈴の鳴る部屋', category: '火・屋内', credit: '効果音ラボ（風鈴のなる部屋）' },
-  { id: 'bathhouse', label: '大浴場', category: '火・屋内', credit: '効果音ラボ（大浴場）' },
-  // ── 街・人 ─────────────────────────────────────────────
-  { id: 'fireworks', label: '花火大会', category: '街・人', credit: '効果音ラボ（花火大会）' },
-  // ── 空間 ───────────────────────────────────────────────
-  { id: 'magic-room', label: '魔力に満ちた部屋', category: '空間', credit: '効果音ラボ（魔力に満ちた部屋）' },
+  { id: 'campfire', label: '焚き火', category: '火・屋内', credit: 'VSQ plus+ (VSQSE_0615_fire_02)' },
+  { id: 'room-furin', label: '室内（風鈴）', category: '火・屋内', credit: 'VSQ plus+ (VSQSE_1010_room_ambient_05)' },
+  { id: 'room-crow', label: '室内（カラスの声）', category: '火・屋内', credit: 'VSQ plus+ (VSQSE_1008_room_ambient_04)' },
+  // ── 生き物 ─────────────────────────────────────────────
+  { id: 'higurashi', label: 'ヒグラシ', category: '生き物', credit: 'VSQ plus+ (VSQSE_0821_rice_field_06)' },
+  { id: 'insects-morning', label: '朝の虫の声', category: '生き物', credit: 'VSQ plus+ (VSQSE_0824_morning_countryside_01)' },
+  { id: 'uguisu', label: 'ウグイス', category: '生き物', credit: 'VSQ plus+ (VSQSE_0848_Japanese_nightingale_02)' },
+  { id: 'uguisu-2', label: 'ウグイス（2）', category: '生き物', credit: 'VSQ plus+ (VSQSE_1187_Japanese_nightingale_04)' },
+  { id: 'city-birds', label: '街と鳥の声', category: '生き物', credit: 'VSQ plus+ (VSQSE_0586_city_bird)' },
+  // ── 自然 ───────────────────────────────────────────────
+  { id: 'rice-field', label: '田んぼ', category: '自然', credit: 'VSQ plus+ (VSQSE_0920_rice_field_11)' },
+  { id: 'pastoral', label: '田園', category: '自然', credit: 'VSQ plus+ (VSQSE_1078_pastoral_landscape_03)' },
 ]
 
 /** 実体（同梱ファイル）が解決できた音だけのカタログ。UI とエンジンはこれだけを見る */

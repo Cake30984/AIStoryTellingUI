@@ -456,6 +456,11 @@ export interface AmbientPin {
   lineIndex: number
   /** 到達半径＝チャット表示領域の高さの倍数（省略時 AMBIENT_DEFAULT_RADIUS） */
   radius?: number
+  /**
+   * このピンの音量上限（0〜1・省略時 1）。ピーク（＝ピン位置）に来た時にどこまで出すか。
+   * 素材ごとの相性（同じ -23 LUFS でも蝉は主張が強く、風は埋もれる）を1本ずつ抑えるための調整子。
+   */
+  maxGain?: number
   createdAt: number
 }
 

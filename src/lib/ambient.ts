@@ -97,7 +97,8 @@ export function mergeTargets(
   const bySound = new Map<string, number>()
   for (const { pin, y } of positions) {
     const radiusPx = (pin.radius ?? AMBIENT_DEFAULT_RADIUS) * viewportHeight
-    const g = ambientGain(y - centerY, radiusPx)
+    // 距離カーブに、そのピンの音量上限を掛ける（素材ごとの主張の強さを1本ずつ抑えるため）
+    const g = ambientGain(y - centerY, radiusPx) * Math.min(1, Math.max(0, pin.maxGain ?? 1))
     if (g <= 0) continue
     bySound.set(pin.soundId, Math.max(bySound.get(pin.soundId) ?? 0, g))
   }

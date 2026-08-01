@@ -11,6 +11,8 @@
   max-width: var(--content-width);
   margin: 0 auto;
   padding: 0 20px;
+  /* 環境音のスピーカー（.ambient-layer）を本文カラム基準で絶対配置するため */
+  position: relative;
 }
 
 .msg {
@@ -503,44 +505,165 @@
   background: color-mix(in srgb, var(--bg-elev2) 72%, transparent);
 }
 
-/* ---------- 環境音ピンのガターマーカー（AM1） ---------- */
-/* 本文フローに幅0・高さ0の span を差し込み、それ自体を「Yの測定点」と「表示位置」の両方に使う。
-   絶対配置の点を左余白へ出すので、スクロールしても JS で位置を計算する必要がない。 */
-.ambient-mark {
-  position: relative;
+/* ---------- 環境音ピンのマーカー（AM1 / AM2で刷新） ---------- */
+/* 本文フローには幅0・高さ0の「アンカー」だけを差し込む（＝音量計算のY測定点。組版に影響しない）。
+   見えるスピーカーは .ambient-layer の中に絶対配置し、横位置は本文カラムの右端、
+   縦位置はアンカーの実測 offsetTop から JS で入れる。
+   横をカラム基準・縦を行基準にしたいが、CSS では containing block を混ぜられないため。 */
+.ambient-anchor {
   display: inline-block;
   width: 0;
   height: 0;
   vertical-align: baseline;
 }
-.ambient-mark::before {
-  content: '';
+
+.ambient-layer {
   position: absolute;
-  left: -16px;
-  top: 0.5em;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent);
-  opacity: 0.5;
-  transition: opacity 0.15s;
+  inset: 0;
+  pointer-events: none; /* 本文の選択・クリックを妨げない */
 }
-.ambient-mark:hover::before {
+.ambient-pin-wrap {
+  position: absolute;
+  right: -2px;
+  pointer-events: auto;
+}
+.ambient-pin {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--bg-elev);
+  color: var(--text-faint);
+  cursor: grab;
+  opacity: 0.65;
+  transition: opacity 0.15s, color 0.15s, border-color 0.15s;
+}
+.ambient-pin:hover {
   opacity: 1;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.ambient-pin.dragging {
+  cursor: grabbing;
+  opacity: 1;
+  color: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+/* ドラッグ中に落ちる先の行を示す横線 */
+.ambient-drop-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--accent);
+  opacity: 0.7;
+  pointer-events: none;
 }
 
-/* ---------- 環境音ピンの追加モーダル（AM1） ---------- */
+/* ピン設定のポップオーバー中身 */
+.ambient-menu {
+  min-width: 210px;
+  padding: 4px 2px;
+}
+.ambient-menu-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  padding: 2px 8px 8px;
+}
+.ambient-menu-row {
+  padding: 4px 8px 8px;
+}
+.ambient-menu-row > .rs-label {
+  display: block;
+  font-size: 11.5px;
+  color: var(--text-faint);
+  margin-bottom: 4px;
+}
+.ambient-menu-row input[type='range'] {
+  width: 100%;
+}
+.ambient-hint {
+  font-size: 11.5px;
+  color: var(--text-faint);
+  padding: 0 8px 6px;
+}
+
+/* ---------- 環境音ピンの追加モーダル（AM1 / AM2でレイアウト修正） ---------- */
+/* 2カラム（左＝置く場所、右＝音の一覧）。それぞれ独立にスクロールし、
+   モーダル全体が縦に伸び続けないようにする（1カラムで全部積むと操作しづらかった） */
+.ap-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+  gap: 18px;
+  align-items: start;
+}
+@media (max-width: 760px) {
+  .ap-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.ap-col {
+  min-width: 0;
+}
 .ap-section {
   font-size: 12px;
   color: var(--text-faint);
   margin: 14px 0 6px;
 }
-.ap-section:first-child {
+.ap-col > .ap-section:first-child {
   margin-top: 0;
 }
+.ap-cat {
+  font-size: 11px;
+  color: var(--text-faint);
+  margin: 10px 0 4px;
+  position: sticky;
+  top: 0;
+  background: var(--bg-elev);
+  padding: 2px 0;
+  z-index: 1;
+}
+.ap-cat:first-child {
+  margin-top: 0;
+}
+.ap-scroll {
+  max-height: 300px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+/* 選んだ段落のプレビュー＝「どこに入るか」を置く前に見せる */
+.ap-preview-box {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--text-dim);
+  line-height: 1.7;
+  max-height: 96px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+}
+.ap-preview-box .ap-here {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+  margin-right: 6px;
+  vertical-align: 1px;
+}
 .ap-lines {
-  max-height: 190px;
+  max-height: 220px;
   overflow-y: auto;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -581,8 +704,8 @@
 }
 .ap-sounds {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 6px;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 5px;
 }
 .ap-sound {
   display: flex;
@@ -623,6 +746,12 @@
 .ap-radius {
   display: flex;
   gap: 6px;
+}
+/* 半径の3択に選択状態が無く、押しても何も起きないように見えていたので追加 */
+.ap-radius .scene-btn.on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--text);
 }
 .ap-existing {
   display: flex;
