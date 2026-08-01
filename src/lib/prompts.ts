@@ -508,13 +508,3 @@ export function avatarContextUser(args: { name: string; appearance?: string; ima
   if (args.imagePrompt) parts.push(`【画像生成タグ】${args.imagePrompt}`)
   return parts.join('\n')
 }
-
-/** シーン要約（引き継ぎメモ）生成用の system プロンプト */
-export const SUMMARY_SYSTEM =
-  `あなたは物語の記録係です。次のシーンの会話を、後で物語を再開するための「引き継ぎメモ」として要約してください。\n` +
-  `次の観点を簡潔な日本語の箇条書きでまとめてください（冗長な描写は省く）：\n` +
-  `- 起きた重要な出来事\n` +
-  `- 人物の関係・心情の変化\n` +
-  `- 交わした約束や未解決の事柄\n` +
-  `- シーン終了時点の状況（場所・時間・誰がどこにいるか）\n` +
-  `見出しや前置きは不要です。箇条書きのみを出力してください。`
