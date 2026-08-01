@@ -1,11 +1,9 @@
-import { EMOTIONS, type EmotionId } from '../types'
-
 /** 構造化本文の1行。dialogue 以外はすべて narration（graceful degradation の要） */
 export type StructuredLine =
   | {
       kind: 'narration'
       text: string
-      /** 行頭 @地の文(感情) 等のラベルを剥がして地の文に落とした行か（レンダラ分岐・ラベル非表示用） */
+      /** 行頭 @地の文 等のラベルを剥がして地の文に落とした行か（レンダラ分岐・ラベル非表示用） */
       fromTag?: boolean
     }
   | {
@@ -14,8 +12,6 @@ export type StructuredLine =
       name: string
       /** 参加キャラに解決できた場合のみ */
       characterId?: string
-      /** 6値に解決できた場合のみ */
-      emotion?: EmotionId
       /** セリフ本文（通常「」込み） */
       text: string
       /** 元の行全文（編集・フォールバック表示用） */
@@ -27,7 +23,7 @@ export interface ParseCharacter {
   name: string
 }
 
-/** キャラ名解決: 完全一致 → 前方一致（双方向 startsWith）。resolveEmotionUpdates と同一規則 */
+/** キャラ名解決: 完全一致 → 前方一致（双方向 startsWith） */
 export function matchCharacterByName(name: string, characters: ParseCharacter[]): string | undefined {
   const hit =
     characters.find((c) => c.name === name) ??
@@ -37,31 +33,23 @@ export function matchCharacterByName(name: string, characters: ParseCharacter[])
 
 /**
  * 話者名として書かれても「地の文（ナレーション）」として扱う予約語。
- * モデルが地の文行にまで @地の文(感情)「…」 とラベルを付けてしまうケースの救済（ラベルを描画しない）。
+ * モデルが地の文行にまで @地の文「…」 とラベルを付けてしまうケースの救済（ラベルを描画しない）。
  * ASCII 名の大小文字ゆれを吸収するため小文字で保持し、照合時も toLowerCase する。
  */
 export const NARRATION_NAMES = new Set(['地の文', '地文', 'ナレーション', 'ナレーター', 'narration', 'narrator'])
-
-/** 感情トークンを EmotionId に解決（id の大小文字ゆれ・日本語ラベルも受理）。不明は undefined */
-export function resolveEmotionToken(token: string): EmotionId | undefined {
-  const t = token.trim().toLowerCase()
-  const byId = EMOTIONS.find((e) => e.id === t)
-  if (byId) return byId.id
-  const byLabel = EMOTIONS.find((e) => e.label === token.trim())
-  return byLabel?.id
-}
 
 /** 1行をパースする。@ 行でなければ narration */
 export function parseLine(line: string, characters: ParseCharacter[]): StructuredLine {
   if (!line.startsWith('@')) return { kind: 'narration', text: line }
   const body = line.slice(1)
   // 名前 = 最初の ( / （ / 「 まで。どれも無い行・名前が空/長すぎる行は narration に落とす（D-1 の原則）
-  const m = body.match(/^([^(（「]{1,24})([(（]([^)）]{0,12})[)）])?/)
+  // 名前の直後の括弧は読み捨てる: 感情タグ（@美咲(joy)）を書かせるのは立ち絵と一緒に廃止したが、
+  // 旧メッセージには残っており、履歴の few-shot でモデルが真似ることもあるため受理だけは続ける。
+  const m = body.match(/^([^(（「]{1,24})(?:[(（][^)）]{0,12}[)）])?/)
   const name = m?.[1]?.trim() ?? ''
   if (!name) return { kind: 'narration', text: line }
-  const emotionToken = m?.[3]
   const rest = body.slice((m?.[0] ?? '').length).trim()
-  // 「地の文」等が話者名として書かれた行は地の文扱い。@地の文(感情) ラベルを描画せず本文（rest）だけ残す
+  // 「地の文」等が話者名として書かれた行は地の文扱い。@地の文 ラベルを描画せず本文（rest）だけ残す
   if (NARRATION_NAMES.has(name.toLowerCase())) return { kind: 'narration', text: rest, fromTag: true }
   // セリフ本文が空（@名前 だけの行）は情報が無いので narration 扱い
   if (!rest) return { kind: 'narration', text: line }
@@ -69,7 +57,6 @@ export function parseLine(line: string, characters: ParseCharacter[]): Structure
     kind: 'dialogue',
     name,
     characterId: matchCharacterByName(name, characters),
-    emotion: emotionToken ? resolveEmotionToken(emotionToken) : undefined,
     text: rest,
     raw: line,
   }
@@ -93,7 +80,7 @@ export function hasStructuredLines(content: string, characters: ParseCharacter[]
 
 /**
  * マークアップを自然な日本語表記に落とす（裏方 LLM の文脈・チェックポイントラベル用。ST3 で使用）。
- * @美咲(joy)「やった」 → 美咲「やった」。@地の文(感情)「…」 → 「…」（ラベルを剥がした本文）。
+ * @美咲「やった」 → 美咲「やった」。@地の文「…」 → 「…」（ラベルを剥がした本文）。
  * 通常の地の文（@ なし）は parsed.text === 元の行なので不変。
  */
 export function plainTextOf(content: string): string {

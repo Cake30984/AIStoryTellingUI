@@ -400,7 +400,7 @@ export default function CassetteEditor({ cassette, seedSession, onClose }: Props
                     onChange={(e) => patchSession({ structuredOutput: e.target.checked })}
                     style={{ width: 'auto', marginRight: 8 }}
                   />
-                  構造化出力（@名前(感情)「セリフ」の行形式で書かせる）
+                  構造化出力（@名前「セリフ」の行形式で書かせる）
                 </label>
               </div>
               <div className="field">

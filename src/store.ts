@@ -1052,7 +1052,6 @@ function extractImageRecords(session: Session, seen: Set<string>): SessionImageR
       out.push({
         id: uid(),
         imageId: ill.imageId,
-        kind: 'illustration',
         prompt: ill.prompt,
         negative: ill.negative,
         sceneId: sc.id,
@@ -4253,7 +4252,6 @@ export const useStore = create<AppState>()(
             appendImageRecord(target.sessionId, {
               id: uid(),
               imageId,
-              kind: 'illustration',
               prompt: job.prompt,
               negative: job.negative,
               sceneId: target.sceneId,

@@ -7,7 +7,7 @@ import type { Scene, SceneIllustration, Session, SessionImageRecord } from '../t
 import ZoomOverlay from './ZoomOverlay'
 import { Icon } from './icons'
 
-/** サムネイル左上の小バッジ（配置中・旧データの背景表示に共用） */
+/** サムネイル左上の小バッジ（「配置中」表示） */
 const THUMB_BADGE_STYLE: CSSProperties = {
   position: 'absolute',
   top: 4,
@@ -164,12 +164,9 @@ function RecordThumb({
   const [zoom, setZoom] = useState(false)
   if (!url) return null
   const heading = [record.timeLabel, record.sceneTitle].filter(Boolean).join('｜')
-  const badge = [record.kind === 'background' ? '背景' : null, placed ? '配置中' : null]
-    .filter(Boolean)
-    .join('・')
   return (
     <div className="job-thumb" style={{ position: 'relative' }}>
-      {badge && <span style={THUMB_BADGE_STYLE}>{badge}</span>}
+      {placed && <span style={THUMB_BADGE_STYLE}>配置中</span>}
       <img src={url} alt={record.prompt || heading || '生成画像'} onClick={() => setZoom(true)} />
       <div className="illustration-actions" style={{ position: 'static', opacity: 1 }}>
         {onGoToText && (
@@ -309,9 +306,8 @@ export function GalleryBody({
     return (
       <div className="job-thumbs">
         {sorted.map((r) => {
-          // 記録元のシーンが現存する挿絵の時のみ再生成を出す
-          // （削除済みシーンには投入先が無い。旧データの背景は生成手段そのものが無い）
-          const canRegenerate = r.kind === 'illustration' && !!r.sceneId && sceneIds.has(r.sceneId)
+          // 記録元のシーンが現存する時のみ再生成を出す（削除済みシーンには投入先が無い）
+          const canRegenerate = !!r.sceneId && sceneIds.has(r.sceneId)
           const jumpTo = jumpTargetFor(r.messageId, r.sceneId)
           return (
             <RecordThumb

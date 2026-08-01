@@ -2,20 +2,6 @@ export type Role = 'system' | 'user' | 'assistant'
 
 export type SessionMode = 'roleplay' | 'story'
 
-/**
- * 感情の固定セット。構造化出力の `@名前(感情)「セリフ」` で受理する感情トークンの語彙。
- * id は英語（プロンプトのタグと対応）、label は UI 表示用。
- */
-export const EMOTIONS = [
-  { id: 'neutral', label: 'ふつう', tags: 'neutral expression' },
-  { id: 'joy', label: '喜び', tags: 'smile, happy, cheerful expression' },
-  { id: 'anger', label: '怒り', tags: 'angry, frowning, annoyed expression' },
-  { id: 'sadness', label: '悲しみ', tags: 'sad, teary eyes, downcast expression' },
-  { id: 'shy', label: '照れ', tags: 'blushing, embarrassed, shy expression' },
-  { id: 'surprise', label: '驚き', tags: 'surprised, wide eyes, open mouth' },
-] as const
-export type EmotionId = (typeof EMOTIONS)[number]['id']
-
 /** アバター表現（画像参照＋テーマ色）。絵文字は廃止 */
 export interface Avatar {
   /** IndexedDB 画像ストアの id。未設定なら色＋名前イニシャルで表示 */
@@ -407,12 +393,7 @@ export interface SessionImageRecord {
   id: string
   /** imageStore の画像 id（GC はこの参照を使用中扱いにする） */
   imageId: string
-  /**
-   * `'background'` は**背景機能を廃止する前の旧データにのみ存在する**（新規に書かれることはない）。
-   * 過去に採用した画像をアルバムから消さないため、読み取り値として残している。
-   */
-  kind: 'illustration' | 'background'
-  /** 結合前のユーザープロンプト（ImageJob.prompt と同じ規約）。旧・背景の記録など不明な場合は空文字 */
+  /** 結合前のユーザープロンプト（ImageJob.prompt と同じ規約）。旧データなど不明な場合は空文字 */
   prompt: string
   /** 結合前のユーザーネガティブプロンプト（ImageJob.negative と同じ規約。FB7-A追修） */
   negative?: string
@@ -546,7 +527,7 @@ export interface StorySetup {
 
 /**
  * 関係性の prose（言語記述）状態。キャラ→相手（主人公 or 別キャラ）の有向ペアごと。
- * 「判断は言葉」：感情の機微は数値化せず記述で持つ。条件判定には使わない（→ stats/flags が担う）。
+ * 「判断は言葉」：感情の機微は数値化せず記述で持つ。条件判定には使わない（→ stats/counters が担う）。
  * セッション固有。シーン終了レビューが唯一の書き手（追記でなく全文書き直し）。
  */
 export interface Relation {
@@ -655,7 +636,7 @@ export interface Session {
   state: SessionState
   /** 発見・深化した設定の上乗せ（セッション固有・素材は不変） */
   overlay: SessionOverlay
-  /** 構造化出力（本編を @名前(感情)「セリフ」の行形式で書かせる。undefined=OFF。設計は docs/設計_構造化出力.md） */
+  /** 構造化出力（本編を @名前「セリフ」の行形式で書かせる。undefined=OFF。設計は docs/設計_構造化出力.md） */
   structuredOutput?: boolean
   /** アーカイブ済み（セッション一覧から既定で除外。UI-5） */
   archived?: boolean

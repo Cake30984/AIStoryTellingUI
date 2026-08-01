@@ -48,8 +48,6 @@ interface Props {
   target: ImageJobTarget
   /** ジョブ一覧・通知に出すラベル（例: '挿絵: 放課後の屋上'） */
   label: string
-  /** サイズ選択の初期インデックス（SIZE_PRESETS）。用途ごとの既定サイズ切替に使う */
-  defaultSizeIdx?: number
   /** 起案後も必ず維持するタグ（カンマ区切り）。LoRA トリガー・表情タグ等が起案の全文置換で消えるのを防ぐ（V5c） */
   pinTags?: string
   onClose: () => void
@@ -62,7 +60,6 @@ export default function ImageGenModal({
   initialNegative,
   target,
   label,
-  defaultSizeIdx,
   pinTags,
   onClose,
 }: Props) {
@@ -83,9 +80,9 @@ export default function ImageGenModal({
   const [providerId, setProviderId] = useState(
     imageProviders.some((p) => p.id === lastImageProviderId) ? lastImageProviderId! : imageProviders[0]?.id ?? '',
   )
-  const [sizeIdx, setSizeIdx] = useState(defaultSizeIdx ?? 0) // -1 = カスタム
-  const [customW, setCustomW] = useState(SIZE_PRESETS[defaultSizeIdx ?? 0]?.width ?? 1024)
-  const [customH, setCustomH] = useState(SIZE_PRESETS[defaultSizeIdx ?? 0]?.height ?? 1024)
+  const [sizeIdx, setSizeIdx] = useState(0) // -1 = カスタム
+  const [customW, setCustomW] = useState(SIZE_PRESETS[0]?.width ?? 1024)
+  const [customH, setCustomH] = useState(SIZE_PRESETS[0]?.height ?? 1024)
   const [count, setCount] = useState(1)
   const [prompt, setPrompt] = useState(initialPrompt ?? '')
   const [negative, setNegative] = useState(initialNegative ?? '')

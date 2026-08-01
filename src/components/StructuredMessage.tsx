@@ -16,7 +16,7 @@ function renderProseText(text: string) {
   )
 }
 
-/** 未確定行（ストリーミング中の書きかけ）の生テキストを取り出す（D-4。感情等はパースしない） */
+/** 未確定行（ストリーミング中の書きかけ）の生テキストを取り出す（D-4。話者等はパースしない） */
 function rawTextOf(line: StructuredLine): string {
   return line.kind === 'dialogue' ? line.raw : line.text
 }
@@ -82,7 +82,7 @@ export function StructuredNovelBody({
             {'\n'}
           </Fragment>
         ) : (
-          <div className="st-dialogue" key={i} title={line.emotion}>
+          <div className="st-dialogue" key={i}>
             {pinsAt(i)}
             <EntityAvatar
               className="st-speaker"
