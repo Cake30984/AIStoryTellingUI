@@ -15,6 +15,7 @@ import CastingModal from './components/CastingModal'
 import DialogHost from './components/DialogHost'
 import CommandPalette from './components/CommandPalette'
 import { useGlobalShortcuts } from './lib/shortcuts'
+import { ensureAudio, setMasterVolume } from './lib/ambientAudio'
 import { Icon, type IconName } from './components/icons'
 
 // 積層トーストの1件。autoCloseMs があれば一定時間後に自動で onClose を呼ぶ（UI-0）
@@ -126,6 +127,23 @@ export default function App() {
     ui.stageBgOpacity,
     ui.stageSpriteOpacity,
   ])
+
+  // 環境音のマスター音量（AM1）。ピンの音量制御とは独立に、出口のゲインだけを動かす
+  useEffect(() => {
+    setMasterVolume(ui.ambientVolume)
+  }, [ui.ambientVolume])
+
+  // 自動再生ポリシー（AM1）: 最初のユーザー操作まで AudioContext は鳴らせない。
+  // どこでもよいので1回だけ操作を拾って解錠する（以後このリスナは外れる）
+  useEffect(() => {
+    const unlock = () => ensureAudio()
+    window.addEventListener('pointerdown', unlock, { once: true })
+    window.addEventListener('keydown', unlock, { once: true })
+    return () => {
+      window.removeEventListener('pointerdown', unlock)
+      window.removeEventListener('keydown', unlock)
+    }
+  }, [])
 
   // グローバルショートカット（UI-7）: Ctrl+K/1/2/3/G/.。没入モードの Ctrl+. トグルもここに集約（旧 UI-4 実装を移管）
   useGlobalShortcuts(() => setPaletteOpen((v) => !v))

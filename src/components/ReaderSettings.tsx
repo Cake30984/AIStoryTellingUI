@@ -74,6 +74,8 @@ export default function ReaderSettings({ session }: Props) {
       dialogueTint: DEFAULT_UI.dialogueTint,
       stageBgOpacity: DEFAULT_UI.stageBgOpacity,
       stageSpriteOpacity: DEFAULT_UI.stageSpriteOpacity,
+      ambientEnabled: DEFAULT_UI.ambientEnabled,
+      ambientVolume: DEFAULT_UI.ambientVolume,
     })
 
   return (
@@ -143,6 +145,27 @@ export default function ReaderSettings({ session }: Props) {
               step={5}
               unit="%"
               onChange={(v) => setUiPrefs({ stageSpriteOpacity: v / 100 })}
+            />
+
+            <div className="menu-sep" />
+
+            {/* 環境音ピン（AM1）。ピン自体は本文のデータなので、ここで切れるのは鳴らすかどうかだけ */}
+            <label className="chk rs-chk">
+              <input
+                type="checkbox"
+                checked={ui.ambientEnabled}
+                onChange={(e) => setUiPrefs({ ambientEnabled: e.target.checked })}
+              />
+              環境音を鳴らす
+            </label>
+            <RsField
+              label="環境音の音量"
+              value={Math.round(ui.ambientVolume * 100)}
+              min={Math.round(UI_LIMITS.ambientVolume.min * 100)}
+              max={Math.round(UI_LIMITS.ambientVolume.max * 100)}
+              step={5}
+              unit="%"
+              onChange={(v) => setUiPrefs({ ambientVolume: v / 100 })}
             />
 
             <div className="menu-sep" />

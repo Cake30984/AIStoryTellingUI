@@ -502,3 +502,141 @@
 .main.stage-on .composer-tool-btn {
   background: color-mix(in srgb, var(--bg-elev2) 72%, transparent);
 }
+
+/* ---------- 環境音ピンのガターマーカー（AM1） ---------- */
+/* 本文フローに幅0・高さ0の span を差し込み、それ自体を「Yの測定点」と「表示位置」の両方に使う。
+   絶対配置の点を左余白へ出すので、スクロールしても JS で位置を計算する必要がない。 */
+.ambient-mark {
+  position: relative;
+  display: inline-block;
+  width: 0;
+  height: 0;
+  vertical-align: baseline;
+}
+.ambient-mark::before {
+  content: '';
+  position: absolute;
+  left: -16px;
+  top: 0.5em;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.5;
+  transition: opacity 0.15s;
+}
+.ambient-mark:hover::before {
+  opacity: 1;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+/* ---------- 環境音ピンの追加モーダル（AM1） ---------- */
+.ap-section {
+  font-size: 12px;
+  color: var(--text-faint);
+  margin: 14px 0 6px;
+}
+.ap-section:first-child {
+  margin-top: 0;
+}
+.ap-lines {
+  max-height: 190px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.ap-line {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-dim);
+  padding: 7px 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.ap-line:last-child {
+  border-bottom: 0;
+}
+.ap-line:hover {
+  background: var(--bg-elev);
+}
+.ap-line.on {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--text);
+}
+.ap-line-no {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+}
+.ap-line-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ap-sounds {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 6px;
+}
+.ap-sound {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  padding: 7px 9px;
+  font-size: 12.5px;
+  cursor: pointer;
+  text-align: left;
+}
+.ap-sound:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.ap-sound.on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--text);
+}
+.ap-sound-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ap-preview {
+  flex-shrink: 0;
+  color: var(--text-faint);
+  display: inline-flex;
+}
+.ap-sound.playing .ap-preview {
+  color: var(--accent);
+}
+.ap-radius {
+  display: flex;
+  gap: 6px;
+}
+.ap-existing {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text-dim);
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+}
+.ap-existing-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -419,6 +419,46 @@ export interface SessionImageRecord {
   createdAt: number
 }
 
+/**
+ * 内蔵環境音カタログの1件（AM1）。**アプリの一部であって世界観データではない**ので、
+ * blob ストア・GC・カセット同梱・エクスポートのいずれとも無関係。実体は同梱の静的アセット。
+ */
+export interface AmbientSoundDef {
+  /** 安定・可読キー（例 'rain-soft'）。`uid()` にしない＝カタログは作り込み資産 */
+  id: string
+  label: string
+  /** カタログの並び・グループ表示に使う分類名 */
+  category: string
+  /** Vite が解決した同梱アセットの URL */
+  url: string
+  /** 出所（ライセンス根拠を後から辿るための記録。表示義務のためではない） */
+  credit: string
+}
+
+/**
+ * 本文フロー上の一点に留めた環境音（AM1・実験機能）。
+ * 挿絵（`SceneIllustration`）と違い「ブロックとして描かれる実体」を持たないメタデータで、
+ * スクロール中心との距離で音量が決まる。Scene の中に置くことでチェックポイント（分岐）に
+ * そのまま乗る＝過去へ戻ればその地点のピンが鳴る。
+ * 詳細は `docs/設計_環境音ピン.md`。
+ */
+export interface AmbientPin {
+  id: string
+  /** 内蔵カタログ（`ambientSounds.ts`）の安定キー。カタログに無ければ黙ってスキップする */
+  soundId: string
+  /** アンカー先メッセージ。消失時はシーン末尾のメッセージへ実行時フォールバック（永続データは書き換えない） */
+  messageId: string
+  /**
+   * アンカー先メッセージ本文の `content.split('\n')` 上の行番号。
+   * ⚠ レンダリング上の折り返し行ではない（折り返しは幅・フォントで変わり永続化できない）。
+   * 本文が短くなって範囲外になったら表示時に最終行へクランプする。
+   */
+  lineIndex: number
+  /** 到達半径＝チャット表示領域の高さの倍数（省略時 AMBIENT_DEFAULT_RADIUS） */
+  radius?: number
+  createdAt: number
+}
+
 /** 物語の一区切り（その場の登場キャラ・状況・終了時の要約を持つ） */
 export interface Scene {
   id: string
@@ -433,6 +473,8 @@ export interface Scene {
   timeLabel?: string
   /** 挿絵（手動生成のみ。任意＝旧データには無い） */
   illustrations?: SceneIllustration[]
+  /** 環境音ピン（AM1。任意＝旧データには無い。読む側は `ambientPins ?? []`） */
+  ambientPins?: AmbientPin[]
   /** シーン背景画像（V4。手動生成・シーンごとに1枚） */
   backgroundImageId?: string
   /** 終了済みなら時刻 */
@@ -849,6 +891,10 @@ export interface UiPrefs {
   stageBgOpacity: number
   /** ステージ立ち絵の濃さ（0〜0.9。--stage-sprite-opacity と連動） */
   stageSpriteOpacity: number
+  /** 環境音ピンを鳴らすか（AM1。OFF で全ピンを停止＝ピン自体は消えない） */
+  ambientEnabled: boolean
+  /** 環境音のマスター音量（0〜1。UI では % 表示。AM1） */
+  ambientVolume: number
   /** 没入モード（サイドバー・ドックを隠し topbar をホバー表示に） */
   immersive: boolean
 }
@@ -862,6 +908,8 @@ export const DEFAULT_UI: UiPrefs = {
   dialogueTint: true,
   stageBgOpacity: 0.25,
   stageSpriteOpacity: 0.5,
+  ambientEnabled: true,
+  ambientVolume: 0.6,
   immersive: false,
 }
 
@@ -872,6 +920,7 @@ export const UI_LIMITS = {
   contentWidth: { min: 560, max: 1200, step: 20 },
   stageBgOpacity: { min: 0, max: 0.6, step: 0.05 },
   stageSpriteOpacity: { min: 0, max: 0.9, step: 0.05 },
+  ambientVolume: { min: 0, max: 1, step: 0.05 },
   dockWidth: { min: 300, max: 560 },
 } as const
 
@@ -912,6 +961,8 @@ export function normalizeUiPrefs(raw: unknown): UiPrefs {
     dialogueTint: r.dialogueTint !== false,
     stageBgOpacity: clamp(r.stageBgOpacity, 0, 0.6, 0.25),
     stageSpriteOpacity: clamp(r.stageSpriteOpacity, 0, 0.9, 0.5),
+    ambientEnabled: r.ambientEnabled !== false,
+    ambientVolume: clamp(r.ambientVolume, 0, 1, 0.6),
     immersive: r.immersive === true,
   }
 }

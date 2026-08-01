@@ -53,6 +53,7 @@ export type IconName =
   | 'gamepad'
   | 'alert-triangle'
   | 'panel-right'
+  | 'volume-2'
 
 const PATHS: Record<IconName, ReactNode> = {
   'more-horizontal': (
@@ -353,6 +354,13 @@ const PATHS: Record<IconName, ReactNode> = {
     <>
       <rect x="3" y="4" width="18" height="16" rx="2" />
       <line x1="15" y1="4" x2="15" y2="20" />
+    </>
+  ),
+  'volume-2': (
+    <>
+      <path d="M11 5 6 9H2v6h4l5 4z" />
+      <path d="M15.5 8.5a5 5 0 0 1 0 7" />
+      <path d="M18.5 5.5a9 9 0 0 1 0 13" />
     </>
   ),
 }

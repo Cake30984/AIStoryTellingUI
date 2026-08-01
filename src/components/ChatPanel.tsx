@@ -14,9 +14,13 @@ import { getImage, useImageUrl } from '../lib/imageStore'
 import { downloadBlob } from '../lib/io'
 import { hasStructuredLines, plainTextOf } from '../lib/structured'
 import { appConfirm } from '../lib/dialogs'
+import { PIN_MARK_ATTR, pinsByAnchor, useAmbientScape } from '../lib/ambient'
+import { ambientSoundLabel } from '../lib/ambientSounds'
+import { ensureAudio } from '../lib/ambientAudio'
 import ImageGenModal from './ImageGenModal'
+import AmbientPinModal from './AmbientPinModal'
 import ModalShell from './ModalShell'
-import type { DockTab, Message, Scene, SceneIllustration, Session } from '../types'
+import type { AmbientPin, DockTab, Message, Scene, SceneIllustration, Session } from '../types'
 import SessionEditor from './SessionEditor'
 import SceneEditor from './SceneEditor'
 import StoryLogModal from './StoryLogModal'
@@ -36,6 +40,26 @@ import ActivityIndicator from './ActivityIndicator'
 
 interface Props {
   session: Session
+}
+
+/**
+ * 環境音ピンの不可視マーカー（AM1）。幅0・高さ0の span を本文フローに差し込み、
+ * これ自体を「音量計算のY測定点」と「左ガターの点の表示位置」の両方に使う。
+ * CSS が絶対配置で点を左余白へ出すので、スクロール時に JS で位置を計算する必要がない。
+ */
+export function PinMark({ pins }: { pins: AmbientPin[] }) {
+  return (
+    <>
+      {pins.map((p) => (
+        <span
+          key={p.id}
+          className="ambient-mark"
+          {...{ [PIN_MARK_ATTR]: p.id }}
+          title={`環境音: ${ambientSoundLabel(p.soundId)}`}
+        />
+      ))}
+    </>
+  )
 }
 
 /** 挿絵1枚の表示（保存・削除・クリック拡大・再生成） */
@@ -162,6 +186,9 @@ export default function ChatPanel({ session }: Props) {
   const [editText, setEditText] = useState('')
   const taRef = useRef<HTMLTextAreaElement>(null)
   const anchorRef = useRef<HTMLDivElement>(null)
+  // 環境音ピンの音量は「この要素の中央」とマーカーの距離で決まる（AM1）
+  const chatRef = useRef<HTMLDivElement>(null)
+  const [ambientPinFor, setAmbientPinFor] = useState<{ sceneId: string; message: Message } | null>(null)
   // 自動スクロールは「自分の操作直後の1回」だけ（生成中は追従しない。FB3-A3）
   const lastScrolledRef = useRef<string | null>(null)
   // パネル開閉（FB8-E4 A案: タブ切替はドック側。最後に開いていたタブを覚えて再開する）
@@ -180,6 +207,19 @@ export default function ChatPanel({ session }: Props) {
     : undefined
   const isFinalized = !!session.ending && !!epilogueScene?.endedAt
   const castIds = scene && scene.activeCharacterIds.length > 0 ? scene.activeCharacterIds : session.characterIds
+
+  // ── 環境音ピン（AM1）─────────────────────────────────
+  // 全シーンのピンを1つの索引にまとめ、レンダラが「このメッセージのこの行」で引けるようにする。
+  // 実際に鳴るのは DOM にマーカーが描かれたものだけ（＝畳んだ過去シーンの音は鳴らない）。
+  const ambientPins = useMemo<AmbientPin[]>(
+    () => session.scenes.flatMap((sc) => sc.ambientPins ?? []),
+    [session.scenes],
+  )
+  const pinIndex = useMemo(
+    () => pinsByAnchor(session.scenes, session.messages),
+    [session.scenes, session.messages],
+  )
+  useAmbientScape(chatRef, ambientPins, ui.ambientEnabled)
 
   const participants = useMemo(
     () =>
@@ -472,6 +512,19 @@ export default function ChatPanel({ session }: Props) {
             <Icon name="palette" size={13} /> 挿絵
           </button>
         )}
+        {/* 環境音ピン（AM1）。本文を書き換えないので挿絵と同じく完結後も許可する */}
+        {(m.sceneId ?? session.currentSceneId) && (
+          <button
+            onClick={() => {
+              // 自動再生ポリシー対策: 音を扱う操作の中で AudioContext を作る／resume する
+              ensureAudio()
+              setAmbientPinFor({ sceneId: (m.sceneId ?? session.currentSceneId)!, message: m })
+            }}
+            title="この本文の狙った段落に環境音を置く（スクロールで音量が変わる）"
+          >
+            <Icon name="volume-2" size={13} /> 環境音
+          </button>
+        )}
         {/* 末尾のアシスタント本文にだけ「選択肢を生成」（FB3-A6）。完結分岐では出さない（FB8-B） */}
         {!isFinalized && m.id === lastAssistantId && session.choiceMode !== 'off' && (
           <button
@@ -486,8 +539,27 @@ export default function ChatPanel({ session }: Props) {
     )
   }
 
+  /**
+   * 非構造化の地の文を行単位で描く（環境音ピンのマーカーを狙った行の直前に差し込むため）。
+   * pre-wrap なので行の間に '\n' を戻せば出力文字列は従来と完全に同じ。
+   * ⚠ 現行の `renderProse` は改行を跨いだ `「…」` も1つのセリフとして色付けするため、
+   * 行分割するとその1本だけ色分けが切れる。影響をピン付きメッセージだけに閉じ込めるため、
+   * ピンが無いメッセージは従来どおり分割せずに描く。
+   */
+  const renderProseWithPins = (content: string, byLine: Map<number, AmbientPin[]>) => {
+    if (byLine.size === 0) return renderProse(content)
+    return content.split('\n').map((line, i) => (
+      <Fragment key={i}>
+        <PinMark pins={byLine.get(i) ?? []} />
+        {renderProse(line)}
+        {'\n'}
+      </Fragment>
+    ))
+  }
+
   const renderNovelMessage = (m: Message) => {
     if (editingId === m.id) return <div className="prose-block" data-msg-id={m.id} key={m.id}>{editBox()}</div>
+    const byLine = pinIndex.get(m.id) ?? new Map<number, AmbientPin[]>()
     if (m.role === 'assistant') {
       const structured = hasStructuredLines(m.content, participants)
       return (
@@ -498,10 +570,12 @@ export default function ChatPanel({ session }: Props) {
               participants={participants}
               persona={persona}
               pending={!!m.pending && isStreaming}
+              pinsByLine={byLine}
+              renderPins={(pins) => <PinMark pins={pins} />}
             />
           ) : (
             <>
-              {renderProse(m.content)}
+              {renderProseWithPins(m.content, byLine)}
               {m.pending && isStreaming && <span className="cursor" />}
             </>
           )}
@@ -511,6 +585,7 @@ export default function ChatPanel({ session }: Props) {
     }
     return (
       <div className="prose-action" data-msg-id={m.id} key={m.id}>
+        <PinMark pins={[...byLine.values()].flat()} />
         {m.content}
         {msgActions(m)}
       </div>
@@ -519,9 +594,13 @@ export default function ChatPanel({ session }: Props) {
 
   const renderMessage = (m: Message) => {
     if (novel) return renderNovelMessage(m)
+    // 会話形式（吹き出し）は行とDOMが1対1にならない（StructuredChatBody が行をグループへ畳む）ため、
+    // ピンはメッセージ先頭にまとめて置く＝メッセージ単位の精度に落とす（設計 §1.3）
+    const chatPins = [...(pinIndex.get(m.id)?.values() ?? [])].flat()
     if (m.role === 'assistant' && editingId !== m.id && hasStructuredLines(m.content, participants)) {
       return (
         <div className="st-message" data-msg-id={m.id} key={m.id}>
+          <PinMark pins={chatPins} />
           <StructuredChatBody
             content={m.content}
             participants={participants}
@@ -548,6 +627,7 @@ export default function ChatPanel({ session }: Props) {
           ) : (
             <>
               <div className="content">
+                <PinMark pins={chatPins} />
                 {m.content}
                 {m.pending && isStreaming && <span className="cursor" />}
               </div>
@@ -731,7 +811,7 @@ export default function ChatPanel({ session }: Props) {
           {/* バックドロップは play-col 直下に敷き、コンポーザーの背面にも透けるようにする（V5d・UI-3で.main直下からplay-colへ移設） */}
           {stageOn && <StageBackdrop session={session} scene={scene} participants={participants} />}
           <div className="chat-wrap">
-            <div className="chat">
+            <div className="chat" ref={chatRef}>
               <div className="chat-inner">
                 {session.messages.length === 0 && (
                   <div className="chat-hint">
@@ -1046,6 +1126,19 @@ export default function ChatPanel({ session }: Props) {
       </div>
 
       {showEditor && <SessionEditor session={session} onClose={() => setShowEditor(false)} />}
+      {ambientPinFor &&
+        (() => {
+          const sc = session.scenes.find((s) => s.id === ambientPinFor.sceneId)
+          if (!sc) return null
+          return (
+            <AmbientPinModal
+              sessionId={session.id}
+              scene={sc}
+              message={ambientPinFor.message}
+              onClose={() => setAmbientPinFor(null)}
+            />
+          )
+        })()}
       {showSceneEditor && scene && (
         <SceneEditor session={session} scene={scene} onClose={() => setShowSceneEditor(false)} />
       )}
