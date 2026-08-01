@@ -1267,52 +1267,6 @@
   font-size: 13.5px;
 }
 
-/* ---------- 立ち絵セット（V4） ---------- */
-.sprite-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-.sprite-slot {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  width: 92px;
-}
-.sprite-thumb {
-  width: 92px;
-  height: 128px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-  background: var(--bg-elev2);
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-}
-.sprite-thumb img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-.sprite-empty {
-  font-size: 11px;
-  color: var(--text-faint);
-}
-.sprite-label {
-  font-size: 11px;
-  color: var(--text-faint);
-}
-.sprite-slot-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  width: 100%;
-}
-.sprite-slot-actions .btn {
-  width: 100%;
-}
-
 /* ---------- コマンドパレット（Ctrl+K。UI-7） ---------- */
 .cmdk-overlay {
   position: fixed;

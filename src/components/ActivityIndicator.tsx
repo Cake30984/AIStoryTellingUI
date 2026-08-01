@@ -2,13 +2,12 @@ import { useState } from 'react'
 import { useStore } from '../store'
 import MenuPopover from './MenuPopover'
 
-/** 本編/選択肢/レビュー/画像生成/表情判定の進行状態を一元表示し、中止できるチップ */
+/** 本編/選択肢/レビュー/画像生成の進行状態を一元表示し、中止できるチップ */
 export default function ActivityIndicator() {
   const {
     isStreaming,
     isGeneratingChoices,
     isReviewing,
-    isClassifyingEmotions,
     imageJobs,
     stop,
     stopChoices,
@@ -29,7 +28,6 @@ export default function ActivityIndicator() {
       onStop: () => cancelImageJob(j.id),
     })
   }
-  if (isClassifyingEmotions) items.push({ key: 'emotion', label: '表情を判定中' })
 
   if (items.length === 0) return null
   const main = items[0]

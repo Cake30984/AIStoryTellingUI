@@ -105,19 +105,3 @@ export function plainTextOf(content: string): string {
     })
     .join('\n')
 }
-
-/**
- * 確定行（＝末尾の未完行を除いた行）から立ち絵の感情更新を抽出する（ST2 のストリーミング監視用）。
- * 同一キャラが複数回発言していれば後勝ち。characterId と emotion の両方が解決できた行のみ。
- */
-export function emotionUpdatesOf(
-  completedLines: string[],
-  characters: ParseCharacter[],
-): { characterId: string; emotion: EmotionId }[] {
-  const map = new Map<string, EmotionId>()
-  for (const line of completedLines) {
-    const p = parseLine(line, characters)
-    if (p.kind === 'dialogue' && p.characterId && p.emotion) map.set(p.characterId, p.emotion)
-  }
-  return [...map.entries()].map(([characterId, emotion]) => ({ characterId, emotion }))
-}

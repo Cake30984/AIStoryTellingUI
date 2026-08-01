@@ -117,16 +117,7 @@ export default function App() {
     // 色分けONは tokens.css の既定（--dialogue）に戻す。OFF のときだけ本文色で上書き（A7）
     if (ui.dialogueTint) root.removeProperty('--dialogue')
     else root.setProperty('--dialogue', 'var(--text)')
-    root.setProperty('--stage-bg-opacity', String(ui.stageBgOpacity))
-    root.setProperty('--stage-sprite-opacity', String(ui.stageSpriteOpacity))
-  }, [
-    ui.fontSize,
-    ui.lineHeight,
-    ui.contentWidth,
-    ui.dialogueTint,
-    ui.stageBgOpacity,
-    ui.stageSpriteOpacity,
-  ])
+  }, [ui.fontSize, ui.lineHeight, ui.contentWidth, ui.dialogueTint])
 
   // 環境音のマスター音量（AM1）。ピンの音量制御とは独立に、出口のゲインだけを動かす
   useEffect(() => {

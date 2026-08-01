@@ -8,11 +8,9 @@ interface Props {
   onClose: () => void
   /** 指定シーンへの挿絵の後付け生成（FB6-B。渡されるとシーン行にボタンを出す） */
   onGenIllustration?: (sceneId: string) => void
-  /** 指定シーンの背景の生成・差し替え（FB6-B） */
-  onGenBackground?: (sceneId: string) => void
 }
 
-export default function StoryLogModal({ session, onClose, onGenIllustration, onGenBackground }: Props) {
+export default function StoryLogModal({ session, onClose, onGenIllustration }: Props) {
   const characters = useStore((s) => s.characters)
 
   const recap = session.scenes
@@ -69,15 +67,6 @@ export default function StoryLogModal({ session, onClose, onGenIllustration, onG
                           onClick={() => onGenIllustration(sc.id)}
                         >
                           <Icon name="palette" size={14} />
-                        </button>
-                      )}
-                      {onGenBackground && (
-                        <button
-                          className="icon-btn small"
-                          title={sc.backgroundImageId ? 'このシーンの背景を生成し直す' : 'このシーンの背景を生成'}
-                          onClick={() => onGenBackground(sc.id)}
-                        >
-                          <Icon name="mountain" size={14} />
                         </button>
                       )}
                     </div>

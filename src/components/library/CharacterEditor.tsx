@@ -3,7 +3,6 @@ import { useStore } from '../../store'
 import type { Character } from '../../types'
 import { modelRefLabel } from '../../lib/providers'
 import AvatarField from './AvatarField'
-import SpriteSetField from './SpriteSetField'
 import CsvInput from '../CsvInput'
 import ModelPicker from '../ModelPicker'
 import { exportCharacterCard } from '../../lib/cards'
@@ -17,10 +16,8 @@ interface Props {
 }
 
 export default function CharacterEditor({ character, onClose }: Props) {
-  const { characters, upsertCharacter, deleteCharacter, providers } = useStore()
+  const { upsertCharacter, deleteCharacter, providers } = useStore()
   const [d, setD] = useState<Character>(character)
-  // 未保存の新規キャラ（store にまだ id が無い）は立ち絵生成を無効化する
-  const savedExists = characters.some((c) => c.id === d.id)
   const [showModelPicker, setShowModelPicker] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [dirty, setDirty] = useState(false)
@@ -213,13 +210,6 @@ export default function CharacterEditor({ character, onClose }: Props) {
               onChange={(e) => patch({ imagePrompt: e.target.value || undefined })}
             />
           </div>
-
-          <SpriteSetField
-            characterId={savedExists ? d.id : ''}
-            name={d.name}
-            appearance={d.appearance}
-            imagePrompt={d.imagePrompt}
-          />
 
           <div className="field">
             <label>専用モデル（任意・会話劇の話者確定時のみ有効）</label>

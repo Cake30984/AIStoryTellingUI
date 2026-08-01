@@ -14,7 +14,6 @@ interface Props {
   onEditStatus: () => void
   onEditDiscovery: (scope: DiscoveryScope) => void
   onRegenerateIllustration: (sceneId: string, messageId: string | undefined, prompt: string, negative?: string) => void
-  onRegenerateBackground: (sceneId: string, prompt: string, negative?: string) => void
 }
 
 const TITLES: Record<DockTab, string> = {
@@ -43,7 +42,6 @@ export default function ContextDock({
   onEditStatus,
   onEditDiscovery,
   onRegenerateIllustration,
-  onRegenerateBackground,
 }: Props) {
   const { ui, setUiPrefs } = useStore()
   const tab = ui.dockTab
@@ -112,7 +110,6 @@ export default function ContextDock({
           <GalleryBody
             session={session}
             onRegenerateIllustration={onRegenerateIllustration}
-            onRegenerateBackground={onRegenerateBackground}
           />
         )}
         {tab === 'branch' && <BranchTreeBody session={session} />}

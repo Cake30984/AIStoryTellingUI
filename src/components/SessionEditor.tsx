@@ -632,8 +632,8 @@ export default function SessionEditor({ session, onClose }: Props) {
                   構造化出力
                 </label>
                 <div className="desc">
-                  セリフを @名前(感情)「…」の行形式で書かせ、立ち絵の表情切替・話者表示に使います。
-                  対応が不安定なモデルでは OFF に。OFF でも表示・立ち絵は従来方式で動作します。
+                  セリフを @名前(感情)「…」の行形式で書かせ、話者アイコン付きの表示に使います。
+                  対応が不安定なモデルでは OFF に。OFF でも本文は従来方式で表示されます。
                 </div>
               </div>
             </>

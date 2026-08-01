@@ -14,7 +14,6 @@ import type {
   CounterDef,
   CounterEvent,
   Development,
-  EmotionId,
   EndingDef,
   EndingRecord,
   ExactGroupCandidate,
@@ -48,13 +47,13 @@ import type {
   UiPrefs,
   World,
 } from './types'
-import { DEFAULT_UI, EMOTIONS, normalizeUiPrefs } from './types'
+import { DEFAULT_UI, normalizeUiPrefs } from './types'
 import { fetchModels, streamChat } from './lib/openrouter'
 import { base64ToBlob, blobToBase64, gcImages, getImage, listImageIds, putImage, putImageAs } from './lib/imageStore'
 import { checkpointStore, PERSIST_KEY, stateStorage } from './lib/platform'
 import { gunzipText, gzipText } from './lib/checkpoint'
 import { normalizeImage } from './lib/avatarGen'
-import { emotionUpdatesOf, matchCharacterByName, parseStructured, plainTextOf } from './lib/structured'
+import { parseStructured, plainTextOf } from './lib/structured'
 import { generateImage } from './lib/imageGen'
 import {
   abortJobController,
@@ -78,7 +77,6 @@ import {
   choicesUserNudge,
   CONTINUATION_NUDGE,
   CONTINUE_PROMPT,
-  emotionSystem,
   nextSceneSystem,
   reviewSystem,
   SCENE_START_PROMPT,
@@ -665,27 +663,6 @@ export function applyReviewToState(
 }
 
 /**
- * 表情判定（V4）のモデル出力を検証・解決する純粋関数。
- * キャラ名は完全一致 → 前方一致の順で解決し、解決できない名前・6値以外の emotion は捨てる。
- */
-export function resolveEmotionUpdates(
-  raw: { character?: string; emotion?: string }[],
-  characters: { id: string; name: string }[],
-): { characterId: string; emotion: EmotionId }[] {
-  const validEmotions = new Set(EMOTIONS.map((e) => e.id as string))
-  const out: { characterId: string; emotion: EmotionId }[] = []
-  for (const item of raw) {
-    const name = item.character?.trim()
-    const emotion = item.emotion
-    if (!name || !emotion || !validEmotions.has(emotion)) continue
-    const characterId = matchCharacterByName(name, characters)
-    if (!characterId) continue
-    out.push({ characterId, emotion: emotion as EmotionId })
-  }
-  return out
-}
-
-/**
  * モデルが返した JSON から選択肢を取り出す。
  * 素直な ["a","b"] のほか、`{"choices":[...]}` のラップや
  * `[{"text":"a"}]` のオブジェクト配列にも対応する（モデル差吸収）。
@@ -1058,7 +1035,6 @@ export function sessionImageIds(session: Session): string[] {
   const ids: string[] = []
   for (const sc of session.scenes) {
     for (const ill of sc.illustrations ?? []) ids.push(ill.imageId)
-    if (sc.backgroundImageId) ids.push(sc.backgroundImageId)
   }
   return ids
 }
@@ -1066,28 +1042,10 @@ export function sessionImageIds(session: Session): string[] {
 /**
  * バックフィル用: セッション（ライブ or スナップショット）から画像記録の候補を抽出する（FB6-A）。
  * seen に無い imageId のみ record 化し、seen へ追加する（呼び出し側がスナップショット横断で dedupe）。
- * fallbackCreatedAt は作成時刻を持たない参照（背景）に使う。
  */
-function extractImageRecords(
-  session: Session,
-  seen: Set<string>,
-  fallbackCreatedAt: number,
-): SessionImageRecord[] {
+function extractImageRecords(session: Session, seen: Set<string>): SessionImageRecord[] {
   const out: SessionImageRecord[] = []
   for (const sc of session.scenes) {
-    if (sc.backgroundImageId && !seen.has(sc.backgroundImageId)) {
-      seen.add(sc.backgroundImageId)
-      out.push({
-        id: uid(),
-        imageId: sc.backgroundImageId,
-        kind: 'background',
-        prompt: '',
-        sceneId: sc.id,
-        sceneTitle: sc.title || undefined,
-        timeLabel: sc.timeLabel,
-        createdAt: fallbackCreatedAt,
-      })
-    }
     for (const ill of sc.illustrations ?? []) {
       if (seen.has(ill.imageId)) continue
       seen.add(ill.imageId)
@@ -1110,12 +1068,11 @@ function extractImageRecords(
 
 /**
  * しおり（C3）のサムネイルをチェックポイントのスナップショットから自動選択する。
- * 新しいシーンから遡り、背景 → 挿絵（末尾＝最新）の優先度で最初に見つかった画像を使う。
+ * 新しいシーンから遡り、挿絵（末尾＝最新）で最初に見つかった画像を使う。
  */
 function pickThumbFromSnapshot(session: Session): string | undefined {
   for (let i = session.scenes.length - 1; i >= 0; i--) {
     const sc = session.scenes[i]
-    if (sc.backgroundImageId) return sc.backgroundImageId
     const ills = sc.illustrations ?? []
     if (ills.length > 0) return ills[ills.length - 1].imageId
   }
@@ -1136,7 +1093,6 @@ export function collectUsedImageIds(
   const used = new Set<string>()
   for (const c of characters) {
     if (c.avatar.imageId) used.add(c.avatar.imageId)
-    for (const sp of c.sprites ?? []) used.add(sp.imageId)
   }
   for (const p of personas) if (p.avatar.imageId) used.add(p.avatar.imageId)
   for (const s of sessions) for (const id of sessionImageIds(s)) used.add(id)
@@ -1189,8 +1145,6 @@ interface AppState {
   isStreaming: boolean
   isGeneratingChoices: boolean
   isReviewing: boolean
-  /** 表情判定（方式A・classifyEmotions）が進行中か（非永続。ActivityIndicator 用） */
-  isClassifyingEmotions: boolean
   /** 次シーン候補（suggestions）だけを再生成中 */
   isRegenSuggestions: boolean
   sceneReview: SceneReview | null
@@ -1246,8 +1200,6 @@ interface AppState {
   importCharacterCard: (c: Character) => void
   deleteCharacter: (id: string) => void
   bulkSetCharacterModel: (characterIds: string[], modelRef: string) => void
-  /** 立ち絵を手動で設定/解除する（アップロード・削除用。生成採用は applyImageJobResult 側） */
-  setCharacterSprite: (characterId: string, emotion: EmotionId, imageId: string | undefined) => Promise<void>
   upsertWorld: (w: World) => void
   /** カードからのインポート専用。id が既存と衝突する場合は振り直して常に新規追加する */
   importWorldCard: (w: World) => void
@@ -1265,7 +1217,7 @@ interface AppState {
   resolveRefs: (session: Session) => ResolvedRefs
   /**
    * チェックポイントへ復元する（C1）。プレイ用ノブ（title/model/reviewModel/choicesModel/
-   * temperature/maxTokens/spritesEnabled）だけ現在値を維持し、それ以外はスナップショットから復元する。
+   * temperature/maxTokens）だけ現在値を維持し、それ以外はスナップショットから復元する。
    * 復元自体は何も削除しない（過去を読みに行くだけの移動は安全）。置き去りの記録の削除・確認は
    * 「この地点から物語を進める最初の操作」の冒頭で上書きガード（ensureLineTip）が行う（FB6-C）。
    */
@@ -1286,7 +1238,7 @@ interface AppState {
   deleteBranchSubtree: (sessionId: string, nodeId: string) => Promise<void>
   /** 現在パス以外のノードを一括削除する「この分岐だけ残す」（C2） */
   pruneToCurrentPath: (sessionId: string) => Promise<void>
-  /** しおりを設定する（C3）。サムネイルはノードのスナップショットから自動選択（背景優先） */
+  /** しおりを設定する（C3）。サムネイルはノードのスナップショットから自動選択（最新の挿絵） */
   setBranchStar: (sessionId: string, nodeId: string, name: string) => Promise<void>
   /** しおりを外す（C3） */
   removeBranchStar: (sessionId: string, nodeId: string) => void
@@ -1371,8 +1323,6 @@ interface AppState {
   // 挿絵
   addIllustration: (sessionId: string, sceneId: string, ill: SceneIllustration) => void
   removeIllustration: (sessionId: string, sceneId: string, illId: string) => void
-  /** シーン背景を外す（参照除去のみ。実体回収は GC 一本化により gcUnusedImages に任せる） */
-  removeSceneBackground: (sessionId: string, sceneId: string) => void
 
   // 環境音ピン（AM1）。音源は内蔵カタログなので画像と違い GC・実体削除の概念が無い
   addAmbientPin: (sessionId: string, sceneId: string, pin: AmbientPin) => void
@@ -1397,23 +1347,11 @@ interface AppState {
   cancelImageJob: (jobId: string) => void
   dismissImageJob: (jobId: string) => void
   dismissImageJobToasts: () => void
-  /** 候補から採用。保存先は target で分岐（挿絵/キャラアバター/ペルソナアバター/立ち絵/背景）し、完了後ジョブを自動 dismiss */
+  /** 候補から採用。保存先は target で分岐（挿絵/キャラアバター/ペルソナアバター）し、完了後ジョブを自動 dismiss */
   applyImageJobResult: (jobId: string, index: number) => Promise<void>
-  /** 立ち絵セットの一括生成（V4）。6感情ぶんのジョブを前を待って順番に起動する（ComfyUI が並列に弱いため） */
-  startSpriteBatch: (args: {
-    characterId: string
-    characterName: string
-    providerId: string
-    prompts: { emotion: EmotionId; prompt: string }[]
-    negative?: string
-    width: number
-    height: number
-  }) => void
-  /** 表情判定（V4・方式A）。runCompletion の正常完了後に fire-and-forget で呼ぶ */
-  classifyEmotions: (sessionId: string) => Promise<void>
 
   // データ入出力
-  /** includeImages=true で使用中の画像（アバター・立ち絵・挿絵・背景）を base64 同梱する（T0） */
+  /** includeImages=true で使用中の画像（アバター・挿絵）を base64 同梱する（T0） */
   exportBundle: (includeImages?: boolean) => Promise<ExportBundle>
   importBundle: (bundle: ExportBundle) => Promise<{ added: number }>
   /**
@@ -1436,7 +1374,7 @@ interface AppState {
   /** 記録を1件削除する（record 除去のみ。実体は他で未使用なら gcUnusedImages が回収） */
   deleteImageRecord: (sessionId: string, recordId: string) => void
   /**
-   * 過去に採用した挿絵・背景を全チェックポイント走査で記録に補完する（FB6-A。初回起動時に1回）。
+   * 過去に採用した挿絵を全チェックポイント走査で記録に補完する（FB6-A。初回起動時に1回）。
    * ライブの scenes＋全スナップショットから imageId で dedupe して登録。実在しない画像はスキップ。
    */
   backfillImageLogs: () => Promise<void>
@@ -2102,28 +2040,8 @@ export const useStore = create<AppState>()(
           })
         }
 
-        // 構造化出力のストリーミング表情切替（ST2）: 確定行（改行済み）が増えるたびに立ち絵の感情を反映する
         const structuredOn = !!s.structuredOutput
-        const watchEmotions =
-          structuredOn && !!s.spritesEnabled && refs.characters.some((c) => (c.sprites?.length ?? 0) > 0)
         let acc = appendToId ? (target()?.messages.find((m) => m.id === appendToId)?.content ?? '') : ''
-        let processedLineCount = acc.split('\n').length - 1
-        let emotionApplied = false
-
-        const applyLineEmotions = (completedLines: string[]) => {
-          const updates = emotionUpdatesOf(completedLines, refs.characters)
-          if (updates.length === 0) return
-          emotionApplied = true
-          const cur = target()
-          if (!cur) return
-          const next = [...(cur.spriteEmotions ?? [])]
-          for (const u of updates) {
-            const idx = next.findIndex((e) => e.characterId === u.characterId)
-            if (idx >= 0) next[idx] = u
-            else next.push(u)
-          }
-          patchTarget({ spriteEmotions: next })
-        }
 
         const writeDelta = (chunk: string) => {
           const cur = target()
@@ -2134,14 +2052,6 @@ export const useStore = create<AppState>()(
             ),
           })
           acc += chunk
-          if (watchEmotions && chunk.includes('\n')) {
-            const lines = acc.split('\n')
-            const completed = lines.slice(0, -1)
-            if (completed.length > processedLineCount) {
-              applyLineEmotions(completed.slice(processedLineCount))
-              processedLineCount = completed.length
-            }
-          }
         }
 
         // 「続きを生成」の念押しは履歴には積まず、API 送信時だけ末尾に付加する
@@ -2182,11 +2092,6 @@ export const useStore = create<AppState>()(
             set({ error: `${err.message}（${attempt}回試行）` })
             break
           }
-        }
-
-        if (watchEmotions) {
-          const lines = acc.split('\n')
-          applyLineEmotions(lines.slice(processedLineCount))
         }
 
         const cur = target()
@@ -2232,10 +2137,6 @@ export const useStore = create<AppState>()(
         if (finishReason !== null) {
           const finalSession = target()
           if (finalSession) void recordCheckpoint(sessionId, 'action', actionCheckpointLabel(finalSession), s)
-        }
-        // 表情判定（V4・方式A）。構造化出力で1件でも感情が取れた応答ではスキップ（ST2のフォールバック）
-        if (finalMsg && finalMsg.content.trim() && !emotionApplied) {
-          get().classifyEmotions(sessionId)
         }
       }
 
@@ -2309,7 +2210,7 @@ export const useStore = create<AppState>()(
       }
 
       /**
-       * 画像生成ジョブ1件分の直列生成ループ（startImageJob と startSpriteBatch の共通処理）。
+       * 画像生成ジョブ1件分の直列生成ループ。
        * ジョブは呼び出し側が事前に imageJobs へ追加済みであること。完了まで待つ Promise を返す
        * （バッチ生成は前のジョブがこれを await し終えてから次を起動する）。
        */
@@ -2403,7 +2304,6 @@ export const useStore = create<AppState>()(
         isStreaming: false,
         isGeneratingChoices: false,
         isReviewing: false,
-        isClassifyingEmotions: false,
         isRegenSuggestions: false,
         sceneReview: null,
         castingSessionId: null,
@@ -2484,11 +2384,7 @@ export const useStore = create<AppState>()(
         upsertCharacter: (c) =>
           set((st) => {
             const prev = st.characters.find((x) => x.id === c.id)
-            // sprites は store 直接管理（書き手は setCharacterSprite / applyImageJobResult のみ）。
-            // エディタ draft のスナップショットで上書きすると、編集中に生成・解除した立ち絵が
-            // 巻き戻る（消える / deleteImage 済みの imageId が復活する）ため、既存キャラでは常に
-            // store 側の sprites を保持する。
-            const updated = { ...c, ...(prev ? { sprites: prev.sprites } : {}), updatedAt: Date.now() }
+            const updated = { ...c, updatedAt: Date.now() }
             return {
               characters: prev
                 ? st.characters.map((x) => (x.id === c.id ? updated : x))
@@ -2541,26 +2437,6 @@ export const useStore = create<AppState>()(
                 : c,
             ),
           })),
-
-        setCharacterSprite: async (characterId, emotion, imageId) => {
-          const character = get().characters.find((c) => c.id === characterId)
-          if (!character) return
-          // 旧 imageId の実体削除はしない（GC 一本化。分岐チェックポイントが参照している可能性があるため
-          // 参照を外すだけにとどめ、回収は gcUnusedImages に任せる）
-          set((st) => ({
-            characters: st.characters.map((c) =>
-              c.id !== characterId
-                ? c
-                : {
-                    ...c,
-                    sprites: imageId
-                      ? [...(c.sprites ?? []).filter((s) => s.emotion !== emotion), { emotion, imageId }]
-                      : (c.sprites ?? []).filter((s) => s.emotion !== emotion),
-                    updatedAt: Date.now(),
-                  },
-            ),
-          }))
-        },
 
         upsertWorld: (w) =>
           set((st) => {
@@ -2669,7 +2545,6 @@ export const useStore = create<AppState>()(
             choicesModel: cur.choicesModel,
             temperature: cur.temperature,
             maxTokens: cur.maxTokens,
-            spritesEnabled: cur.spritesEnabled,
             archived: cur.archived,
             updatedAt: Date.now(),
           }
@@ -3445,7 +3320,6 @@ export const useStore = create<AppState>()(
                       // タイムライン・usedEventIds は据え置き（特別イベント同時発火はエンディングが勝つ＝未消化のまま残す）
                       state: newState,
                       overlay: nextOverlay(sess.overlay),
-                      spriteEmotions: [],
                       ending: {
                         defId: ending.id,
                         name: endingName,
@@ -3529,7 +3403,6 @@ export const useStore = create<AppState>()(
                     usedEventIds,
                     state: newState,
                     overlay: nextOverlay(sess.overlay),
-                    spriteEmotions: [], // シーンは時間・場面が飛ぶため前シーンの表情を持ち越さない
                     updatedAt: Date.now(),
                   }
                 : sess,
@@ -3998,58 +3871,6 @@ export const useStore = create<AppState>()(
           reviewController = null
         },
 
-        classifyEmotions: async (sessionId) => {
-          const session = get().sessions.find((s) => s.id === sessionId)
-          if (!session?.spritesEnabled) return
-          const castChars = get().characters.filter((c) => session.characterIds.includes(c.id))
-          if (!castChars.some((c) => (c.sprites?.length ?? 0) > 0)) return
-          const { provider, model } = parseModelRef(choicesModelOf(session), get().providers)
-          if (!provider?.apiKey.trim()) return
-          const recent = session.messages
-            .filter(
-              (m) =>
-                m.content.trim().length > 0 &&
-                m.content !== CONTINUE_PROMPT &&
-                m.content !== SCENE_START_PROMPT,
-            )
-            .slice(-3)
-            .map((m) => plainTextOf(m.content))
-          if (recent.length === 0) return
-          set({ isClassifyingEmotions: true })
-          try {
-            const raw = await streamChat(
-              {
-                provider,
-                model,
-                messages: [
-                  { role: 'system', content: emotionSystem(castChars.map((c) => c.name)) },
-                  { role: 'user', content: recent.join('\n---\n') },
-                ],
-                temperature: 0,
-                maxTokens: 300,
-              },
-              () => {},
-            )
-            const json = extractJson<{ emotions?: { character?: string; emotion?: string }[] }>(raw.text)
-            const updates = resolveEmotionUpdates(json?.emotions ?? [], castChars)
-            if (updates.length === 0) return
-            const cur = get().sessions.find((s) => s.id === sessionId)
-            if (!cur) return
-            const nextEmotions = [...(cur.spriteEmotions ?? [])]
-            for (const u of updates) {
-              const idx = nextEmotions.findIndex((e) => e.characterId === u.characterId)
-              if (idx >= 0) nextEmotions[idx] = u
-              else nextEmotions.push(u)
-            }
-            get().updateSession(sessionId, { spriteEmotions: nextEmotions })
-          } catch (e) {
-            // 表情判定は失敗しても本編には影響させない。現状維持（次の応答でまた判定される）
-            console.warn('[emotion] 判定に失敗:', (e as Error)?.message)
-          } finally {
-            set({ isClassifyingEmotions: false })
-          }
-        },
-
         exportBundle: async (includeImages) => {
           const { characters, worlds, personas, sessions, cassettes, endingRecords, sessionImageLogs } = get()
           // providers（API キー）は localStorage のみに保持し、エクスポートには含めない（共有時の漏洩防止）
@@ -4210,24 +4031,18 @@ export const useStore = create<AppState>()(
             ...x,
             avatar: { ...x.avatar, imageId: x.avatar.imageId ? idMap.get(x.avatar.imageId) : undefined },
           })
-          const remapSprites = (c: Character): Character =>
-            c.sprites && c.sprites.length > 0
-              ? { ...c, sprites: c.sprites.map((sp) => ({ ...sp, imageId: idMap.get(sp.imageId) ?? sp.imageId })) }
-              : c
-
           set((st) => {
             const now = Date.now()
             const charIds = new Set(st.characters.map((c) => c.id))
             const freshChars = bundle.characters
               .filter((c) => !charIds.has(c.id))
               .map(remapAvatar)
-              .map(remapSprites)
             const worldExists = bundle.world && st.worlds.some((w) => w.id === bundle.world!.id)
             const freshWorlds = bundle.world && !worldExists ? [bundle.world] : []
             const personaExists = bundle.persona && st.personas.some((p) => p.id === bundle.persona!.id)
             const freshPersonas = bundle.persona && !personaExists ? [remapAvatar(bundle.persona)] : []
 
-            // カセットの同梱セッションは開始状態（freshSessionOf 済み）。挿絵・背景の remap のみ行う
+            // カセットの同梱セッションは開始状態（freshSessionOf 済み）。挿絵の remap のみ行う
             const session: Session = {
               ...bundle.session,
               scenes: bundle.session.scenes.map((sc) => ({
@@ -4236,9 +4051,6 @@ export const useStore = create<AppState>()(
                   ...ill,
                   imageId: idMap.get(ill.imageId) ?? ill.imageId,
                 })),
-                ...(sc.backgroundImageId
-                  ? { backgroundImageId: idMap.get(sc.backgroundImageId) ?? sc.backgroundImageId }
-                  : {}),
               })),
             }
             const cassette: Cassette = {
@@ -4383,23 +4195,6 @@ export const useStore = create<AppState>()(
             ),
           })),
 
-        removeSceneBackground: (sessionId, sceneId) => {
-          // 実体削除はしない（GC 一本化。分岐チェックポイントが参照している可能性があるため
-          // 参照を外すだけにとどめ、回収は gcUnusedImages に任せる）
-          set((st) => ({
-            sessions: st.sessions.map((s) =>
-              s.id !== sessionId
-                ? s
-                : {
-                    ...s,
-                    scenes: s.scenes.map((sc) =>
-                      sc.id !== sceneId ? sc : { ...sc, backgroundImageId: undefined },
-                    ),
-                  },
-            ),
-          }))
-        },
-
         startImageJob: (args) => {
           const id = uid()
           const job: ImageJob = {
@@ -4422,35 +4217,6 @@ export const useStore = create<AppState>()(
           set((st) => ({ imageJobs: [...st.imageJobs, job] }))
           runImageJobLoop(id, args)
           return id
-        },
-
-        startSpriteBatch: (args) => {
-          ;(async () => {
-            for (const p of args.prompts) {
-              const emotionLabel = EMOTIONS.find((e) => e.id === p.emotion)?.label ?? p.emotion
-              const id = uid()
-              const jobArgs = {
-                providerId: args.providerId,
-                prompt: p.prompt,
-                negative: args.negative,
-                width: args.width,
-                height: args.height,
-                count: 1,
-              }
-              const job: ImageJob = {
-                id,
-                label: `立ち絵: ${args.characterName}（${emotionLabel}）`,
-                target: { type: 'character-sprite', characterId: args.characterId, emotion: p.emotion },
-                ...jobArgs,
-                status: 'running',
-                results: [],
-                createdAt: Date.now(),
-              }
-              set((st) => ({ imageJobs: [...st.imageJobs, job] }))
-              // 前の感情のジョブが完了してから次を起動する（ComfyUI は並列に弱いため）
-              await runImageJobLoop(id, jobArgs)
-            }
-          })()
         },
 
         cancelImageJob: (jobId) => {
@@ -4526,58 +4292,6 @@ export const useStore = create<AppState>()(
                 p.id === target.personaId ? { ...p, avatar: { ...p.avatar, imageId }, updatedAt: Date.now() } : p,
               ),
             }))
-          } else if (target.type === 'character-sprite') {
-            const character = get().characters.find((c) => c.id === target.characterId)
-            if (!character) {
-              throw new Error('対象のキャラクターが見つかりません（削除された可能性があります）。')
-            }
-            // 旧 imageId の実体削除はしない（GC 一本化。参照を外すだけ・回収は gcUnusedImages）
-            const normalized = await normalizeImage(blob, 1024)
-            const imageId = await putImage(normalized)
-            set((st) => ({
-              characters: st.characters.map((c) =>
-                c.id !== target.characterId
-                  ? c
-                  : {
-                      ...c,
-                      sprites: [
-                        ...(c.sprites ?? []).filter((s) => s.emotion !== target.emotion),
-                        { emotion: target.emotion, imageId },
-                      ],
-                      updatedAt: Date.now(),
-                    },
-              ),
-            }))
-          } else {
-            // scene-background（旧 imageId の実体削除はしない。GC 一本化）
-            const imageId = await putImage(blob)
-            // 先に永続記録へ追記する（FB6-A）
-            const scene = get()
-              .sessions.find((s) => s.id === target.sessionId)
-              ?.scenes.find((sc) => sc.id === target.sceneId)
-            appendImageRecord(target.sessionId, {
-              id: uid(),
-              imageId,
-              kind: 'background',
-              prompt: job.prompt,
-              negative: job.negative,
-              sceneId: target.sceneId,
-              sceneTitle: scene?.title || undefined,
-              timeLabel: scene?.timeLabel,
-              createdAt: Date.now(),
-            })
-            set((st) => ({
-              sessions: st.sessions.map((s) =>
-                s.id !== target.sessionId
-                  ? s
-                  : {
-                      ...s,
-                      scenes: s.scenes.map((sc) =>
-                        sc.id !== target.sceneId ? sc : { ...sc, backgroundImageId: imageId },
-                      ),
-                    },
-              ),
-            }))
           }
           get().dismissImageJob(jobId)
         },
@@ -4622,7 +4336,7 @@ export const useStore = create<AppState>()(
           for (const session of sessions) {
             const seen = new Set((get().sessionImageLogs[session.id] ?? []).map((r) => r.imageId))
             // ライブの本文にある分（プロンプト・アンカー付きで最も情報が正確なので先に）
-            const records = extractImageRecords(session, seen, session.updatedAt)
+            const records = extractImageRecords(session, seen)
             // 全スナップショット走査（他分岐にしか無い画像を拾う）
             for (const node of branchTrees[session.id]?.nodes ?? []) {
               // 未知の imageId を含まないノードは展開しない（gunzip の節約）
@@ -4631,7 +4345,7 @@ export const useStore = create<AppState>()(
                 const raw = await checkpointStore.get(session.id, node.id)
                 if (!raw) continue
                 const parsed = JSON.parse(await gunzipText(raw)) as { v: number; session: Session }
-                records.push(...extractImageRecords(parsed.session, seen, node.createdAt))
+                records.push(...extractImageRecords(parsed.session, seen))
               } catch {
                 continue // 壊れたスナップショットはスキップ
               }

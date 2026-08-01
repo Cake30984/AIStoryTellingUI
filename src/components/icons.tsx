@@ -12,7 +12,6 @@ export type IconName =
   | 'git-branch'
   | 'hourglass'
   | 'palette'
-  | 'mountain'
   | 'credit-card'
   | 'layers'
   | 'settings'
@@ -116,7 +115,6 @@ const PATHS: Record<IconName, ReactNode> = {
       <circle cx="15" cy="7.5" r="1.2" fill="currentColor" stroke="none" />
     </>
   ),
-  mountain: <path d="M3 20 9 8l4 6 3-4 5 10" />,
   'credit-card': (
     <>
       <rect x="2" y="5" width="20" height="14" rx="2" />

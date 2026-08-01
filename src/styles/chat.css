@@ -430,79 +430,12 @@
   color: var(--bad);
 }
 
-/* ---------- ステージ・バックドロップ（背景＋立ち絵を本文の背面に薄く敷く。V5b） ---------- */
 .chat-wrap {
   position: relative;
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
-}
-.stage-backdrop {
-  position: absolute;
-  top: 0; /* UI-3 で .main 直下から play-col 直下へ移設（topbar は既に外側のため 0 でよい） */
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 0;
-  overflow: hidden;
-  pointer-events: none; /* 表示専用。本文のクリック・選択を妨げない */
-}
-.stage-backdrop-bg {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  opacity: var(--stage-bg-opacity);
-}
-.stage-backdrop-sprites {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: min(72%, 520px);
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-evenly;
-  gap: 8px;
-  padding: 0 4%;
-}
-/* キャラ数で横幅を等分するセル。何人いても重ならない */
-.stage-backdrop-cell {
-  flex: 1 1 0;
-  min-width: 0;
-  max-width: 340px;
-  height: 100%;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-}
-.stage-backdrop-sprite {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  object-position: bottom center;
-  opacity: var(--stage-sprite-opacity);
-  animation: sprite-fade 0.3s ease;
-}
-@keyframes sprite-fade {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: var(--stage-sprite-opacity);
-  }
-}
-
-/* ステージON時は背景・立ち絵がコンポーザー（入力欄・選択肢・操作行のボタン）の背面にも透ける（V5d。UI-2でシーンバーは廃止しトップバーのシーンチップへ移設） */
-.main.stage-on .composer-wrap {
-  background: color-mix(in srgb, var(--bg-elev) 72%, transparent);
-}
-.main.stage-on .input-row,
-.main.stage-on .choice-btn,
-.main.stage-on .composer-tool-btn {
-  background: color-mix(in srgb, var(--bg-elev2) 72%, transparent);
 }
 
 /* ---------- 環境音ピンのマーカー（AM1 / AM2で刷新） ---------- */

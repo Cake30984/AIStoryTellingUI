@@ -2,7 +2,10 @@ export type Role = 'system' | 'user' | 'assistant'
 
 export type SessionMode = 'roleplay' | 'story'
 
-/** 感情の固定セット（V4）。id は英語（プロンプトのタグと対応）、label は UI 表示用 */
+/**
+ * 感情の固定セット。構造化出力の `@名前(感情)「セリフ」` で受理する感情トークンの語彙。
+ * id は英語（プロンプトのタグと対応）、label は UI 表示用。
+ */
 export const EMOTIONS = [
   { id: 'neutral', label: 'ふつう', tags: 'neutral expression' },
   { id: 'joy', label: '喜び', tags: 'smile, happy, cheerful expression' },
@@ -47,8 +50,6 @@ export interface Character {
   avatar: Avatar
   /** 画像生成用の固定英語タグ（画風・髪色・LoRA トリガー等。挿絵/アバター生成時に自動結合） */
   imagePrompt?: string
-  /** 表情つき立ち絵（V4。emotion ごとに1枚。ステージ表示・裏方感情判定と連動） */
-  sprites?: { emotion: EmotionId; imageId: string }[]
   tags: string[]
   /**
    * このキャラ専用の本編モデル参照（ModelRef 形式）。
@@ -406,8 +407,12 @@ export interface SessionImageRecord {
   id: string
   /** imageStore の画像 id（GC はこの参照を使用中扱いにする） */
   imageId: string
+  /**
+   * `'background'` は**背景機能を廃止する前の旧データにのみ存在する**（新規に書かれることはない）。
+   * 過去に採用した画像をアルバムから消さないため、読み取り値として残している。
+   */
   kind: 'illustration' | 'background'
-  /** 結合前のユーザープロンプト（ImageJob.prompt と同じ規約）。バックフィルした背景など不明な場合は空文字 */
+  /** 結合前のユーザープロンプト（ImageJob.prompt と同じ規約）。旧・背景の記録など不明な場合は空文字 */
   prompt: string
   /** 結合前のユーザーネガティブプロンプト（ImageJob.negative と同じ規約。FB7-A追修） */
   negative?: string
@@ -480,8 +485,6 @@ export interface Scene {
   illustrations?: SceneIllustration[]
   /** 環境音ピン（AM1。任意＝旧データには無い。読む側は `ambientPins ?? []`） */
   ambientPins?: AmbientPin[]
-  /** シーン背景画像（V4。手動生成・シーンごとに1枚） */
-  backgroundImageId?: string
   /** 終了済みなら時刻 */
   endedAt?: number
   createdAt: number
@@ -652,10 +655,6 @@ export interface Session {
   state: SessionState
   /** 発見・深化した設定の上乗せ（セッション固有・素材は不変） */
   overlay: SessionOverlay
-  /** 立ち絵ステージ表示の ON/OFF（V4） */
-  spritesEnabled?: boolean
-  /** 各キャラの現在の表情判定結果（V4・裏方LLMが毎応答後に判定） */
-  spriteEmotions?: { characterId: string; emotion: EmotionId }[]
   /** 構造化出力（本編を @名前(感情)「セリフ」の行形式で書かせる。undefined=OFF。設計は docs/設計_構造化出力.md） */
   structuredOutput?: boolean
   /** アーカイブ済み（セッション一覧から既定で除外。UI-5） */
@@ -892,10 +891,6 @@ export interface UiPrefs {
   contentWidth: number
   /** セリフ（「」）を色分け表示するか（false なら本文と同色） */
   dialogueTint: boolean
-  /** ステージ背景の濃さ（0〜0.6。--stage-bg-opacity と連動） */
-  stageBgOpacity: number
-  /** ステージ立ち絵の濃さ（0〜0.9。--stage-sprite-opacity と連動） */
-  stageSpriteOpacity: number
   /** 環境音ピンを鳴らすか（AM1。OFF で全ピンを停止＝ピン自体は消えない） */
   ambientEnabled: boolean
   /** 環境音のマスター音量（0〜1。UI では % 表示。AM1） */
@@ -911,8 +906,6 @@ export const DEFAULT_UI: UiPrefs = {
   lineHeight: 1.9,
   contentWidth: 760,
   dialogueTint: true,
-  stageBgOpacity: 0.25,
-  stageSpriteOpacity: 0.5,
   ambientEnabled: true,
   ambientVolume: 0.6,
   immersive: false,
@@ -923,8 +916,6 @@ export const UI_LIMITS = {
   fontSize: { min: 12, max: 22, step: 0.5 },
   lineHeight: { min: 1.4, max: 2.4, step: 0.05 },
   contentWidth: { min: 560, max: 1200, step: 20 },
-  stageBgOpacity: { min: 0, max: 0.6, step: 0.05 },
-  stageSpriteOpacity: { min: 0, max: 0.9, step: 0.05 },
   ambientVolume: { min: 0, max: 1, step: 0.05 },
   dockWidth: { min: 300, max: 560 },
 } as const
@@ -964,8 +955,6 @@ export function normalizeUiPrefs(raw: unknown): UiPrefs {
     lineHeight,
     contentWidth,
     dialogueTint: r.dialogueTint !== false,
-    stageBgOpacity: clamp(r.stageBgOpacity, 0, 0.6, 0.25),
-    stageSpriteOpacity: clamp(r.stageSpriteOpacity, 0, 0.9, 0.5),
     ambientEnabled: r.ambientEnabled !== false,
     ambientVolume: clamp(r.ambientVolume, 0, 1, 0.6),
     immersive: r.immersive === true,
@@ -1008,6 +997,6 @@ export interface ExportBundle {
   /** セッションごとの生成画像の永続記録（FB6-A。record id でセッション単位に dedupe マージ） */
   sessionImageLogs?: Record<string, SessionImageRecord[]>
   providers?: Provider[]
-  /** 画像込みエクスポート時のみ同梱（アバター・立ち絵・挿絵・背景・カセット表紙の実体。T0/FB2-E） */
+  /** 画像込みエクスポート時のみ同梱（アバター・挿絵・カセット表紙の実体。T0/FB2-E） */
   images?: { id: string; mime: string; dataBase64: string }[]
 }

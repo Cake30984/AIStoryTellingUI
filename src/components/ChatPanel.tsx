@@ -4,8 +4,6 @@ import { currentScene, reviewModelOf, useStore } from '../store'
 import {
   CONTINUE_PROMPT,
   SCENE_START_PROMPT,
-  backgroundContextUser,
-  backgroundPromptSystem,
   illustrationContextUser,
   illustrationPromptSystem,
 } from '../lib/prompts'
@@ -29,7 +27,6 @@ import StatusPanel from './StatusPanel'
 import DiscoveryPanel, { type DiscoveryScope } from './DiscoveryPanel'
 import CassetteEditor from './CassetteEditor'
 import EntityAvatar from './EntityAvatar'
-import StageBackdrop from './StageBackdrop'
 import ContextDock from './ContextDock'
 import ReaderSettings from './ReaderSettings'
 import { StructuredChatBody, StructuredNovelBody } from './StructuredMessage'
@@ -179,12 +176,9 @@ export default function ChatPanel({ session }: Props) {
   const [showLog, setShowLog] = useState(false)
   const [showStatus, setShowStatus] = useState(false)
   const [discoveryScope, setDiscoveryScope] = useState<DiscoveryScope | null>(null)
-  // 挿絵・背景の生成対象（FB6-B。null=閉。過去シーン・任意メッセージをアンカーに後付け生成できる）
+  // 挿絵の生成対象（FB6-B。null=閉。過去シーン・任意メッセージをアンカーに後付け生成できる）
   const [illustGenFor, setIllustGenFor] = useState<
     { sceneId: string; messageId?: string; regenPrompt?: string; regenNegative?: string } | null
-  >(null)
-  const [bgGenFor, setBgGenFor] = useState<
-    { sceneId: string; regenPrompt?: string; regenNegative?: string } | null
   >(null)
   const [showCassetteEditor, setShowCassetteEditor] = useState(false)
   const [showMenu, setShowMenu] = useState(false)
@@ -265,7 +259,6 @@ export default function ChatPanel({ session }: Props) {
   const endingDef = session.ending
     ? world?.endings?.find((e) => e.id === session.ending!.defId)
     : undefined
-  const stageOn = session.spritesEnabled ?? true // 未設定は ON（コンテンツが無ければ何も描かれない）
   const persona = personas.find((p) => p.id === session.personaId)
   const novel = session.narrativeStyle === 'novel'
   const groupMode = session.mode === 'roleplay' && participants.length > 1 && !novel
@@ -734,7 +727,7 @@ export default function ChatPanel({ session }: Props) {
   }
 
   return (
-    <div className={'main' + (stageOn ? ' stage-on' : '')}>
+    <div className="main">
       {/* 没入モードで topbar を隠した際、上端ホバーで呼び戻すための当たり判定（UI-4）。~ セレクタのため topbar の直前に置く */}
       {ui.immersive && <div className="top-hover" />}
       <div className="topbar">
@@ -784,7 +777,7 @@ export default function ChatPanel({ session }: Props) {
           {imageJobs.length > 0 && <span className="icon-badge">{imageJobs.length}</span>}
         </button>
 
-        <ReaderSettings session={session} />
+        <ReaderSettings />
 
         <div className="menu-anchor">
           <button className="icon-btn" onClick={() => setShowMenu((v) => !v)} title="メニュー">
@@ -793,7 +786,7 @@ export default function ChatPanel({ session }: Props) {
           {showMenu && (
             <MenuPopover onClose={() => setShowMenu(false)}>
               {/* FB8-E4: 参照系／管理系／破壊系の3グループに整理。モデルは「セッション設定 > AIと出力」へ、
-                  挿絵・背景はコンポーザーのボタンに一本化（重複導線を撤去） */}
+                  挿絵はコンポーザーのボタンに一本化（重複導線を撤去） */}
               <button
                 className="menu-item"
                 onClick={() => {
@@ -848,8 +841,6 @@ export default function ChatPanel({ session }: Props) {
 
       <div className="play-body">
         <div className="play-col">
-          {/* バックドロップは play-col 直下に敷き、コンポーザーの背面にも透けるようにする（V5d・UI-3で.main直下からplay-colへ移設） */}
-          {stageOn && <StageBackdrop session={session} scene={scene} participants={participants} />}
           <div className="chat-wrap">
             <div className="chat" ref={chatRef}>
               <div className="chat-inner">
@@ -1059,7 +1050,7 @@ export default function ChatPanel({ session }: Props) {
                     </button>
                   )}
                 <div style={{ flex: 1 }} />
-                {/* 挿絵・背景生成は「進行しながら使う」操作なので入力欄付近にも置く（⋯メニューとも両導線。F3/R9） */}
+                {/* 挿絵生成は「進行しながら使う」操作なので入力欄付近にも置く（⋯メニューとも両導線。F3/R9） */}
                 <button
                   className="composer-tool-btn"
                   disabled={!scene}
@@ -1067,14 +1058,6 @@ export default function ChatPanel({ session }: Props) {
                   onClick={() => scene && setIllustGenFor({ sceneId: scene.id })}
                 >
                   <Icon name="palette" size={14} /> 挿絵
-                </button>
-                <button
-                  className="composer-tool-btn"
-                  disabled={!scene}
-                  title={scene ? 'この場面の背景を生成' : '物語を開始すると生成できます'}
-                  onClick={() => scene && setBgGenFor({ sceneId: scene.id })}
-                >
-                  <Icon name="mountain" size={14} /> 背景
                 </button>
                 {!isFinalized && (
                   <button className="composer-tool-btn" onClick={() => setShowSceneEditor(true)}>
@@ -1166,9 +1149,6 @@ export default function ChatPanel({ session }: Props) {
           onRegenerateIllustration={(sceneId, messageId, prompt, negative) =>
             setIllustGenFor({ sceneId, messageId, regenPrompt: prompt, regenNegative: negative })
           }
-          onRegenerateBackground={(sceneId, prompt, negative) =>
-            setBgGenFor({ sceneId, regenPrompt: prompt, regenNegative: negative })
-          }
         />
       </div>
 
@@ -1194,7 +1174,6 @@ export default function ChatPanel({ session }: Props) {
           session={session}
           onClose={() => setShowLog(false)}
           onGenIllustration={(sceneId) => setIllustGenFor({ sceneId })}
-          onGenBackground={(sceneId) => setBgGenFor({ sceneId })}
         />
       )}
       {showStatus && <StatusPanel session={session} onClose={() => setShowStatus(false)} />}
@@ -1258,35 +1237,6 @@ export default function ChatPanel({ session }: Props) {
               }}
               label={`挿絵: ${sc.title || 'シーン'}`}
               onClose={() => setIllustGenFor(null)}
-            />
-          )
-        })()}
-      {bgGenFor &&
-        (() => {
-          const sc = session.scenes.find((s) => s.id === bgGenFor.sceneId)
-          if (!sc) return null
-          return (
-            <ImageGenModal
-              title={bgGenFor.regenPrompt ? '同じプロンプトで背景を再生成' : '場面の背景を生成'}
-              draftContext={{
-                system: backgroundPromptSystem(),
-                user: backgroundContextUser({
-                  sceneTitle: sc.title,
-                  sceneNote: sc.note,
-                  timeLabel: sc.timeLabel,
-                  worldDescription: world?.description,
-                  recentMessages: sceneMessagesUpto(sc.id)
-                    .slice(-6)
-                    .map((m) => plainTextOf(m.content)),
-                }),
-                modelRef: reviewModelOf(session),
-              }}
-              defaultSizeIdx={1}
-              initialPrompt={bgGenFor.regenPrompt}
-              initialNegative={bgGenFor.regenNegative}
-              target={{ type: 'scene-background', sessionId: session.id, sceneId: sc.id }}
-              label={`背景: ${sc.title || 'シーン'}`}
-              onClose={() => setBgGenFor(null)}
             />
           )
         })()}

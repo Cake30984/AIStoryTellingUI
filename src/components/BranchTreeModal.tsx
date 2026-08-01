@@ -218,7 +218,7 @@ function buildGraph(tree: BranchTree, pathIds: Set<string>): { rows: GraphRow[];
   return { rows, laneCount: maxLane + 1 }
 }
 
-/** しおりのサムネイル（背景/挿絵があれば表示、無ければプレースホルダ） */
+/** しおりのサムネイル（挿絵があれば表示、無ければプレースホルダ） */
 function StarThumb({ imageId, size = 28 }: { imageId?: string; size?: number }) {
   const url = useImageUrl(imageId)
   const style = { width: size, height: size }

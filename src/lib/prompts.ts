@@ -502,60 +502,12 @@ export function illustrationContextUser(args: {
   return parts.join('\n\n')
 }
 
-/** 画像プロンプト起案の user 文脈（アバター/立ち絵用） */
+/** 画像プロンプト起案の user 文脈（アバター用） */
 export function avatarContextUser(args: { name: string; appearance?: string; imagePrompt?: string }): string {
   const parts = [`このキャラクター1人のポートレート（バストアップ・正面）のプロンプトを作成してください。`, `【名前】${args.name}`]
   if (args.appearance) parts.push(`【外見】${args.appearance}`)
   if (args.imagePrompt) parts.push(`【画像生成タグ】${args.imagePrompt}`)
   return parts.join('\n')
-}
-
-/**
- * 表情判定用 system（V4・方式A）。裏方LLMが直近の本文から登場キャラの現在の感情を判定する。
- * シーンタイプ／ディレクターには一切依存しない。
- */
-export function emotionSystem(characterNames: string[]): string {
-  return (
-    `あなたは演出アシスタントです。直近の本文を読み、登場キャラクターの現在の感情を判定してください。\n` +
-    `出力は次の JSON のみ（説明・前置き・コードフェンス禁止）:\n` +
-    `{"emotions": [{"character":"名前","emotion":"neutral|joy|anger|sadness|shy|surprise"}]}\n` +
-    `指針:\n` +
-    `- 対象キャラ: ${characterNames.join('・')}\n` +
-    `- 本文に登場しない・感情が判断できないキャラは含めない。\n` +
-    `- emotion は neutral/joy/anger/sadness/shy/surprise の6値のみ。それ以外の語は使わない。`
-  )
-}
-
-/** 背景画像プロンプト起案用の system プロンプト（人物を含めない背景専用。V4） */
-export function backgroundPromptSystem(): string {
-  return (
-    `あなたは背景美術プロンプトの起案アシスタントです。与えられた場面の文脈から、人物を含めない背景・情景のみの英語プロンプトを作ってください。\n` +
-    `出力は次の JSON のみ（説明・前置き・コードフェンス禁止）:\n` +
-    `{"prompt": "英語のカンマ区切りタグまたは簡潔な英語描写", "negative": "避けたい要素の英語タグ"}\n` +
-    `指針:\n` +
-    `- 場所・時間帯・天候・光・雰囲気を具体的なタグにする。\n` +
-    `- 人物・キャラクターは一切含めない（no humans, no people 等を prompt か negative に含めてよい）。\n` +
-    `- masterpiece 等の品質タグ、anime style / photorealistic 等の画風タグは入れない（接続先のデフォルトタグとして自動で付加される）。`
-  )
-}
-
-/** 背景画像プロンプト起案の user 文脈（V4） */
-export function backgroundContextUser(args: {
-  sceneTitle?: string
-  sceneNote?: string
-  timeLabel?: string
-  worldDescription?: string
-  recentMessages: string[]
-}): string {
-  const parts: string[] = ['この場面の背景（人物を含まない情景）のプロンプトを作成してください。']
-  if (args.sceneTitle) parts.push(`【シーン】${args.sceneTitle}`)
-  if (args.sceneNote) parts.push(`【状況】${args.sceneNote}`)
-  if (args.timeLabel) parts.push(`【時間】${args.timeLabel}`)
-  if (args.worldDescription) parts.push(`【世界観】${args.worldDescription}`)
-  if (args.recentMessages.length > 0) {
-    parts.push(`【このシーンの本文（末尾）】\n${args.recentMessages.join('\n---\n')}`)
-  }
-  return parts.join('\n\n')
 }
 
 /** シーン要約（引き継ぎメモ）生成用の system プロンプト */

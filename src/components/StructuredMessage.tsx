@@ -24,7 +24,7 @@ function rawTextOf(line: StructuredLine): string {
 interface BodyProps {
   content: string
   participants: Character[]
-  /** ユーザーが演じる人物。@ペルソナ名 行のアイコン解決に含める（立ち絵・感情判定には使わない） */
+  /** ユーザーが演じる人物。@ペルソナ名 行のアイコン解決に含める */
   persona?: Persona
   /** ストリーミング中（末尾の未改行行を未確定として扱う） */
   pending: boolean

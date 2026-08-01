@@ -302,7 +302,7 @@ export function SettingsBody() {
                 checked={includeImages}
                 onChange={(e) => setIncludeImages(e.target.checked)}
               />
-              画像も含める（アバター・立ち絵・挿絵・背景。容量が大きくなる場合があります）
+              画像も含める（アバター・挿絵。容量が大きくなる場合があります）
             </label>
             <div style={{ display: 'flex', gap: 8 }}>
               <button className="btn" onClick={onExport}>
@@ -331,7 +331,7 @@ export function SettingsBody() {
           <div className="field">
             <label>未使用画像の整理</label>
             <div className="desc">
-              どのキャラクター・セッション・分岐チェックポイントからも参照されなくなった画像（アバター・立ち絵・挿絵・背景）を
+              どのキャラクター・セッション・分岐チェックポイントからも参照されなくなった画像（アバター・挿絵）を
               ストレージから完全に削除し、容量を空けます。使用中の画像が消えることはありません。
             </div>
             <button

@@ -7,7 +7,7 @@ import type { Scene, SceneIllustration, Session, SessionImageRecord } from '../t
 import ZoomOverlay from './ZoomOverlay'
 import { Icon } from './icons'
 
-/** サムネイル左上の小バッジ（背景・配置中の表示に共用） */
+/** サムネイル左上の小バッジ（配置中・旧データの背景表示に共用） */
 const THUMB_BADGE_STYLE: CSSProperties = {
   position: 'absolute',
   top: 4,
@@ -143,84 +143,6 @@ function GalleryThumb({
   )
 }
 
-/** ギャラリー内の背景1枚（サムネイル→クリックで拡大・保存・外す・再生成。V5b） */
-function BackgroundThumb({
-  imageId,
-  sceneId,
-  record,
-  onRemove,
-  onRegenerate,
-  onGoToText,
-}: {
-  imageId: string
-  sceneId: string
-  /** 採用時の永続記録（プロンプト・ネガティブの参照元。旧データ等で見つからない場合あり） */
-  record?: SessionImageRecord
-  onRemove: () => void
-  onRegenerate: () => void
-  /** そのシーンの本文へ移動（FB8-D #2。背景は場面単位なのでシーン先頭が飛び先） */
-  onGoToText?: () => void
-}) {
-  const url = useImageUrl(imageId)
-  const [zoom, setZoom] = useState(false)
-  if (!url) return null
-  return (
-    <div className="job-thumb" style={{ position: 'relative' }}>
-      <span style={THUMB_BADGE_STYLE}>背景</span>
-      <img src={url} alt="背景" onClick={() => setZoom(true)} />
-      <div className="illustration-actions" style={{ position: 'static', opacity: 1 }}>
-        {onGoToText && (
-          <button className="icon-btn small" title="この場面の本文へ移動" onClick={onGoToText}>
-            <Icon name="book-open" size={14} />
-          </button>
-        )}
-        <button
-          className="icon-btn small"
-          title="画像を保存"
-          onClick={async () => {
-            const blob = await getImage(imageId)
-            if (blob) downloadBlob(blob, `background_${sceneId}.png`)
-          }}
-        >
-          <Icon name="download" size={14} />
-        </button>
-        <button
-          className="icon-btn small"
-          title="背景を外す"
-          onClick={async () => {
-            if (
-              await appConfirm({
-                message: 'この場面の背景を外しますか？\n（「すべての記録」には残ります）',
-                danger: true,
-              })
-            )
-              onRemove()
-          }}
-        >
-          <Icon name="trash-2" size={14} />
-        </button>
-      </div>
-      {zoom && (
-        <ZoomOverlay
-          url={url}
-          onClose={() => setZoom(false)}
-          caption={
-            <PromptCaption
-              prompt={record?.prompt}
-              negative={record?.negative}
-              createdAt={record?.createdAt}
-              onRegenerate={() => {
-                setZoom(false)
-                onRegenerate()
-              }}
-            />
-          }
-        />
-      )}
-    </div>
-  )
-}
-
 /** 「すべての記録」の1枚（FB6-A。分岐・シーンが消えても残る採用画像） */
 function RecordThumb({
   record,
@@ -309,28 +231,22 @@ function RecordThumb({
 }
 
 /**
- * シーンごとに挿絵・背景をグリッド表示するギャラリー本体（V3・V5b。UI-3 でコンテキストドックへ移設）。
+ * シーンごとに挿絵をグリッド表示するギャラリー本体（V3。UI-3 でコンテキストドックへ移設）。
  * FB6-A で「この分岐（従来表示）／すべての記録（分岐から独立した永続アルバム）」のタブ切替を追加。
  */
 export function GalleryBody({
   session,
   onRegenerateIllustration,
-  onRegenerateBackground,
 }: {
   session: Session
   /** 再生成モーダルを開く（挿絵）。messageId は元の記録のアンカー */
   onRegenerateIllustration: (sceneId: string, messageId: string | undefined, prompt: string, negative?: string) => void
-  /** 再生成モーダルを開く（背景） */
-  onRegenerateBackground: (sceneId: string, prompt: string, negative?: string) => void
 }) {
-  const { removeIllustration, removeSceneBackground, deleteImageRecord, sessionImageLogs, revealMessage } =
-    useStore()
+  const { removeIllustration, deleteImageRecord, sessionImageLogs, revealMessage } = useStore()
   const [tab, setTab] = useState<'branch' | 'all'>('branch')
 
   const records = sessionImageLogs[session.id] ?? []
-  const scenesWithImages = session.scenes.filter(
-    (sc) => (sc.illustrations ?? []).length > 0 || sc.backgroundImageId,
-  )
+  const scenesWithImages = session.scenes.filter((sc) => (sc.illustrations ?? []).length > 0)
 
   const sceneHeading = (sc: Scene) => [sc.timeLabel, sc.title].filter(Boolean).join('｜') || 'シーン'
 
@@ -350,14 +266,6 @@ export function GalleryBody({
     )
   }
 
-  // 背景の採用記録は Scene に直接持たないため、永続記録から imageId で引く（最新のものを優先）
-  const backgroundRecordByImageId = new Map<string, SessionImageRecord>()
-  for (const r of records) {
-    if (r.kind === 'background' && !backgroundRecordByImageId.has(r.imageId)) {
-      backgroundRecordByImageId.set(r.imageId, r)
-    }
-  }
-
   const branchView = () =>
     scenesWithImages.length === 0 ? (
       <p className="desc">この分岐にはまだ画像がありません。</p>
@@ -369,22 +277,6 @@ export function GalleryBody({
               <span className="log-title">{sceneHeading(sc)}</span>
             </div>
             <div className="job-thumbs">
-              {sc.backgroundImageId && (
-                <BackgroundThumb
-                  imageId={sc.backgroundImageId}
-                  sceneId={sc.id}
-                  record={backgroundRecordByImageId.get(sc.backgroundImageId)}
-                  onRemove={() => removeSceneBackground(session.id, sc.id)}
-                  onRegenerate={() => {
-                    const r = backgroundRecordByImageId.get(sc.backgroundImageId!)
-                    onRegenerateBackground(sc.id, r?.prompt ?? '', r?.negative)
-                  }}
-                  onGoToText={(() => {
-                    const jumpTo = jumpTargetFor(undefined, sc.id)
-                    return jumpTo ? () => revealMessage(session.id, jumpTo) : undefined
-                  })()}
-                />
-              )}
               {(sc.illustrations ?? []).map((ill) => (
                 <GalleryThumb
                   key={ill.id}
@@ -407,7 +299,7 @@ export function GalleryBody({
     if (records.length === 0) {
       return (
         <p className="desc">
-          まだ記録がありません。挿絵・背景を採用すると、分岐やシーンが消えてもここに残ります。
+          まだ記録がありません。挿絵を採用すると、分岐やシーンが消えてもここに残ります。
         </p>
       )
     }
@@ -417,8 +309,9 @@ export function GalleryBody({
     return (
       <div className="job-thumbs">
         {sorted.map((r) => {
-          // 記録元のシーンが現存する時のみ再生成を出す（削除済みシーンには投入先が無い）
-          const canRegenerate = !!r.sceneId && sceneIds.has(r.sceneId)
+          // 記録元のシーンが現存する挿絵の時のみ再生成を出す
+          // （削除済みシーンには投入先が無い。旧データの背景は生成手段そのものが無い）
+          const canRegenerate = r.kind === 'illustration' && !!r.sceneId && sceneIds.has(r.sceneId)
           const jumpTo = jumpTargetFor(r.messageId, r.sceneId)
           return (
             <RecordThumb
@@ -429,10 +322,7 @@ export function GalleryBody({
               onGoToText={jumpTo ? () => revealMessage(session.id, jumpTo) : undefined}
               onRegenerate={
                 canRegenerate
-                  ? () =>
-                      r.kind === 'illustration'
-                        ? onRegenerateIllustration(r.sceneId!, r.messageId, r.prompt, r.negative)
-                        : onRegenerateBackground(r.sceneId!, r.prompt, r.negative)
+                  ? () => onRegenerateIllustration(r.sceneId!, r.messageId, r.prompt, r.negative)
                   : undefined
               }
             />

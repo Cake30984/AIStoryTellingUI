@@ -49,8 +49,4 @@
   --font-size-prose: 15.5px;
   --line-height-prose: 1.9;
   --content-width: 760px;
-
-  /* ステージ・バックドロップの濃さ（V5b。UI-0 でここに統合移動） */
-  --stage-bg-opacity: 0.25; /* 背景画像の濃さ（文字の可読性と相談してここだけ調整） */
-  --stage-sprite-opacity: 0.5; /* 立ち絵の濃さ */
 }

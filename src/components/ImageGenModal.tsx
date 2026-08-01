@@ -48,7 +48,7 @@ interface Props {
   target: ImageJobTarget
   /** ジョブ一覧・通知に出すラベル（例: '挿絵: 放課後の屋上'） */
   label: string
-  /** サイズ選択の初期インデックス（SIZE_PRESETS）。立ち絵=縦長・背景=横長 等の既定値切替に使う */
+  /** サイズ選択の初期インデックス（SIZE_PRESETS）。用途ごとの既定サイズ切替に使う */
   defaultSizeIdx?: number
   /** 起案後も必ず維持するタグ（カンマ区切り）。LoRA トリガー・表情タグ等が起案の全文置換で消えるのを防ぐ（V5c） */
   pinTags?: string

@@ -2,11 +2,7 @@ import { useState } from 'react'
 import { useStore } from '../store'
 import MenuPopover from './MenuPopover'
 import NumberInput from './NumberInput'
-import { DEFAULT_UI, UI_LIMITS, type Session } from '../types'
-
-interface Props {
-  session: Session
-}
+import { DEFAULT_UI, UI_LIMITS } from '../types'
 
 /**
  * ラベル＋数値入力（上段）＋スライダー（下段）の共通行。数値入力・スライダーどちらでも変更できる（F2）。
@@ -60,11 +56,10 @@ function RsField({
   )
 }
 
-/** topbar の Aa ボタン→ポップオーバー。文字サイズ・行間・本文幅・セリフ色分け・ステージ濃度・没入モード（UI-4・F2で数値化） */
-export default function ReaderSettings({ session }: Props) {
-  const { ui, setUiPrefs, updateSession } = useStore()
+/** topbar の Aa ボタン→ポップオーバー。文字サイズ・行間・本文幅・セリフ色分け・環境音・没入モード（UI-4・F2で数値化） */
+export default function ReaderSettings() {
+  const { ui, setUiPrefs } = useStore()
   const [open, setOpen] = useState(false)
-  const stageOn = session.spritesEnabled ?? true
 
   const resetReader = () =>
     setUiPrefs({
@@ -72,8 +67,6 @@ export default function ReaderSettings({ session }: Props) {
       lineHeight: DEFAULT_UI.lineHeight,
       contentWidth: DEFAULT_UI.contentWidth,
       dialogueTint: DEFAULT_UI.dialogueTint,
-      stageBgOpacity: DEFAULT_UI.stageBgOpacity,
-      stageSpriteOpacity: DEFAULT_UI.stageSpriteOpacity,
       ambientEnabled: DEFAULT_UI.ambientEnabled,
       ambientVolume: DEFAULT_UI.ambientVolume,
     })
@@ -83,7 +76,7 @@ export default function ReaderSettings({ session }: Props) {
       <button
         className="icon-btn"
         onClick={() => setOpen((v) => !v)}
-        title="表示設定（文字サイズ・行間・ステージ・没入モード）"
+        title="表示設定（文字サイズ・行間・環境音・没入モード）"
       >
         Aa
       </button>
@@ -116,36 +109,6 @@ export default function ReaderSettings({ session }: Props) {
               />
               セリフを色分け
             </label>
-
-            <div className="menu-sep" />
-
-            <label className="chk rs-chk">
-              <input
-                type="checkbox"
-                checked={stageOn}
-                onChange={() => updateSession(session.id, { spritesEnabled: !stageOn })}
-              />
-              背景・立ち絵を表示
-            </label>
-            {/* 濃さは 0.25 のような生小数でなく %で扱う（内部値は 0..1 のまま。FB8-E4） */}
-            <RsField
-              label="背景の濃さ"
-              value={Math.round(ui.stageBgOpacity * 100)}
-              min={Math.round(UI_LIMITS.stageBgOpacity.min * 100)}
-              max={Math.round(UI_LIMITS.stageBgOpacity.max * 100)}
-              step={5}
-              unit="%"
-              onChange={(v) => setUiPrefs({ stageBgOpacity: v / 100 })}
-            />
-            <RsField
-              label="立ち絵の濃さ"
-              value={Math.round(ui.stageSpriteOpacity * 100)}
-              min={Math.round(UI_LIMITS.stageSpriteOpacity.min * 100)}
-              max={Math.round(UI_LIMITS.stageSpriteOpacity.max * 100)}
-              step={5}
-              unit="%"
-              onChange={(v) => setUiPrefs({ stageSpriteOpacity: v / 100 })}
-            />
 
             <div className="menu-sep" />
 

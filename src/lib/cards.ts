@@ -1,4 +1,4 @@
-import type { Character, EmotionId, Persona, Scene, Session, World, WorldStartPreset } from '../types'
+import type { Character, Persona, Scene, Session, World, WorldStartPreset } from '../types'
 import { readTextChunks, writeTextChunk } from './png'
 import { getImage, putImage } from './imageStore'
 import { generateDefaultAvatar, normalizeImage } from './avatarGen'
@@ -69,11 +69,11 @@ export type ParsedCard =
   | { kind: 'persona'; persona: Persona }
   | { kind: 'cassette'; bundle: CassetteBundle }
 
-/** キャラクターの extensions に格納する独自拡張（model・avatar.imageId・sprites は環境固有のため除外） */
+/** キャラクターの extensions に格納する独自拡張（model・avatar.imageId は環境固有のため除外） */
 interface CharacterExtension {
   version: 1
   kind: 'character'
-  character: Omit<Character, 'avatar' | 'model' | 'sprites'> & { avatar: { color: string } }
+  character: Omit<Character, 'avatar' | 'model'> & { avatar: { color: string } }
 }
 
 interface CharaCardV2 {
@@ -101,7 +101,7 @@ function buildCharaCard(character: Character): CharaCardV2 {
   const description = character.appearance
     ? `${character.persona}\n\n【外見】\n${character.appearance}`
     : character.persona
-  const { avatar, model, sprites, ...rest } = character
+  const { avatar, model, ...rest } = character
   return {
     spec: 'chara_card_v2',
     spec_version: '2.0',
@@ -148,13 +148,6 @@ export async function exportCharacterCard(character: Character): Promise<void> {
 
 function normalizeCharacterFromExtension(raw: any): Character {
   const now = Date.now()
-  // sprites の imageId は同梱画像への参照（セッションカード経由のみ持つ。通常カードには無い）。
-  // インポート側（importCassette）で remap するためそのまま保持する。
-  const sprites: { emotion: EmotionId; imageId: string }[] | undefined = Array.isArray(raw.sprites)
-    ? raw.sprites.filter(
-        (s: any) => typeof s?.emotion === 'string' && typeof s?.imageId === 'string',
-      )
-    : undefined
   return {
     id: typeof raw.id === 'string' ? raw.id : uid(),
     name: typeof raw.name === 'string' ? raw.name : '',
@@ -166,7 +159,6 @@ function normalizeCharacterFromExtension(raw: any): Character {
     developments: Array.isArray(raw.developments) ? raw.developments : [],
     avatar: { color: typeof raw.avatar?.color === 'string' ? raw.avatar.color : '#5b8def' },
     imagePrompt: typeof raw.imagePrompt === 'string' ? raw.imagePrompt : undefined,
-    ...(sprites && sprites.length > 0 ? { sprites } : {}),
     tags: Array.isArray(raw.tags) ? raw.tags : [],
     createdAt: typeof raw.createdAt === 'number' ? raw.createdAt : now,
     updatedAt: typeof raw.updatedAt === 'number' ? raw.updatedAt : now,
@@ -316,7 +308,7 @@ function normalizePersonaFromData(raw: any): Persona {
 
 /**
  * セッション/カセットが参照する画像を収集し base64 同梱用に変換する（セッションカード・ゲームカセット共通）。
- * 対象＝キャラのアバター＋立ち絵、ペルソナのアバター、各シーンの挿絵＋背景。
+ * 対象＝キャラのアバター、ペルソナのアバター、各シーンの挿絵。
  * 消失画像はスキップ（インポート側でフォールバック表示）。合計バイト数も返す（サイズ警告用）。
  */
 async function collectCardImages(
@@ -326,12 +318,10 @@ async function collectCardImages(
   const imageIds = new Set<string>()
   for (const c of refs.characters) {
     if (c.avatar.imageId) imageIds.add(c.avatar.imageId)
-    for (const sp of c.sprites ?? []) imageIds.add(sp.imageId)
   }
   if (refs.persona?.avatar.imageId) imageIds.add(refs.persona.avatar.imageId)
   for (const sc of session.scenes) {
     for (const ill of sc.illustrations ?? []) imageIds.add(ill.imageId)
-    if (sc.backgroundImageId) imageIds.add(sc.backgroundImageId)
   }
 
   const images: { id: string; b64: string }[] = []
@@ -394,7 +384,6 @@ export function freshSessionOf(session: Session): Session {
     // 出自カセットは引き継がない（FB9-B。既存セッションを種に別のカセットを作った時、
     // 到達エンディングが種のカセットへ集計されるのを防ぐ。playCassette が改めて刻む）
     originCassetteId: undefined,
-    spriteEmotions: [],
     // 開始時点（startDay/startSlot）へ巻き戻す。指定が無ければ従来どおり1日目・先頭スロット（FB2-B）。
     // 区切り編集後に範囲外となった開始時点は防御的にクランプ（FB4-A）
     timeline: {
@@ -412,8 +401,8 @@ export function freshSessionOf(session: Session): Session {
 
 /**
  * ゲームカセット（W2）を PNG カードとして書き出す。世界観・登場キャラ・ペルソナ・設定・
- * アバター/立ち絵画像を1枚に同梱し、読み込めば最初から遊べる状態を配布できる。
- * セッションカードとの違いは「開始状態に初期化して同梱する」点（挿絵/背景は初期化で自然に対象外）。
+ * アバター画像を1枚に同梱し、読み込めば最初から遊べる状態を配布できる。
+ * セッションカードとの違いは「開始状態に初期化して同梱する」点（挿絵は初期化で自然に対象外）。
  */
 export async function exportCassetteCard(
   session: Session,
