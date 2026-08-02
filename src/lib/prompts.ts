@@ -1,7 +1,7 @@
 import type { Character, Persona, RoleParty, Session, World } from '../types'
 import type { ChatMessage } from './openrouter'
 import { roleMembers } from './casting'
-import { selectLoreEntries } from './lorebook'
+import { splitLoreEntries } from './lorebook'
 import { SCENE_WIND_DOWN_TOKENS, SCENE_WRAP_UP_TOKENS, sceneTokensOf } from './tokens'
 
 export interface ResolvedRefs {
@@ -58,21 +58,25 @@ function castingBlock(session: Session, refs: ResolvedRefs): string | undefined 
 
 /**
  * system プロンプトを組み立てる。
- * activeCharacter が指定された場合は「その人物として応答」を末尾に明示。
+ *
+ * **この関数の出力はシーン境界でしか変わってはいけない**（PC1+PC4）。
+ * プロンプトキャッシュの粒度はメッセージ単位で、system を1文字でも変えると system 全体が無効になるため
+ * （実測: 可変ブロックを system のどこに置いてもヒット率 2%）。
+ * 毎ターン変わる要素——キーワード一致のロア・会話劇の話者指定・ペース制御のナッジ——は
+ * `buildMessages` が深さ3／深さ0のメッセージとして注入する。
+ * 日付・トークン数・乱数のような動的な値をここへ足さないこと。
+ * `docs/詳細設計_プロンプト構造とキャッシュ.md` §5
  */
-export function buildSystemPrompt(
-  session: Session,
-  refs: ResolvedRefs,
-  activeCharacter?: Character,
-): string {
+export function buildSystemPrompt(session: Session, refs: ResolvedRefs): string {
   const parts: string[] = []
 
-  // 1. 世界観（概要 + ロアブック）
+  // 1. 世界観（概要 + 常時ロア）
+  // キーワード一致のロア（matched）は毎ターン入れ替わるので system には入れない（深さ3へ）
   if (refs.world) {
     const wParts: string[] = []
     if (refs.world.description.trim()) wParts.push(refs.world.description.trim())
-    const lore = selectLoreEntries(refs.world, session.messages)
-    for (const e of lore) {
+    const { always } = splitLoreEntries(refs.world, session.messages)
+    for (const e of always) {
       if (e.content.trim()) wParts.push(e.content.trim())
     }
     if (wParts.length) {
@@ -195,10 +199,7 @@ export function buildSystemPrompt(
     }
   }
 
-  // 5. 固定メモ（作者ノート）
-  if (session.authorNote.trim()) {
-    parts.push(`【常に踏まえる重要事項】\n${session.authorNote.trim()}`)
-  }
+  // 5. 固定メモ（作者ノート）は深さ3へ移した（PC1+PC4。近接させた方が効く）
 
   // 6. 文体・ルール
   if (novel) {
@@ -231,38 +232,8 @@ export function buildSystemPrompt(
     )
   }
 
-  // 6.5 シーンのペース制御（FB5-①）: 現在シーンが長くなってきたら収束へ向かわせる。
-  // メッセージ履歴には積まず、毎回の組み立て時に推定トークンから判定する（状態を持たない）。
-  // エピローグは【エンディング】に専用の締め指示があるため対象外。
-  if (!refs.ending) {
-    const sceneTokens = sceneTokensOf(session)
-    if (sceneTokens >= SCENE_WRAP_UP_TOKENS) {
-      parts.push(
-        `【シーンの締め】\nこの場面は十分な長さに達しています。新しい話題・場所・事件を持ち込まず、` +
-          `次の1〜2回の応答でこの場面を自然な一区切りへ着地させてください（続きが気になる引きは残してよい）。`,
-      )
-    } else if (sceneTokens >= SCENE_WIND_DOWN_TOKENS) {
-      parts.push(
-        `【シーンの収束】\nこの場面は後半に入っています。新しい展開を広げすぎず、` +
-          `いま起きている流れをまとめる方向で書き進めてください。`,
-      )
-    }
-  }
-
-  // 7. グループ会話: 今回の話者を指定（会話劇のみ）
-  if (!novel && session.mode === 'roleplay' && refs.characters.length > 1) {
-    if (activeCharacter) {
-      parts.push(`【今回の応答】\n「${activeCharacter.name}」として、その人物の発言・描写のみを返してください。`)
-    } else {
-      parts.push(
-        `【今回の応答】\n` +
-          `この場面で最も自然に発言するキャラクターを1人選び、その人物として応答してください。` +
-          (session.structuredOutput
-            ? `セリフはすべて @名前 行で書くため、応答の先頭に「キャラ名: 」は付けないでください。`
-            : `応答は必ず「キャラ名: 」で始めてください。`),
-      )
-    }
-  }
+  // 6.5 シーンのペース制御（FB5-①）と 7. 今回の話者指定は深さ0へ移した（PC1+PC4）。
+  // どちらも毎ターン変わりうるので system に置くとキャッシュが全損する。
 
   // 8. セリフの出力形式（構造化出力）
   if (session.structuredOutput) {
@@ -279,15 +250,111 @@ export function buildSystemPrompt(
   return parts.join('\n\n')
 }
 
-/** API に送る messages 配列を作る */
+/**
+ * 可変ブロックを差し込む深さ（末尾から何件手前か）。
+ * 実測ヒット率は深さ0で95%・深さ3で87%＝直近3件ぶんしか失わない。
+ * `docs/詳細設計_プロンプト構造とキャッシュ.md` §0.1 F4
+ */
+const INJECT_DEPTH = 3
+
+/** 末尾から depth 件手前へ差し込む。履歴が足りなければ system 直後へクランプする */
+function insertAtDepth(history: ChatMessage[], depth: number, content: string): ChatMessage[] {
+  const at = Math.max(0, history.length - depth)
+  return [...history.slice(0, at), { role: 'user' as const, content }, ...history.slice(at)]
+}
+
+/**
+ * 深さ3に差し込む1通（PC1+PC4）。「素材 → 拘束」の順。
+ * ここに置くのは「毎ターン変わりうるが、いま直ちに効かせる必要はない」もの。
+ * 空文字なら差し込まない。
+ */
+function depthThreeContent(session: Session, refs: ResolvedRefs): string {
+  const parts: string[] = []
+  // 素材: 直近の会話にキーワードが当たったロア（system から追い出した主犯）
+  const { matched } = splitLoreEntries(refs.world, session.messages)
+  const lore = matched.map((e) => e.content.trim()).filter((t) => t.length > 0)
+  if (lore.length) parts.push(`【今回の場面に関わる設定】\n${lore.join('\n\n')}`)
+  // TODO(PC-B): 【状態→帰結の拘束文】（迎合対策の文面）はここへ入る。文面は実測で決まるため未実装
+  // 拘束: 作者ノート（system から近接位置へ移した）
+  if (session.authorNote.trim()) parts.push(`【常に踏まえる重要事項】\n${session.authorNote.trim()}`)
+  return parts.join('\n\n')
+}
+
+/**
+ * 末尾（深さ0）に積む1通（PC1+PC4）。「いま直ちに効かせたい」ものだけ。
+ * **毎ターン非キャッシュなので短さが命**＝形式の再掲は1行に留める。
+ */
+function depthZeroContent(
+  session: Session,
+  refs: ResolvedRefs,
+  activeCharacter?: Character,
+): string {
+  const parts: string[] = []
+  const novel = session.narrativeStyle === 'novel'
+
+  // グループ会話: 今回の話者を指定（会話劇のみ）
+  if (!novel && session.mode === 'roleplay' && refs.characters.length > 1) {
+    if (activeCharacter) {
+      parts.push(`【今回の応答】\n「${activeCharacter.name}」として、その人物の発言・描写のみを返してください。`)
+    } else {
+      parts.push(
+        `【今回の応答】\n` +
+          `この場面で最も自然に発言するキャラクターを1人選び、その人物として応答してください。` +
+          (session.structuredOutput
+            ? `セリフはすべて @名前 行で書くため、応答の先頭に「キャラ名: 」は付けないでください。`
+            : `応答は必ず「キャラ名: 」で始めてください。`),
+      )
+    }
+  }
+
+  // シーンのペース制御（FB5-①）: 現在シーンが長くなってきたら収束へ向かわせる。
+  // メッセージ履歴には積まず、毎回の組み立て時に推定トークンから判定する（状態を持たない）。
+  // 「今すぐ畳め」という指示なので深さ0＝最も近い位置に置く。
+  // エピローグは【エンディング】に専用の締め指示があるため対象外。
+  if (!refs.ending) {
+    const sceneTokens = sceneTokensOf(session)
+    if (sceneTokens >= SCENE_WRAP_UP_TOKENS) {
+      parts.push(
+        `【シーンの締め】\nこの場面は十分な長さに達しています。新しい話題・場所・事件を持ち込まず、` +
+          `次の1〜2回の応答でこの場面を自然な一区切りへ着地させてください（続きが気になる引きは残してよい）。`,
+      )
+    } else if (sceneTokens >= SCENE_WIND_DOWN_TOKENS) {
+      parts.push(
+        `【シーンの収束】\nこの場面は後半に入っています。新しい展開を広げすぎず、` +
+          `いま起きている流れをまとめる方向で書き進めてください。`,
+      )
+    }
+  }
+
+  // 形式の再掲（system の詳細な指示から遠ざかった分の押さえ。短く）
+  parts.push(
+    session.structuredOutput
+      ? `（セリフは行頭 @名前 の1行、地の文は @ を付けない。1〜3段落で書く。）`
+      : `（地の文とセリフを織り交ぜて1〜3段落。）`,
+  )
+
+  return parts.join('\n\n')
+}
+
+/**
+ * API に送る messages 配列を作る。
+ *
+ * 組み立て順（PC1+PC4）: system（シーン境界でしか変わらない） → 履歴 →
+ * 深さ3の1通（可変ロア・作者ノート） → 深さ0の1通（話者指定・締めのナッジ・形式の再掲）。
+ * 呼び出し側の追加念押し（`CONTINUATION_NUDGE` 等）はさらにその後ろに積まれる。
+ *
+ * @param opts.injections 深さ3・深さ0の注入を行うか（既定 true）。
+ *   本編以外の呼び出し（選択肢生成）は system を差し替えて履歴だけを使うため false を渡す。
+ */
 export function buildMessages(
   session: Session,
   refs: ResolvedRefs,
   activeCharacter?: Character,
+  opts?: { injections?: boolean },
 ): ChatMessage[] {
   const system: ChatMessage = {
     role: 'system',
-    content: buildSystemPrompt(session, refs, activeCharacter),
+    content: buildSystemPrompt(session, refs),
   }
   // 会話劇のグループ時のみ、誰の発言かをテキストに織り込む（構造化出力ONでは @ 行が話者を運ぶためスキップ）
   const multi = session.narrativeStyle !== 'novel' && refs.characters.length > 1 && !session.structuredOutput
@@ -303,7 +370,12 @@ export function buildMessages(
       }
       return { role: m.role, content: m.content }
     })
-  return [system, ...history]
+  if (opts?.injections === false) return [system, ...history]
+
+  const depth3 = depthThreeContent(session, refs)
+  const body = depth3 ? insertAtDepth(history, INJECT_DEPTH, depth3) : history
+  const depth0 = depthZeroContent(session, refs, activeCharacter)
+  return depth0 ? [system, ...body, { role: 'user', content: depth0 }] : [system, ...body]
 }
 
 export const CONTINUE_PROMPT = '（続けて。物語をさらに展開させてください。）'

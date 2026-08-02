@@ -19,7 +19,7 @@ export function estimateTokens(text: string): number {
 
 /**
  * シーンのペース制御閾値（推定トークン。FB5-①）。目標は1シーン＝4〜5千トークンで一区切り。
- * 超過すると buildSystemPrompt が本編 system に収束/締めのナッジを注入し、
+ * 超過すると buildMessages が本編の末尾（深さ0）に収束/締めのナッジを注入し、
  * ChatPanel はバッジ「締め時」とシーン終了の提案チップを出す（自動でレビューは開かない）。
  */
 export const SCENE_WIND_DOWN_TOKENS = 3000

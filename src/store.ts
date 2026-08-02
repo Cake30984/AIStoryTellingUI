@@ -2240,7 +2240,9 @@ export const useStore = create<AppState>()(
         set({ isGeneratingChoices: true })
         try {
           const refs = resolveRefs(session)
-          const base = buildMessages(session, refs)
+          // system は差し替えるので履歴だけを使う。本編用の深さ注入（形式の再掲・締めのナッジ）は
+          // JSON を出させたい選択肢では邪魔なので入れない（PC1+PC4。文脈自体の削減は PC2' で行う）
+          const base = buildMessages(session, refs, undefined, { injections: false })
           // 対応モデルなら JSON を強制する（スキーマが通る相手は system の書式指示も包んだ形へ揃える）
           const jsonMode = jsonModeFor(model, get().modelsByProvider[provider.id])
           const jsonSchema = jsonMode === 'none' ? undefined : CHOICES_SCHEMA
