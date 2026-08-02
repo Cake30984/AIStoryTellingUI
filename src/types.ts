@@ -166,6 +166,11 @@ export type Clause =
   | { kind: 'stat'; defId: string; characterId?: string; op: Op; value: number }
   | { kind: 'counter'; defId: string; characterId?: string; op: Op; value: number }
   | { kind: 'achievement'; defId: string; have: boolean }
+  /**
+   * 特別イベントが発火済みか（G1）。v1 では当事者の組を問わない＝「その定義がどれか1組で発火済みか」。
+   * 判定は `usedEventIds` の前方一致（`eventUsedKey` が `eventId@charId1[+charId2]` を作るため）。
+   */
+  | { kind: 'eventFired'; eventId: string; have: boolean }
   | { kind: 'group'; roleId: string; quantifier: Quantifier; subject?: boolean; clauses: GroupSubClause[] }
 
 /** 条件式（all=すべて満たす / any=いずれか満たす）。節が空なら不成立扱い。 */

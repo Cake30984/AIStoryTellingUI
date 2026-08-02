@@ -185,16 +185,59 @@ function compareOp(a: number, op: Op, b: number): boolean {
 }
 
 /**
+ * 条件エンジンの評価コンテキスト（G1）。`matchGroups` 系はこれ1つだけを受け取る。
+ * 引数を足すたびに全呼び出し元の位置引数を書き換える事故を避けるためのオブジェクト化
+ * （docs/詳細設計_ゲーム性向上.md §1.3）。
+ */
+export interface ConditionContext {
+  state: SessionState
+  world: World | undefined
+  characterIds: string[]
+  roleAssignments: RoleAssignment[] | undefined
+  characters: { id: string; name: string }[]
+  /** Session 直下（SessionState ではない）。前方一致で判定する */
+  usedEventIds: string[]
+  exactSelections?: Record<string, string[]>
+}
+
+/**
+ * セッションから評価コンテキストを組み立てる。`state` 未指定なら `session.state`
+ * （レビュー確定後の state で判定したい呼び出し用に上書きできる）。
+ */
+export function conditionContextOf(
+  session: Session,
+  world: World | undefined,
+  characters: { id: string; name: string }[] = [],
+  state?: SessionState,
+  exactSelections?: Record<string, string[]>,
+): ConditionContext {
+  return {
+    state: state ?? session.state,
+    world,
+    characterIds: session.characterIds,
+    roleAssignments: session.roleAssignments,
+    characters,
+    usedEventIds: session.usedEventIds ?? [],
+    exactSelections,
+  }
+}
+
+/**
+ * その特別イベント定義がどれか1組で発火済みか（G1）。`usedEventIds` の要素は素の `eventId`
+ * （global・当事者無し／旧データ）か `eventId@charId1[+charId2]`（当事者つき）なので前方一致で見る。
+ */
+export function isEventFired(usedEventIds: string[], eventId: string): boolean {
+  if (!eventId) return false
+  return usedEventIds.some((k) => k === eventId || k.startsWith(`${eventId}@`))
+}
+
+/**
  * 条件節（Clause）を評価する。prose は読まない＝数・フラグ・実績のみ判定（再現性のため）。
  * World はセッション横断の再利用素材のため characterId/fromId 省略時は
  * 「セッション参加キャラのいずれかが満たせば真」で判定する。
  */
-function evalClause(
-  clause: Clause,
-  state: SessionState,
-  world: World | undefined,
-  characterIds: string[],
-): boolean {
+function evalClause(clause: Clause, ctx: ConditionContext): boolean {
+  const { state, world, characterIds } = ctx
   switch (clause.kind) {
     case 'stat': {
       const def = world?.stats.find((d) => d.id === clause.defId)
@@ -219,6 +262,8 @@ function evalClause(
       const has = state.achievements.some((a) => a.defId === clause.defId)
       return has === clause.have
     }
+    case 'eventFired':
+      return isEventFired(ctx.usedEventIds, clause.eventId) === clause.have
     default:
       return false
   }
@@ -306,13 +351,9 @@ function mergeRoleParties(parties: RoleParty[]): RoleParty[] {
  */
 function evalGroupClause(
   clause: Extract<Clause, { kind: 'group' }>,
-  state: SessionState,
-  world: World | undefined,
-  characterIds: string[],
-  roleAssignments: RoleAssignment[] | undefined,
-  characters: { id: string; name: string }[],
-  exactSelections?: Record<string, string[]>,
+  ctx: ConditionContext,
 ): { ok: boolean; subjects: RoleParty[]; exactCandidates: ExactGroupCandidate[] } {
+  const { state, world, characterIds, roleAssignments, characters, exactSelections } = ctx
   const role = world?.roles?.find((r) => r.id === clause.roleId)
   const memberIds = new Set(
     (roleAssignments ?? [])
@@ -358,12 +399,7 @@ function evalGroupClause(
  */
 export function matchGroups(
   cond: Condition | undefined,
-  state: SessionState,
-  world: World | undefined,
-  characterIds: string[],
-  roleAssignments: RoleAssignment[] | undefined,
-  characters: { id: string; name: string }[] = [],
-  exactSelections?: Record<string, string[]>,
+  ctx: ConditionContext,
 ): { ok: boolean; subjects: RoleParty[]; exactCandidates: ExactGroupCandidate[] } {
   if (!cond) return { ok: false, subjects: [], exactCandidates: [] }
   const clauses = 'all' in cond ? cond.all : cond.any
@@ -371,8 +407,8 @@ export function matchGroups(
   const isAll = 'all' in cond
   const results = clauses.map((c) =>
     c.kind === 'group'
-      ? evalGroupClause(c, state, world, characterIds, roleAssignments, characters, exactSelections)
-      : { ok: evalClause(c, state, world, characterIds), subjects: [] as RoleParty[], exactCandidates: [] as ExactGroupCandidate[] },
+      ? evalGroupClause(c, ctx)
+      : { ok: evalClause(c, ctx), subjects: [] as RoleParty[], exactCandidates: [] as ExactGroupCandidate[] },
   )
   const ok = isAll ? results.every((r) => r.ok) : results.some((r) => r.ok)
   const contributing = isAll ? results : results.filter((r) => r.ok)
@@ -402,14 +438,8 @@ export function bindRoleNames(text: string, subjects: RoleParty[] | undefined): 
 }
 
 /** 条件式を評価する（成立するか）。`matchGroups` の互換窓口。節が空なら不成立扱い。 */
-export function evalCondition(
-  cond: Condition | undefined,
-  state: SessionState,
-  world: World | undefined,
-  characterIds: string[],
-  roleAssignments: RoleAssignment[] | undefined,
-): boolean {
-  return matchGroups(cond, state, world, characterIds, roleAssignments).ok
+export function evalCondition(cond: Condition | undefined, ctx: ConditionContext): boolean {
+  return matchGroups(cond, ctx).ok
 }
 
 /**
@@ -479,14 +509,12 @@ function degradeExactlyForAchievement(cond: Condition): Condition {
  * シーン確定時・状態の手動編集時など、state が変わり得るあらゆる場所から共通で呼ぶ。
  */
 function unlockAchievements(
-  state: SessionState,
-  world: World | undefined,
-  characterIds: string[],
-  roleAssignments: RoleAssignment[] | undefined,
-  characters: { id: string; name: string }[] = [],
+  ctx: ConditionContext,
 ): { state: SessionState; unlocked: UnlockedAchievement[] } {
+  const { state, world } = ctx
   const achievements = state.achievements.map((a) => ({ ...a }))
   const candidate: SessionState = { ...state, achievements }
+  const candidateCtx: ConditionContext = { ...ctx, state: candidate }
   const unlocked: UnlockedAchievement[] = []
   const keyOf = (defId: string, parties: PartyRef[]) =>
     `${defId}@${parties
@@ -499,7 +527,7 @@ function unlockAchievements(
     progressed = false
     for (const def of world?.achievements ?? []) {
       const cond = degradeExactlyForAchievement(def.condition)
-      const result = matchGroups(cond, candidate, world, characterIds, roleAssignments, characters)
+      const result = matchGroups(cond, candidateCtx)
       if (!result.ok) continue
       const parties = partiesOf(result.subjects)
       const key = keyOf(def.id, parties)
@@ -524,16 +552,11 @@ function unlockAchievements(
  */
 export function checkEndings(
   endings: EndingDef[] | undefined,
-  state: SessionState,
-  world: World | undefined,
-  characterIds: string[],
-  roleAssignments: RoleAssignment[] | undefined,
-  characters: { id: string; name: string }[] = [],
-  exactSelections?: Record<string, string[]>,
+  ctx: ConditionContext,
 ): { def: EndingDef; subjects: RoleParty[]; exactCandidates: ExactGroupCandidate[] } | undefined {
   for (const e of endings ?? []) {
     if (e.fallback || !e.condition) continue
-    const result = matchGroups(e.condition, state, world, characterIds, roleAssignments, characters, exactSelections)
+    const result = matchGroups(e.condition, ctx)
     if (result.ok) return { def: e, subjects: result.subjects, exactCandidates: result.exactCandidates }
   }
   return undefined
@@ -588,17 +611,15 @@ function mergeEndingRecords(cur: EndingRecord[], inc: EndingRecord[]): EndingRec
  */
 export function applyReviewToState(
   base: SessionState | undefined,
-  world: World | undefined,
-  characterIds: string[],
   sel: {
     relationUpdates: RelationUpdate[]
     statChanges: StatChange[]
     counterEvents: CounterEvent[]
     moodChanges: MoodChange[]
   },
-  roleAssignments: RoleAssignment[] | undefined,
-  characters: { id: string; name: string }[] = [],
+  ctx: ConditionContext,
 ): { state: SessionState; unlocked: UnlockedAchievement[] } {
+  const world = ctx.world
   const prev = base ?? { relations: [], moods: [], stats: [], counters: [], achievements: [] }
   // 関係性（fromId,toId で upsert。stance は全文置換）
   const relations = prev.relations.map((r) => ({ ...r }))
@@ -653,13 +674,10 @@ export function applyReviewToState(
     else counters.push({ defId: c.defId, characterId: c.characterId, value: c.amount })
   }
   // 実績（数・フラグ・実績のしきい値をコードが自動判定。連鎖依存も解決するまで反復）
-  return unlockAchievements(
-    { relations, moods, stats, counters, achievements: prev.achievements ?? [] },
-    world,
-    characterIds,
-    roleAssignments,
-    characters,
-  )
+  return unlockAchievements({
+    ...ctx,
+    state: { relations, moods, stats, counters, achievements: prev.achievements ?? [] },
+  })
 }
 
 /**
@@ -886,6 +904,8 @@ export function newClause(kind: Clause['kind'], world: World): Clause {
       return { kind: 'counter', defId: world.counters[0]?.id ?? '', op: '>=', value: 1 }
     case 'achievement':
       return { kind: 'achievement', defId: '', have: true }
+    case 'eventFired':
+      return { kind: 'eventFired', eventId: world.scheduledEvents?.[0]?.id ?? '', have: true }
     case 'group':
       return {
         kind: 'group',
@@ -1693,6 +1713,9 @@ function nextScheduledEvent(
     slot == null ? -1 : session.timeline.slots.indexOf(slot)
   type Cand = { event: ScheduledEvent; subjects: RoleParty[]; key: string }
   const cands: Cand[] = []
+  // 条件評価は全候補で同じ文脈（このレビュー確定前の state・usedEventIds）を使う。
+  // よって「A が発火 → 同じシーンで A 発火済みを条件にした B も発火」は起きない（1シーンに1段。§1.5a）
+  const ctx = conditionContextOf(session, world, characters)
   for (const e of world.scheduledEvents ?? []) {
     // 素の eventId が消化済み＝旧データ・global 発火済み。全割り当てを消化済み扱いにする（安全側）
     if (session.usedEventIds.includes(e.id)) continue
@@ -1706,7 +1729,7 @@ function nextScheduledEvent(
     )
       continue
     if (e.condition) {
-      const result = matchGroups(e.condition, session.state, world, session.characterIds, session.roleAssignments, characters)
+      const result = matchGroups(e.condition, ctx)
       if (!result.ok) continue
       const key = eventUsedKey(e.id, result.subjects)
       if (session.usedEventIds.includes(key)) continue
@@ -3150,16 +3173,13 @@ export const useStore = create<AppState>()(
           const characters = get().characters
           const applied = applyReviewToState(
             s.state,
-            stateWorld,
-            s.characterIds,
             {
               relationUpdates: selectedRelUpdates,
               statChanges: selectedStats,
               counterEvents: selectedCounters,
               moodChanges: selectedMoods,
             },
-            s.roleAssignments,
-            characters,
+            conditionContextOf(s, stateWorld, characters),
           )
           const newState = applied.state
           // このレビュー適用で新規解除された実績（通知用・当事者つき）
@@ -3245,17 +3265,17 @@ export const useStore = create<AppState>()(
           // 判定は newState（このレビュー適用後の state）に対して行い、モーダルのプレビューと一致させる。
           const endings = stateWorld?.endings ?? []
           // checkEndings は「最上位成立エンディング」の当事者組を返す
-          const topMatch = s.ending
-            ? undefined
-            : checkEndings(
-                endings,
-                newState,
-                stateWorld,
-                s.characterIds,
-                s.roleAssignments,
-                characters,
-                opts.endingExactSelections,
-              )
+          // エンディング判定の文脈は「確定後 state ＋ 確定前 usedEventIds」。今回発火するイベントは
+          // まだ usedEventIds に無いので、eventFired 節を使ったエンディングは次のシーンで成立する
+          // （プレビューと確定が同じ文脈を見る＝予告と発火が一致する。§1.5b）
+          const endingCtx = conditionContextOf(
+            s,
+            stateWorld,
+            characters,
+            newState,
+            opts.endingExactSelections,
+          )
+          const topMatch = s.ending ? undefined : checkEndings(endings, endingCtx)
           // 満了モード：確定後に進む先が totalDays を超えるか（enabled かつ totalDays 指定時のみ）
           const isExpiry =
             !s.ending &&
@@ -3276,15 +3296,7 @@ export const useStore = create<AppState>()(
               if (chosen?.fallback) {
                 if (isExpiry) firing = chosen
               } else if (chosen) {
-                const result = matchGroups(
-                  chosen.condition,
-                  newState,
-                  stateWorld,
-                  s.characterIds,
-                  s.roleAssignments,
-                  characters,
-                  opts.endingExactSelections,
-                )
+                const result = matchGroups(chosen.condition, endingCtx)
                 if (result.ok) {
                   firing = chosen
                   firingSubjects = result.subjects
@@ -3539,11 +3551,7 @@ export const useStore = create<AppState>()(
             value: clampStat(sv.value, world?.stats.find((d) => d.id === sv.defId)),
           }))
           const { state, unlocked } = unlockAchievements(
-            { ...edited, stats },
-            world,
-            s.characterIds,
-            s.roleAssignments,
-            get().characters,
+            conditionContextOf(s, world, get().characters, { ...edited, stats }),
           )
           get().updateSession(s.id, { state })
           if (unlocked.length) set({ newlyUnlockedAchievements: unlocked })

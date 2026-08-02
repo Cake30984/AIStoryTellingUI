@@ -172,20 +172,30 @@ function GroupSubClauseRow({
   )
 }
 
-/** 条件節（Clause）1件の編集行。achievementId は実績の自己参照を除外するため（イベントでは未指定） */
+/**
+ * 条件節（Clause）1件の編集行。achievementId は実績の、eventId は特別イベントの自己参照を
+ * 除外するため（それぞれ自分の条件エディタからのみ渡す。他の画面では未指定）。
+ */
 function ClauseRow({
   clause,
   world,
   achievementId,
+  eventId,
   onChange,
   onRemove,
 }: {
   clause: Clause
   world: World
   achievementId?: string
+  eventId?: string
   onChange: (c: Clause) => void
   onRemove: () => void
 }) {
+  // 参照切れの検出：定義が消えた節は黙って発火しなくなるので、行の右に警告を出す
+  const missingEvent =
+    clause.kind === 'eventFired' &&
+    !!clause.eventId &&
+    !(world.scheduledEvents ?? []).some((e) => e.id === clause.eventId)
   return (
     <div style={{ marginTop: 6 }}>
       <div className="lore-entry-top">
@@ -197,6 +207,7 @@ function ClauseRow({
           <option value="stat">ステータス</option>
           <option value="counter">カウンター</option>
           <option value="achievement">実績</option>
+          <option value="eventFired">特別イベント</option>
           <option value="group">グループ条件</option>
         </select>
 
@@ -261,6 +272,39 @@ function ClauseRow({
               <option value="have">達成済み</option>
               <option value="not">未達成</option>
             </select>
+          </>
+        )}
+
+        {clause.kind === 'eventFired' && (
+          <>
+            <select
+              value={clause.eventId}
+              style={{ background: 'var(--bg)' }}
+              onChange={(e) => onChange({ ...clause, eventId: e.target.value })}
+            >
+              <option value="">（未選択）</option>
+              {(world.scheduledEvents ?? [])
+                .filter((ev) => ev.id !== eventId)
+                .map((ev) => (
+                  <option key={ev.id} value={ev.id}>
+                    {ev.name || '無名'}
+                  </option>
+                ))}
+            </select>
+            <span className="clause-joint">が</span>
+            <select
+              value={clause.have ? 'have' : 'not'}
+              style={{ background: 'var(--bg)' }}
+              onChange={(e) => onChange({ ...clause, have: e.target.value === 'have' })}
+            >
+              <option value="have">発生済み</option>
+              <option value="not">未発生</option>
+            </select>
+            {missingEvent && (
+              <span className="clause-joint" style={{ color: 'var(--danger)' }}>
+                このイベントは存在しません
+              </span>
+            )}
           </>
         )}
 
@@ -1048,6 +1092,7 @@ export default function WorldEditor({ world, onClose }: Props) {
                     key={i}
                     clause={c}
                     world={d}
+                    eventId={e.id}
                     onChange={(nc) => updateEventClause(e, i, nc)}
                     onRemove={() => removeEventClause(e, i)}
                   />
@@ -1059,6 +1104,8 @@ export default function WorldEditor({ world, onClose }: Props) {
                   {clauses.length > 0
                     ? '条件を満たし、指定日時も到来していれば自動的に発生します。'
                     : '指定日時で判定します（両方空欄なら常に候補）。'}
+                  {clauses.some((c) => c.kind === 'eventFired') &&
+                    ' イベントの連鎖は1シーンに1段ずつ進みます（発生したイベントを条件にした次のイベントは、さらに次のシーンで候補になります）。'}
                 </div>
               </div>
             )

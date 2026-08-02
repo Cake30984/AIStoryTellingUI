@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { applyReviewToState, bindRoleNames, checkEndings, useStore } from '../store'
+import { applyReviewToState, bindRoleNames, checkEndings, conditionContextOf, useStore } from '../store'
 import { advanceTimeline, timeLabelOf } from '../lib/timeline'
 import type {
   CounterEvent,
@@ -90,23 +90,12 @@ export default function SceneReviewModal() {
       counterEvents: [...counterSel].map((i) => draft.counterEvents[i]).filter(Boolean),
       moodChanges: [...moodSel].map((i) => draft.moodChanges[i]).filter(Boolean),
     }
-    const applied = applyReviewToState(
-      session.state,
-      world,
-      session.characterIds,
-      sel,
-      session.roleAssignments,
-      characters,
-    )
-    // checkEndings は最上位成立エンディングの当事者組を返す（exactPicks の n 人選択を反映）
+    const applied = applyReviewToState(session.state, sel, conditionContextOf(session, world, characters))
+    // checkEndings は最上位成立エンディングの当事者組を返す（exactPicks の n 人選択を反映）。
+    // 文脈は確定側（confirmSceneReview）と同じ「確定後 state ＋ 確定前 usedEventIds」
     const top = checkEndings(
       endings,
-      applied.state,
-      world,
-      session.characterIds,
-      session.roleAssignments,
-      characters,
-      exactPicks,
+      conditionContextOf(session, world, characters, applied.state, exactPicks),
     )
     const tlNext = session.timeline.enabled ? advanceTimeline(session.timeline) : null
     const isExpiry = !!(
