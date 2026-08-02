@@ -80,6 +80,7 @@ export default function SessionEditor({ session, onClose }: Props) {
       choiceMode: d.choiceMode,
       narrativeStyle: d.narrativeStyle,
       structuredOutput: d.structuredOutput,
+      reviewSplit: d.reviewSplit,
       reviewModel: d.reviewModel,
       choicesModel: d.choicesModel,
       eventAutoFire: d.eventAutoFire,
@@ -634,6 +635,21 @@ export default function SessionEditor({ session, onClose }: Props) {
                 <div className="desc">
                   セリフを @名前「…」の行形式で書かせ、話者アイコン付きの表示に使います。
                   対応が不安定なモデルでは OFF に。OFF でも本文は従来方式で表示されます。
+                </div>
+              </div>
+
+              {/* レビューの分割並列（PC-A A-2。undefined=ON） */}
+              <div className="field">
+                <label className="chk">
+                  <input
+                    type="checkbox"
+                    checked={d.reviewSplit !== false}
+                    onChange={(e) => patch({ reviewSplit: e.target.checked })}
+                  />
+                  レビューを2本に分けて並列実行する
+                </label>
+                <div className="desc">
+                  待ち時間が約半分になります。入力コストは約2倍になります。
                 </div>
               </div>
             </>

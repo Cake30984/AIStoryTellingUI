@@ -324,14 +324,18 @@ export const CONTINUATION_NUDGE =
  * 選択肢生成用の system プロンプト。
  * 選択肢は行動の提示のみ＝加点（旧 P5 の effects）は持たない（FB7-C。評価はシーン終了レビューが行う）。
  */
-export function choicesSystem(mode: 'always' | 'auto'): string {
+export function choicesSystem(mode: 'always' | 'auto', jsonSchema = false): string {
   const base = `あなたは物語の選択肢デザイナーです。直前の場面を踏まえ、主人公（ユーザー）が次に取りうる行動・展開の選択肢を考えます。\n`
-  const format = `出力は JSON 配列のみ（前後に文章を付けない）。各要素は10〜30字程度の短い行動・選択の文字列。例: ["剣を抜いて立ち向かう","そっと後ずさる","話しかけてみる"]\n`
+  // JSON スキーマで固定する場合は root がオブジェクトである必要があるため、包んだ形を指示する
+  // （`jsonSchemas.ts` の CHOICES_SCHEMA と対。指示とスキーマが食い違わないようにする）
+  const format = jsonSchema
+    ? `出力は {"choices": [...]} の JSON のみ（前後に文章を付けない）。各要素は10〜30字程度の短い行動・選択の文字列。例: {"choices":["剣を抜いて立ち向かう","そっと後ずさる","話しかけてみる"]}\n`
+    : `出力は JSON 配列のみ（前後に文章を付けない）。各要素は10〜30字程度の短い行動・選択の文字列。例: ["剣を抜いて立ち向かう","そっと後ずさる","話しかけてみる"]\n`
   if (mode === 'auto') {
     return (
       base +
       format +
-      `ただし、選択を挟むのが不自然な場面（描写の途中など）では空配列 [] を返してください。挟むべき局面でのみ2〜4個。`
+      `ただし、選択を挟むのが不自然な場面（描写の途中など）では${jsonSchema ? '空の配列（choices: []）' : '空配列 []'}を返してください。挟むべき局面でのみ2〜4個。`
     )
   }
   return base + format + `2〜4個の選択肢を返してください。`
@@ -376,16 +380,28 @@ function rangeLabel(prefix: string, min?: number, max?: number): string {
 }
 
 /**
+ * レビューの分割単位（PC-A A-2）。`a`＝何が起きたか／`b`＝状態がどう動いたか／`all`＝従来の一本。
+ * docs/詳細設計_プロンプト構造とキャッシュ.md §3.2
+ */
+export type ReviewPart = 'all' | 'a' | 'b'
+
+/**
  * シーン終了レビュー（要約＋次シーン提案＋成長＋関係性 prose＋スタット）生成用の system プロンプト。
  * 原則「事実は数、判断は言葉」：関係の機微は relationUpdates（prose）、数値の増減は statChanges。
  * ポイントの確定はこのレビューに一本化（選択肢の事前 effects は FB7-C で廃止）＝
  * 選択肢経由・自由入力の独自行動を問わず「実際に起きた結果」を評価して加点する。
+ *
+ * `part` で出力させる項目を絞れる（PC-A A-2。2本を並列に投げて待ち時間を半減させる）。
+ * 状態変動の拘束（次元・ステータス・カウンター・世界のレビュー指針）は B のみに入れる＝
+ * A の suggestions が状態変動の方針で歪まないようにするため。
+ * @param part 出力させる項目の範囲（`a`/`b`/`all`）
  * @param aspectNames ワールド固定の関係次元名。空でなければその次元のみ使うよう拘束。
  * @param stats    ワールド定義のステータス（名前＋変動幅）。空なら statChanges は空配列。
  * @param counters ワールド定義の行動カウンター（名前＋計上条件メモ＋加算幅）。空なら counterEvents は空配列。
  * @param reviewGuidance 世界観のレビュー指針（自由記述）。あれば毎回そのまま注入する。
  */
 export function reviewSystem(
+  part: ReviewPart,
   aspectNames: string[],
   stats: ReviewStatSpec[],
   counters: ReviewCounterSpec[] = [],
@@ -419,31 +435,53 @@ export function reviewSystem(
   const counterLine = counters.length
     ? `counterEvents.name は既存の【${counterList}】のみを使う。括弧内はそのカウンターを計上する条件＝**そこに書かれた出来事が今シーンで実際に起きた時だけ**計上する（amount は通常1）。一度きりで十分な種類の出来事（告白した・秘密を知った等）は、既に計上済みなら重ねて出さない。無ければ空配列。`
     : `カウンター未定義のため counterEvents は空配列。`
-  const guidanceBlock = reviewGuidance?.trim()
-    ? `\n【世界のレビュー指針】\n${reviewGuidance.trim()}\n`
-    : ''
+  // 【世界のレビュー指針】は状態変動の方針なので B（と all）にだけ入れる（A の suggestions を歪めない）
+  const wantsGuidance = part !== 'a'
+  const guidanceBlock =
+    wantsGuidance && reviewGuidance?.trim() ? `\n【世界のレビュー指針】\n${reviewGuidance.trim()}\n` : ''
+  const a = part !== 'b' // A の項目を出すか
+  const b = part !== 'a' // B の項目を出すか
+
+  const schema = [
+    a &&
+      `  "summary": "このシーンの引き継ぎ要約（日本語の文字列。改行は \\\\n で表現。重要な出来事・関係や心情の変化・約束や未解決事項・終了時の状況を含む）",`,
+    a && `  "suggestions": [ {"title":"次シーンの短い見出し","note":"次シーンの状況・方向性の説明（2〜3文）"} ],`,
+    a && `  "characterGrowth": [ {"name":"キャラ名","addition":"今回の展開で新たに判明/深化した性格・背景を一文で"} ],`,
+    a && `  "worldGrowth": [ {"keys":["トリガー語"],"content":"新たに判明した世界設定"} ],`,
+    b &&
+      `  "relationUpdates": [ {"character":"キャラ名","stance":"そのキャラの主人公への関係の現在地を1〜2文で","aspects":[{"name":"次元名","note":"その次元の現在の機微（肯定・否定の両面を具体的に）"}],"reason":"変化の根拠（一文）"} ],`,
+    b && `  "moods": [ {"character":"キャラ名","mood":"終了時点の気分（一語〜短句）"} ],`,
+    b && `  "statChanges": [ {"name":"ステータス名","character":"キャラ名（省略可＝主人公/全体）","delta":3,"reason":"変化の理由（一文）"} ],`,
+    b && `  "counterEvents": [ {"name":"カウンター名","character":"キャラ名（省略可＝全体）","amount":1,"reason":"該当する行動（一文）"} ]`,
+  ].filter((x): x is string => !!x)
+  // 分割時に末尾の行だけ余分なカンマが残らないようにする
+  const schemaBody = schema.map((line, i) => (i === schema.length - 1 ? line.replace(/,$/, '') : line))
+
+  const rules = [
+    a && `- summary は必ず JSON 文字列（string）で返す。配列や改行そのままは不可。`,
+    a &&
+      `- suggestions は2〜3個。**各案はこのシーン終了直後の「同一の起点」から分岐する、相互に排他な"次シーンの候補"**。案どうしは時系列でつながってはならない。【次シーンの時間】があればその時刻にふさわしい状況で書く（直前の続きをそのまま続けない）。`,
+    a && `- characterGrowth / worldGrowth は、既存設定に無い"新しく分かったこと"のみ。無ければ空配列。`,
+    b &&
+      `- **relationUpdates**：各キャラが主人公（ユーザー）に抱く関係を、与えられた【現在の関係性】を踏まえて**書き直す**（差分でなく現時点の全文）。今シーンで変化していない機微（好悪・約束）は失わず維持して書く。変化が無いキャラは省略可。${aspectLine}`,
+    b && `- moods は各キャラの終了時点の気分。変化が無いキャラは省略可。`,
+    b &&
+      `- **statChanges**：行動・出来事に対応する数値の増減のみ（delta は相対値。例: デートした→好感度+3）。感情の"査定"ではなく、起きた事実に対応する固定的な変化として出す。${statLine}`,
+    b &&
+      `- **counterEvents**：今シーンで実際に起きた行動の累計回数の計上（例: デートした→デート回数 amount:1）。起きていない行動は計上しない。${counterLine}`,
+    b &&
+      `- 主人公の行動は、提示された選択肢を選んだ場合も自由入力の独自行動も同様に、実際に起きた結果に基づいて statChanges / counterEvents に反映し、reason にその行動と結果を書く。`,
+    `- 推測の捏造はせず、会話に根拠があるものだけ。`,
+  ].filter((x): x is string => !!x)
+
   return (
     `あなたは物語編集アシスタントです。直前のシーンの会話を分析し、次の JSON のみを出力してください（前後に文章・コードフェンスを付けない）。\n` +
     `{\n` +
-    `  "summary": "このシーンの引き継ぎ要約（日本語の文字列。改行は \\\\n で表現。重要な出来事・関係や心情の変化・約束や未解決事項・終了時の状況を含む）",\n` +
-    `  "suggestions": [ {"title":"次シーンの短い見出し","note":"次シーンの状況・方向性の説明（2〜3文）"} ],\n` +
-    `  "characterGrowth": [ {"name":"キャラ名","addition":"今回の展開で新たに判明/深化した性格・背景を一文で"} ],\n` +
-    `  "worldGrowth": [ {"keys":["トリガー語"],"content":"新たに判明した世界設定"} ],\n` +
-    `  "relationUpdates": [ {"character":"キャラ名","stance":"そのキャラの主人公への関係の現在地を1〜2文で","aspects":[{"name":"次元名","note":"その次元の現在の機微（肯定・否定の両面を具体的に）"}],"reason":"変化の根拠（一文）"} ],\n` +
-    `  "moods": [ {"character":"キャラ名","mood":"終了時点の気分（一語〜短句）"} ],\n` +
-    `  "statChanges": [ {"name":"ステータス名","character":"キャラ名（省略可＝主人公/全体）","delta":3,"reason":"変化の理由（一文）"} ],\n` +
-    `  "counterEvents": [ {"name":"カウンター名","character":"キャラ名（省略可＝全体）","amount":1,"reason":"該当する行動（一文）"} ]\n` +
-    `}\n` +
+    schemaBody.join('\n') +
+    `\n}\n` +
     `指針:\n` +
-    `- summary は必ず JSON 文字列（string）で返す。配列や改行そのままは不可。\n` +
-    `- suggestions は2〜3個。**各案はこのシーン終了直後の「同一の起点」から分岐する、相互に排他な"次シーンの候補"**。案どうしは時系列でつながってはならない。【次シーンの時間】があればその時刻にふさわしい状況で書く（直前の続きをそのまま続けない）。\n` +
-    `- characterGrowth / worldGrowth は、既存設定に無い"新しく分かったこと"のみ。無ければ空配列。\n` +
-    `- **relationUpdates**：各キャラが主人公（ユーザー）に抱く関係を、与えられた【現在の関係性】を踏まえて**書き直す**（差分でなく現時点の全文）。今シーンで変化していない機微（好悪・約束）は失わず維持して書く。変化が無いキャラは省略可。${aspectLine}\n` +
-    `- moods は各キャラの終了時点の気分。変化が無いキャラは省略可。\n` +
-    `- **statChanges**：行動・出来事に対応する数値の増減のみ（delta は相対値。例: デートした→好感度+3）。感情の"査定"ではなく、起きた事実に対応する固定的な変化として出す。${statLine}\n` +
-    `- **counterEvents**：今シーンで実際に起きた行動の累計回数の計上（例: デートした→デート回数 amount:1）。起きていない行動は計上しない。${counterLine}\n` +
-    `- 主人公の行動は、提示された選択肢を選んだ場合も自由入力の独自行動も同様に、実際に起きた結果に基づいて statChanges / counterEvents に反映し、reason にその行動と結果を書く。\n` +
-    `- 推測の捏造はせず、会話に根拠があるものだけ。\n` +
+    rules.join('\n') +
+    `\n` +
     guidanceBlock +
     `${guidanceBlock ? '上の【世界のレビュー指針】は状態変動の方針として毎回従うこと（条件つきの方針は、与えられた現在のステータス・カウンター・日付・本文の描写から判断する）。' : ''}`
   )

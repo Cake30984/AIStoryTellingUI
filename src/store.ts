@@ -45,6 +45,7 @@ import type {
   SessionState,
   StatDef,
   UiPrefs,
+  UsageRecord,
   World,
 } from './types'
 import { DEFAULT_UI, normalizeUiPrefs } from './types'
@@ -81,6 +82,7 @@ import {
   reviewSystem,
   SCENE_START_PROMPT,
   type ResolvedRefs,
+  type ReviewPart,
 } from './lib/prompts'
 import {
   advanceTimeline,
@@ -89,7 +91,13 @@ import {
   timeLabelOf,
   timelinePromptInfo,
 } from './lib/timeline'
-import { extractJson } from './lib/json'
+import { extractJson, partialString } from './lib/json'
+import {
+  CHOICES_SCHEMA,
+  jsonModeFor,
+  NEXT_SCENE_SCHEMA,
+  reviewSchema,
+} from './lib/jsonSchemas'
 import { defaultOpenRouterProvider, parseModelRef } from './lib/providers'
 import {
   castingIssueLabel,
@@ -1127,6 +1135,32 @@ export function collectUsedImageIds(
   return used
 }
 
+/** レビュー1本ぶんの状態（PC-A A-1）。`waiting`＝送信済みで最初のトークン待ち */
+export type ReviewCallStatus = 'waiting' | 'streaming' | 'done' | 'failed'
+
+/**
+ * レビュー呼び出し1本ぶんの進行（PC-A A-1）。**呼び出し単位で持つ**のが要点で、
+ * 分割実行なら2件並ぶ＝「いま何本走っているか」がそのまま画面に出る。
+ * `chars` は受信文字数＝2本が同時に伸びることが並列実行の可視的な証拠になる。
+ */
+export interface ReviewCallProgress {
+  key: ReviewPart
+  label: string
+  status: ReviewCallStatus
+  chars: number
+  /** 何回目の試行か（1始まり。途中切れ・JSON 失敗でのリトライで増える） */
+  attempt: number
+  /** 直近の再試行・失敗の理由（画面に出す。原因が分からないまま再試行だけ見えるのを避ける） */
+  note?: string
+}
+
+/** レビュー呼び出しの表示名（進行表示に出す。何を作っている最中かが分かる粒度にする） */
+const REVIEW_CALL_LABEL: Record<ReviewPart, string> = {
+  a: 'あらすじ・次シーンの候補',
+  b: '関係性・気分・数値の変化',
+  all: 'シーンの整理（一括）',
+}
+
 interface AppState {
   // 永続化
   providers: Provider[]
@@ -1167,6 +1201,19 @@ interface AppState {
   /** 次シーン候補（suggestions）だけを再生成中 */
   isRegenSuggestions: boolean
   sceneReview: SceneReview | null
+  /**
+   * レビュー生成中の途中経過（PC-A A-1。非永続・partialize から除外）。
+   * `prepareSceneReview` の開始時に立ち、`sceneReview` が確定するか失敗・中断すると null に戻る。
+   * これがあると本文の確定前でもレビューモーダルを開いて進行を見せられる。
+   */
+  reviewProgress: {
+    sessionId: string
+    sceneId: string
+    /** ストリーミング中のあらすじ（A / all からのみ拾う） */
+    summary: string
+    /** 実行中の呼び出し（分割実行なら2件＝並列に走っていることが画面に出る） */
+    calls: ReviewCallProgress[]
+  } | null
   /** 開始時に未配役だったセッション。null なら配役モーダルを閉じる */
   castingSessionId: string | null
   error: string | null
@@ -1185,6 +1232,8 @@ interface AppState {
    * ChatPanel が消化して null に戻す。seq は同じメッセージへの連続移動でも effect を再発火させるための通番。
    */
   scrollTarget: { sessionId: string; messageId: string; seq: number } | null
+  /** LLM 呼び出しの実測記録（PC0。docs/詳細設計_プロンプト構造とキャッシュ.md §2）。非永続・partialize から除外 */
+  usageLog: UsageRecord[]
 
   // 共通
   setView: (v: View) => void
@@ -1196,6 +1245,10 @@ interface AppState {
   setUiPrefs: (patch: Partial<UiPrefs>) => void
   /** 一時案内メッセージのセット/クリア（F2） */
   setInfoNotice: (msg: string | null) => void
+  /** LLM 呼び出し1回ぶんの実測を記録する（PC0）。上限1000件の FIFO */
+  recordUsage: (rec: Omit<UsageRecord, 'id' | 'at'>) => void
+  /** 実測記録をすべて消去する（PC0） */
+  clearUsageLog: () => void
 
   // 接続先（プロバイダ）
   upsertProvider: (p: Provider) => void
@@ -2086,6 +2139,7 @@ export const useStore = create<AppState>()(
         let gotContent = false
         const MAX_TRIES = 3
         for (let attempt = 1; attempt <= MAX_TRIES; attempt++) {
+          const t0 = performance.now()
           try {
             const res = await streamChat(
               {
@@ -2102,6 +2156,17 @@ export const useStore = create<AppState>()(
               },
             )
             finishReason = res.finishReason
+            get().recordUsage({
+              kind: 'main',
+              modelRef: mainModelOf(s, speaker),
+              upstream: res.usage?.upstream,
+              promptTokens: res.usage?.promptTokens ?? 0,
+              cachedTokens: res.usage?.cachedTokens ?? 0,
+              completionTokens: res.usage?.completionTokens ?? 0,
+              cost: res.usage?.cost,
+              ms: performance.now() - t0,
+              sessionId,
+            })
             break
           } catch (e) {
             const err = e as Error
@@ -2176,9 +2241,12 @@ export const useStore = create<AppState>()(
         try {
           const refs = resolveRefs(session)
           const base = buildMessages(session, refs)
+          // 対応モデルなら JSON を強制する（スキーマが通る相手は system の書式指示も包んだ形へ揃える）
+          const jsonMode = jsonModeFor(model, get().modelsByProvider[provider.id])
+          const jsonSchema = jsonMode === 'none' ? undefined : CHOICES_SCHEMA
           // 末尾に user の念押しを積み、本編の続き（地の文）ではなく JSON を出させる
           const msgs = [
-            { role: 'system' as const, content: choicesSystem(mode) },
+            { role: 'system' as const, content: choicesSystem(mode, jsonMode === 'schema') },
             ...base.slice(1),
             { role: 'user' as const, content: choicesUserNudge(mode) },
           ]
@@ -2190,10 +2258,31 @@ export const useStore = create<AppState>()(
           let bestChoices: Choice[] = []
           choicesController = new AbortController()
           for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            const t0 = performance.now()
             const raw = await streamChat(
-              { provider, model, messages: msgs, temperature: 0.5, maxTokens: 600, signal: choicesController.signal },
+              {
+                provider,
+                model,
+                messages: msgs,
+                temperature: 0.5,
+                maxTokens: 600,
+                signal: choicesController.signal,
+                jsonSchema,
+                jsonMode,
+              },
               () => {},
             )
+            get().recordUsage({
+              kind: 'choices',
+              modelRef: choicesModelOf(session),
+              upstream: raw.usage?.upstream,
+              promptTokens: raw.usage?.promptTokens ?? 0,
+              cachedTokens: raw.usage?.cachedTokens ?? 0,
+              completionTokens: raw.usage?.completionTokens ?? 0,
+              cost: raw.usage?.cost,
+              ms: performance.now() - t0,
+              sessionId: session.id,
+            })
             const parsedChoices = coerceChoices(extractJson<unknown>(raw.text))
             if (parsedChoices.length > bestChoices.length) bestChoices = parsedChoices
             const truncated = raw.finishReason === 'length'
@@ -2328,6 +2417,7 @@ export const useStore = create<AppState>()(
         isReviewing: false,
         isRegenSuggestions: false,
         sceneReview: null,
+        reviewProgress: null,
         castingSessionId: null,
         error: null,
         newlyUnlockedAchievements: [],
@@ -2336,6 +2426,7 @@ export const useStore = create<AppState>()(
         imageJobToasts: [],
         infoNotice: null,
         scrollTarget: null,
+        usageLog: [],
 
         setView: (view) => set({ view }),
         clearError: () => set({ error: null }),
@@ -2353,6 +2444,12 @@ export const useStore = create<AppState>()(
             }
           }),
         setInfoNotice: (msg) => set({ infoNotice: msg }),
+        recordUsage: (rec) =>
+          set((st) => {
+            const next = [...st.usageLog, { ...rec, id: uid(), at: Date.now() }]
+            return { usageLog: next.length > 1000 ? next.slice(next.length - 1000) : next }
+          }),
+        clearUsageLog: () => set({ usageLog: [] }),
 
         upsertProvider: (p) =>
           set((st) => ({
@@ -2795,7 +2892,26 @@ export const useStore = create<AppState>()(
 
           // 過去シーンの再レビューかどうか（登場キャラ・時刻の文脈組み立てを分岐させる）
           const isPastScene = scene.id !== s.currentSceneId
-          set({ isReviewing: true, error: null })
+          // 2本に分けて並列実行するか（PC-A A-2。既定 ON＝undefined は true 扱い）
+          const split = s.reviewSplit !== false
+          const parts: ReviewPart[] = split ? ['a', 'b'] : ['all']
+          set({
+            isReviewing: true,
+            error: null,
+            // 進行表示を先に立てる＝「シーン終了」直後にモーダルが開く（PC-A A-1）
+            reviewProgress: {
+              sessionId: s.id,
+              sceneId: scene.id,
+              summary: '',
+              calls: parts.map((key) => ({
+                key,
+                label: REVIEW_CALL_LABEL[key],
+                status: 'waiting' as const,
+                chars: 0,
+                attempt: 1,
+              })),
+            },
+          })
           try {
             // resolveRefs はセッションの currentSceneId を見て登場キャラ・状況メモを決めるため、
             // 過去シーンの再レビューでは対象シーンを一時的に current 扱いにして正しい文脈を得る
@@ -2941,52 +3057,188 @@ export const useStore = create<AppState>()(
               .join('\n')
             const relBlock = relNow ? `\n\n【現在の関係性】\n${relNow}` : ''
 
-            const reviewMessages = [
-              {
-                role: 'system' as const,
-                content: reviewSystem(aspectNames, statSpecs, counterSpecs, world?.reviewGuidance),
-              },
-              {
-                role: 'user' as const,
-                content: `${context}${relBlock}\n\n【シーン「${scene.title}」の会話】\n${transcript}`,
-              },
-            ]
+            const userContent = `${context}${relBlock}\n\n【シーン「${scene.title}」の会話】\n${transcript}`
             // max_tokens は打ち切り上限であり、モデルは書き終われば自然に停止するため
             // 十分大きく取っても無駄な出力やコスト増にはならない（長大な JSON でも途中で切れないように余裕を持たせる）。
             const REVIEW_MAX_TOKENS = 8000
             const maxAttempts = 2
-            let raw: Awaited<ReturnType<typeof streamChat>> | null = null
-            let parsed: any = null
             const hasSummary = (p: any) =>
               (typeof p?.summary === 'string' && p.summary.trim().length > 0) ||
               (Array.isArray(p?.summary) && p.summary.length > 0)
-            reviewController = new AbortController()
-            for (let attempt = 0; attempt < maxAttempts; attempt++) {
-              raw = await streamChat(
-                {
-                  provider,
-                  model,
-                  messages: reviewMessages,
-                  temperature: 0.4,
-                  maxTokens: REVIEW_MAX_TOKENS,
-                  signal: reviewController.signal,
-                },
-                () => {},
-              )
-              parsed = extractJson<any>(raw.text)
-              const truncated = raw.finishReason === 'length'
-              if (parsed && !truncated && hasSummary(parsed)) break
-              if (truncated) {
-                console.warn(`[review] 出力が途中で切れました（試行${attempt + 1}/${maxAttempts}）。再試行します。`)
-              } else if (!parsed) {
-                console.warn(`[review] JSON を抽出できませんでした（試行${attempt + 1}/${maxAttempts}）。モデル出力:`, raw.text || '<empty>')
-              } else if (!hasSummary(parsed)) {
-                console.warn(`[review] summary フィールドが空でした（試行${attempt + 1}/${maxAttempts}）。再試行します。`)
-              }
+
+            // 進行表示の更新（PC-A A-1）。呼び出し1本ぶんの状態と、流れてきたあらすじを書く。
+            // 呼び出しごとに独立して更新される＝並列実行では2件が同時に伸びる。
+            const bumpProgress = (
+              part: ReviewPart,
+              patch: { summary?: string } & Partial<Omit<ReviewCallProgress, 'key' | 'label'>>,
+            ) => {
+              const cur = get().reviewProgress
+              if (!cur || cur.sceneId !== scene.id) return
+              const summary = patch.summary ?? cur.summary
+              const calls = cur.calls.map((c) => (c.key === part ? { ...c, ...patch } : c))
+              const same =
+                summary === cur.summary &&
+                calls.every((c, i) => {
+                  const p = cur.calls[i]
+                  return (
+                    c.status === p.status &&
+                    c.chars === p.chars &&
+                    c.attempt === p.attempt &&
+                    c.note === p.note
+                  )
+                })
+              if (same) return
+              set({ reviewProgress: { ...cur, summary, calls } })
             }
-            if (!parsed) {
-              set({ error: 'シーンの整理に失敗しました（モデル出力の解釈に失敗）。もう一度お試しください。' })
-              return
+
+            // 中断は1つの controller を共有する＝stopReview で分割した2本とも止まる
+            const controller = new AbortController()
+            reviewController = controller
+
+            /**
+             * レビュー1本ぶん（リトライ込み）。解釈できた JSON を返す（全試行で取れなければ null）。
+             * B には summary が無いので summary 検査は A / all のときだけ適用する。
+             */
+            const runReviewCall = async (part: ReviewPart): Promise<any | null> => {
+              const system = reviewSystem(
+                part,
+                aspectNames,
+                statSpecs,
+                counterSpecs,
+                world?.reviewGuidance,
+              )
+              const wantsSummary = part !== 'b'
+              const tag = part === 'all' ? 'review' : `review:${part}`
+              // 対応モデルなら JSON を強制する＝解釈失敗による再試行がそもそも起きなくなる
+              const jsonMode = jsonModeFor(model, get().modelsByProvider[provider.id])
+              const jsonSchema = jsonMode === 'none' ? undefined : reviewSchema(part)
+              let parsed: any = null
+              // 直前の失敗を伝える追伸（PC-A 追修）。**同じリクエストを投げ直しても結果は運任せ**なので、
+              // 再試行では何が駄目だったかを1文だけ足して条件を変える。
+              let retryHint = ''
+              let note: string | undefined
+              for (let attempt = 0; attempt < maxAttempts; attempt++) {
+                const t0 = performance.now()
+                let acc = ''
+                let lastPush = 0
+                const pushProgress = (status: ReviewCallStatus) =>
+                  bumpProgress(part, {
+                    summary: wantsSummary ? partialString(acc, 'summary') : undefined,
+                    status,
+                    chars: acc.length,
+                    attempt: attempt + 1,
+                    note,
+                  })
+                pushProgress('waiting') // 送信直後＝最初のトークン待ち（リトライ時は文字数が0に戻る）
+                const raw = await streamChat(
+                  {
+                    provider,
+                    model,
+                    messages: [
+                      { role: 'system', content: system },
+                      { role: 'user', content: userContent },
+                      ...(retryHint ? [{ role: 'user' as const, content: retryHint }] : []),
+                    ],
+                    temperature: 0.4,
+                    maxTokens: REVIEW_MAX_TOKENS,
+                    signal: controller.signal,
+                    jsonSchema,
+                    jsonMode,
+                  },
+                  (d) => {
+                    acc += d
+                    // 毎トークン set すると再描画が重いので 16ms でスロットリングする
+                    const now = performance.now()
+                    if (now - lastPush < 16) return
+                    lastPush = now
+                    pushProgress('streaming')
+                  },
+                )
+                pushProgress('streaming') // 最後の未反映ぶん
+                parsed = extractJson<any>(raw.text)
+                const deltaSigns = Array.isArray(parsed?.statChanges)
+                  ? (parsed.statChanges as any[]).reduce(
+                      (acc2: { plus: number; minus: number; zero: number }, x: any) => {
+                        const d = Number(x?.delta) || 0
+                        if (d > 0) acc2.plus++
+                        else if (d < 0) acc2.minus++
+                        else acc2.zero++
+                        return acc2
+                      },
+                      { plus: 0, minus: 0, zero: 0 },
+                    )
+                  : undefined
+                get().recordUsage({
+                  kind: 'review',
+                  modelRef: reviewModelOf(s),
+                  upstream: raw.usage?.upstream,
+                  promptTokens: raw.usage?.promptTokens ?? 0,
+                  cachedTokens: raw.usage?.cachedTokens ?? 0,
+                  completionTokens: raw.usage?.completionTokens ?? 0,
+                  cost: raw.usage?.cost,
+                  ms: performance.now() - t0,
+                  sessionId: s.id,
+                  deltaSigns,
+                })
+                const truncated = raw.finishReason === 'length'
+                if (parsed && !truncated && (!wantsSummary || hasSummary(parsed))) break
+                if (truncated) {
+                  note = '出力が途中で切れたため'
+                  retryHint =
+                    '前回の出力は長すぎて途中で切れました。各項目を簡潔にまとめ直し、JSON だけを出力してください。'
+                  console.warn(`[${tag}] 出力が途中で切れました（試行${attempt + 1}/${maxAttempts}）。再試行します。`)
+                } else if (!parsed) {
+                  note = 'JSON として読み取れなかったため'
+                  retryHint =
+                    '前回の出力は JSON として読み取れませんでした。前後に文章やコードフェンスを付けず、JSON だけを出力してください。文字列の中の改行は \\n と書いてください。'
+                  console.warn(`[${tag}] JSON を抽出できませんでした（試行${attempt + 1}/${maxAttempts}）。モデル出力:`, raw.text || '<empty>')
+                } else {
+                  note = 'あらすじ（summary）が空だったため'
+                  retryHint =
+                    '前回の出力には summary がありませんでした。summary を必ず文字列で含めた JSON だけを出力してください。'
+                  console.warn(`[${tag}] summary フィールドが空でした（試行${attempt + 1}/${maxAttempts}）。再試行します。`)
+                }
+              }
+              bumpProgress(part, { status: parsed ? 'done' : 'failed', note })
+              return parsed
+            }
+
+            // 2本に分けて並列実行（PC-A A-2）。
+            // 片方だけ失敗しても続行する＝そのぶんの項目が空になるだけで、レビュー全体は成立する。
+            let parsed: any = null
+            if (split) {
+              let callError: Error | null = null
+              const runSafe = async (part: ReviewPart) => {
+                try {
+                  return await runReviewCall(part)
+                } catch (e) {
+                  // 中断は両方を止める＝そのまま外へ投げる。それ以外は片方の失敗として飲み込む
+                  if ((e as Error).name === 'AbortError') throw e
+                  callError ??= e as Error
+                  bumpProgress(part, { status: 'failed' })
+                  console.warn(`[review:${part}] 呼び出しに失敗しました:`, e)
+                  return null
+                }
+              }
+              const [ra, rb] = await Promise.all([runSafe('a'), runSafe('b')])
+              if (!ra && !rb) {
+                set({
+                  error:
+                    (callError as Error | null)?.message ??
+                    'シーンの整理に失敗しました（モデル出力の解釈に失敗）。もう一度お試しください。',
+                })
+                return
+              }
+              if (!ra) console.warn('[review] A（あらすじ・次シーン候補）が取れなかったため、該当項目は空になります。')
+              if (!rb) console.warn('[review] B（関係性・数値）が取れなかったため、該当項目は空になります。')
+              // A の項目を優先（B が余計なキーを返しても A の結果で上書きされる）
+              parsed = { ...(rb ?? {}), ...(ra ?? {}) }
+            } else {
+              parsed = await runReviewCall('all')
+              if (!parsed) {
+                set({ error: 'シーンの整理に失敗しました（モデル出力の解釈に失敗）。もう一度お試しください。' })
+                return
+              }
             }
             if (!hasSummary(parsed)) {
               console.warn('[review] リトライしても summary が空のため、要約は空欄になります。手動で編集してください。')
@@ -3130,7 +3382,8 @@ export const useStore = create<AppState>()(
             if ((e as Error).name !== 'AbortError') set({ error: (e as Error).message })
           } finally {
             reviewController = null
-            set({ isReviewing: false })
+            // 進行表示は確定・失敗・中断のいずれでも畳む（確定時は sceneReview 側の表示へ切り替わる）
+            set({ isReviewing: false, reviewProgress: null })
           }
         },
 
@@ -3496,6 +3749,7 @@ export const useStore = create<AppState>()(
               )
             }
             reviewController = new AbortController()
+            const t0 = performance.now()
             const raw = await streamChat(
               {
                 provider,
@@ -3507,9 +3761,22 @@ export const useStore = create<AppState>()(
                 temperature: 0.7,
                 maxTokens: 800,
                 signal: reviewController.signal,
+                jsonSchema: NEXT_SCENE_SCHEMA,
+                jsonMode: jsonModeFor(model, get().modelsByProvider[provider.id]),
               },
               () => {},
             )
+            get().recordUsage({
+              kind: 'nextScene',
+              modelRef: reviewModelOf(s),
+              upstream: raw.usage?.upstream,
+              promptTokens: raw.usage?.promptTokens ?? 0,
+              cachedTokens: raw.usage?.cachedTokens ?? 0,
+              completionTokens: raw.usage?.completionTokens ?? 0,
+              cost: raw.usage?.cost,
+              ms: performance.now() - t0,
+              sessionId: s.id,
+            })
             const parsed = extractJson<any>(raw.text)
             const suggestions = Array.isArray(parsed?.suggestions)
               ? parsed.suggestions
@@ -3529,7 +3796,8 @@ export const useStore = create<AppState>()(
           }
         },
 
-        cancelReview: () => set({ sceneReview: null }),
+        // 生成中に閉じた場合も進行表示を残さない（生成自体の中断は stopReview の担当）
+        cancelReview: () => set({ sceneReview: null, reviewProgress: null }),
 
         regenChoices: async () => {
           const s = active()

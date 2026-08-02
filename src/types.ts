@@ -643,6 +643,11 @@ export interface Session {
   overlay: SessionOverlay
   /** 構造化出力（本編を @名前「セリフ」の行形式で書かせる。undefined=OFF。設計は docs/設計_構造化出力.md） */
   structuredOutput?: boolean
+  /**
+   * レビューを2本（A=何が起きたか / B=状態がどう動いたか）に分けて並列実行する（PC-A A-2。
+   * undefined=true＝既定ON）。docs/詳細設計_プロンプト構造とキャッシュ.md §3.2
+   */
+  reviewSplit?: boolean
   /** アーカイブ済み（セッション一覧から既定で除外。UI-5） */
   archived?: boolean
   /**
@@ -694,6 +699,12 @@ export interface OpenRouterModel {
     prompt?: string
     completion?: string
   }
+  /**
+   * OpenRouter が申告するそのモデルの対応パラメータ（`structured_outputs`/`response_format`/`tools` 等）。
+   * JSON スキーマ強制の可否判定に使う（`jsonSchemas.ts`）。**同じ系列でもモデルごとに違う**ので
+   * モデル名からの推測ではなくこちらを優先する。
+   */
+  supported_parameters?: string[]
 }
 
 export type ProviderKind = 'openrouter' | 'openai'
@@ -707,6 +718,27 @@ export interface Provider {
   baseUrl: string
   /** API キー（ブラウザ内 localStorage にのみ保存） */
   apiKey: string
+}
+
+export type LlmRequestKind = 'main' | 'choices' | 'review' | 'nextScene' | 'imageDraft'
+
+/** LLM 呼び出し1回ぶんの実測記録（PC0。docs/詳細設計_プロンプト構造とキャッシュ.md §2） */
+export interface UsageRecord {
+  id: string
+  at: number
+  kind: LlmRequestKind
+  /** "providerId::modelId" */
+  modelRef: string
+  upstream?: string
+  promptTokens: number
+  cachedTokens: number
+  completionTokens: number
+  cost?: number
+  /** 呼び出し開始から完了までのミリ秒 */
+  ms: number
+  sessionId?: string
+  /** レビューのみ: statChanges の符号内訳（設計_ゲーム性向上バックログ.md §2.3 の検証用） */
+  deltaSigns?: { plus: number; minus: number; zero: number }
 }
 
 /** 画像生成の接続先種別 */

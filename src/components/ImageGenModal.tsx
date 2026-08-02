@@ -3,6 +3,7 @@ import { useStore } from '../store'
 import { streamChat } from '../lib/openrouter'
 import { parseModelRef, modelRefLabel } from '../lib/providers'
 import { extractJson } from '../lib/json'
+import { IMAGE_DRAFT_SCHEMA, jsonModeFor } from '../lib/jsonSchemas'
 import { ensureTags } from '../lib/promptTags'
 import { useBlobUrl, type ImageJobTarget } from '../lib/imageJobs'
 import ModelPicker from './ModelPicker'
@@ -76,6 +77,8 @@ export default function ImageGenModal({
     dismissImageJob,
     applyImageJobResult,
     setView,
+    recordUsage,
+    modelsByProvider,
   } = useStore()
   const [providerId, setProviderId] = useState(
     imageProviders.some((p) => p.id === lastImageProviderId) ? lastImageProviderId! : imageProviders[0]?.id ?? '',
@@ -112,6 +115,7 @@ export default function ImageGenModal({
     setDrafting(true)
     setError('')
     try {
+      const t0 = performance.now()
       const res = await streamChat(
         {
           provider: llm,
@@ -122,9 +126,22 @@ export default function ImageGenModal({
           ],
           temperature: 0.7,
           maxTokens: 4000,
+          // 対応モデルなら JSON を強制する（起案の取りこぼしを防ぐ）
+          jsonSchema: IMAGE_DRAFT_SCHEMA,
+          jsonMode: jsonModeFor(model, modelsByProvider[llm.id]),
         },
         () => {},
       )
+      recordUsage({
+        kind: 'imageDraft',
+        modelRef: draftModel,
+        upstream: res.usage?.upstream,
+        promptTokens: res.usage?.promptTokens ?? 0,
+        cachedTokens: res.usage?.cachedTokens ?? 0,
+        completionTokens: res.usage?.completionTokens ?? 0,
+        cost: res.usage?.cost,
+        ms: performance.now() - t0,
+      })
       if (!res.text.trim()) {
         // thinking系モデル等で reasoning が max_tokens を食い潰し本文0文字で終了するケース
         setError(

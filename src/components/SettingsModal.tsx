@@ -1,14 +1,24 @@
 import { useRef, useState } from 'react'
 import { useStore } from '../store'
-import { downloadBundle } from '../lib/io'
+import { downloadBundle, downloadBlob } from '../lib/io'
 import { PROVIDER_PRESETS, modelRefLabel, newProvider } from '../lib/providers'
 import ImageProviderSettings from './ImageProviderSettings'
 import ModelPicker from './ModelPicker'
 import { appConfirm } from '../lib/dialogs'
-import type { Provider } from '../types'
+import type { LlmRequestKind, Provider, UsageRecord } from '../types'
 import { Icon } from './icons'
 import HelpDetails from './HelpDetails'
 import { AMBIENT_CATEGORIES, AMBIENT_SOUNDS } from '../lib/ambientSounds'
+
+/** モデル使用状況（計測。PC0）の種別表示順・ラベル */
+const USAGE_KIND_ORDER: LlmRequestKind[] = ['main', 'choices', 'review', 'nextScene', 'imageDraft']
+const USAGE_KIND_LABELS: Record<LlmRequestKind, string> = {
+  main: '本編',
+  choices: '選択肢',
+  review: 'レビュー',
+  nextScene: '次シーン候補',
+  imageDraft: '画像起案',
+}
 
 /** System ページ（設定・データ管理）の中身。UI-5でモーダルからページ化するため抽出。ロジックは無変更 */
 export function SettingsBody() {
@@ -23,6 +33,8 @@ export function SettingsBody() {
     gcUnusedImages,
     defaultModelRef,
     setDefaultModelRef,
+    usageLog,
+    clearUsageLog,
   } = useStore()
 
   // API キーはローカルバッファに保持し「保存」ボタンで確定
@@ -349,6 +361,20 @@ export function SettingsBody() {
 
           <hr className="divider" />
 
+          {/* モデル使用状況（計測。PC0） */}
+          <div className="field">
+            <label>モデル使用状況（計測）</label>
+            <div className="desc">
+              このセッション中の LLM 呼び出しの実コスト・キャッシュヒット率・所要時間を記録します
+              （リロードで消えます。ブラウザに保存されません）。
+            </div>
+            <HelpDetails summary={`内訳を表示（${usageLog.length}件）`}>
+              <UsageLogSummary usageLog={usageLog} onClear={clearUsageLog} />
+            </HelpDetails>
+          </div>
+
+          <hr className="divider" />
+
           {/* 同梱素材のクレジット（AM3）。CC0/規約上は表示義務が無くても、
               何を同梱しているか・出所はどこかを利用者が確認できる場所を1つ持つ */}
           <div className="field">
@@ -388,6 +414,120 @@ export function SettingsBody() {
               onClose={() => setShowDefaultPicker(false)}
             />
           )}
+    </>
+  )
+}
+
+/** モデル使用状況（計測）の集計表示（PC0）。usageLog は非永続・エクスポート対象外の生ログをそのまま渡す */
+function UsageLogSummary({ usageLog, onClear }: { usageLog: UsageRecord[]; onClear: () => void }) {
+  if (usageLog.length === 0) {
+    return <p className="desc">まだ記録がありません。物語を進めると記録が増えます。</p>
+  }
+
+  const rows = USAGE_KIND_ORDER.map((kind) => {
+    const recs = usageLog.filter((r) => r.kind === kind)
+    if (recs.length === 0) return null
+    const promptTokens = recs.reduce((a, r) => a + r.promptTokens, 0)
+    const cachedTokens = recs.reduce((a, r) => a + r.cachedTokens, 0)
+    const completionTokens = recs.reduce((a, r) => a + r.completionTokens, 0)
+    const cost = recs.reduce((a, r) => a + (r.cost ?? 0), 0)
+    const ms = recs.reduce((a, r) => a + r.ms, 0)
+    return {
+      kind,
+      count: recs.length,
+      promptTokens,
+      cachedTokens,
+      completionTokens,
+      cost,
+      avgSec: ms / recs.length / 1000,
+      hitRate: promptTokens > 0 ? (cachedTokens / promptTokens) * 100 : 0,
+    }
+  }).filter((r): r is NonNullable<typeof r> => !!r)
+
+  const total = {
+    count: usageLog.length,
+    promptTokens: rows.reduce((a, r) => a + r.promptTokens, 0),
+    cachedTokens: rows.reduce((a, r) => a + r.cachedTokens, 0),
+    completionTokens: rows.reduce((a, r) => a + r.completionTokens, 0),
+    cost: rows.reduce((a, r) => a + r.cost, 0),
+  }
+  const totalHitRate = total.promptTokens > 0 ? (total.cachedTokens / total.promptTokens) * 100 : 0
+
+  const upstreamCounts = usageLog.reduce<Record<string, number>>((acc, r) => {
+    const key = r.upstream || '(不明)'
+    acc[key] = (acc[key] ?? 0) + 1
+    return acc
+  }, {})
+
+  const exportLog = async () => {
+    const blob = new Blob([JSON.stringify(usageLog, null, 2)], { type: 'application/json' })
+    const stamp = new Date().toISOString().slice(0, 10)
+    await downloadBlob(blob, `usage-log-${stamp}.json`)
+  }
+  const clearLog = async () => {
+    if (!(await appConfirm('実測記録をすべて削除しますか？'))) return
+    onClear()
+  }
+
+  return (
+    <>
+      <table className="usage-table">
+        <thead>
+          <tr>
+            <th>種別</th>
+            <th>回数</th>
+            <th>prompt計</th>
+            <th>cached計（率）</th>
+            <th>completion計</th>
+            <th>cost計</th>
+            <th>平均秒</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.kind}>
+              <td>{USAGE_KIND_LABELS[r.kind]}</td>
+              <td>{r.count}</td>
+              <td>{r.promptTokens.toLocaleString()}</td>
+              <td>
+                {r.cachedTokens.toLocaleString()}（{r.hitRate.toFixed(1)}%）
+              </td>
+              <td>{r.completionTokens.toLocaleString()}</td>
+              <td>{r.cost > 0 ? `$${r.cost.toFixed(4)}` : '-'}</td>
+              <td>{r.avgSec.toFixed(1)}s</td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td>合計</td>
+            <td>{total.count}</td>
+            <td>{total.promptTokens.toLocaleString()}</td>
+            <td>
+              {total.cachedTokens.toLocaleString()}（{totalHitRate.toFixed(1)}%）
+            </td>
+            <td>{total.completionTokens.toLocaleString()}</td>
+            <td>{total.cost > 0 ? `$${total.cost.toFixed(4)}` : '-'}</td>
+            <td>-</td>
+          </tr>
+        </tfoot>
+      </table>
+
+      <div className="desc" style={{ marginTop: 10 }}>
+        上流プロバイダの内訳:{' '}
+        {Object.entries(upstreamCounts)
+          .map(([name, n]) => `${name} ×${n}`)
+          .join(' / ')}
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+        <button className="btn" onClick={exportLog}>
+          <Icon name="download" size={14} /> JSON で書き出す
+        </button>
+        <button className="btn" onClick={clearLog}>
+          <Icon name="broom" size={14} /> クリア
+        </button>
+      </div>
     </>
   )
 }

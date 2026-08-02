@@ -61,6 +61,7 @@ export default function App() {
     clearError,
     createSession,
     sceneReview,
+    reviewProgress,
     castingSessionId,
     newlyUnlockedAchievements,
     dismissNewAchievements,
@@ -222,9 +223,11 @@ export default function App() {
         </div>
       )}
 
-      {/* レビュー完了モーダルは、該当セッションを Play で開いている時だけ出す（FB8-B #14）。
-          他画面・他セッション表示中は sceneReview を保持したまま待たせ、戻ってきたら表示する */}
-      {sceneReview && view === 'sessions' && sceneReview.sessionId === activeId && <SceneReviewModal />}
+      {/* レビューモーダルは、該当セッションを Play で開いている時だけ出す（FB8-B #14）。
+          他画面・他セッション表示中は sceneReview を保持したまま待たせ、戻ってきたら表示する。
+          生成中（reviewProgress）でも開く＝「シーン終了」直後にあらすじが流れ始める（PC-A A-1） */}
+      {(sceneReview?.sessionId === activeId || reviewProgress?.sessionId === activeId) &&
+        view === 'sessions' && <SceneReviewModal />}
 
       {castingSessionId && <CastingModal sessionId={castingSessionId} />}
 

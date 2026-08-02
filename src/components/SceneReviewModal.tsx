@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
-import { applyReviewToState, bindRoleNames, checkEndings, conditionContextOf, useStore } from '../store'
+import {
+  applyReviewToState,
+  bindRoleNames,
+  checkEndings,
+  conditionContextOf,
+  useStore,
+  type ReviewCallProgress,
+  type ReviewCallStatus,
+} from '../store'
 import { advanceTimeline, timeLabelOf } from '../lib/timeline'
 import type {
   CounterEvent,
@@ -21,7 +29,92 @@ const cloneReview = (r: SceneReview): SceneReview => JSON.parse(JSON.stringify(r
 const mapAt = <T,>(arr: T[], i: number, patch: Partial<T>): T[] =>
   arr.map((x, j) => (j === i ? { ...x, ...patch } : x))
 
+const CALL_STATUS_LABEL: Record<ReviewCallStatus, string> = {
+  waiting: '送信済み・応答待ち',
+  streaming: '生成中',
+  done: '完了',
+  failed: '失敗',
+}
+
+/**
+ * レビュー確定前の進行表示（PC-A A-1）。「シーンを終える」直後に開き、あらすじを流し込む。
+ * 確定・編集はできず、中止だけが可能。
+ *
+ * 呼び出し1本＝1行で出す。2本に分けている時は2行が**同時に**「生成中」で文字数を伸ばす＝
+ * 並列に走っていることがそのまま見える（工程の段階表示だと1本か2本か判別できなかった）。
+ */
+function ReviewProgressView({
+  progress,
+}: {
+  progress: { summary: string; calls: ReviewCallProgress[] }
+}) {
+  const stopReview = useStore((st) => st.stopReview)
+  const running = progress.calls.filter((c) => c.status === 'waiting' || c.status === 'streaming').length
+  return (
+    <ModalShell
+      title="シーンを整理しています…"
+      onClose={stopReview}
+      wide
+      footer={
+        <button className="btn" onClick={stopReview}>
+          中止
+        </button>
+      }
+    >
+      <div className="field">
+        <label>
+          生成中のリクエスト
+          {progress.calls.length > 1 ? `（${progress.calls.length}本を並列実行）` : ''}
+        </label>
+        <div className="review-calls">
+          {progress.calls.map((c) => (
+            <div key={c.key} className={'review-call ' + c.status}>
+              <span className="review-call-dot" />
+              <span className="review-call-label">{c.label}</span>
+              <span className="review-call-status">
+                {CALL_STATUS_LABEL[c.status]}
+                {c.status === 'streaming' && ` ${c.chars.toLocaleString()}字`}
+                {/* 再試行は理由も一緒に出す（原因が分からないまま回数だけ見えるのを避ける） */}
+                {c.attempt > 1 && c.status !== 'done' && (
+                  <span className="review-call-note">
+                    再試行{c.attempt}回目{c.note ? `：${c.note}` : ''}
+                  </span>
+                )}
+              </span>
+            </div>
+          ))}
+        </div>
+        {progress.calls.length > 1 && (
+          <div className="desc">
+            {running === progress.calls.length
+              ? `${running}本とも同時に受信中です（両方の文字数が並行して増えます）。`
+              : running > 0
+                ? `1本が終わり、残り${running}本を待っています。`
+                : 'まとめています…'}
+          </div>
+        )}
+      </div>
+      <div className="field">
+        <label>このシーンのあらすじ</label>
+        <div className="review-static-text review-streaming">
+          {progress.summary || '…'}
+          <span className="review-caret" />
+        </div>
+      </div>
+      <div className="desc">生成が終わると、この画面で内容を確認・編集して確定できます。</div>
+    </ModalShell>
+  )
+}
+
 export default function SceneReviewModal() {
+  const sceneReview = useStore((st) => st.sceneReview)
+  const reviewProgress = useStore((st) => st.reviewProgress)
+  // 確定前は進行表示のみ。確定した時点で通常のレビュー本体へ差し替わる（PC-A A-1）
+  if (!sceneReview) return reviewProgress ? <ReviewProgressView progress={reviewProgress} /> : null
+  return <ReviewBody />
+}
+
+function ReviewBody() {
   const {
     sceneReview,
     confirmSceneReview,
