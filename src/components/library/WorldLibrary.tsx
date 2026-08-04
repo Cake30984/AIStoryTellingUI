@@ -10,7 +10,7 @@ import { SelectionBar, CardContextMenu } from './LibraryMultiSelect'
 import { Icon } from '../icons'
 
 export default function WorldLibrary() {
-  const { worlds, importWorldCard, deleteWorld } = useStore()
+  const { worlds, importWorldCard, deleteWorld, duplicateWorld } = useStore()
   const [editing, setEditing] = useState<World | null>(null)
   const [notice, setNotice] = useState('')
   const [query, setQuery] = useState('')
@@ -52,6 +52,15 @@ export default function WorldLibrary() {
     )
       return
     ids.forEach((id) => deleteWorld(id))
+    clear()
+  }
+
+  // 複製（G4-a）。エディタは開かず一覧に増やすだけ＝一括複製と挙動を揃える
+  const doDuplicate = (ids: string[]) => {
+    ids.forEach((id) => duplicateWorld(id))
+    setNotice(
+      ids.length > 1 ? `世界観 ${ids.length} 件を複製しました。` : '世界観を複製しました。',
+    )
     clear()
   }
 
@@ -147,6 +156,9 @@ export default function WorldLibrary() {
             const w = worlds.find((x) => x.id === ctxMenu.id)
             if (w) setEditing(w)
           }}
+          onDuplicate={() =>
+            doDuplicate(selected.has(ctxMenu.id) && selected.size > 0 ? [...selected] : [ctxMenu.id])
+          }
           onDelete={() =>
             doDelete(selected.has(ctxMenu.id) && selected.size > 0 ? [...selected] : [ctxMenu.id])
           }

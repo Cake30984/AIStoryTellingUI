@@ -34,6 +34,7 @@ export function CardContextMenu({
   count,
   noun,
   onEdit,
+  onDuplicate,
   onDelete,
   onClose,
   extra,
@@ -42,6 +43,8 @@ export function CardContextMenu({
   count: number
   noun: string
   onEdit?: () => void
+  /** 複製（G4-a）。複数選択時は一括複製。複製後もエディタは開かない（一覧に増えるだけ） */
+  onDuplicate?: () => void
   onDelete: () => void
   onClose: () => void
   extra?: React.ReactNode
@@ -58,6 +61,17 @@ export function CardContextMenu({
           }}
         >
           <Icon name="pencil" size={14} /> 編集
+        </button>
+      )}
+      {onDuplicate && (
+        <button
+          className="menu-item"
+          onClick={() => {
+            onDuplicate()
+            onClose()
+          }}
+        >
+          <Icon name="layers" size={14} /> {multi ? `選択した ${count} 件を複製` : '複製'}
         </button>
       )}
       {!multi && extra}

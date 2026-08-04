@@ -1,4 +1,4 @@
-import { bindRoleNames, resolveParties, useStore } from '../store'
+import { bindRoleNames, firedEventLog, resolveParties, useStore } from '../store'
 import { roleMembers } from '../lib/casting'
 import type { Session } from '../types'
 import EntityAvatar from './EntityAvatar'
@@ -110,6 +110,30 @@ export default function StatusView({ session }: Props) {
           </div>
         )
       })}
+
+      {/* 起きた出来事（G2）。消化済みの特別イベントのみを発火順に出す。未発火は件数も出さない
+          ＝プレイヤーが見る画面なので先の展開を割らない（docs/詳細設計_ゲーム性向上.md §2.2） */}
+      {(() => {
+        const fired = firedEventLog(session.usedEventIds, world, characters)
+        if (fired.length === 0) return null
+        return (
+          <div className="field">
+            <label>
+              <Icon name="sparkles" size={13} className="label-icon" /> 起きた出来事
+            </label>
+            {fired.map(({ key, event, subjects }, i) => {
+              const names = subjects.flatMap((p) => p.members.map((m) => m.name))
+              return (
+                <div key={`${key}-${i}`} className="desc" style={{ marginBottom: 4 }}>
+                  <Icon name="check" size={12} className="state-icon ok" />{' '}
+                  {bindRoleNames(event.name || '無名', subjects)}
+                  {names.length > 0 && <span className="growth-keys">（{names.join('・')}）</span>}
+                </div>
+              )
+            })}
+          </div>
+        )
+      })()}
 
       {(world.achievements ?? []).length > 0 && (
         <div className="field">

@@ -459,6 +459,21 @@ function UsageLogSummary({ usageLog, onClear }: { usageLog: UsageRecord[]; onCle
     return acc
   }, {})
 
+  // レビューが返した statChanges の符号内訳（G5 §5.1）。ここが「減少ほぼ0」のままなら
+  // 数値が上振れ方向にしか動かない＝迎合の固定化ループが実在するので、自然減衰の保留を解く材料になる
+  const signs = usageLog.reduce(
+    (acc, r) => {
+      if (!r.deltaSigns) return acc
+      acc.plus += r.deltaSigns.plus
+      acc.minus += r.deltaSigns.minus
+      acc.zero += r.deltaSigns.zero
+      acc.reviews++
+      return acc
+    },
+    { plus: 0, minus: 0, zero: 0, reviews: 0 },
+  )
+  const signTotal = signs.plus + signs.minus + signs.zero
+
   const exportLog = async () => {
     const blob = new Blob([JSON.stringify(usageLog, null, 2)], { type: 'application/json' })
     const stamp = new Date().toISOString().slice(0, 10)
@@ -512,6 +527,14 @@ function UsageLogSummary({ usageLog, onClear }: { usageLog: UsageRecord[]; onCle
           </tr>
         </tfoot>
       </table>
+
+      {signTotal > 0 && (
+        <div className="desc" style={{ marginTop: 10 }}>
+          ステータス変動の符号内訳（レビュー {signs.reviews} 回ぶん）: 増加 {signs.plus} / 減少{' '}
+          {signs.minus} / 変化なし {signs.zero}（減少の割合{' '}
+          {((signs.minus / signTotal) * 100).toFixed(1)}%）
+        </div>
+      )}
 
       <div className="desc" style={{ marginTop: 10 }}>
         上流プロバイダの内訳:{' '}

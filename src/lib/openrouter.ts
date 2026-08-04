@@ -1,13 +1,21 @@
 import type { OpenRouterModel, Provider, Role } from '../types'
 import { appFetch } from './platform'
 import { weakerJsonMode, type JsonMode, type JsonSchemaSpec } from './jsonSchemas'
+import { estimateTokens } from './tokens'
 
 /** モードの強さ（比較用） */
 const rank = (m: JsonMode) => (m === 'schema' ? 2 : m === 'object' ? 1 : 0)
 
+/** content ブロック配列の1要素。`cache_control` はキャッシュのブレークポイント（PC-C） */
+export type ContentPart = { type: 'text'; text: string; cache_control?: { type: 'ephemeral' } }
+
 export interface ChatMessage {
   role: Role
-  content: string
+  /**
+   * 文字列で組み立てる（`prompts.ts` は常に文字列を返す）。
+   * ブロック配列になるのは送信直前の `withCacheControl` を通った後だけ。
+   */
+  content: string | ContentPart[]
 }
 
 export interface ChatParams {
@@ -57,6 +65,85 @@ function commonHeaders(provider: Provider): Record<string, string> {
   return headers
 }
 
+/**
+ * Anthropic の最小キャッシュ長（モデルにより 1024〜2048 トークン）。
+ * これを下回る接頭辞は Anthropic 側で単に**キャッシュされない**（エラーにはならない）ので、
+ * 無意味なマーカーを付けないための足切りとしてだけ使う。
+ */
+const MIN_CACHE_TOKENS = 1024
+
+/**
+ * 末尾の「毎ターン変わる」メッセージ数（PC1+PC4 の組み立てに対応）。
+ * 深さ3の1通 ＋ その後ろの履歴3件 ＋ 深さ0の1通 ＋ 呼び出し側の念押し1通（`CONTINUATION_NUDGE` 等）= 6。
+ * ブレークポイント②はこの手前に置く＝**多めに数える方が安全**（早すぎればキャッシュ範囲が少し狭まるだけだが、
+ * 遅すぎると毎ターン変わるメッセージを接頭辞に含めてしまいブレークポイントが無駄になる）。
+ */
+const VOLATILE_TAIL_MESSAGES = 6
+
+/** cache_control を付ける相手か。Anthropic 系以外は素通し＝リクエストの形を1バイトも変えない */
+function isAnthropic(provider: Provider, model: string): boolean {
+  // OpenRouter 経由（`anthropic/claude-…`）
+  if (/^anthropic\//i.test(model)) return true
+  // Anthropic 直叩き（OpenAI 互換エンドポイント）
+  try {
+    return /(^|\.)anthropic\.com$/i.test(new URL(provider.baseUrl).hostname)
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Anthropic 系にだけプロンプトキャッシュのブレークポイントを付ける（PC-C）。
+ *
+ * `buildMessages` は今までどおり `content: string` を返し、変換はこの送信直前の1箇所に閉じ込める
+ * （プロンプト組み立て側がプロバイダの都合を知らなくて済む）。
+ * ブレークポイントは上限4つのうち**2つ**だけ使う:
+ *   ① system メッセージの末尾 — 毎ターン byte 一致する最大の塊（PC1+PC4 でそう作ってある）
+ *   ② 深さ3の注入点の手前 — そこから後ろは毎ターン変わるので、境界をその前に置く
+ *
+ * 非対応モデルへ content ブロック配列を送っても実測ではエラーにならない（F8）が、
+ * **意図しない差分を作らない**ため対象を Anthropic 系に限定する。
+ * `docs/詳細設計_プロンプト構造とキャッシュ.md` §7.1
+ */
+export function withCacheControl(
+  messages: ChatMessage[],
+  provider: Provider,
+  model: string,
+): ChatMessage[] {
+  if (!isAnthropic(provider, model)) return messages
+  // 呼び出し側が既にブロック配列を組んでいる場合は触らない（二重付与の事故を避ける）
+  if (messages.some((m) => typeof m.content !== 'string')) return messages
+
+  // 接頭辞の累計トークン（概算）。最小キャッシュ長に満たない位置にはマーカーを置かない
+  let acc = 0
+  const prefixTokens = messages.map((m) => {
+    acc += estimateTokens(m.content as string)
+    return acc
+  })
+
+  const marks = new Set<number>()
+  const mark = (i: number) => {
+    if (i >= 0 && i < messages.length && prefixTokens[i] >= MIN_CACHE_TOKENS) marks.add(i)
+  }
+  // ① system の末尾
+  if (messages[0]?.role === 'system') mark(0)
+  // ② 毎ターン変わる末尾を除いた最後の位置（system 自身は①が担当するので 1 以上に限る）
+  const stable = messages.length - 1 - VOLATILE_TAIL_MESSAGES
+  if (stable >= 1) mark(stable)
+
+  if (marks.size === 0) return messages
+  return messages.map((m, i) =>
+    marks.has(i)
+      ? {
+          role: m.role,
+          content: [
+            { type: 'text' as const, text: m.content as string, cache_control: { type: 'ephemeral' as const } },
+          ],
+        }
+      : m,
+  )
+}
+
 export interface ChatUsage {
   promptTokens: number
   completionTokens: number
@@ -92,6 +179,9 @@ export async function streamChat(
   let mode: JsonMode =
     capped && rank(capped) < rank(requested) ? capped : requested
 
+  // プロンプトキャッシュのブレークポイント付与（Anthropic 系のみ。それ以外は同一参照で素通し）
+  const outgoing = withCacheControl(params.messages, params.provider, params.model)
+
   const send = (m: JsonMode) =>
     appFetch(`${params.provider.baseUrl}/chat/completions`, {
       method: 'POST',
@@ -99,7 +189,7 @@ export async function streamChat(
       signal: params.signal,
       body: JSON.stringify({
         model: params.model,
-        messages: params.messages,
+        messages: outgoing,
         temperature: params.temperature,
         max_tokens: params.maxTokens,
         stream: true,

@@ -10,7 +10,6 @@ import {
   newStatDef,
   uid,
   useStore,
-  WORLD_PRESETS,
 } from '../../store'
 import type {
   AchievementDef,
@@ -470,6 +469,33 @@ export default function WorldEditor({ world, onClose }: Props) {
 
   const removeEntry = (id: string) => patch({ entries: d.entries.filter((e) => e.id !== id) })
 
+  // ロアの解禁条件（G3。未指定＝条件なし＝常に通る。条件は alwaysOn より強い）
+  const addEntryClause = (e: LoreEntry) => {
+    const mode = e.condition ? modeOf(e.condition) : 'all'
+    const clauses = [...(e.condition ? clausesOf(e.condition) : []), newClause('stat', d)]
+    updateEntry(e.id, { condition: mode === 'all' ? { all: clauses } : { any: clauses } })
+  }
+  const updateEntryClause = (e: LoreEntry, idx: number, clause: Clause) => {
+    if (!e.condition) return
+    const mode = modeOf(e.condition)
+    const clauses = clausesOf(e.condition).map((c, i) => (i === idx ? clause : c))
+    updateEntry(e.id, { condition: mode === 'all' ? { all: clauses } : { any: clauses } })
+  }
+  const removeEntryClause = (e: LoreEntry, idx: number) => {
+    if (!e.condition) return
+    const mode = modeOf(e.condition)
+    const clauses = clausesOf(e.condition).filter((_, i) => i !== idx)
+    // 条件が空になったら条件そのものを外す（＝常に注入される状態へ戻す）
+    const condition = clauses.length ? (mode === 'all' ? { all: clauses } : { any: clauses }) : undefined
+    updateEntry(e.id, { condition })
+  }
+  const setEntryMode = (e: LoreEntry, mode: 'all' | 'any') => {
+    if (!e.condition) return
+    updateEntry(e.id, {
+      condition: mode === 'all' ? { all: clausesOf(e.condition) } : { any: clausesOf(e.condition) },
+    })
+  }
+
   const events = d.scheduledEvents ?? []
   const eventSlots = d.startPreset?.timeline?.slots.length
     ? d.startPreset.timeline.slots
@@ -585,32 +611,6 @@ export default function WorldEditor({ world, onClose }: Props) {
       modeOf(e.condition ?? { all: [] }),
       clausesOf(e.condition ?? { all: [] }).filter((_, i) => i !== idx),
     )
-
-  // プリセット：既存と重複しない次元・スタット・カウンターを追記
-  const applyPreset = (presetId: string) => {
-    const p = WORLD_PRESETS.find((x) => x.id === presetId)
-    if (!p) return
-    patch({
-      relationAspects: [
-        ...aspects,
-        ...p.aspects
-          .filter((n) => !aspects.some((a) => a.name === n))
-          .map((n) => newRelationAspect(n)),
-      ],
-      stats: [
-        ...stats,
-        ...p.stats
-          .filter((sd) => !stats.some((s) => s.name === sd.name))
-          .map((sd) => ({ id: uid(), ...sd })),
-      ],
-      counters: [
-        ...counters,
-        ...p.counters
-          .filter((cd) => !counters.some((c) => c.name === cd.name))
-          .map((cd) => ({ id: uid(), ...cd })),
-      ],
-    })
-  }
 
   const save = () => {
     const problem = roleValidationError()
@@ -944,6 +944,7 @@ export default function WorldEditor({ world, onClose }: Props) {
             <label>ロア項目</label>
             <div className="desc">
               キーワードが会話に登場した時だけ注入されます（トークン節約）。「常時」をオンにすると常に注入。
+              各項目の「解禁条件」を設定すると、条件を満たすまで注入されません（「常時」より強い）。
             </div>
           </div>
 
@@ -990,6 +991,46 @@ export default function WorldEditor({ world, onClose }: Props) {
                 placeholder="この語が出たときに注入する設定内容"
                 onChange={(ev) => updateEntry(e.id, { content: ev.target.value })}
               />
+              {/* 解禁条件（G3）。既定は畳んでおき、設定済みなら見出しで分かるようにする */}
+              {(() => {
+                const cond = e.condition
+                const clauses = cond ? clausesOf(cond) : []
+                return (
+                  <details className="help-details" open={false}>
+                    <summary>解禁条件{clauses.length > 0 ? '（条件あり）' : ''}</summary>
+                    <div style={{ marginTop: 6 }}>
+                      <div className="desc">
+                        条件を満たすまで、この設定は AI に渡されません。「常時」にしていても渡されません。
+                      </div>
+                      {clauses.length > 0 && (
+                        <div className="row2" style={{ marginTop: 6, alignItems: 'center' }}>
+                          <span className="sub-label">解禁条件</span>
+                          <select
+                            value={modeOf(cond!)}
+                            style={{ background: 'var(--bg)' }}
+                            onChange={(ev) => setEntryMode(e, ev.target.value as 'all' | 'any')}
+                          >
+                            <option value="all">すべて満たす</option>
+                            <option value="any">いずれか満たす</option>
+                          </select>
+                        </div>
+                      )}
+                      {clauses.map((c, i) => (
+                        <ClauseRow
+                          key={i}
+                          clause={c}
+                          world={d}
+                          onChange={(nc) => updateEntryClause(e, i, nc)}
+                          onRemove={() => removeEntryClause(e, i)}
+                        />
+                      ))}
+                      <button className="btn" style={{ marginTop: 6 }} onClick={() => addEntryClause(e)}>
+                        <Icon name="plus" size={13} />解禁条件を追加
+                      </button>
+                    </div>
+                  </details>
+                )
+              })()}
             </div>
           ))}
 
@@ -1120,16 +1161,9 @@ export default function WorldEditor({ world, onClose }: Props) {
           {section === 'aspects' && (
             <>
           <div className="lore-head">
-            <label>状態システム（プリセット）</label>
+            <label>状態システム</label>
             <div className="desc">
-              このワールドのゲームシステムを定義します。プリセットで素早く投入できます（後から編集可）。
-            </div>
-            <div className="pick-grid">
-              {WORLD_PRESETS.map((p) => (
-                <button key={p.id} className="pick-chip" onClick={() => applyPreset(p.id)}>
-                  <Icon name="plus" size={13} />{p.label}
-                </button>
-              ))}
+              このワールドのゲームシステムを定義します。新規ワールドには「信頼」と「好感度」が1つずつ入っています（不要なら削除・自由に追加できます）。
             </div>
           </div>
 

@@ -72,6 +72,12 @@ export interface LoreEntry {
   order: number
   /** 物語の展開中にレビューで追加された項目（元からの設定と区別） */
   addedInStory?: boolean
+  /**
+   * 解禁条件（G3）。未達なら AI に渡さない（`gateLoreByCondition` が実効 World から取り除く）。
+   * **`alwaysOn` より強い**（条件のほうが勝つ。docs/詳細設計_ゲーム性向上.md §3.1）。
+   * 未設定＝条件なし＝常に通す。
+   */
+  condition?: Condition
 }
 
 /** 特別イベント（世界設定で日付・時間帯・条件を指定。コードが自動判定して発火する） */
@@ -637,6 +643,11 @@ export interface Session {
   eventAutoFire?: boolean
   /** 消化済みの特別イベント ID */
   usedEventIds: string[]
+  /**
+   * 解禁条件つきロア（`LoreEntry.condition`）のうち、既に解禁を通知したものの id（G3）。
+   * 重複通知の防止だけに使う＝注入の可否は毎回条件で判定するので、この配列は注入を左右しない。
+   */
+  revealedLoreIds?: string[]
   /** 感情・関係値の状態（セッション固有） */
   state: SessionState
   /** 発見・深化した設定の上乗せ（セッション固有・素材は不変） */
@@ -648,6 +659,14 @@ export interface Session {
    * undefined=true＝既定ON）。docs/詳細設計_プロンプト構造とキャッシュ.md §3.2
    */
   reviewSplit?: boolean
+  /**
+   * 原文で送る最古のシーン id（PC3）。`beginScene` が `selectRawScenes` で確定し、
+   * **シーン途中では動かさない**（毎ターン予算計算をすると履歴が伸びるだけで窓が動き、
+   * 「シーン途中で畳む」＝最悪の切り方になるため状態として持つ）。
+   * undefined（旧データ・最初のシーン）は「現在シーンのみ」＝PC3 以前と同じ挙動。
+   * docs/詳細設計_プロンプト構造とキャッシュ.md §7.2
+   */
+  rawWindowFromSceneId?: string
   /** アーカイブ済み（セッション一覧から既定で除外。UI-5） */
   archived?: boolean
   /**

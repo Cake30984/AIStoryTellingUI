@@ -37,6 +37,28 @@ export function sceneTokensOf(session: Session): number {
   )
 }
 
+/**
+ * 原文（要約ではなく本文そのもの）で送るシーン群のトークン予算（PC3）。
+ * 保守的な初期値から始め、実測（PC0 の表）を見て上げる。
+ * BYOK なので入力の増分はユーザーの請求に直撃する＝キャッシュヒットは確率的（F5）で
+ * 「ミス時の全額」が常時起こりうるため、上位設計の目安（1.5万〜2万）より低く置いている。
+ * `docs/詳細設計_プロンプト構造とキャッシュ.md` §7.2
+ */
+export const RAW_WINDOW_TOKENS = 12000
+
+/**
+ * 予算を超えた時に**そこまで落とす**割合（畳み方4原則①のヒステリシス）。
+ * 「超えたぶんだけ落とす」と毎シーン1つずつ落ち続ける（＝窓が1シーンずつ滑る）ので、
+ * 一度畳むときに 60% までまとめて落として次の数シーンぶんの余地を作る。
+ */
+export const RAW_WINDOW_KEEP_RATIO = 0.6
+
+/**
+ * 窓から落ちたシーン群のうち**最後の1シーン**だけ原文の末尾を残す量（畳み方4原則②「橋を残す」）。
+ * あらすじだけでは固有名詞・約束・言い回しが落ちて直前シーンとの接続が切れるため。
+ */
+export const RAW_WINDOW_BRIDGE_TOKENS = 1000
+
 /** 締め時の目安（おおよその往復コスト感に対応） */
 export type TokenLevel = 'low' | 'mid' | 'high'
 export function tokenLevel(tokens: number): TokenLevel {

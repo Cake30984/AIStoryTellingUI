@@ -376,6 +376,9 @@ export function freshSessionOf(session: Session): Session {
     messages: [],
     scenes: [scene],
     currentSceneId: scene.id,
+    // 原文窓は種セッションのシーン id を指しているので落とす（PC3。残っても参照切れで
+    // 無視されるだけだが、配布物に死んだ id を載せない）
+    rawWindowFromSceneId: undefined,
     state: { relations: [], moods: [], stats: [], counters: [], achievements: [] },
     overlay: { lore: [], characterDevelopments: [] },
     usedEventIds: [],

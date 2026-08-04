@@ -1,8 +1,16 @@
-import type { Character, Persona, RoleParty, Session, World } from '../types'
+import type { Character, Message, Persona, RoleParty, Scene, Session, World } from '../types'
 import type { ChatMessage } from './openrouter'
 import { roleMembers } from './casting'
 import { splitLoreEntries } from './lorebook'
-import { SCENE_WIND_DOWN_TOKENS, SCENE_WRAP_UP_TOKENS, sceneTokensOf } from './tokens'
+import { plainTextOf } from './structured'
+import {
+  estimateTokens,
+  RAW_WINDOW_BRIDGE_TOKENS,
+  RAW_WINDOW_KEEP_RATIO,
+  SCENE_WIND_DOWN_TOKENS,
+  SCENE_WRAP_UP_TOKENS,
+  sceneTokensOf,
+} from './tokens'
 
 export interface ResolvedRefs {
   /** 現在のシーンに登場するキャラ */
@@ -336,21 +344,142 @@ function depthZeroContent(
   return parts.join('\n\n')
 }
 
+/** シーンごとの原文トークン量（概算）。空メッセージ・シーン未所属のメッセージは数えない */
+function sceneTokenMap(messages: Message[]): Map<string, number> {
+  const map = new Map<string, number>()
+  for (const m of messages) {
+    if (!m.sceneId || !m.content.trim()) continue
+    map.set(m.sceneId, (map.get(m.sceneId) ?? 0) + estimateTokens(m.content))
+  }
+  return map
+}
+
+/**
+ * 原文（要約ではなく本文）で送るシーンの範囲を決める（PC3）。純関数。
+ *
+ * **シーン開始時（`beginScene`）に1回だけ呼び、結果を `Session.rawWindowFromSceneId` に保存する**
+ * ——毎ターン計算すると履歴が伸びるだけでシーンの途中で窓が動いてしまい、
+ * 「シーン途中で畳む」という最悪の切り方になるため（畳み方4原則③）。
+ *
+ * 4原則のうちここが担うのは ①階段状に畳む（`RAW_WINDOW_KEEP_RATIO`）と ②橋を残す。
+ * ③はこの関数を呼ぶ場所（シーン境界のみ）が、④は落ちたシーンの `summary` を
+ * 【これまでのあらすじ】へ載せる既存の `priorSummaries` が担う（追加実装なし）。
+ *
+ * @param budget 原文で送るトークン予算（`RAW_WINDOW_TOKENS`）
+ * @param previousFromSceneId 前回確定した窓の起点（`Session.rawWindowFromSceneId`）。
+ *   **①のヒステリシスに必要**——「前回どこまで畳んだか」が無いと、予算を超えるたびに毎回
+ *   その場で切り直す＝窓が1シーンずつ滑る形にしかならない（詳細設計の引数表には無い追加）。
+ * @returns `fromSceneId`＝原文で送る最古のシーン id。
+ *   `bridgeTail`＝窓から落ちた直前シーンから末尾だけ残す指定（無ければ undefined）
+ * `docs/詳細設計_プロンプト構造とキャッシュ.md` §7.2
+ */
+export function selectRawScenes(
+  scenes: Scene[],
+  messages: Message[],
+  currentSceneId: string | null,
+  budget: number,
+  previousFromSceneId?: string,
+): { fromSceneId: string; bridgeTail?: { sceneId: string; tokens: number } } {
+  const found = currentSceneId ? scenes.findIndex((sc) => sc.id === currentSceneId) : -1
+  const at = found >= 0 ? found : scenes.length - 1
+  if (at < 0) return { fromSceneId: currentSceneId ?? '' }
+
+  const tokens = sceneTokenMap(messages)
+  const tokensOf = (id: string) => tokens.get(id) ?? 0
+
+  // 起点は前回の窓を引き継ぐ（無効・未設定なら現在シーンから）
+  const prev = previousFromSceneId ? scenes.findIndex((sc) => sc.id === previousFromSceneId) : -1
+  const hasPrev = prev >= 0 && prev <= at
+  let from = hasPrev ? prev : at
+  let total = 0
+  for (let i = from; i <= at; i++) total += tokensOf(scenes[i].id)
+
+  // 古い方へ広げるのは**前回の窓が無いとき（初回・復旧）だけ**。
+  // 前回の窓があるなら、それより古いシーンは既に「落とした」もの＝戻さない。
+  // 戻すと、畳んだ直後に余った予算ぶん再拡張 → 次のシーンでまた畳む、の振動になる。
+  if (!hasPrev) {
+    for (let i = from - 1; i >= 0; i--) {
+      const t = tokensOf(scenes[i].id)
+      if (total + t > budget) break
+      total += t
+      from = i
+    }
+  }
+
+  // 超過したときだけ、予算の 60% に収まるまで古い方から**まとめて**落とす（原則①）。
+  // 「超えたぶんだけ」落とすと次のシーンでまた1つ落ちる＝毎シーン滑るので、一度に余地を作る。
+  if (total > budget) {
+    const room = budget * RAW_WINDOW_KEEP_RATIO
+    while (total > room && from < at) {
+      total -= tokensOf(scenes[from].id)
+      from++
+    }
+  }
+
+  const droppedIndex = from - 1
+  const dropped = droppedIndex >= 0 ? scenes[droppedIndex] : undefined
+  return {
+    fromSceneId: scenes[from].id,
+    ...(dropped && tokensOf(dropped.id) > 0
+      ? { bridgeTail: { sceneId: dropped.id, tokens: RAW_WINDOW_BRIDGE_TOKENS } }
+      : {}),
+  }
+}
+
+/**
+ * 原文で送るシーン範囲を `session.rawWindowFromSceneId` から復元する（PC3）。
+ * **ここで予算計算はしない**（窓を動かしてよいのはシーン開始時だけ）。
+ * 参照が使えない場合——未設定（旧データ・最初のシーン）／分岐の巻き戻しでシーンごと消えた／
+ * 現在シーンより後ろを指している——は null を返し、呼び出し側は「現在シーンのみ」＝PC3 以前へ落とす。
+ *
+ * 窓が現在シーンまで畳まれている（`from === currentSceneId`）場合も null にはしない——
+ * その状態こそ橋（②）が要る場面で、直前シーンの原文末尾が唯一の接続になるため。
+ */
+function rawWindowOf(
+  session: Session,
+  currentSceneId: string | null,
+): { ids: Set<string>; bridgeSceneId?: string } | null {
+  const from = session.rawWindowFromSceneId
+  if (!currentSceneId || !from) return null
+  const curIndex = session.scenes.findIndex((sc) => sc.id === currentSceneId)
+  const fromIndex = session.scenes.findIndex((sc) => sc.id === from)
+  if (curIndex < 0 || fromIndex < 0 || fromIndex > curIndex) return null
+  return {
+    ids: new Set(session.scenes.slice(fromIndex, curIndex + 1).map((sc) => sc.id)),
+    // 橋は「窓の1つ手前のシーン」＝`selectRawScenes` が返す bridgeTail と同じ位置（保存不要な導出値）
+    ...(fromIndex > 0 ? { bridgeSceneId: session.scenes[fromIndex - 1].id } : {}),
+  }
+}
+
+/** 末尾から budget トークンぶんのメッセージを返す。橋の意味が消えるので最低1件は必ず残す */
+function tailByTokens(messages: Message[], budget: number): Message[] {
+  const out: Message[] = []
+  let total = 0
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const t = estimateTokens(messages[i].content)
+    if (out.length > 0 && total + t > budget) break
+    out.unshift(messages[i])
+    total += t
+  }
+  return out
+}
+
 /**
  * API に送る messages 配列を作る。
  *
- * 組み立て順（PC1+PC4）: system（シーン境界でしか変わらない） → 履歴 →
+ * 組み立て順（PC1+PC4）: system（シーン境界でしか変わらない） → 橋 → 履歴 →
  * 深さ3の1通（可変ロア・作者ノート） → 深さ0の1通（話者指定・締めのナッジ・形式の再掲）。
  * 呼び出し側の追加念押し（`CONTINUATION_NUDGE` 等）はさらにその後ろに積まれる。
  *
- * @param opts.injections 深さ3・深さ0の注入を行うか（既定 true）。
- *   本編以外の呼び出し（選択肢生成）は system を差し替えて履歴だけを使うため false を渡す。
+ * 履歴に載せる範囲は `session.rawWindowFromSceneId` が決める（PC3。現在シーンだけとは限らない）。
+ * ここでは予算計算をしない＝窓を動かしてよいのはシーン開始時（`beginScene`）だけ。
+ *
+ * 選択肢生成はこの関数を使わない（PC2'。`choicesMessages` が専用の圧縮した文脈を組み立てる）。
  */
 export function buildMessages(
   session: Session,
   refs: ResolvedRefs,
   activeCharacter?: Character,
-  opts?: { injections?: boolean },
 ): ChatMessage[] {
   const system: ChatMessage = {
     role: 'system',
@@ -359,21 +488,36 @@ export function buildMessages(
   // 会話劇のグループ時のみ、誰の発言かをテキストに織り込む（構造化出力ONでは @ 行が話者を運ぶためスキップ）
   const multi = session.narrativeStyle !== 'novel' && refs.characters.length > 1 && !session.structuredOutput
   const nameOf = (id?: string) => refs.characters.find((c) => c.id === id)?.name
-  // 履歴は現在シーンの発言のみ（過去シーンは要約で引き継ぐ）
-  const history: ChatMessage[] = session.messages
-    .filter((m) => m.content.trim().length > 0)
-    .filter((m) => !refs.currentSceneId || !m.sceneId || m.sceneId === refs.currentSceneId)
-    .map((m) => {
-      if (m.role === 'assistant' && multi) {
-        const nm = nameOf(m.characterId)
-        return { role: 'assistant' as const, content: nm ? `${nm}: ${m.content}` : m.content }
-      }
-      return { role: m.role, content: m.content }
-    })
-  if (opts?.injections === false) return [system, ...history]
+  const toChat = (m: Message): ChatMessage => {
+    if (m.role === 'assistant' && multi) {
+      const nm = nameOf(m.characterId)
+      return { role: 'assistant' as const, content: nm ? `${nm}: ${m.content}` : m.content }
+    }
+    return { role: m.role, content: m.content }
+  }
+
+  const filled = session.messages.filter((m) => m.content.trim().length > 0)
+  // 原文で送る範囲（PC3）。窓が未確定なら従来どおり現在シーンのみ（過去シーンは要約で引き継ぐ）
+  const win = rawWindowOf(session, refs.currentSceneId)
+  const history: ChatMessage[] = filled
+    .filter((m) =>
+      win
+        ? !m.sceneId || win.ids.has(m.sceneId)
+        : !refs.currentSceneId || !m.sceneId || m.sceneId === refs.currentSceneId,
+    )
+    .map(toChat)
+  // 橋（PC3 の畳み方4原則②）: 窓から落ちた直前シーンの原文末尾だけ残す。
+  // あらすじは system の【これまでのあらすじ】が持つが、固有名詞・約束・言い回しは要約で落ちるため。
+  const bridge: ChatMessage[] = win?.bridgeSceneId
+    ? tailByTokens(
+        filled.filter((m) => m.sceneId === win.bridgeSceneId),
+        RAW_WINDOW_BRIDGE_TOKENS,
+      ).map(toChat)
+    : []
 
   const depth3 = depthThreeContent(session, refs)
-  const body = depth3 ? insertAtDepth(history, INJECT_DEPTH, depth3) : history
+  const withBridge = bridge.length ? [...bridge, ...history] : history
+  const body = depth3 ? insertAtDepth(withBridge, INJECT_DEPTH, depth3) : withBridge
   const depth0 = depthZeroContent(session, refs, activeCharacter)
   return depth0 ? [system, ...body, { role: 'user', content: depth0 }] : [system, ...body]
 }
@@ -425,6 +569,79 @@ export function choicesUserNudge(mode: 'always' | 'auto'): string {
   return mode === 'auto'
     ? `${head}（選択を挟むのが不自然なら [] を返す）`
     : `${head} 上で指定した形式・個数を厳守すること。`
+}
+
+function headOf(text: string, max: number): string {
+  const t = text.trim().replace(/\s+/g, ' ')
+  return t.length > max ? `${t.slice(0, max)}…` : t
+}
+
+/** 【登場人物】に載せる1キャラぶんの一行（PC2'）。フルの `characterBlock` は載せない＝短さが命 */
+function choicesCharacterLine(c: Character): string {
+  const bits = [c.persona, c.speechStyle].map((s) => s.trim()).filter((s) => s.length > 0)
+  const desc = bits.length ? headOf(bits.join('・'), 40) : ''
+  return desc ? `${c.name}: ${desc}` : c.name
+}
+
+/** 末尾 count 件の本文を自然表記（`plainTextOf`）の行にする。話者名の織り込みは `buildMessages` と同じ規則 */
+function recentPlainLines(session: Session, refs: ResolvedRefs, count: number): string[] {
+  const multi = session.narrativeStyle !== 'novel' && refs.characters.length > 1 && !session.structuredOutput
+  const nameOf = (id?: string) => refs.characters.find((c) => c.id === id)?.name
+  const history = session.messages
+    .filter((m) => m.content.trim().length > 0)
+    .filter((m) => !refs.currentSceneId || !m.sceneId || m.sceneId === refs.currentSceneId)
+  return history.slice(-count).map((m) => {
+    const text = plainTextOf(m.content)
+    if (m.role === 'assistant' && multi) {
+      const nm = nameOf(m.characterId)
+      return nm ? `${nm}: ${text}` : text
+    }
+    return text
+  })
+}
+
+/** 選択肢生成へ渡す直近本文の件数（PC2'）。全履歴は渡さない */
+const CHOICES_RECENT_MESSAGES = 4
+
+/**
+ * 選択肢生成用の messages を組み立てる（PC2'）。
+ *
+ * 本編の system・履歴全文は使わず、選択肢の質に効く要素だけを user 1通へ圧縮する:
+ * 【登場人物】（名前＋一言）／【状態（現在）】（`refs.stateInfo`）／
+ * 【直前のあらすじ】（`priorSummaries` の末尾1件のみ）／【直近の本文】（末尾数件・`plainTextOf` 適用）。
+ * 続く user 1通は従来どおり `choicesUserNudge`。
+ *
+ * 上位設計 PC2（R1 との system 接頭辞共有）は却下し、この「文脈を削る」対案を採る——
+ * R2 は既に system 固定により自系列でヒットしており（実測平均46%）、接頭辞共有は送信量を約1.6倍にして
+ * ヒット時ほぼ相殺・ミス時は明確に悪化するため（キャッシュヒットは確率的。F5・F7。
+ * `docs/詳細設計_プロンプト構造とキャッシュ.md` §6）。
+ *
+ * `choicesSystem` はここでは jsonSchema なしの版を積む。JSON スキーマ対応モデル向けの差し替えは
+ * 呼び出し側（`genChoices`）が返り値の先頭（system）を上書きして行う。
+ */
+export function choicesMessages(
+  session: Session,
+  refs: ResolvedRefs,
+  mode: 'always' | 'auto',
+): ChatMessage[] {
+  const parts: string[] = []
+  if (refs.characters.length) {
+    parts.push(`【登場人物】\n${refs.characters.map(choicesCharacterLine).join('\n')}`)
+  }
+  if (refs.stateInfo.trim()) {
+    parts.push(`【状態（現在）】\n${refs.stateInfo.trim()}`)
+  }
+  const lastSummary = refs.priorSummaries[refs.priorSummaries.length - 1]
+  if (lastSummary) {
+    parts.push(`【直前のあらすじ】\n■ ${lastSummary.title}\n${lastSummary.summary}`)
+  }
+  const recent = recentPlainLines(session, refs, CHOICES_RECENT_MESSAGES)
+  if (recent.length) parts.push(`【直近の本文】\n${recent.join('\n')}`)
+  return [
+    { role: 'system', content: choicesSystem(mode) },
+    { role: 'user', content: parts.join('\n\n') },
+    { role: 'user', content: choicesUserNudge(mode) },
+  ]
 }
 
 /** reviewSystem に渡すステータス定義の要点（変動幅は範囲付き列挙とクランプの両方に使う。FB7-C） */

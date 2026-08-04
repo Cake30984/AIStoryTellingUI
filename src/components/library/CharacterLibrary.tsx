@@ -11,7 +11,7 @@ import { SelectionBar, CardContextMenu } from './LibraryMultiSelect'
 import { Icon } from '../icons'
 
 export default function CharacterLibrary() {
-  const { characters, importCharacterCard, deleteCharacter } = useStore()
+  const { characters, importCharacterCard, deleteCharacter, duplicateCharacter } = useStore()
   const [editing, setEditing] = useState<Character | null>(null)
   const [notice, setNotice] = useState('')
   const [query, setQuery] = useState('')
@@ -58,6 +58,13 @@ export default function CharacterLibrary() {
     )
       return
     ids.forEach((id) => deleteCharacter(id))
+    clear()
+  }
+
+  // 複製（G4-a）。エディタは開かず一覧に増やすだけ＝一括複製と挙動を揃える
+  const doDuplicate = (ids: string[]) => {
+    ids.forEach((id) => duplicateCharacter(id))
+    setNotice(ids.length > 1 ? `キャラ ${ids.length} 件を複製しました。` : 'キャラを複製しました。')
     clear()
   }
 
@@ -146,6 +153,9 @@ export default function CharacterLibrary() {
             const c = characters.find((x) => x.id === ctxMenu.id)
             if (c) setEditing(c)
           }}
+          onDuplicate={() =>
+            doDuplicate(selected.has(ctxMenu.id) && selected.size > 0 ? [...selected] : [ctxMenu.id])
+          }
           onDelete={() =>
             doDelete(selected.has(ctxMenu.id) && selected.size > 0 ? [...selected] : [ctxMenu.id])
           }

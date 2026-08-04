@@ -74,16 +74,18 @@ import { parseBundle } from './lib/io'
 import { appChoices, appPrompt } from './lib/dialogs'
 import {
   buildMessages,
+  choicesMessages,
   choicesSystem,
-  choicesUserNudge,
   CONTINUATION_NUDGE,
   CONTINUE_PROMPT,
   nextSceneSystem,
   reviewSystem,
   SCENE_START_PROMPT,
+  selectRawScenes,
   type ResolvedRefs,
   type ReviewPart,
 } from './lib/prompts'
+import { RAW_WINDOW_TOKENS } from './lib/tokens'
 import {
   advanceTimeline,
   defaultTimeline,
@@ -493,6 +495,40 @@ export function stripLegacyFlagClauses(world: World): World {
   }
 }
 
+/**
+ * 解禁条件（`LoreEntry.condition`）が未達のロアを World から取り除く純関数（G3）。
+ * `resolveRefs` が実効 World を組んだ直後に1段挟む＝`lorebook.ts`/`prompts.ts` は無改修で、
+ * 本編もレビューも「解禁済みだけ」を見る（循環依存を避けるための置き場所。詳細設計 §3.2）。
+ * **`alwaysOn` でも条件が未達なら落とす**（条件のほうが強い）。
+ * 1件も落とさない場合は同一参照のまま返す（毎ターン呼ばれるため。`stripLegacyFlagClauses` と同じ最適化）。
+ */
+export function gateLoreByCondition(
+  world: World | undefined,
+  ctx: ConditionContext,
+): World | undefined {
+  if (!world) return world
+  const entries = world.entries ?? []
+  if (!entries.some((e) => e.condition)) return world
+  const kept = entries.filter((e) => !e.condition || matchGroups(e.condition, ctx).ok)
+  if (kept.length === entries.length) return world
+  return { ...world, entries: kept }
+}
+
+/**
+ * 解禁条件つきロアのうち、この文脈で**新たに**解禁されたものの id（G3。通知は1回だけ）。
+ * 中身はトーストに出さない（本編で自然に出るべきもの）ので id だけ返す。
+ */
+export function newlyRevealedLoreIds(
+  world: World | undefined,
+  ctx: ConditionContext,
+  alreadyRevealed: string[] | undefined,
+): string[] {
+  const known = new Set(alreadyRevealed ?? [])
+  return (world?.entries ?? [])
+    .filter((e) => e.condition && !known.has(e.id) && matchGroups(e.condition, ctx).ok)
+    .map((e) => e.id)
+}
+
 /** 新規解除された実績1件（当事者つき。トースト・`@ロール名` 置換に使う） */
 export interface UnlockedAchievement {
   def: AchievementDef
@@ -778,6 +814,21 @@ export function choicesModelOf(s: Session): string {
   return s.choicesModel?.trim() || s.model || DEFAULT_MODEL
 }
 
+/** 複製時の名前（G4-a）。「〜のコピー」を付け、同名が既にあれば「〜のコピー2」…と連番にする */
+export function copyNameOf(name: string, existing: string[]): string {
+  const base = `${name.trim() || '無名'}のコピー`
+  if (!existing.includes(base)) return base
+  for (let n = 2; ; n++) {
+    if (!existing.includes(`${base}${n}`)) return `${base}${n}`
+  }
+}
+
+/**
+ * 新規ワールド。**中立な既定を1組だけ入れる**（G4-b）。
+ * `relationAspects` が空のままだとレビューが劣化する（次元未定義＝ stance のみ更新に落ちる。
+ * `prompts.ts`）ため、プリセット（廃止）が実際に防いでいた「空設定のまま遊び始めること」を
+ * 既定1つで肩代わりする（詳細設計 §4.2）。カウンターは作者が決めるものなので空のまま。
+ */
 export function newWorld(): World {
   const now = Date.now()
   return {
@@ -786,8 +837,8 @@ export function newWorld(): World {
     description: '',
     entries: [],
     scheduledEvents: [],
-    relationAspects: [],
-    stats: [],
+    relationAspects: [newRelationAspect('信頼')],
+    stats: [newStatDef('好感度')],
     counters: [],
     achievements: [],
     roles: [],
@@ -939,43 +990,6 @@ export function newGroupSubClause(kind: GroupSubClause['kind'], world: World): G
       }
   }
 }
-
-/** ワールドの状態定義プリセット（次元＋スタット＋カウンターをまとめて投入） */
-export const WORLD_PRESETS: {
-  id: string
-  label: string
-  aspects: string[]
-  stats: Omit<StatDef, 'id'>[]
-  counters: Omit<CounterDef, 'id'>[]
-}[] = [
-  {
-    id: 'romance',
-    label: '恋愛',
-    aspects: ['信頼', '恋愛'],
-    stats: [{ name: '好感度', scope: 'character', default: 0, min: 0, max: 100, inject: false }],
-    counters: [{ name: 'デート回数', scope: 'character', inject: true }],
-  },
-  {
-    id: 'rpg',
-    label: 'RPG',
-    aspects: ['信頼', '警戒'],
-    stats: [
-      { name: 'レベル', scope: 'character', default: 1, min: 1, max: 99, inject: true },
-      { name: '所持金', scope: 'global', default: 0, min: 0, inject: true },
-    ],
-    counters: [{ name: '戦闘回数', scope: 'global', inject: false }],
-  },
-  {
-    id: 'business',
-    label: '経営',
-    aspects: ['信用'],
-    stats: [
-      { name: '資産', scope: 'global', default: 0, min: 0, inject: true },
-      { name: '名声', scope: 'global', default: 0, min: 0, max: 100, inject: true },
-    ],
-    counters: [{ name: '来店回数', scope: 'global', inject: true }],
-  },
-]
 
 export function newScene(
   title: string,
@@ -1280,6 +1294,16 @@ interface AppState {
   /** カードからのインポート専用。id が既存と衝突する場合は振り直して常に新規追加する */
   importPersonaCard: (p: Persona) => void
   deletePersona: (id: string) => void
+  /**
+   * 素材の複製（G4-a。取り込んだカセットの世界観を編集して原本を壊すのを防ぐ導線）。
+   * 新 id を返す（見つからなければ undefined）。名前は「〜のコピー」（同名があれば連番）。
+   * **世界観の内部 id（ロア・実績・エンディング・ロール・stat/counter の defId）は振り直さない**
+   * ＝既存セッションの世界観を複製先へ差し替えても state の参照が生きる（詳細設計 §4.1）。
+   * アバターの画像 id は共有する（画像は不変・GC は使用中集合で判定するので安全）。
+   */
+  duplicateWorld: (id: string) => string | undefined
+  duplicateCharacter: (id: string) => string | undefined
+  duplicatePersona: (id: string) => string | undefined
 
   // セッション
   createSession: (mode: SessionMode) => string
@@ -1747,6 +1771,55 @@ export function eventUsedKey(eventId: string, subjects: RoleParty[]): string {
 }
 
 /**
+ * 消化キーの当事者 id 列を `@ロール名` 置換用の RoleParty へ戻す（`eventUsedKey` の逆・表示専用）。
+ * キーはロールを保存しないので、条件の subject group 節がちょうど1つのときだけロールを復元する
+ * （その場合は当事者全員がそのロールのメンバーだと確定する）。複数群なら分配が不明なので
+ * ロール名なし＝名前だけ（`@相手` は置換できる）。
+ */
+function eventSubjectsOf(
+  event: ScheduledEvent,
+  memberIds: string[],
+  world: World | undefined,
+  characters: { id: string; name: string }[],
+): RoleParty[] {
+  if (memberIds.length === 0) return []
+  const cond = event.condition
+  const clauses = cond ? ('all' in cond ? cond.all : cond.any) : []
+  const groups = clauses.filter((c) => c.kind === 'group' && c.subject === true)
+  const roleId = groups.length === 1 ? (groups[0] as Extract<Clause, { kind: 'group' }>).roleId : ''
+  return [
+    {
+      roleId,
+      roleName: world?.roles?.find((r) => r.id === roleId)?.name || '',
+      members: partnersOf(memberIds, characters),
+    },
+  ]
+}
+
+/**
+ * 消化済みの特別イベントを発火順（`usedEventIds` の追記順＝時系列）に解決する（G2）。
+ * 定義が削除されたキーは落とす。当事者名は保存せず表示直前に解決する＝リネームに追従する
+ * （`resolveParties` と同じ規約）。未発火のイベントは返さない（ネタバレ防止・詳細設計 §2.2）。
+ */
+export function firedEventLog(
+  usedEventIds: string[] | undefined,
+  world: World | undefined,
+  characters: { id: string; name: string }[],
+): { key: string; event: ScheduledEvent; subjects: RoleParty[] }[] {
+  const events = world?.scheduledEvents ?? []
+  const out: { key: string; event: ScheduledEvent; subjects: RoleParty[] }[] = []
+  for (const key of usedEventIds ?? []) {
+    // 素の eventId か `eventId@charId1[+charId2]`。id に '@' は入らないので前方一致で定義を引ける
+    const event = events.find((e) => !!e.id && (key === e.id || key.startsWith(`${e.id}@`)))
+    if (!event) continue
+    const ids =
+      key === event.id ? [] : key.slice(event.id.length + 1).split('+').filter(Boolean)
+    out.push({ key, event, subjects: eventSubjectsOf(event, ids, world, characters) })
+  }
+  return out
+}
+
+/**
  * 次シーンの特別イベントを決める（FB3-C。演出タイプ抽選は廃止し、世界観イベントに一本化）。
  * 未消化かつ day/slot 到来かつ条件成立のイベントを日時順・参加キャラ順で1つ返す（subject な group 節を
  * 含む条件は当事者の組ごとに独立発火＝当事者の組が変われば別キーとして再度候補になる）。
@@ -2019,9 +2092,15 @@ export const useStore = create<AppState>()(
           scene && scene.activeCharacterIds.length > 0
             ? scene.activeCharacterIds
             : session.characterIds
-        const effWorld = effectiveWorld(
+        // 素材＋オーバーレイの実効ビューを組んでから、解禁条件が未達のロアを落とす（G3）。
+        // ここ1箇所で本編・レビュー・状況要約のすべてが「解禁済みだけ」を見る（詳細設計 §3.2）
+        const baseWorld = effectiveWorld(
           worlds.find((w) => w.id === session.worldId),
           session.overlay,
+        )
+        const effWorld = gateLoreByCondition(
+          baseWorld,
+          conditionContextOf(session, baseWorld, characters),
         )
         const allCharacters = session.characterIds
           .map((id) => characters.find((c) => c.id === id))
@@ -2240,17 +2319,14 @@ export const useStore = create<AppState>()(
         set({ isGeneratingChoices: true })
         try {
           const refs = resolveRefs(session)
-          // system は差し替えるので履歴だけを使う。本編用の深さ注入（形式の再掲・締めのナッジ）は
-          // JSON を出させたい選択肢では邪魔なので入れない（PC1+PC4。文脈自体の削減は PC2' で行う）
-          const base = buildMessages(session, refs, undefined, { injections: false })
+          // 本編の system・履歴全文は使わず、選択肢に効く要素だけへ圧縮した専用文脈を使う（PC2'）
+          const base = choicesMessages(session, refs, mode)
           // 対応モデルなら JSON を強制する（スキーマが通る相手は system の書式指示も包んだ形へ揃える）
           const jsonMode = jsonModeFor(model, get().modelsByProvider[provider.id])
           const jsonSchema = jsonMode === 'none' ? undefined : CHOICES_SCHEMA
-          // 末尾に user の念押しを積み、本編の続き（地の文）ではなく JSON を出させる
           const msgs = [
             { role: 'system' as const, content: choicesSystem(mode, jsonMode === 'schema') },
             ...base.slice(1),
-            { role: 'user' as const, content: choicesUserNudge(mode) },
           ]
           // always はモデルが本編を続けてしまうことがあるため最大2回試行（auto の空配列は正当なので1回）
           // truncated（途中切れ）の場合も抽出漏れの原因になるため再試行対象に含める。
@@ -2614,6 +2690,53 @@ export const useStore = create<AppState>()(
               s.personaId === id ? { ...s, personaId: null } : s,
             ),
           })),
+
+        duplicateWorld: (id) => {
+          const src = get().worlds.find((w) => w.id === id)
+          if (!src) return undefined
+          const now = Date.now()
+          const copy: World = {
+            ...src,
+            id: uid(),
+            name: copyNameOf(src.name, get().worlds.map((w) => w.name)),
+            createdAt: now,
+            updatedAt: now,
+          }
+          set((st) => ({ worlds: [copy, ...st.worlds] }))
+          return copy.id
+        },
+
+        duplicateCharacter: (id) => {
+          const src = get().characters.find((c) => c.id === id)
+          if (!src) return undefined
+          const now = Date.now()
+          const copy: Character = {
+            ...src,
+            id: uid(),
+            name: copyNameOf(src.name, get().characters.map((c) => c.name)),
+            // developments はそのままコピー（配列だけ複製先で独立させる）
+            developments: src.developments.map((dv) => ({ ...dv })),
+            createdAt: now,
+            updatedAt: now,
+          }
+          set((st) => ({ characters: [copy, ...st.characters] }))
+          return copy.id
+        },
+
+        duplicatePersona: (id) => {
+          const src = get().personas.find((p) => p.id === id)
+          if (!src) return undefined
+          const now = Date.now()
+          const copy: Persona = {
+            ...src,
+            id: uid(),
+            name: copyNameOf(src.name, get().personas.map((p) => p.name)),
+            createdAt: now,
+            updatedAt: now,
+          }
+          set((st) => ({ personas: [copy, ...st.personas] }))
+          return copy.id
+        },
 
         createSession: (mode) => {
           const s = newSession(mode)
@@ -3440,6 +3563,18 @@ export const useStore = create<AppState>()(
           // このレビュー適用で新規解除された実績（通知用・当事者つき）
           const newlyUnlocked: UnlockedAchievement[] = [...applied.unlocked]
 
+          /**
+           * 新たに解禁されたロアの id（G3）。判定は「確定後 state ＋ 確定後 usedEventIds」＝
+           * 次のシーンで `resolveRefs` が実際に注入する条件と同じ文脈で見る（通知と注入をずらさない）。
+           * 状態が動くのはレビューだけ（ADR-1）なので、ここ以外では評価しない。
+           */
+          const revealedLoreOf = (usedIds: string[]) =>
+            newlyRevealedLoreIds(
+              stateWorld,
+              conditionContextOf({ ...s, usedEventIds: usedIds }, stateWorld, characters, newState),
+              s.revealedLoreIds,
+            )
+
           // 発見ロア・キャラ成長はセッションのオーバーレイへ積む（元 Character/World は不変に保つ）
           const nextOverlay = (prev: Session['overlay'] | undefined): Session['overlay'] => {
             const src = prev ?? { lore: [], characterDevelopments: [] }
@@ -3570,6 +3705,8 @@ export const useStore = create<AppState>()(
             // エピローグ指針の @ロール名/@相手 を当事者名へ置換して注入
             epiScene.note = bindRoleNames(ending.epilogueGuidance, subjects)
             const reachedAt = Date.now()
+            // usedEventIds はエンディングが勝つため据え置き＝確定前のまま判定する
+            const revealedLore = revealedLoreOf(s.usedEventIds)
             set((st) => ({
               sessions: st.sessions.map((sess) =>
                 sess.id === s.id
@@ -3586,6 +3723,9 @@ export const useStore = create<AppState>()(
                       // タイムライン・usedEventIds は据え置き（特別イベント同時発火はエンディングが勝つ＝未消化のまま残す）
                       state: newState,
                       overlay: nextOverlay(sess.overlay),
+                      ...(revealedLore.length
+                        ? { revealedLoreIds: [...(sess.revealedLoreIds ?? []), ...revealedLore] }
+                        : {}),
                       ending: {
                         defId: ending.id,
                         name: endingName,
@@ -3600,6 +3740,8 @@ export const useStore = create<AppState>()(
               sceneReview: null,
               newlyUnlockedAchievements: newlyUnlocked,
               endingToast: { name: endingName },
+              // ロアの中身は出さない（本編で自然に明かされるべきもの。詳細設計 §3.3）
+              ...(revealedLore.length ? { infoNotice: '新しい設定が明らかになりました' } : {}),
               // 到達記録（E3）。突入時に追記＝完結ボタンの押し忘れで漏れないため。再到達も追記し表示側で distinct。
               // 集計はセッション単位（ステータス）とカセット単位（棚の通算）の2軸（FB9-B）
               endingRecords: s.worldId
@@ -3651,6 +3793,7 @@ export const useStore = create<AppState>()(
           const usedEventIds = event
             ? [...s.usedEventIds, review.scheduledEventKey ?? event.id]
             : s.usedEventIds
+          const revealedLore = revealedLoreOf(usedEventIds)
 
           set((st) => ({
             sessions: st.sessions.map((sess) =>
@@ -3669,12 +3812,17 @@ export const useStore = create<AppState>()(
                     usedEventIds,
                     state: newState,
                     overlay: nextOverlay(sess.overlay),
+                    ...(revealedLore.length
+                      ? { revealedLoreIds: [...(sess.revealedLoreIds ?? []), ...revealedLore] }
+                      : {}),
                     updatedAt: Date.now(),
                   }
                 : sess,
             ),
             sceneReview: null,
             newlyUnlockedAchievements: newlyUnlocked,
+            // ロアの中身は出さない（本編で自然に明かされるべきもの。詳細設計 §3.3）
+            ...(revealedLore.length ? { infoNotice: '新しい設定が明らかになりました' } : {}),
           }))
           void recordCheckpoint(s.id, 'scene', next.title, s, next.timeLabel)
 
@@ -4016,7 +4164,17 @@ export const useStore = create<AppState>()(
           const s = active()
           if (!s || get().isStreaming) return
           if (!(await ensureLineTip(s.id, get().branchTrees[s.id]?.currentId))) return
+          // 原文で送るシーン範囲をここで1回だけ確定する（PC3。シーン途中では動かさない＝
+          // 毎ターン計算するとシーンの途中で畳まれてしまうため、結果を状態として持つ）
+          const raw = selectRawScenes(
+            s.scenes,
+            s.messages,
+            s.currentSceneId,
+            RAW_WINDOW_TOKENS,
+            s.rawWindowFromSceneId,
+          )
           patchActive({
+            rawWindowFromSceneId: raw.fromSceneId,
             messages: [
               ...s.messages,
               {

@@ -11,7 +11,7 @@ import { SelectionBar, CardContextMenu } from './LibraryMultiSelect'
 import { Icon } from '../icons'
 
 export default function PersonaLibrary() {
-  const { personas, importPersonaCard, deletePersona } = useStore()
+  const { personas, importPersonaCard, deletePersona, duplicatePersona } = useStore()
   const [editing, setEditing] = useState<Persona | null>(null)
   const [notice, setNotice] = useState('')
   const [query, setQuery] = useState('')
@@ -54,6 +54,15 @@ export default function PersonaLibrary() {
     )
       return
     ids.forEach((id) => deletePersona(id))
+    clear()
+  }
+
+  // 複製（G4-a）。エディタは開かず一覧に増やすだけ＝一括複製と挙動を揃える
+  const doDuplicate = (ids: string[]) => {
+    ids.forEach((id) => duplicatePersona(id))
+    setNotice(
+      ids.length > 1 ? `ペルソナ ${ids.length} 件を複製しました。` : 'ペルソナを複製しました。',
+    )
     clear()
   }
 
@@ -132,6 +141,9 @@ export default function PersonaLibrary() {
             const p = personas.find((x) => x.id === ctxMenu.id)
             if (p) setEditing(p)
           }}
+          onDuplicate={() =>
+            doDuplicate(selected.has(ctxMenu.id) && selected.size > 0 ? [...selected] : [ctxMenu.id])
+          }
           onDelete={() =>
             doDelete(selected.has(ctxMenu.id) && selected.size > 0 ? [...selected] : [ctxMenu.id])
           }
