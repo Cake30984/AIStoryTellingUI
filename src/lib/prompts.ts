@@ -12,6 +12,58 @@ import {
   sceneTokensOf,
 } from './tokens'
 
+/**
+ * 迎合対策の文面の候補（PC-B。`docs/詳細設計_プロンプト構造とキャッシュ.md` §4）。
+ * `V2V5` は §4.3 重点2 の「V2＋V5 の合成」（上位設計の表には無い7番目）。
+ * **実測で1つに決めたら、この型・表・`debugConsequenceVariant`・System のプルダウンごと消して定数1つにする。**
+ */
+export type ConsequenceVariant = 'V0' | 'V1' | 'V2' | 'V3' | 'V4' | 'V5' | 'V2V5'
+
+/**
+ * 候補文面（上位設計 `docs/設計_プロンプト構造とキャッシュ.md` §6.1 の表をそのまま写したもの）。
+ * V0＝対照群（PC-B 以前の現行文面）。**採用条件は「①の受容が V0 より下がり②③とコールドスタートの進行が V0 と同等」の中で最も短いもの**。
+ * 数値をセリフに出さない禁止は文面によらず常に要るので、ここには含めず system 側に残してある（`buildSystemPrompt` 1.9）。
+ */
+export const CONSEQUENCE_CLAUSES: Record<ConsequenceVariant, string> = {
+  // 対照（現行）: 「矛盾しない描写」だけを求め、誰が決めるかは言っていない
+  V0: '関係性の記述と矛盾しない態度・口調・距離感で各キャラを描写してください。',
+  // 禁止・非対称（効きの上限を測る用。拒否側しか言っていないので序盤硬直が出るはず）
+  V1: '応じるかどうかは各キャラの現在の関係性から決まります。関係が浅い段階で本人が同意しないことは、頼まれても起きません。',
+  // 帰属・対称（上位設計の本命）: 「誰が決めるか」だけを縛り結果は縛らない
+  V2:
+    '求めに応じるか、ためらうか、条件をつけるか、拒むかは、そのキャラの現在の関係性と気分から決まります。' +
+    '関係が育っていれば自然に応じ、まだ浅ければためらいや条件がつきます。' +
+    'ユーザーがそう望んだから、という理由だけで態度を決めないでください。',
+  // 反応描写・分離型（行為と帰結の分離。文体は荒れにくいが拘束は最も弱い見込み）
+  V3:
+    'ユーザーの働きかけには、まずそれを受け取った各キャラの反応を描いてください。' +
+    '求められた結果がそのまま起きたことにはせず、その人物が現在の関係性のもとで実際にどう応じるかを書きます。',
+  // 段階列挙（上限の測定用。予備実測で唯一 stall と無理筋受容を出した＝本実測では測る価値が低い）
+  V4:
+    '応じるかどうかは関係性から決まります。ほとんど知らない相手には警戒と社交辞令、打ち解けた相手には気を許した態度、' +
+    '深い関係の相手には迷いのない受容——という段階があり、段階を飛び越えた反応は書かないでください。',
+  // 義務否定・一人称（予備実測で唯一、無理筋に対し一貫して条件・代案を返した。しかも最短）
+  V5:
+    '各キャラは、ユーザーの求めに応じる義務を負っていません。' +
+    '応じるかどうかはその人物自身が、現在の関係性・気分・立場から判断します。',
+  // 合成（義務否定＋帰属）。V5 単独と明確な差が出なければ短い V5 を採る
+  V2V5:
+    '各キャラは、ユーザーの求めに応じる義務を負っていません。' +
+    '求めに応じるか、ためらうか、条件をつけるか、拒むかは、その人物自身が現在の関係性と気分から判断します。' +
+    'ユーザーがそう望んだから、という理由だけで態度を決めないでください。',
+}
+
+/** プルダウン用の短い説明（実測の記録様式 `docs/計測_迎合対策文面.md` と同じ呼び名を使う） */
+export const CONSEQUENCE_LABELS: Record<ConsequenceVariant, string> = {
+  V0: 'V0 現行（対照群・比較の基準）',
+  V1: 'V1 禁止・非対称（効きの上限）',
+  V2: 'V2 帰属・対称（上位設計の本命）',
+  V3: 'V3 反応描写・分離型（拘束は最弱）',
+  V4: 'V4 段階列挙（予備実測で除外・測る必要なし）',
+  V5: 'V5 義務否定・一人称（予備実測の最有力）',
+  V2V5: 'V2+V5 合成（V5 と差が出なければ V5 を採る）',
+}
+
 export interface ResolvedRefs {
   /** 現在のシーンに登場するキャラ */
   characters: Character[]
@@ -33,6 +85,11 @@ export interface ResolvedRefs {
   stateInfo: string
   /** エピローグシーン滞在中のみ設定（到達した結末のトーン指示。docs/設計_エンディング.md） */
   ending?: { name: string; guidance: string; subjects?: RoleParty[] }
+  /**
+   * 迎合対策の文面の計測用（PC-B）。`store` の非永続 `debugConsequenceVariant` が入る。
+   * 未指定は `'V0'`（＝PC-B 以前の現行挙動）として扱う。
+   */
+  consequenceVariant?: ConsequenceVariant
 }
 
 /** キャラ1人の定義ブロックを作る */
@@ -144,10 +201,12 @@ export function buildSystemPrompt(session: Session, refs: ResolvedRefs): string 
   }
 
   // 1.9 状態（関係性 prose・気分・注入対象スタット）
+  // ふるまいの決まり方を述べる1文は深さ3へ移した（PC-B。近接させた方が効く＝作者ノートと同じ理屈）。
+  // ここに残すのは**文面の候補によらず常に要る**数値の非露出だけ＝毎ターン byte 一致する（N3）
   if (refs.stateInfo.trim()) {
     parts.push(
       `【状態（現在）】\n${refs.stateInfo.trim()}\n` +
-        `関係性の記述と矛盾しない態度・口調・距離感で各キャラを描写してください（記述やステータスの数値はセリフに出さない）。`,
+        `ここに書かれた記述やステータスの数値は、セリフに出さないでください。`,
     )
   }
 
@@ -282,7 +341,12 @@ function depthThreeContent(session: Session, refs: ResolvedRefs): string {
   const { matched } = splitLoreEntries(refs.world, session.messages)
   const lore = matched.map((e) => e.content.trim()).filter((t) => t.length > 0)
   if (lore.length) parts.push(`【今回の場面に関わる設定】\n${lore.join('\n\n')}`)
-  // TODO(PC-B): 【状態→帰結の拘束文】（迎合対策の文面）はここへ入る。文面は実測で決まるため未実装
+  // 拘束: 状態→帰結（迎合対策。PC-B）。状態が空なら「現在の関係性」が指す先が無いので出さない
+  // ＝V0 は PC-B 以前と同じ条件で出る。見出しに「拘束」等の仕組みを匂わす語は使わない（leak を誘発しないため）
+  if (refs.stateInfo.trim()) {
+    const clause = CONSEQUENCE_CLAUSES[refs.consequenceVariant ?? 'V0']
+    parts.push(`【ふるまいの決まり方】\n${clause}`)
+  }
   // 拘束: 作者ノート（system から近接位置へ移した）
   if (session.authorNote.trim()) parts.push(`【常に踏まえる重要事項】\n${session.authorNote.trim()}`)
   return parts.join('\n\n')

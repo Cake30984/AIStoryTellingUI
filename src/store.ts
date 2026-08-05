@@ -82,6 +82,7 @@ import {
   reviewSystem,
   SCENE_START_PROMPT,
   selectRawScenes,
+  type ConsequenceVariant,
   type ResolvedRefs,
   type ReviewPart,
 } from './lib/prompts'
@@ -1248,6 +1249,11 @@ interface AppState {
   scrollTarget: { sessionId: string; messageId: string; seq: number } | null
   /** LLM 呼び出しの実測記録（PC0。docs/詳細設計_プロンプト構造とキャッシュ.md §2）。非永続・partialize から除外 */
   usageLog: UsageRecord[]
+  /**
+   * 迎合対策の文面の計測用（PC-B。同 §4.2）。**`Session` には持たせない**＝作品データを計測で汚さないため、
+   * AppState 直下の非永続（リロードで `'V0'` に戻る・partialize から除外）。採用文面が決まったらこのフィールドごと消す
+   */
+  debugConsequenceVariant: ConsequenceVariant
 
   // 共通
   setView: (v: View) => void
@@ -1263,6 +1269,8 @@ interface AppState {
   recordUsage: (rec: Omit<UsageRecord, 'id' | 'at'>) => void
   /** 実測記録をすべて消去する（PC0） */
   clearUsageLog: () => void
+  /** 迎合対策の文面を切り替える（PC-B の実測用。次の生成から効く） */
+  setDebugConsequenceVariant: (v: ConsequenceVariant) => void
 
   // 接続先（プロバイダ）
   upsertProvider: (p: Provider) => void
@@ -2123,6 +2131,8 @@ export const useStore = create<AppState>()(
           // ending が set の間は nearEnd を出さない（「クライマックスへ収束」とエピローグ指示が矛盾するため）
           nearEnd: session.ending ? false : isNearEnd(session.timeline),
           stateInfo: buildStateInfo(session, characters, effWorld),
+          // 迎合対策の文面（PC-B）。prompts.ts を store 非依存の純関数に保つため refs 経由で渡す
+          consequenceVariant: get().debugConsequenceVariant,
           // エピローグシーン滞在中だけエンディング指示を注入する（他シーンでは自由な文体へ戻る）
           ending:
             session.ending && scene?.id === session.ending.epilogueSceneId
@@ -2505,6 +2515,7 @@ export const useStore = create<AppState>()(
         infoNotice: null,
         scrollTarget: null,
         usageLog: [],
+        debugConsequenceVariant: 'V0',
 
         setView: (view) => set({ view }),
         clearError: () => set({ error: null }),
@@ -2528,6 +2539,7 @@ export const useStore = create<AppState>()(
             return { usageLog: next.length > 1000 ? next.slice(next.length - 1000) : next }
           }),
         clearUsageLog: () => set({ usageLog: [] }),
+        setDebugConsequenceVariant: (v) => set({ debugConsequenceVariant: v }),
 
         upsertProvider: (p) =>
           set((st) => ({
