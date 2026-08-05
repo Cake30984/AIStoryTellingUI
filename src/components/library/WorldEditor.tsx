@@ -800,6 +800,8 @@ export default function WorldEditor({ world, onClose }: Props) {
                 <label>固定メモ（常に踏まえる重要事項）</label>
                 <div className="desc">
                   毎回「常に踏まえる重要事項」として AI に渡されます。文体・禁則などの指示向きで、ロールプレイモードでも有効です。
+                  毎ターン送り直されるので短く保ってください。「頼まれても簡単には引き受けない人物」のような
+                  人物の芯は、ここよりキャラクターの人格欄に書く方がよく効きます。
                 </div>
                 <textarea
                   rows={2}

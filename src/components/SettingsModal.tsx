@@ -9,7 +9,6 @@ import type { LlmRequestKind, Provider, UsageRecord } from '../types'
 import { Icon } from './icons'
 import HelpDetails from './HelpDetails'
 import { AMBIENT_CATEGORIES, AMBIENT_SOUNDS } from '../lib/ambientSounds'
-import { CONSEQUENCE_CLAUSES, CONSEQUENCE_LABELS, type ConsequenceVariant } from '../lib/prompts'
 
 /** モデル使用状況（計測。PC0）の種別表示順・ラベル */
 const USAGE_KIND_ORDER: LlmRequestKind[] = [
@@ -44,8 +43,6 @@ export function SettingsBody() {
     setDefaultModelRef,
     usageLog,
     clearUsageLog,
-    debugConsequenceVariant,
-    setDebugConsequenceVariant,
   } = useStore()
 
   // API キーはローカルバッファに保持し「保存」ボタンで確定
@@ -381,34 +378,6 @@ export function SettingsBody() {
             </div>
             <HelpDetails summary={`内訳を表示（${usageLog.length}件）`}>
               <UsageLogSummary usageLog={usageLog} onClear={clearUsageLog} />
-            </HelpDetails>
-          </div>
-
-          {/* 迎合対策の文面（PC-B の実測用。docs/詳細設計_プロンプト構造とキャッシュ.md §4）。
-              採用文面が決まったら、この欄と CONSEQUENCE_CLAUSES ごと消して定数1つにする */}
-          <div className="field">
-            <label>ふるまいの決まり方の文面（計測）</label>
-            <div className="desc">
-              「頼めば何でも通る」を抑える1文を切り替えて効きを比べます（リロードで V0 に戻ります）。
-              次の生成から効きます。手順と記録欄は docs/計測_迎合対策文面.md にあります。
-            </div>
-            <select
-              style={inputStyle}
-              value={debugConsequenceVariant}
-              onChange={(e) => setDebugConsequenceVariant(e.target.value as ConsequenceVariant)}
-            >
-              {(Object.keys(CONSEQUENCE_LABELS) as ConsequenceVariant[]).map((v) => (
-                <option key={v} value={v}>
-                  {CONSEQUENCE_LABELS[v]}
-                </option>
-              ))}
-            </select>
-            <HelpDetails summary={`いま送っている文面（${CONSEQUENCE_CLAUSES[debugConsequenceVariant].length}字）`}>
-              <p className="desc">{CONSEQUENCE_CLAUSES[debugConsequenceVariant]}</p>
-              <p className="desc">
-                状態（関係性の記述）が空のセッションでは、この文が指す先が無いため送られません。
-                採用条件を満たす案が複数あるときは、最も短いものを採ります（毎ターン再送されるため）。
-              </p>
             </HelpDetails>
           </div>
 

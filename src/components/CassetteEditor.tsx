@@ -355,6 +355,10 @@ export default function CassetteEditor({ cassette, seedSession, onClose }: Props
               />
               <div className="field">
                 <label>固定メモ（常に踏まえる重要事項・任意）</label>
+                <div className="desc">
+                  毎回「常に踏まえる重要事項」として AI に渡されます。毎ターン送り直されるので短く保ってください。
+                  「頼まれても簡単には引き受けない人物」のような人物の芯は、ここよりキャラクターの人格欄に書く方がよく効きます。
+                </div>
                 <textarea
                   rows={2}
                   value={s.authorNote}
