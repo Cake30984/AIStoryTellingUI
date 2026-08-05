@@ -13,9 +13,18 @@ import { Icon } from '../icons'
 interface Props {
   character: Character
   onClose: () => void
+  /**
+   * 未保存の下書きとして開く（発見キャラのキャラ化・FB7-E）。
+   * まだライブラリに無いので「削除」「カードとして保存」は出さず、先頭の注意書きを差し替える。
+   */
+  draft?: boolean
+  /** draft モードの案内文（起案が失敗した理由の表示にも使う） */
+  draftNotice?: string
+  /** 保存された内容を受け取る（保存先の追加処理＝セッション参加などを呼び出し側でやるため） */
+  onSaved?: (c: Character) => void
 }
 
-export default function CharacterEditor({ character, onClose }: Props) {
+export default function CharacterEditor({ character, onClose, draft, draftNotice, onSaved }: Props) {
   const { upsertCharacter, deleteCharacter, providers } = useStore()
   const [d, setD] = useState<Character>(character)
   const [showModelPicker, setShowModelPicker] = useState(false)
@@ -37,37 +46,43 @@ export default function CharacterEditor({ character, onClose }: Props) {
 
   const save = () => {
     upsertCharacter(d)
+    onSaved?.(d)
     onClose()
   }
 
   return (
     <>
     <ModalShell
-      title="キャラクター"
+      title={draft ? `キャラクターにする：${character.name || '無名'}` : 'キャラクター'}
       onClose={onClose}
       dirty={dirty}
       footer={
         <>
-          <button
-            className="btn danger"
-            onClick={async () => {
-              if (await appConfirm({ message: 'このキャラクターを削除しますか？', danger: true })) {
-                deleteCharacter(d.id)
-                onClose()
-              }
-            }}
-          >
-            削除
-          </button>
-          <button className="btn" onClick={exportCard} disabled={exporting}>
-            {exporting ? (
-              '書き出し中…'
-            ) : (
-              <>
-                <Icon name="credit-card" size={14} /> カードとして保存
-              </>
-            )}
-          </button>
+          {/* 下書き（発見キャラ）はまだライブラリに無いので削除・カード書き出しを出さない（FB7-E） */}
+          {!draft && (
+            <>
+              <button
+                className="btn danger"
+                onClick={async () => {
+                  if (await appConfirm({ message: 'このキャラクターを削除しますか？', danger: true })) {
+                    deleteCharacter(d.id)
+                    onClose()
+                  }
+                }}
+              >
+                削除
+              </button>
+              <button className="btn" onClick={exportCard} disabled={exporting}>
+                {exporting ? (
+                  '書き出し中…'
+                ) : (
+                  <>
+                    <Icon name="credit-card" size={14} /> カードとして保存
+                  </>
+                )}
+              </button>
+            </>
+          )}
           <div style={{ flex: 1 }} />
           <button className="btn" onClick={onClose}>
             キャンセル
@@ -79,7 +94,9 @@ export default function CharacterEditor({ character, onClose }: Props) {
       }
     >
           <p style={{ fontSize: 12, color: 'var(--text-faint)', marginTop: 0, marginBottom: 10 }}>
-            素材の編集・保存はすべてのセッション・すべての分岐に共有されます（分岐を戻しても巻き戻りません）。
+            {draft
+              ? draftNotice
+              : '素材の編集・保存はすべてのセッション・すべての分岐に共有されます（分岐を戻しても巻き戻りません）。'}
           </p>
           <div className="field">
             <label>アバター</label>

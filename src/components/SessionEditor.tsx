@@ -84,6 +84,7 @@ export default function SessionEditor({ session, onClose }: Props) {
       reviewModel: d.reviewModel,
       choicesModel: d.choicesModel,
       eventAutoFire: d.eventAutoFire,
+      newCharacterPolicy: d.newCharacterPolicy,
       temperature: d.temperature,
       maxTokens: d.maxTokens,
     })
@@ -498,6 +499,32 @@ export default function SessionEditor({ session, onClose }: Props) {
                 </label>
                 <div className="desc" style={{ marginTop: 4 }}>
                   世界観に定義した特別イベント（日付・条件つき）を、シーンの切り替わり時にコードが自動判定して発生させます。オフにすると自動発生しません。
+                </div>
+              </div>
+
+              {/* 新しい登場人物の登場ポリシー（発見キャラ・FB7-E） */}
+              <div className="field">
+                <label>新しい登場人物</label>
+                <div className="desc">
+                  登場キャラクターに登録していない人物を AI が新しく出してよいかを指示します。
+                  出てきた人物は本文の話者に付く印から、あるいはシーン終了レビューの提案から、
+                  キャラクターとして登録できます。
+                </div>
+                <div className="seg">
+                  {(
+                    [
+                      { key: 'allow', label: '出してよい' },
+                      { key: 'avoid', label: '出さない' },
+                    ] as const
+                  ).map((o) => (
+                    <button
+                      key={o.key}
+                      className={(d.newCharacterPolicy ?? 'allow') === o.key ? 'on' : ''}
+                      onClick={() => patch({ newCharacterPolicy: o.key })}
+                    >
+                      {o.label}
+                    </button>
+                  ))}
                 </div>
               </div>
             </>

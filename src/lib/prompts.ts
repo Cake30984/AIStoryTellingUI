@@ -238,6 +238,17 @@ export function buildSystemPrompt(session: Session, refs: ResolvedRefs): string 
     }
   }
 
+  // 2.5 新しい登場人物の登場ポリシー（発見キャラ・FB7-E）。
+  // セッション設定なのでシーン境界どころか手動変更まで動かない＝system に置いてよい（PC1+PC4）。
+  // allow は現行の暗黙の挙動を明文化するだけ（＝出さないと "出してよい" が伝わらないので出す）。
+  parts.push(
+    session.newCharacterPolicy === 'avoid'
+      ? `【新しい登場人物】\n上に定義されていない名前付きの人物を新たに登場させないでください。` +
+          `通行人・店員などの脇役が必要な場合も、名前を与えず役割だけ（「店員」「通りすがりの男」等）で描いてください。`
+      : `【新しい登場人物】\n物語に必要であれば、上に定義されていない人物を新しく登場させて構いません。` +
+          `その場合は名前・立場が読者に伝わるように描写し、以後は同じ名前で一貫して扱ってください。`,
+  )
+
   // 3. ユーザーペルソナ
   if (refs.persona && (refs.persona.name.trim() || refs.persona.description.trim())) {
     parts.push(
@@ -801,6 +812,8 @@ export function reviewSystem(
     a && `  "suggestions": [ {"title":"次シーンの短い見出し","note":"次シーンの状況・方向性の説明（2〜3文）"} ],`,
     a && `  "characterGrowth": [ {"name":"キャラ名","addition":"今回の展開で新たに判明/深化した性格・背景を一文で"} ],`,
     a && `  "worldGrowth": [ {"keys":["トリガー語"],"content":"新たに判明した世界設定"} ],`,
+    a &&
+      `  "newCharacters": [ {"name":"新しく登場した人物の名前","note":"その人物について本文から分かること（立場・見た目・口調・主人公との関わりを2〜3文）"} ],`,
     b &&
       `  "relationUpdates": [ {"character":"キャラ名","stance":"そのキャラの主人公への関係の現在地を1〜2文で","aspects":[{"name":"次元名","note":"その次元の現在の機微（肯定・否定の両面を具体的に）"}],"reason":"変化の根拠（一文）"} ],`,
     b && `  "moods": [ {"character":"キャラ名","mood":"終了時点の気分（一語〜短句）"} ],`,
@@ -815,6 +828,8 @@ export function reviewSystem(
     a &&
       `- suggestions は2〜3個。**各案はこのシーン終了直後の「同一の起点」から分岐する、相互に排他な"次シーンの候補"**。案どうしは時系列でつながってはならない。【次シーンの時間】があればその時刻にふさわしい状況で書く（直前の続きをそのまま続けない）。`,
     a && `- characterGrowth / worldGrowth は、既存設定に無い"新しく分かったこと"のみ。無ければ空配列。`,
+    a &&
+      `- **newCharacters**：このシーンで初めて登場した人物のうち、【登場人物の現行設定】にも【ユーザーが演じる人物】にも載っていない**名前を持つ人物**だけを挙げる（名前の無い通行人・店員などのモブは挙げない）。既に挙がっている人物・既存キャラの別名は挙げない。無ければ空配列。`,
     b &&
       `- **relationUpdates**：各キャラが主人公（ユーザー）に抱く関係を、与えられた【現在の関係性】を踏まえて**書き直す**（差分でなく現時点の全文）。今シーンで変化していない機微（好悪・約束）は失わず維持して書く。変化が無いキャラは省略可。${aspectLine}`,
     b && `- moods は各キャラの終了時点の気分。変化が無いキャラは省略可。`,
@@ -852,6 +867,54 @@ export function nextSceneSystem(): string {
     `- suggestions は2〜3個。**各案はこのシーン終了直後の「同一の起点」から分岐する、相互に排他な候補**。案どうしは時系列でつながってはならない（案2が案1の続き・結果になってはいけない）。\n` +
     `- 与えられた【次シーンの方向性】に必ず沿う。【次シーンの時間】があれば、その時刻にふさわしい（時間が経過した後の）場面として書く。`
   )
+}
+
+/**
+ * 発見キャラのキャラクター JSON 起案用の system プロンプト（FB7-E）。
+ * ここまでの本文だけを根拠に、CharacterEditor がそのまま受け取れる形の下書きを作らせる。
+ * 画像生成タグ（`imagePrompt`）は英語タグの管理がユーザー主権なので起案させない（空のまま渡す）。
+ */
+export function characterDraftSystem(): string {
+  return (
+    `あなたはキャラクター設定の起案アシスタントです。物語の本文に登場した人物1名について、` +
+    `再利用できるキャラクター設定の下書きを作ってください。\n` +
+    `出力は次の JSON のみ（説明・前置き・コードフェンス禁止）:\n` +
+    `{"name":"名前","persona":"人格・性格・背景","speechStyle":"口調・話し方","appearance":"外見","greeting":"最初のセリフ"}\n` +
+    `指針:\n` +
+    `- **本文に書かれていることを根拠にする**。書かれていない設定を足す場合も、本文の描写と矛盾しない範囲に留める。\n` +
+    `- persona は価値観・立場・主人公との関係を2〜4文で。speechStyle は一人称・語尾・敬語の有無を具体的に。\n` +
+    `- appearance は容姿・服装を簡潔に（本文に描写が無ければ空文字でよい）。\n` +
+    `- greeting はその人物らしい短いセリフ1つ（鉤括弧つき）。\n` +
+    `- name は本文で呼ばれている表記をそのまま使う（敬称・役職は付けない）。`
+  )
+}
+
+/** 発見キャラの起案の user 文脈（FB7-E）。呼び出し側が本文を集めて渡す */
+export function characterDraftContextUser(args: {
+  name: string
+  /** レビュー経路で渡ってくる「その人物について分かること」（構造化話者経路では無い） */
+  note?: string
+  worldName?: string
+  worldDescription?: string
+  sceneTitle?: string
+  /** 既存の登場人物名（同名・混同を避けるための参考） */
+  knownNames: string[]
+  /** ここまでの本文（自然表記へ整流済み） */
+  recentMessages: string[]
+}): string {
+  const parts: string[] = [`次の人物のキャラクター設定を起案してください。\n【対象】${args.name}`]
+  if (args.note?.trim()) parts.push(`【この人物について分かっていること】\n${args.note.trim()}`)
+  if (args.worldName || args.worldDescription) {
+    parts.push(`【世界観】${args.worldName ?? ''}${args.worldDescription ? `: ${args.worldDescription}` : ''}`)
+  }
+  if (args.sceneTitle) parts.push(`【シーン】${args.sceneTitle}`)
+  if (args.knownNames.length > 0) {
+    parts.push(`【既存の登場人物】${args.knownNames.join('・')}（この人たちとは別人です）`)
+  }
+  if (args.recentMessages.length > 0) {
+    parts.push(`【本文】\n${args.recentMessages.join('\n')}`)
+  }
+  return parts.join('\n\n')
 }
 
 /** 画像プロンプト起案用の system プロンプト（挿絵・アバター共通） */

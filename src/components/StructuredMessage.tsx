@@ -2,6 +2,7 @@ import { Fragment, useMemo, type ReactNode } from 'react'
 import { parseStructured, type StructuredLine } from '../lib/structured'
 import type { AmbientPin, Character, Persona } from '../types'
 import EntityAvatar from './EntityAvatar'
+import { Icon } from './icons'
 
 /** 「」を強調表示する（小説形式の地の文用。ChatPanel の renderProse と同じ規則） */
 function renderProseText(text: string) {
@@ -37,6 +38,27 @@ interface BodyProps {
   /** ドラッグ中の落とし先候補として、全行にアンカーを描くか */
   dropTarget?: boolean
   renderPins?: (pins: AmbientPin[], lineAnchor?: number) => ReactNode
+  /**
+   * 未解決の話者（参加キャラ・ペルソナのどれにも解決できない名前）をキャラクター化する導線（発見キャラ・FB7-E）。
+   * 渡すとその話者チップの隣にバッジが出て、クリックで呼ばれる。未指定ならバッジを描かない。
+   */
+  onDefineSpeaker?: (name: string) => void
+}
+
+/**
+ * 未解決話者のバッジ（発見キャラ・FB7-E）。この人物はまだキャラクターとして定義されていない、を示す。
+ * ラベル省略はアイコン単独可の例外に当たらないので tooltip を必須にする（FB8-E2 の規約）。
+ */
+function UnknownSpeakerBadge({ name, onClick }: { name: string; onClick: () => void }) {
+  return (
+    <button
+      className="st-unknown-speaker"
+      title={`「${name}」はまだキャラクターとして定義されていません。クリックして定義します`}
+      onClick={onClick}
+    >
+      <Icon name="user-plus" size={12} />
+    </button>
+  )
 }
 
 /**
@@ -59,6 +81,7 @@ export function StructuredNovelBody({
   pinsByLine,
   dropTarget,
   renderPins,
+  onDefineSpeaker,
 }: BodyProps) {
   const speakers = useSpeakers(participants, persona)
   const lines = useMemo(() => parseStructured(content, speakers), [content, speakers])
@@ -89,6 +112,9 @@ export function StructuredNovelBody({
               avatar={speakers.find((c) => c.id === line.characterId)?.avatar ?? { color: '#666' }}
               name={line.name}
             />
+            {!line.characterId && onDefineSpeaker && (
+              <UnknownSpeakerBadge name={line.name} onClick={() => onDefineSpeaker(line.name)} />
+            )}
             <span className="dialogue">{line.text}</span>
           </div>
         ),
@@ -128,7 +154,13 @@ function groupChatLines(lines: StructuredLine[]): ChatGroup[] {
 }
 
 /** 会話形式: 連続する同一話者のセリフを1つの吹き出しにまとめ、地の文は吹き出し間のブロックとして挟む */
-export function StructuredChatBody({ content, participants, persona, pending }: BodyProps) {
+export function StructuredChatBody({
+  content,
+  participants,
+  persona,
+  pending,
+  onDefineSpeaker,
+}: BodyProps) {
   const speakers = useSpeakers(participants, persona)
   const lines = useMemo(() => parseStructured(content, speakers), [content, speakers])
   const endsWithNewline = content.endsWith('\n')
@@ -151,7 +183,12 @@ export function StructuredChatBody({ content, participants, persona, pending }: 
               name={g.name}
             />
             <div className="bubble">
-              <div className="name">{g.name}</div>
+              <div className="name">
+                {g.name}
+                {!g.characterId && onDefineSpeaker && (
+                  <UnknownSpeakerBadge name={g.name} onClick={() => onDefineSpeaker(g.name)} />
+                )}
+              </div>
               <div className="content">
                 {g.texts.map((t, j) => (
                   <div key={j}>{t}</div>

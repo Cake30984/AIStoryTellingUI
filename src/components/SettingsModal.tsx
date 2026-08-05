@@ -12,13 +12,21 @@ import { AMBIENT_CATEGORIES, AMBIENT_SOUNDS } from '../lib/ambientSounds'
 import { CONSEQUENCE_CLAUSES, CONSEQUENCE_LABELS, type ConsequenceVariant } from '../lib/prompts'
 
 /** モデル使用状況（計測。PC0）の種別表示順・ラベル */
-const USAGE_KIND_ORDER: LlmRequestKind[] = ['main', 'choices', 'review', 'nextScene', 'imageDraft']
+const USAGE_KIND_ORDER: LlmRequestKind[] = [
+  'main',
+  'choices',
+  'review',
+  'nextScene',
+  'imageDraft',
+  'characterDraft',
+]
 const USAGE_KIND_LABELS: Record<LlmRequestKind, string> = {
   main: '本編',
   choices: '選択肢',
   review: 'レビュー',
   nextScene: '次シーン候補',
   imageDraft: '画像起案',
+  characterDraft: 'キャラ起案',
 }
 
 /** System ページ（設定・データ管理）の中身。UI-5でモーダルからページ化するため抽出。ロジックは無変更 */

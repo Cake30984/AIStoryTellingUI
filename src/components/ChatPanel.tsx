@@ -25,6 +25,7 @@ import SceneEditor from './SceneEditor'
 import StoryLogModal from './StoryLogModal'
 import StatusPanel from './StatusPanel'
 import DiscoveryPanel, { type DiscoveryScope } from './DiscoveryPanel'
+import CharacterDraftModal from './CharacterDraftModal'
 import CassetteEditor from './CassetteEditor'
 import EntityAvatar from './EntityAvatar'
 import ContextDock from './ContextDock'
@@ -168,6 +169,9 @@ export default function ChatPanel({ session }: Props) {
     ui,
     setUiPrefs,
     scrollTarget,
+    characterDraftQueue,
+    queueCharacterDrafts,
+    dismissCharacterDraft,
   } = useStore()
 
   const [text, setText] = useState('')
@@ -261,6 +265,10 @@ export default function ChatPanel({ session }: Props) {
     : undefined
   const persona = personas.find((p) => p.id === session.personaId)
   const novel = session.narrativeStyle === 'novel'
+  // 発見キャラ（FB7-E）: 未解決話者の ？バッジ → キャラ化待ちへ積む。
+  // 先頭1件だけモーダルを開く（複数承認された時は保存/中止のたびに次が出る）
+  const defineSpeaker = (name: string) => queueCharacterDrafts(session.id, [{ name, note: '' }])
+  const pendingDraft = characterDraftQueue.find((q) => q.sessionId === session.id)
   const groupMode = session.mode === 'roleplay' && participants.length > 1 && !novel
   const effectiveSpeaker = groupMode ? speaker : participants[0]?.id
 
@@ -605,6 +613,7 @@ export default function ChatPanel({ session }: Props) {
               pinsByLine={byLine}
               dropTarget={dropTarget}
               renderPins={(pins, lineAnchor) => <PinMark pins={pins} lineAnchor={lineAnchor} />}
+              onDefineSpeaker={defineSpeaker}
             />
           ) : (
             <>
@@ -639,6 +648,7 @@ export default function ChatPanel({ session }: Props) {
             participants={participants}
             persona={persona}
             pending={!!m.pending && isStreaming}
+            onDefineSpeaker={defineSpeaker}
           />
           {msgActions(m)}
         </div>
@@ -1177,6 +1187,16 @@ export default function ChatPanel({ session }: Props) {
         />
       )}
       {showStatus && <StatusPanel session={session} onClose={() => setShowStatus(false)} />}
+      {/* 発見キャラのキャラ化（FB7-E）。key で対象が変わるたびに起案をやり直させる */}
+      {pendingDraft && (
+        <CharacterDraftModal
+          key={pendingDraft.name}
+          session={session}
+          name={pendingDraft.name}
+          note={pendingDraft.note}
+          onClose={() => dismissCharacterDraft(session.id, pendingDraft.name)}
+        />
+      )}
       {discoveryScope && (
         <DiscoveryPanel
           session={session}

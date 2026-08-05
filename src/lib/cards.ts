@@ -219,6 +219,10 @@ function normalizeStartPreset(raw: any): WorldStartPreset | undefined {
   if (typeof raw.openingTitle === 'string') p.openingTitle = raw.openingTitle
   if (typeof raw.initialDirective === 'string') p.initialDirective = raw.initialDirective
   if (typeof raw.authorNote === 'string') p.authorNote = raw.authorNote
+  // 新しい登場人物の登場ポリシー（FB7-E）。未知の値は読み捨てる
+  if (raw.newCharacterPolicy === 'allow' || raw.newCharacterPolicy === 'avoid') {
+    p.newCharacterPolicy = raw.newCharacterPolicy
+  }
   const introTags = normalizeIntroTags(raw.introTags)
   if (introTags.length > 0) p.introTags = introTags
   if (raw.timeline && Array.isArray(raw.timeline.slots)) {

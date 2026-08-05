@@ -771,6 +771,31 @@ export default function WorldEditor({ world, onClose }: Props) {
                   onChange={(e) => patchPreset({ initialDirective: e.target.value })}
                 />
               </div>
+              {/* 新しい登場人物の登場ポリシー（発見キャラ・FB7-E） */}
+              <div className="field">
+                <label>新しい登場人物</label>
+                <div className="desc">
+                  登場キャラクターに登録していない人物を AI が新しく出してよいか。
+                  「指定しない」ならセッション側の設定（既定＝出してよい）に従います。
+                </div>
+                <div className="seg">
+                  {(
+                    [
+                      { key: '', label: '指定しない' },
+                      { key: 'allow', label: '出してよい' },
+                      { key: 'avoid', label: '出さない' },
+                    ] as const
+                  ).map((o) => (
+                    <button
+                      key={o.key || 'none'}
+                      className={(sp.newCharacterPolicy ?? '') === o.key ? 'on' : ''}
+                      onClick={() => patchPreset({ newCharacterPolicy: o.key || undefined })}
+                    >
+                      {o.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div className="field">
                 <label>固定メモ（常に踏まえる重要事項）</label>
                 <div className="desc">

@@ -252,6 +252,13 @@ export interface EndingDef {
 }
 
 /**
+ * 未定義の人物（＝素材ライブラリにいない名前付きキャラ）を AI が登場させてよいか（発見キャラ・FB7-E）。
+ * `allow`（既定＝undefined も同じ）は自由に登場させてよい／`avoid` は名前付きの新キャラを出させない
+ * （モブは無名のまま描かせる）。判定は system プロンプトへの注入だけで、コードは登場を止めない。
+ */
+export type NewCharacterPolicy = 'allow' | 'avoid'
+
+/**
  * セッション開始テンプレート（World に付属する推奨初期設定。W1）。
  * セッション設定で世界を選んだ時に「コピー」で流し込む（参照ではない）。
  * 以後の編集はセッション側の値だけを変えるため、素材（World）側は不変に保たれる。
@@ -269,6 +276,8 @@ export interface WorldStartPreset {
   openingTitle?: string
   /** 最初の方向付け（→ session.story.initialDirective。最初のシーン滞在中のみ注入される非表示指示。FB7-A） */
   initialDirective?: string
+  /** 新しい登場人物の登場ポリシー（→ session.newCharacterPolicy。FB7-E） */
+  newCharacterPolicy?: NewCharacterPolicy
   /** 固定メモ（→ session.authorNote） */
   authorNote?: string
   /**
@@ -641,6 +650,11 @@ export interface Session {
   narrativeStyle: NarrativeStyle
   /** 世界観の特別イベントを自動発火させるか（FB3-C。undefined=有効） */
   eventAutoFire?: boolean
+  /**
+   * 未定義の新キャラを登場させてよいか（発見キャラ・FB7-E。undefined=allow＝従来どおり）。
+   * `buildSystemPrompt` が【新しい登場人物】として注入するだけで、検出・キャラ化とは独立している。
+   */
+  newCharacterPolicy?: NewCharacterPolicy
   /** 消化済みの特別イベント ID */
   usedEventIds: string[]
   /**
@@ -739,7 +753,13 @@ export interface Provider {
   apiKey: string
 }
 
-export type LlmRequestKind = 'main' | 'choices' | 'review' | 'nextScene' | 'imageDraft'
+export type LlmRequestKind =
+  | 'main'
+  | 'choices'
+  | 'review'
+  | 'nextScene'
+  | 'imageDraft'
+  | 'characterDraft'
 
 /** LLM 呼び出し1回ぶんの実測記録（PC0。docs/詳細設計_プロンプト構造とキャッシュ.md §2） */
 export interface UsageRecord {
@@ -845,6 +865,16 @@ export interface MoodChange {
   mood: string
 }
 
+/**
+ * レビューが見つけた「まだ素材ライブラリにいない登場人物」（発見キャラ・FB7-E）。
+ * 地の文だけで登場した人物（＝構造化出力の話者チップに出ない人物）を拾うための経路。
+ */
+export interface DiscoveredCharacter {
+  name: string
+  /** その人物について本文から分かること（キャラ起案の手がかり） */
+  note: string
+}
+
 /** シーン終了レビューの生成結果（runtime） */
 export interface SceneReview {
   /** このレビューが属するセッション id（FB8-B #14: 該当セッションを Play で開いている時だけモーダルを出す） */
@@ -862,6 +892,8 @@ export interface SceneReview {
   counterEvents: CounterEvent[]
   /** 各キャラの気分の更新案 */
   moodChanges: MoodChange[]
+  /** 新しく登場した未定義の人物（発見キャラ・FB7-E。承認するとキャラ化モーダルへ流す） */
+  newCharacters: DiscoveredCharacter[]
   /** 発火する特別イベント */
   scheduledEventId?: string
   scheduledEventName?: string

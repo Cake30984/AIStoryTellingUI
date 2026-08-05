@@ -361,6 +361,30 @@
 .st-tail {
   color: var(--text-faint);
 }
+/* 未解決話者＝まだキャラクターとして定義されていない人物の印（発見キャラ・FB7-E） */
+.st-unknown-speaker {
+  flex-shrink: 0;
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  margin-left: -2px;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  vertical-align: middle;
+}
+.st-unknown-speaker:hover {
+  border-color: var(--accent);
+  border-style: solid;
+  color: var(--accent);
+}
+.bubble .name .st-unknown-speaker {
+  margin-left: 6px;
+}
 
 /* 会話形式: 吹き出しグループ＋地の文ブロックをまとめた1メッセージ */
 .st-message {

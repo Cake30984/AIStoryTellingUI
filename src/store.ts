@@ -17,6 +17,7 @@ import type {
   EndingDef,
   EndingRecord,
   ExactGroupCandidate,
+  DiscoveredCharacter,
   ExportBundle,
   GroupSubClause,
   ImageProvider,
@@ -54,7 +55,7 @@ import { base64ToBlob, blobToBase64, gcImages, getImage, listImageIds, putImage,
 import { checkpointStore, PERSIST_KEY, stateStorage } from './lib/platform'
 import { gunzipText, gzipText } from './lib/checkpoint'
 import { normalizeImage } from './lib/avatarGen'
-import { parseStructured, plainTextOf } from './lib/structured'
+import { matchCharacterByName, NARRATION_NAMES, parseStructured, plainTextOf } from './lib/structured'
 import { generateImage } from './lib/imageGen'
 import {
   abortJobController,
@@ -860,6 +861,7 @@ export function hasStartPreset(world: World | undefined | null): boolean {
     p.openingTitle?.trim() ||
     p.initialDirective?.trim() ||
     p.authorNote?.trim() ||
+    !!p.newCharacterPolicy ||
     (p.introTags?.length ?? 0) > 0 ||
     (p.timeline && p.timeline.slots.length > 0)
   )
@@ -909,6 +911,10 @@ export function startPresetPatch(d: Session, world: World, overwrite: boolean): 
     if (changed) patch.story = story
   }
   if (p.authorNote?.trim() && (overwrite || !d.authorNote.trim())) patch.authorNote = p.authorNote
+  // 新しい登場人物のポリシー（FB7-E）。セッション側の「空欄」= 未設定（undefined）＝既定の allow
+  if (p.newCharacterPolicy && (overwrite || !d.newCharacterPolicy)) {
+    patch.newCharacterPolicy = p.newCharacterPolicy
+  }
   if (p.timeline && p.timeline.slots.length > 0 && (overwrite || !d.timeline.enabled)) {
     const startDay = Math.max(1, p.timeline.startDay ?? 1)
     const startSlot = Math.min(Math.max(0, p.timeline.startSlot ?? 0), p.timeline.slots.length - 1)
@@ -1048,6 +1054,25 @@ function newSession(mode: SessionMode): Session {
 /** セッションの現在シーンを返す（無ければ最後のシーン） */
 export function currentScene(s: Session): Scene | undefined {
   return s.scenes.find((sc) => sc.id === s.currentSceneId) ?? s.scenes[s.scenes.length - 1]
+}
+
+/**
+ * 「もう知っている話者」の一覧（発見キャラの判定用。FB7-E）。
+ * **現在シーンの顔ぶれではなくセッションの参加キャラ全員**＋ペルソナを返す
+ * （今のシーンに出ていないだけの参加キャラを「新キャラ」と誤検出しないため）。
+ * 名前の照合は必ず `matchCharacterByName`（`structured.ts`）へ通す＝別名・前方一致の規則を1本に保つ。
+ */
+export function knownSpeakersOf(
+  session: Session,
+  characters: Character[],
+  personas: Persona[],
+): { id: string; name: string }[] {
+  const cast = session.characterIds
+    .map((id) => characters.find((c) => c.id === id))
+    .filter((c): c is Character => !!c)
+    .map((c) => ({ id: c.id, name: c.name }))
+  const persona = personas.find((p) => p.id === session.personaId)
+  return persona?.name.trim() ? [...cast, { id: persona.id, name: persona.name }] : cast
 }
 
 /**
@@ -1247,6 +1272,12 @@ interface AppState {
    * ChatPanel が消化して null に戻す。seq は同じメッセージへの連続移動でも effect を再発火させるための通番。
    */
   scrollTarget: { sessionId: string; messageId: string; seq: number } | null
+  /**
+   * キャラ化待ちの発見キャラ（FB7-E。非永続・partialize から除外）。
+   * 検出の2経路——構造化本文の未解決話者の ？バッジ／レビューの `newCharacters` 承認——を
+   * ここへ集約し、ChatPanel が先頭1件ぶんだけ `CharacterDraftModal` を開く（＝採用フローは1本）。
+   */
+  characterDraftQueue: { sessionId: string; name: string; note?: string }[]
   /** LLM 呼び出しの実測記録（PC0。docs/詳細設計_プロンプト構造とキャッシュ.md §2）。非永続・partialize から除外 */
   usageLog: UsageRecord[]
   /**
@@ -1375,6 +1406,8 @@ interface AppState {
     endingDefId?: string
     /** exactly な subject group 節の n 人選択（roleId→選んだ characterId 配列。レビューのプルダウン。B-5） */
     endingExactSelections?: Record<string, string[]>
+    /** キャラ化を承認した発見キャラの index（FB7-E。確定後にキャラ化モーダルへ流す） */
+    newCharacterIdx?: number[]
   }) => void
   /**
    * エピローグシーンを締めて物語を完結する（E2）。レビューをスキップして scene.endedAt をセットし、
@@ -1388,6 +1421,21 @@ interface AppState {
   regenChoices: () => Promise<void>
   /** 状態パネルの手動編集を保存する（スタットを clamp・実績を再評価して通知） */
   applyStatusEdit: (state: SessionState) => void
+
+  // 発見キャラ（FB7-E）
+  /**
+   * キャラ化待ちに積む。既にセッションの参加キャラ・ペルソナ名で解決できる名前と、
+   * 同名で待機中の分は積まない（？バッジ連打・レビューとの二重承認で重複させない）。
+   */
+  queueCharacterDrafts: (sessionId: string, items: DiscoveredCharacter[]) => void
+  /** キャラ化待ちを1件取り下げる（キャンセル・保存後の共通の閉じ口） */
+  dismissCharacterDraft: (sessionId: string, name: string) => void
+  /**
+   * 起案・編集したキャラをライブラリへ保存し、そのセッションの参加キャラ（と現在シーンの
+   * 登場キャラ）に加える（FB7-E）。**セッション内に埋め込まない**＝カセット定義は開始時
+   * スナップショットなので汚れず、カード書き出し・他セッションでの再利用もそのまま効く。
+   */
+  addDiscoveredCharacter: (sessionId: string, character: Character) => void
 
   // 生成
   startSession: () => void
@@ -2514,6 +2562,7 @@ export const useStore = create<AppState>()(
         imageJobToasts: [],
         infoNotice: null,
         scrollTarget: null,
+        characterDraftQueue: [],
         usageLog: [],
         debugConsequenceVariant: 'V0',
 
@@ -2767,7 +2816,14 @@ export const useStore = create<AppState>()(
             // 画像の永続記録もセッションと運命を共にする（FB6-A。実体は GC が回収）
             const sessionImageLogs = { ...st.sessionImageLogs }
             delete sessionImageLogs[id]
-            return { sessions, activeId, branchTrees, sessionImageLogs }
+            return {
+              sessions,
+              activeId,
+              branchTrees,
+              sessionImageLogs,
+              // 消えたセッション宛のキャラ化待ちは残さない（FB7-E）
+              characterDraftQueue: st.characterDraftQueue.filter((q) => q.sessionId !== id),
+            }
           })
           void checkpointStore.deleteSession(id)
         },
@@ -3509,6 +3565,27 @@ export const useStore = create<AppState>()(
                     }))
                     .filter((m: any) => m.characterId && m.mood)
                 : [],
+              // 発見キャラ（FB7-E）。既知の話者に解決できる名前・地の文の予約語・重複は落とす
+              // ＝レビューが参加キャラを「新登場」と誤って挙げても提案には出さない
+              newCharacters: Array.isArray(parsed?.newCharacters)
+                ? (() => {
+                    const known = knownSpeakersOf(s, sessionChars, get().personas)
+                    const seen = new Set<string>()
+                    return parsed.newCharacters
+                      .map((x: any) => ({
+                        name: String(x?.name ?? '').trim(),
+                        note: String(x?.note ?? '').trim(),
+                      }))
+                      .filter((x: DiscoveredCharacter) => {
+                        if (!x.name || NARRATION_NAMES.has(x.name.toLowerCase())) return false
+                        if (matchCharacterByName(x.name, known)) return false
+                        if (seen.has(x.name)) return false
+                        seen.add(x.name)
+                        return true
+                      })
+                      .slice(0, 5)
+                  })()
+                : [],
               scheduledEventId: event?.id,
               scheduledEventName: event?.name,
               scheduledEventKey: pick.eventKey,
@@ -3537,6 +3614,14 @@ export const useStore = create<AppState>()(
           const sceneIdx = s.scenes.findIndex((sc) => sc.id === review.sceneId)
           const scene = s.scenes[sceneIdx]
           if (!scene) return
+
+          // 承認された発見キャラはキャラ化待ちへ積むだけ（FB7-E）。実際の保存は起案 → CharacterEditor →
+          // `addDiscoveredCharacter` の採用フローが行う＝？バッジ経路と1本に保つ。
+          // 分岐（過去シーン再レビュー／エンディング突入／通常）より前に置く＝どの経路でも同じ扱いになる。
+          const approvedNewChars = (opts.newCharacterIdx ?? [])
+            .map((i) => review.newCharacters?.[i])
+            .filter((x): x is DiscoveredCharacter => !!x)
+          if (approvedNewChars.length) get().queueCharacterDrafts(s.id, approvedNewChars)
 
           const selectedGrowth = opts.characterGrowthIdx
             .map((i) => review.characterGrowth[i])
@@ -3985,6 +4070,52 @@ export const useStore = create<AppState>()(
           )
           get().updateSession(s.id, { state })
           if (unlocked.length) set({ newlyUnlockedAchievements: unlocked })
+        },
+
+        // ── 発見キャラ（FB7-E）────────────────────────────────
+        queueCharacterDrafts: (sessionId, items) => {
+          const s = get().sessions.find((x) => x.id === sessionId)
+          if (!s) return
+          const known = knownSpeakersOf(s, get().characters, get().personas)
+          set((st) => {
+            const queued = st.characterDraftQueue
+            const add: { sessionId: string; name: string; note?: string }[] = []
+            for (const item of items) {
+              const name = item.name.trim()
+              if (!name || NARRATION_NAMES.has(name.toLowerCase())) continue
+              // 既存の参加キャラ・ペルソナに解決できる名前は「新キャラ」ではない
+              if (matchCharacterByName(name, known)) continue
+              const dup = (x: { sessionId: string; name: string }) =>
+                x.sessionId === sessionId && x.name === name
+              if (queued.some(dup) || add.some(dup)) continue
+              add.push({ sessionId, name, ...(item.note?.trim() ? { note: item.note.trim() } : {}) })
+            }
+            return add.length ? { characterDraftQueue: [...queued, ...add] } : {}
+          })
+        },
+
+        dismissCharacterDraft: (sessionId, name) =>
+          set((st) => ({
+            characterDraftQueue: st.characterDraftQueue.filter(
+              (q) => !(q.sessionId === sessionId && q.name === name),
+            ),
+          })),
+
+        addDiscoveredCharacter: (sessionId, character) => {
+          get().upsertCharacter(character)
+          const s = get().sessions.find((x) => x.id === sessionId)
+          if (!s || s.characterIds.includes(character.id)) return
+          const cur = currentScene(s)
+          get().updateSession(sessionId, {
+            characterIds: [...s.characterIds, character.id],
+            scenes: cur
+              ? s.scenes.map((sc) =>
+                  sc.id === cur.id
+                    ? { ...sc, activeCharacterIds: [...sc.activeCharacterIds, character.id] }
+                    : sc,
+                )
+              : s.scenes,
+          })
         },
 
         startSession: () => {

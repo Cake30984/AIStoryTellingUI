@@ -35,6 +35,7 @@ export type IconName =
   | 'corner-up-left'
   | 'scissors'
   | 'users'
+  | 'user-plus'
   | 'globe'
   | 'smile'
   | 'clapperboard'
@@ -241,6 +242,14 @@ const PATHS: Record<IconName, ReactNode> = {
       <path d="M4 20c0-3 2.5-5 5-5s5 2 5 5" />
       <circle cx="17" cy="9" r="2.6" />
       <path d="M15.2 20c.2-2.2 1.6-3.9 3.6-4.4" />
+    </>
+  ),
+  // 発見キャラ（FB7-E）: 人＋プラス
+  'user-plus': (
+    <>
+      <circle cx="9.5" cy="8" r="3.4" />
+      <path d="M3.5 20c0-3.2 2.7-5.5 6-5.5s6 2.3 6 5.5" />
+      <path d="M18.5 8.5v5M16 11h5" />
     </>
   ),
   globe: (

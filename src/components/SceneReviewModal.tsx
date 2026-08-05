@@ -11,6 +11,7 @@ import {
 import { advanceTimeline, timeLabelOf } from '../lib/timeline'
 import type {
   CounterEvent,
+  DiscoveredCharacter,
   NextSceneSuggestion,
   RelationUpdate,
   SceneReview,
@@ -165,6 +166,9 @@ function ReviewBody() {
   const [moodSel, setMoodSel] = useState<Set<number>>(
     new Set(review.moodChanges.map((_, i) => i)),
   )
+  // 発見キャラ（FB7-E）は既定でチェックを外す＝キャラ化は毎回モーダルが1枚開く操作なので、
+  // 「確定を押したら知らない人物が次々に起案され始める」状態にはしない
+  const [newCharSel, setNewCharSel] = useState<Set<number>>(new Set())
   // 到達エンディングへ「進む」か（auto は選択なし＝常に進む。既定は保守側＝まだ続ける／満了時は進む）
   const [endingGo, setEndingGo] = useState(false)
   // exactly な subject group 節の n 人選択（roleId→選んだ characterId 配列。エンディングレビューのプルダウン。B-5）
@@ -246,6 +250,7 @@ function ReviewBody() {
     setStatSel(new Set(review.statChanges.map((_, i) => i)))
     setCounterSel(new Set(review.counterEvents.map((_, i) => i)))
     setMoodSel(new Set(review.moodChanges.map((_, i) => i)))
+    setNewCharSel(new Set())
     setExactPicks({})
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [review.sceneId])
@@ -285,6 +290,8 @@ function ReviewBody() {
     setDraft((d) => ({ ...d, counterEvents: mapAt(d.counterEvents, i, patch) }))
   const updMood = (i: number, mood: string) =>
     setDraft((d) => ({ ...d, moodChanges: mapAt(d.moodChanges, i, { mood }) }))
+  const updNewChar = (i: number, patch: Partial<DiscoveredCharacter>) =>
+    setDraft((d) => ({ ...d, newCharacters: mapAt(d.newCharacters, i, patch) }))
 
   // exactly な subject group 節の n 人目の選択を差し替える（同ロールの他の枠と重複はさせない。UI 側で候補を除外）
   const setExactPick = (roleId: string, idx: number, characterId: string) =>
@@ -316,6 +323,7 @@ function ReviewBody() {
       moodChangeIdx: [...moodSel],
       endingDefId: goEnding ? endingPreview!.candidate.id : undefined,
       endingExactSelections: goEnding ? exactPicks : undefined,
+      newCharacterIdx: [...newCharSel],
     })
   }
 
@@ -644,6 +652,51 @@ function ReviewBody() {
                           <span>
                             {g.keys.length > 0 && <span className="growth-keys">[{g.keys.join(', ')}] </span>}
                             {g.content}
+                          </span>
+                        </label>
+                      ),
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* 新しい登場人物（発見キャラ・FB7-E）。チェックした人物は確定後にキャラ化モーダルが開く */}
+              {draft.newCharacters.length > 0 && (
+                <div className="field">
+                  <label>
+                    <Icon name="user-plus" size={13} className="label-icon" /> 新しい登場人物
+                    {editMode ? '（内容を編集）' : '（チェックした人物をキャラクターにする）'}
+                  </label>
+                  <div className="desc">
+                    まだキャラクターとして登録されていない人物です。チェックして確定すると、
+                    本文をもとに設定を起案した編集画面が開き、保存するとキャラクターライブラリに加わります。
+                  </div>
+                  <div className="growth-list">
+                    {draft.newCharacters.map((c, i) =>
+                      editMode ? (
+                        <div key={i} className="growth-item editing">
+                          <input
+                            value={c.name}
+                            placeholder="名前"
+                            onChange={(e) => updNewChar(i, { name: e.target.value })}
+                          />
+                          <textarea
+                            rows={2}
+                            value={c.note}
+                            placeholder="この人物について本文から分かること"
+                            onChange={(e) => updNewChar(i, { note: e.target.value })}
+                          />
+                        </div>
+                      ) : (
+                        <label key={i} className="growth-item">
+                          <input
+                            type="checkbox"
+                            checked={newCharSel.has(i)}
+                            onChange={() => toggle(newCharSel, setNewCharSel, i)}
+                          />
+                          <span>
+                            <strong>{c.name}</strong>
+                            {c.note && `：${c.note}`}
                           </span>
                         </label>
                       ),

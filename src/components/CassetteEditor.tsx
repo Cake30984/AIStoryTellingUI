@@ -414,6 +414,29 @@ export default function CassetteEditor({ cassette, seedSession, onClose }: Props
                   世界観の特別イベントを自動的に発生させる
                 </label>
               </div>
+              {/* 新しい登場人物の登場ポリシー（発見キャラ・FB7-E） */}
+              <div className="field">
+                <label>新しい登場人物</label>
+                <div className="desc">
+                  登場キャラクターに登録していない人物を AI が新しく出してよいか。
+                </div>
+                <div className="seg">
+                  {(
+                    [
+                      { key: 'allow', label: '出してよい' },
+                      { key: 'avoid', label: '出さない' },
+                    ] as const
+                  ).map((o) => (
+                    <button
+                      key={o.key}
+                      className={(s.newCharacterPolicy ?? 'allow') === o.key ? 'on' : ''}
+                      onClick={() => patchSession({ newCharacterPolicy: o.key })}
+                    >
+                      {o.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </>
           )}
         </div>

@@ -55,6 +55,8 @@ const REVIEW_A_PROPS = {
   suggestions: arrayOf(obj({ title: str, note: str })),
   characterGrowth: arrayOf(obj({ name: str, addition: str })),
   worldGrowth: arrayOf(obj({ keys: arrayOf(str), content: str })),
+  // 発見キャラ（FB7-E）。地の文だけで登場した未定義の人物を拾う
+  newCharacters: arrayOf(obj({ name: str, note: str })),
 }
 
 /** レビュー B（状態がどう動いたか）の項目 */
@@ -106,6 +108,18 @@ export const NEXT_SCENE_SCHEMA: JsonSchemaSpec = {
 export const IMAGE_DRAFT_SCHEMA: JsonSchemaSpec = {
   name: 'image_prompt_draft',
   schema: obj({ prompt: str, negative: str }),
+}
+
+/** 発見キャラのキャラクター JSON 起案（FB7-E。`characterDraftSystem` と対） */
+export const CHARACTER_DRAFT_SCHEMA: JsonSchemaSpec = {
+  name: 'character_draft',
+  schema: obj({
+    name: str,
+    persona: str,
+    speechStyle: str,
+    appearance: str,
+    greeting: str,
+  }),
 }
 
 /**
