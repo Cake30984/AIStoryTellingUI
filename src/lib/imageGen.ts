@@ -1,6 +1,13 @@
 import type { ImageProvider, ImageProviderKind, ImageQuality, PromptStyle, Provider } from '../types'
 import { appFetch } from './platform'
 import { applyArtStyle, artStyleText, combineWithDefaults } from './promptTags'
+import {
+  analyzeComfyWorkflow,
+  hasWorkflowPlaceholders,
+  injectComfyWorkflow,
+  type ComfyGraph,
+  type ComfyOverrides,
+} from './comfyWorkflow'
 
 /**
  * 接続先の既定のプロンプトスタイル。**必ず上書き可**（ComfyUI で Flux を回す人がいる）。
@@ -69,13 +76,18 @@ export const MODELSLAB_SCHEDULERS = [
   'LCMScheduler',
 ]
 
-/** ComfyUI 用デフォルト workflow（API Format・プレースホルダ入り）。ckpt_name は各自の環境に合わせて書き換える */
+/**
+ * ComfyUI 用デフォルト workflow（API Format）。
+ * **プレースホルダを入れない**＝そのまま自動検出（I4）に載る素の SDXL 構成。
+ * ComfyUI から書き出した JSON に置き換えても同じように動く。
+ * `ckpt_name` は設定のプルダウン（`/object_info` 由来）から選べるので手で書き換えなくてよい。
+ */
 export const DEFAULT_COMFY_WORKFLOW = `{
-  "3": { "class_type": "KSampler", "inputs": { "cfg": 7, "denoise": 1, "latent_image": ["5", 0], "model": ["4", 0], "negative": ["7", 0], "positive": ["6", 0], "sampler_name": "euler", "scheduler": "normal", "seed": "%SEED%", "steps": 25 } },
+  "3": { "class_type": "KSampler", "inputs": { "cfg": 7, "denoise": 1, "latent_image": ["5", 0], "model": ["4", 0], "negative": ["7", 0], "positive": ["6", 0], "sampler_name": "euler", "scheduler": "normal", "seed": 0, "steps": 25 } },
   "4": { "class_type": "CheckpointLoaderSimple", "inputs": { "ckpt_name": "sd_xl_base_1.0.safetensors" } },
-  "5": { "class_type": "EmptyLatentImage", "inputs": { "batch_size": 1, "height": "%HEIGHT%", "width": "%WIDTH%" } },
-  "6": { "class_type": "CLIPTextEncode", "inputs": { "clip": ["4", 1], "text": "%PROMPT%" } },
-  "7": { "class_type": "CLIPTextEncode", "inputs": { "clip": ["4", 1], "text": "%NEGATIVE%" } },
+  "5": { "class_type": "EmptyLatentImage", "inputs": { "batch_size": 1, "height": 1024, "width": 1024 } },
+  "6": { "class_type": "CLIPTextEncode", "inputs": { "clip": ["4", 1], "text": "" } },
+  "7": { "class_type": "CLIPTextEncode", "inputs": { "clip": ["4", 1], "text": "" } },
   "8": { "class_type": "VAEDecode", "inputs": { "samples": ["3", 0], "vae": ["4", 2] } },
   "9": { "class_type": "SaveImage", "inputs": { "filename_prefix": "AIST", "images": ["8", 0] } }
 }`
@@ -168,15 +180,54 @@ const FORBIDDEN_HINT =
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
-async function generateComfy(p: ImageProvider, req: ImageGenRequest, signal?: AbortSignal): Promise<Blob> {
-  const base = stripSlash(p.baseUrl)
-
-  let workflow: unknown
+/**
+ * ComfyUI の workflow に値を入れる。**明示指定（プレースホルダ）が常に勝つ**。
+ * プレースホルダが1つも無いときだけ、リンクを辿って注入先を自動検出する（I4）。
+ * 両方効かせると二重注入で壊れるので、必ず排他にすること。
+ */
+function buildComfyWorkflow(p: ImageProvider, req: ImageGenRequest): unknown {
+  if (hasWorkflowPlaceholders(p.workflowJson)) {
+    try {
+      return JSON.parse(fillWorkflow(p.workflowJson, req))
+    } catch (e) {
+      throw new Error(`workflow JSON が不正です: ${(e as Error).message}`)
+    }
+  }
+  let parsed: ComfyGraph
   try {
-    workflow = JSON.parse(fillWorkflow(p.workflowJson, req))
+    parsed = JSON.parse(p.workflowJson)
   } catch (e) {
     throw new Error(`workflow JSON が不正です: ${(e as Error).message}`)
   }
+  const plan = analyzeComfyWorkflow(parsed)
+  if (!plan.ok) {
+    throw new Error(
+      `ワークフローの自動検出に失敗しました: ${plan.problems.join(' / ')}` +
+        ' 差し込み位置に %PROMPT% / %NEGATIVE% / "%SEED%" / "%WIDTH%" / "%HEIGHT%" を手で書くと確実に動きます。',
+    )
+  }
+  return injectComfyWorkflow(parsed, plan, req, comfyOverridesOf(p))
+}
+
+/** 接続先に保存されたユーザーの明示選択（未選択なら workflow 自身の値を使う） */
+export function comfyOverridesOf(p: ImageProvider): ComfyOverrides {
+  const raw = (p.params ?? {}) as Record<string, unknown>
+  const str = (k: string) => (typeof raw[k] === 'string' && raw[k] ? (raw[k] as string) : undefined)
+  const num = (k: string) => (typeof raw[k] === 'number' ? (raw[k] as number) : undefined)
+  return {
+    ckptName: str('ckptName'),
+    samplerName: str('samplerName'),
+    scheduler: str('scheduler'),
+    steps: num('steps'),
+    cfg: num('cfg'),
+    loraName: str('loraName'),
+    loraStrength: num('loraStrength'),
+  }
+}
+
+async function generateComfy(p: ImageProvider, req: ImageGenRequest, signal?: AbortSignal): Promise<Blob> {
+  const base = stripSlash(p.baseUrl)
+  const workflow = buildComfyWorkflow(p, req)
 
   const clientId = uid()
   let res: Response
@@ -440,6 +491,58 @@ export async function generateImage(
   if (p.kind === 'modelslab') return { blob: await generateModelslab(p, merged, signal) }
   if (p.kind === 'openrouter-image') return generateOpenRouterImage(p, merged, signal)
   return { blob: await generateOpenAiImage(p, merged, signal) }
+}
+
+/** ComfyUI から取れた選択肢。**その PC に実在するものだけ**が並ぶ＝同梱プリセットより正確 */
+export interface ComfyChoices {
+  ckpt: string[]
+  sampler: string[]
+  scheduler: string[]
+  lora: string[]
+}
+
+/**
+ * `/object_info/{クラス名}` はノードの入力仕様を返し、列挙型の候補は
+ * `input.required.<名前>[0]` に配列で入っている。そこからプルダウンの選択肢を作る。
+ *
+ * **永続化しない**（モデルフォルダは増減するので、開くたびに取り直すのが正しい）。
+ * 同一 baseUrl のぶんだけプロセス内にキャッシュする。
+ */
+const objectInfoCache = new Map<string, ComfyChoices>()
+
+function enumOf(info: unknown, cls: string, key: string): string[] {
+  const req = (info as Record<string, { input?: { required?: Record<string, unknown> } }>)?.[cls]?.input?.required
+  const spec = req?.[key]
+  const list = Array.isArray(spec) ? spec[0] : undefined
+  return Array.isArray(list) ? list.filter((x): x is string => typeof x === 'string') : []
+}
+
+export async function fetchComfyChoices(p: ImageProvider, force = false): Promise<ComfyChoices> {
+  const base = stripSlash(p.baseUrl)
+  if (!force) {
+    const hit = objectInfoCache.get(base)
+    if (hit) return hit
+  }
+  // 使うクラスだけ個別に取る（/object_info 全体は数MBある）
+  const get = async (cls: string): Promise<unknown> => {
+    const res = await appFetch(`${base}/object_info/${encodeURIComponent(cls)}`, { omitOrigin: true })
+    if (res.status === 403) throw new Error(FORBIDDEN_HINT)
+    if (!res.ok) return undefined
+    return res.json()
+  }
+  const [ck, ks, lo] = await Promise.all([
+    get('CheckpointLoaderSimple').catch(() => undefined),
+    get('KSampler').catch(() => undefined),
+    get('LoraLoader').catch(() => undefined),
+  ])
+  const choices: ComfyChoices = {
+    ckpt: enumOf(ck, 'CheckpointLoaderSimple', 'ckpt_name'),
+    sampler: enumOf(ks, 'KSampler', 'sampler_name'),
+    scheduler: enumOf(ks, 'KSampler', 'scheduler'),
+    lora: enumOf(lo, 'LoraLoader', 'lora_name'),
+  }
+  objectInfoCache.set(base, choices)
+  return choices
 }
 
 /** 接続テスト。到達可否と簡単なメッセージを返す（throw しない） */

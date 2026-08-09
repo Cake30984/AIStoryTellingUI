@@ -1,12 +1,15 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useStore } from '../store'
 import {
   newImageProvider,
   testImageProvider,
   resolveImageApiKey,
   promptStyleOf,
+  fetchComfyChoices,
   OPENROUTER_IMAGE_MODELS,
+  type ComfyChoices,
 } from '../lib/imageGen'
+import { analyzeComfyWorkflow, hasWorkflowPlaceholders, type ComfyPlan } from '../lib/comfyWorkflow'
 import type { ImageProvider, ImageQuality, PromptStyle } from '../types'
 import { Icon } from './icons'
 
@@ -140,6 +143,112 @@ function OpenRouterFields({
   )
 }
 
+/**
+ * ComfyUI の欄（I4）。**テンプレを配るのではなく、持ち込みを楽にする**方向に投資している:
+ * エクスポートした API Format をそのまま貼れば注入先を自動検出し、モデル・サンプラーの
+ * 選択肢は ComfyUI 本体から取る（こちらが同梱するどんなプリセットより正確）。
+ */
+function ComfyFields({ p, onChange }: { p: ImageProvider; onChange: (p: ImageProvider) => void }) {
+  const [choices, setChoices] = useState<ComfyChoices | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [loadError, setLoadError] = useState('')
+
+  const manual = hasWorkflowPlaceholders(p.workflowJson)
+  const plan = useMemo(() => {
+    if (manual) return null
+    try {
+      return analyzeComfyWorkflow(JSON.parse(p.workflowJson))
+    } catch {
+      return { ok: false, problems: ['ワークフローが JSON として読めません。'], summary: [] } as ComfyPlan
+    }
+  }, [p.workflowJson, manual])
+
+  const params = (p.params ?? {}) as Record<string, unknown>
+  const setParam = (key: string, value: unknown) =>
+    onChange({ ...p, params: { ...params, [key]: value === '' ? undefined : value } })
+
+  const load = async () => {
+    setLoading(true)
+    setLoadError('')
+    try {
+      setChoices(await fetchComfyChoices(p, true))
+    } catch (e) {
+      setLoadError((e as Error).message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  /** 選択肢が取れていればプルダウン、まだなら手入力。既定は「ワークフローの値を使う」 */
+  const pick = (label: string, key: string, list: string[] | undefined) => (
+    <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
+      <span className="desc" style={{ margin: 0, width: 96, flexShrink: 0 }}>{label}</span>
+      {list && list.length > 0 ? (
+        <select
+          style={{ flex: 1 }}
+          value={typeof params[key] === 'string' ? (params[key] as string) : ''}
+          onChange={(e) => setParam(key, e.target.value)}
+        >
+          <option value="">ワークフローの値を使う</option>
+          {list.map((v) => (
+            <option key={v} value={v}>
+              {v}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <input
+          style={{ ...inputStyle, flex: 1, width: 'auto', marginBottom: 0 }}
+          placeholder="ワークフローの値を使う（上のボタンで選択肢を取得）"
+          value={typeof params[key] === 'string' ? (params[key] as string) : ''}
+          onChange={(e) => setParam(key, e.target.value)}
+        />
+      )}
+    </div>
+  )
+
+  return (
+    <>
+      {manual ? (
+        <div className="desc" style={{ marginBottom: 6 }}>
+          ワークフローに <code>%PROMPT%</code>{' '}
+          等のプレースホルダがあるので、そこへ差し込みます（明示指定が優先されます）。
+        </div>
+      ) : plan?.ok ? (
+        <div className="desc" style={{ marginBottom: 6 }}>
+          自動検出できました。ComfyUI から書き出した JSON をそのまま貼るだけで動きます。
+          <br />
+          {plan.summary.join(' ／ ')}
+        </div>
+      ) : (
+        <p className="notice" style={{ marginBottom: 6 }}>
+          自動検出できません: {plan?.problems.join(' / ')}
+          <br />
+          差し込みたい位置に <code>%PROMPT%</code> / <code>%NEGATIVE%</code> / <code>"%SEED%"</code> /{' '}
+          <code>"%WIDTH%"</code> / <code>"%HEIGHT%"</code> を手で書くと確実に動きます。
+        </p>
+      )}
+
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
+        <button className="btn" style={{ fontSize: 12, padding: '5px 12px' }} onClick={load} disabled={loading}>
+          {loading ? '取得中…' : 'ComfyUI から選択肢を取得'}
+        </button>
+        {loadError && <span style={{ fontSize: 12.5 }}>{loadError}</span>}
+        {choices && !loadError && (
+          <span className="desc" style={{ margin: 0 }}>
+            モデル {choices.ckpt.length} 件 / LoRA {choices.lora.length} 件
+          </span>
+        )}
+      </div>
+
+      {pick('モデル', 'ckptName', choices?.ckpt)}
+      {pick('サンプラー', 'samplerName', choices?.sampler)}
+      {pick('スケジューラ', 'scheduler', choices?.scheduler)}
+      {plan?.loraId && pick('LoRA', 'loraName', choices?.lora)}
+    </>
+  )
+}
+
 /** SettingsBody（System ページ）内の「画像生成の接続先」管理セクション */
 export default function ImageProviderSettings() {
   const { imageProviders, upsertImageProvider, deleteImageProvider, providers } = useStore()
@@ -251,22 +360,26 @@ export default function ImageProviderSettings() {
           )}
 
           {p.kind === 'comfyui' && (
-            /* workflow は通常触らない前提なので畳んでおく（docs/設計_画像生成の簡易化.md §7.3） */
-            <details style={{ marginBottom: 6 }}>
-              <summary className="desc" style={{ cursor: 'pointer' }}>
-                ワークフロー（詳細）
-              </summary>
-              <div className="desc" style={{ margin: '6px 0 4px' }}>
-                workflow（API Format）。%PROMPT% / %NEGATIVE% / "%SEED%" / "%WIDTH%" / "%HEIGHT%"
-                がプレースホルダとして置換されます。ckpt_name はご自身の環境のモデル名に書き換えてください。
-              </div>
-              <textarea
-                rows={6}
-                style={{ ...inputStyle, fontFamily: 'monospace', fontSize: 12 }}
-                value={p.workflowJson}
-                onChange={(e) => upsertImageProvider({ ...p, workflowJson: e.target.value })}
-              />
-            </details>
+            <>
+              <ComfyFields p={p} onChange={upsertImageProvider} />
+              {/* workflow 本文は通常触らない前提なので畳んでおく（§7.3） */}
+              <details style={{ marginBottom: 6 }}>
+                <summary className="desc" style={{ cursor: 'pointer' }}>
+                  ワークフロー（詳細）
+                </summary>
+                <div className="desc" style={{ margin: '6px 0 4px' }}>
+                  ComfyUI の「Save (API Format)」で書き出した JSON をそのまま貼ってください。
+                  差し込み位置を自分で決めたい場合は %PROMPT% / %NEGATIVE% / "%SEED%" / "%WIDTH%" /
+                  "%HEIGHT%" を書くと、自動検出より優先されます。
+                </div>
+                <textarea
+                  rows={6}
+                  style={{ ...inputStyle, fontFamily: 'monospace', fontSize: 12 }}
+                  value={p.workflowJson}
+                  onChange={(e) => upsertImageProvider({ ...p, workflowJson: e.target.value })}
+                />
+              </details>
+            </>
           )}
 
           <div className="desc" style={{ marginBottom: 4 }}>
