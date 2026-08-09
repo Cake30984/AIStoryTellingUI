@@ -1,5 +1,6 @@
 import type { ImageProvider, ImageProviderKind, ImageQuality, PromptStyle, Provider } from '../types'
 import { appFetch } from './platform'
+import { BUZZ_USD } from './cost'
 import { applyArtStyle, artStyleText, combineWithDefaults } from './promptTags'
 import {
   analyzeComfyWorkflow,
@@ -106,6 +107,24 @@ export function newImageProvider(kind: ImageProviderKind): ImageProvider {
       quality: 'low',
       promptStyle: 'natural',
       artStyle: 'anime',
+    }
+  }
+  if (kind === 'civitai') {
+    return {
+      id: uid(),
+      label: 'Civitai',
+      kind,
+      baseUrl: CIVITAI_ORCHESTRATION,
+      apiKey: '',
+      model: '',
+      workflowJson: '',
+      // コミュニティモデルは SDXL 系が主流なのでタグ作法を既定に（URL を貼れば自動判定で上書きされる）
+      promptStyle: 'tags',
+      artStyle: 'anime',
+      defaultPositive: 'masterpiece, best quality, very aesthetic, absurdres',
+      defaultNegative:
+        'low quality, worst quality, bad anatomy, bad hands, extra fingers, missing fingers, jpeg artifacts, signature, watermark',
+      params: { steps: 25, cfgScale: 6, scheduler: 'EulerA', clipSkip: 2 },
     }
   }
   if (kind === 'comfyui') {
@@ -387,6 +406,138 @@ async function generateOpenRouterImage(
 }
 
 /**
+ * Civitai の生成は**サイト API（civitai.com/api/v1）ではなく Orchestration API**。ホストが別。
+ * `api.civitai.com` は Web サイトを返すので注意（docs/設計_画像生成の簡易化.md §1.2）。
+ */
+export const CIVITAI_ORCHESTRATION = 'https://orchestration.civitai.com'
+
+/** Civitai の生成パラメータ（`params` に保存する詳細設定） */
+export interface CivitaiParams {
+  air?: string
+  modelName?: string
+  baseModel?: string
+  steps?: number
+  cfgScale?: number
+  scheduler?: string
+  clipSkip?: number
+  loras?: { air: string; name: string; strength: number }[]
+}
+
+/** Civitai の scheduler 候補。UI のプルダウンで使う */
+export const CIVITAI_SCHEDULERS = ['EulerA', 'Euler', 'DPM2M', 'DPM2MKarras', 'DPMSDE', 'DDIM', 'LCM', 'UniPC']
+
+export function civitaiParamsOf(p: ImageProvider): CivitaiParams {
+  return (p.params ?? {}) as CivitaiParams
+}
+
+/**
+ * リクエストボディを組み立てる。**未知のプロパティは Civitai に黙って無視される**ので
+ * （`{"__bogus__":123}` でも 200 が返った）、名前を実測形から動かさないこと。
+ * `seed` は 0〜4294967295 で、`-1` は 400 になる＝ランダムは「送らない」で表現する。
+ */
+function civitaiBody(p: ImageProvider, req: ImageGenRequest): Record<string, unknown> {
+  const cp = civitaiParamsOf(p)
+  const body: Record<string, unknown> = {
+    model: cp.air,
+    prompt: req.prompt,
+    negativePrompt: req.negative ?? '',
+    width: req.width ?? 1024,
+    height: req.height ?? 1024,
+    steps: cp.steps ?? 25,
+    cfgScale: cp.cfgScale ?? 6,
+    scheduler: cp.scheduler || 'EulerA',
+    clipSkip: cp.clipSkip ?? 2,
+    quantity: 1,
+  }
+  const loras = (cp.loras ?? []).filter((l) => l.air)
+  if (loras.length > 0) {
+    body.additionalNetworks = Object.fromEntries(
+      loras.map((l) => [l.air, { type: 'Lora', strength: l.strength ?? 1 }]),
+    )
+  }
+  return body
+}
+
+function civitaiUrl(whatIf: boolean): string {
+  const qs = new URLSearchParams({ allowMatureContent: 'true' })
+  if (whatIf) qs.set('whatif', 'true')
+  return `${CIVITAI_ORCHESTRATION}/v2/consumer/recipes/textToImage?${qs}`
+}
+
+/** レスポンスヘッダの `x-civitai-cost-total` は Buzz。数値化して返す */
+function buzzOf(res: Response): number | undefined {
+  const n = Number(res.headers.get('x-civitai-cost-total'))
+  return Number.isFinite(n) ? n : undefined
+}
+
+async function civitaiError(res: Response): Promise<Error> {
+  const text = await res.text().catch(() => '')
+  if (res.status === 401 || res.status === 403) return new Error('Civitai の API キーが無効です。')
+  if (res.status === 402 || /buzz/i.test(text)) {
+    return new Error(
+      `Buzz が不足しているか、この生成に使えない種別です（成人向けの生成には Yellow Buzz が必要です）。［${res.status}］${text.slice(0, 200)}`,
+    )
+  }
+  return new Error(`Civitai エラー (${res.status}): ${text.slice(0, 300) || res.statusText}`)
+}
+
+/**
+ * 生成前の見積り。**`whatif=true` は Buzz を消費せずに正確な料金だけ返す**ので、
+ * 「いくらかかるか」を押す前に見せられる（§6.2）。失敗しても致命的でないので呼び出し側で握る。
+ */
+export async function estimateCivitaiBuzz(
+  p: ImageProvider,
+  req: ImageGenRequest,
+  signal?: AbortSignal,
+): Promise<number | undefined> {
+  if (!civitaiParamsOf(p).air) return undefined
+  const res = await appFetch(civitaiUrl(true), {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${p.apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(civitaiBody(p, req)),
+    signal,
+  })
+  if (!res.ok) return undefined
+  return buzzOf(res)
+}
+
+/**
+ * Civitai（Orchestration textToImage）。submit はほぼ同期で返るが `available:false` の
+ * ことがあるので、署名付き URL が 200 を返すまでポーリングする。
+ * **レスポンスの CORS ヘッダが空**なのでブラウザ版からは叩けない（デスクトップ版専用）。
+ */
+async function generateCivitai(
+  p: ImageProvider,
+  req: ImageGenRequest,
+  signal?: AbortSignal,
+): Promise<ImageGenResult> {
+  const cp = civitaiParamsOf(p)
+  if (!cp.air) {
+    throw new Error('モデルが未設定です。設定で Civitai のモデルページの URL を貼ってください。')
+  }
+  const res = await appFetch(civitaiUrl(false), {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${p.apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(civitaiBody(p, req)),
+    signal,
+  })
+  if (!res.ok) throw await civitaiError(res)
+  const costBuzz = buzzOf(res)
+  const json = await res.json()
+  const img = json?.images?.[0]
+  if (!img?.url) throw new Error('Civitai から画像が返されませんでした。')
+
+  const deadline = Date.now() + 5 * 60_000
+  while (Date.now() < deadline) {
+    if (signal?.aborted) throw new DOMException('中断されました', 'AbortError')
+    const g = await appFetch(img.url, { signal })
+    if (g.ok) return { blob: await g.blob(), costUsd: costBuzz != null ? costBuzz * BUZZ_USD : undefined }
+    await sleep(2000)
+  }
+  throw new Error('生成がタイムアウトしました（5分）。')
+}
+
+/**
  * ModelsLab（v6 text2img）。OpenAI 互換ではないので専用パス。
  * - 認証はヘッダではなく body の `key`。モデルは `model_id`（空ならプロバイダ既定）
  * - status:'processing' なら `fetch_result`（または /images/fetch/{id}）を success までポーリング
@@ -489,6 +640,7 @@ export async function generateImage(
   }
   if (p.kind === 'comfyui') return { blob: await generateComfy(p, merged, signal) }
   if (p.kind === 'modelslab') return { blob: await generateModelslab(p, merged, signal) }
+  if (p.kind === 'civitai') return generateCivitai(p, merged, signal)
   if (p.kind === 'openrouter-image') return generateOpenRouterImage(p, merged, signal)
   return { blob: await generateOpenAiImage(p, merged, signal) }
 }
@@ -559,6 +711,14 @@ export async function testImageProvider(p: ImageProvider): Promise<{ ok: boolean
       // ModelsLab は無料の疎通確認エンドポイントが無い（生成はクレジット消費）。キー有無だけ確認する
       if (!p.apiKey.trim()) return { ok: false, message: 'API キーを入力してください。' }
       return { ok: true, message: 'API キーが設定されています。実際の生成でキー・モデルの有効性を確認します。' }
+    }
+    if (p.kind === 'civitai') {
+      if (!p.apiKey.trim()) return { ok: false, message: 'API キーを入力してください。' }
+      if (!civitaiParamsOf(p).air) return { ok: false, message: 'モデルの URL を貼ってください。' }
+      // whatif は Buzz を消費しないので、そのまま疎通＋料金確認になる
+      const buzz = await estimateCivitaiBuzz(p, { prompt: 'test', width: 1024, height: 1024 })
+      if (buzz == null) return { ok: false, message: 'Civitai に接続できませんでした（キー・モデルを確認してください）。' }
+      return { ok: true, message: `接続できました。この設定で 1 枚あたり ${buzz} Buzz です。` }
     }
     if (p.kind === 'openrouter-image') {
       // /key はキー自身の情報を返す＝モデル一覧（公開）と違い「キーが有効か」を実際に判定できる

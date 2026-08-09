@@ -9,6 +9,12 @@ export const USD_JPY = 150
 /** 表示の分母。1枚だと桁が小さすぎ、100枚だと総額が大きく見える（同 §6.1） */
 export const COST_UNIT = 10
 
+/**
+ * Buzz 1 あたりの USD。Civitai の課金単位は Buzz なので、表示前にここで USD へ寄せて
+ * 表示経路を1本に保つ。**概算専用**（購入時のレート・パッケージで前後する）。
+ */
+export const BUZZ_USD = 0.001
+
 /** コスト実測値のキー。同じ条件でだけ「前回の実績」として使い回す */
 export function costKeyOf(model: string, quality: ImageQuality | undefined, width: number, height: number): string {
   return `${model}|${quality ?? '-'}|${width}x${height}`

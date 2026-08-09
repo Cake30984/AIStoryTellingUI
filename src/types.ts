@@ -781,7 +781,7 @@ export interface UsageRecord {
 }
 
 /** 画像生成の接続先種別 */
-export type ImageProviderKind = 'comfyui' | 'openai-image' | 'modelslab' | 'openrouter-image'
+export type ImageProviderKind = 'comfyui' | 'openai-image' | 'modelslab' | 'openrouter-image' | 'civitai'
 
 /** 生成品質。API の値をそのまま持ち、UI では日本語ラベル（標準/高品質/最高品質）に翻訳して見せる */
 export type ImageQuality = 'low' | 'medium' | 'high'

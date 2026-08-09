@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useStore } from '../store'
 import { streamChat } from '../lib/openrouter'
 import { parseModelRef, modelRefLabel } from '../lib/providers'
@@ -11,9 +11,15 @@ import ModelPicker from './ModelPicker'
 import ModalShell from './ModalShell'
 import ZoomOverlay from './ZoomOverlay'
 import NumberInput from './NumberInput'
-import { MODELSLAB_SCHEDULERS, newImageProvider, promptStyleOf, sharedOpenRouterKey } from '../lib/imageGen'
+import {
+  MODELSLAB_SCHEDULERS,
+  estimateCivitaiBuzz,
+  newImageProvider,
+  promptStyleOf,
+  sharedOpenRouterKey,
+} from '../lib/imageGen'
 import { dismissImageSetup } from '../lib/imageSetup'
-import { costLineOf } from '../lib/cost'
+import { BUZZ_USD, costLineOf, formatCostPerUnit } from '../lib/cost'
 import type { ArtStyle, ImageQuality } from '../types'
 import { Icon } from './icons'
 
@@ -133,9 +139,10 @@ export default function ImageGenModal({
   const sharedKey = sharedOpenRouterKey(providers)
   const isModelsLab = provider?.kind === 'modelslab'
   const isOpenRouter = provider?.kind === 'openrouter-image'
+  const isCivitai = provider?.kind === 'civitai'
   const style = provider ? promptStyleOf(provider) : 'tags'
   // 自然文スタイルではネガティブが効かないので欄ごと消す（結合も generateImage 側でしない）
-  const showNegative = style === 'tags' && (provider?.kind === 'comfyui' || isModelsLab)
+  const showNegative = style === 'tags' && (provider?.kind === 'comfyui' || isModelsLab || isCivitai)
   // 生成時に自動付加されるもの（画風＋定型タグ）を隠さず見せる
   const autoPositive = [artStyleText(style, artStyle, artCustom), style === 'tags' ? provider?.defaultPositive : '']
     .filter((s) => s && s.trim())
@@ -144,6 +151,38 @@ export default function ImageGenModal({
   // コストを返す接続先だけ表示する（返さない接続先で推測値を出さない）
   const costLine =
     provider && isOpenRouter ? costLineOf(provider, provider.model, quality, size.width, size.height) : null
+
+  /*
+   * Civitai は `whatif=true` が Buzz を消費せずに正確な料金を返すので、押す前に見せる。
+   * Buzz は暗号資産で買う前払いなので、事前の正確さが他より効く（§6.2）。
+   * サイズ・接続先が変わったときだけ取り直す（デバウンス）。
+   */
+  const [estimate, setEstimate] = useState<string | null>(null)
+  useEffect(() => {
+    if (!provider || !isCivitai) {
+      setEstimate(null)
+      return
+    }
+    const ctrl = new AbortController()
+    const timer = setTimeout(async () => {
+      try {
+        const buzz = await estimateCivitaiBuzz(
+          provider,
+          { prompt: prompt.trim() || 'preview', width: size.width, height: size.height },
+          ctrl.signal,
+        )
+        setEstimate(buzz == null ? null : `${formatCostPerUnit(buzz * BUZZ_USD)}（見積り・${buzz} Buzz/枚）`)
+      } catch {
+        setEstimate(null) // 見積りが取れないだけなので黙って落とす（生成はできる）
+      }
+    }, 600)
+    return () => {
+      clearTimeout(timer)
+      ctrl.abort()
+    }
+    // プロンプト本文では取り直さない（料金は解像度・ステップで決まる）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [providerId, isCivitai, size.width, size.height, provider?.params])
 
   const draft = async () => {
     if (!draftContext || !provider) return
@@ -450,9 +489,9 @@ export default function ImageGenModal({
                       生成中…（{job.results.length}/{job.count} 枚完了。ComfyUI は数十秒かかることがあります）
                     </span>
                   ) : (
-                    costLine && (
+                    (estimate ?? costLine) && (
                       <span className="desc" style={{ alignSelf: 'center', margin: 0 }}>
-                        {costLine}
+                        {estimate ?? costLine}
                       </span>
                     )
                   )}
