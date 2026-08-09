@@ -1,3 +1,5 @@
+import type { ArtStyle, PromptStyle } from '../types'
+
 /**
  * prompt に pins のタグ（カンマ区切り）が欠けていれば末尾に補う。
  * 比較はトークン単位の完全一致（trim・小文字）。起案（LLM）がプロンプトを全文置換した際に、
@@ -13,6 +15,38 @@ export function ensureTags(prompt: string, pins: string): string {
     .filter((t) => t && !have.has(t.toLowerCase()))
   if (missing.length === 0) return prompt
   return prompt ? `${prompt}, ${missing.join(', ')}` : missing.join(', ')
+}
+
+/**
+ * 画風をプロンプトへ足す文字列を返す。**プロンプトスタイルで形が変わる**ので、
+ * 生の `realistic` / `anime style` を直接結合してはいけない（自然文モードで浮く）。
+ * 対応表はここ4行だけ（docs/設計_画像生成の簡易化.md §5.3）。
+ */
+export function artStyleText(
+  style: PromptStyle,
+  art: ArtStyle | undefined,
+  custom: string | undefined,
+): string {
+  if (art === 'custom') return (custom ?? '').trim()
+  if (!art) return ''
+  if (style === 'tags') return art === 'anime' ? 'anime style, anime screencap' : 'photorealistic, realistic'
+  return art === 'anime'
+    ? 'Drawn in a Japanese anime illustration style.'
+    : 'Rendered as a photorealistic photograph.'
+}
+
+/**
+ * 画風をプロンプト本文に合成する。
+ * - `tags`   … 先頭にタグとして結合（重複はトークン単位で除去）
+ * - `natural`… **末尾に1文として添える**（前置きにすると起案文の主語より前に出て文が壊れる）
+ */
+export function applyArtStyle(style: PromptStyle, prompt: string, artText: string): string {
+  const t = artText.trim()
+  if (!t) return prompt.trim()
+  if (style === 'tags') return combineWithDefaults(t, prompt)
+  const p = prompt.trim()
+  if (!p) return t
+  return /[.!?]$/.test(p) ? `${p} ${t}` : `${p}. ${t}`
 }
 
 /**

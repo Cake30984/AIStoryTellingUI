@@ -3,7 +3,7 @@ import type { Avatar } from '../../types'
 import { normalizeImage } from '../../lib/avatarGen'
 import { putImage } from '../../lib/imageStore'
 import type { ImageJobTarget } from '../../lib/imageJobs'
-import { avatarContextUser, illustrationPromptSystem } from '../../lib/prompts'
+import { avatarContextUser } from '../../lib/prompts'
 import { useStore } from '../../store'
 import EntityAvatar from '../EntityAvatar'
 import ImageGenModal from '../ImageGenModal'
@@ -132,7 +132,7 @@ export default function AvatarField({ avatar, name, genContext, target, onChange
       {showGen && genContext && target && (
         <ImageGenModal
           title="アバター画像を生成"
-          draftContext={{ system: illustrationPromptSystem(), user: avatarContextUser(genContext), modelRef: '' }}
+          draftContext={{ user: avatarContextUser(genContext), modelRef: '' }}
           initialPrompt={genContext.imagePrompt}
           pinTags={genContext.imagePrompt}
           target={target}

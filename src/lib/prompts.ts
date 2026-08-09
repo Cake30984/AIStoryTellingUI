@@ -1,4 +1,4 @@
-import type { Character, Message, Persona, RoleParty, Scene, Session, World } from '../types'
+import type { Character, Message, Persona, PromptStyle, RoleParty, Scene, Session, World } from '../types'
 import type { ChatMessage } from './openrouter'
 import { roleMembers } from './casting'
 import { splitLoreEntries } from './lorebook'
@@ -875,16 +875,37 @@ export function characterDraftContextUser(args: {
 }
 
 /** 画像プロンプト起案用の system プロンプト（挿絵・アバター共通） */
-export function illustrationPromptSystem(): string {
-  return (
-    `あなたはイラスト生成用プロンプトの起案アシスタントです。与えられた文脈から、その場面（または人物）を1枚の絵にするための英語プロンプトを作ってください。\n` +
-    `出力は次の JSON のみ（説明・前置き・コードフェンス禁止）:\n` +
-    `{"prompt": "英語のカンマ区切りタグまたは簡潔な英語描写", "negative": "避けたい要素の英語タグ"}\n` +
-    `指針:\n` +
+/**
+ * 画像プロンプト起案の system。**接続先のプロンプトスタイルで作法を断言させる**。
+ * 以前は「カンマ区切りタグ**または**簡潔な英語描写」とどっちつかずで、出力形式が
+ * 起案モデルごとに揺れていた（docs/設計_画像生成の簡易化.md §5.2）。
+ */
+export function illustrationPromptSystem(style: PromptStyle): string {
+  const common =
+    `あなたはイラスト生成用プロンプトの起案アシスタントです。与えられた文脈から、その場面（または人物）を1枚の絵にするための英語プロンプトを作ってください。\n`
+  const guide =
     `- キャラクターに【画像生成タグ】が与えられている場合は、その文字列を改変せずそのまま prompt に含める（LoRA トリガー等のため）。\n` +
-    `- 人数・外見・構図・背景・光・雰囲気を具体的なタグにする。\n` +
-    `- masterpiece 等の品質タグ、anime style / photorealistic 等の画風タグは入れない（接続先のデフォルトタグとして自動で付加される）。\n` +
+    `- masterpiece 等の品質タグ、anime style / photorealistic 等の画風タグは入れない（接続先の設定として自動で付加される）。\n` +
     `- 本文が長い場合は最後の場面（本文の末尾）を描く。シーン全体のダイジェストにしない。`
+  if (style === 'natural') {
+    // Flux / gpt-image / nano banana 系。ネガティブは API に無いので契約から外す
+    return (
+      common +
+      `出力は次の JSON のみ（説明・前置き・コードフェンス禁止）:\n` +
+      `{"prompt": "英語の自然な描写文（1〜3文）"}\n` +
+      `指針:\n` +
+      `- **タグの羅列にしない。**主語のある英文で、人物・構図・背景・光・雰囲気を続けて描写する。\n` +
+      guide
+    )
+  }
+  return (
+    common +
+    `出力は次の JSON のみ（説明・前置き・コードフェンス禁止）:\n` +
+    `{"prompt": "英語のカンマ区切りタグ", "negative": "避けたい要素の英語タグ"}\n` +
+    `指針:\n` +
+    `- **文にしない。**danbooru 風の英語タグをカンマ区切りで並べる。\n` +
+    `- 人数・外見・構図・背景・光・雰囲気をそれぞれ具体的なタグにする。\n` +
+    guide
   )
 }
 

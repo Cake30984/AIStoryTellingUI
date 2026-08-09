@@ -4,10 +4,20 @@ import {
   newImageProvider,
   testImageProvider,
   resolveImageApiKey,
+  promptStyleOf,
   OPENROUTER_IMAGE_MODELS,
 } from '../lib/imageGen'
-import type { ImageProvider, ImageQuality } from '../types'
+import type { ImageProvider, ImageQuality, PromptStyle } from '../types'
 import { Icon } from './icons'
+
+/**
+ * プロンプトの作法。`natural` を選ぶと下のネガティブ・品質タグ欄が消える
+ * （docs/設計_画像生成の簡易化.md §5.1）。
+ */
+const STYLE_LABELS: { value: PromptStyle; label: string }[] = [
+  { value: 'tags', label: 'タグ羅列（SD1.5 / SDXL / Illustrious 系）' },
+  { value: 'natural', label: '自然な文章（Flux / SD3 / DALL·E / nano banana 系）' },
+]
 
 /** API の値をそのまま3択で見せる（日本語ラベルに翻訳するだけ。docs/設計_画像生成の簡易化.md §6.3） */
 const QUALITY_LABELS: { value: ImageQuality; label: string }[] = [
@@ -256,24 +266,44 @@ export default function ImageProviderSettings() {
           )}
 
           <div className="desc" style={{ marginBottom: 4 }}>
-            デフォルトタグ: 生成のたびにプロンプトの先頭へ自動で結合されます（品質・画風・LoRA トリガー等。
-            生成モーダルのプロンプト欄には表示されません）。
+            プロンプトの作法: 使うモデルの世代に合わせます。画風（アニメ／実写）は生成画面で選びます。
           </div>
-          <textarea
-            rows={2}
-            style={inputStyle}
-            placeholder="デフォルトプロンプト（例: masterpiece, best quality, very aesthetic）"
-            value={p.defaultPositive ?? ''}
-            onChange={(e) => upsertImageProvider({ ...p, defaultPositive: e.target.value })}
-          />
-          {(p.kind === 'comfyui' || p.kind === 'modelslab') && (
-            <textarea
-              rows={2}
-              style={inputStyle}
-              placeholder="デフォルトネガティブ（例: low quality, worst quality, bad anatomy）"
-              value={p.defaultNegative ?? ''}
-              onChange={(e) => upsertImageProvider({ ...p, defaultNegative: e.target.value })}
-            />
+          <select
+            style={{ width: '100%', marginBottom: 6 }}
+            value={promptStyleOf(p)}
+            onChange={(e) => upsertImageProvider({ ...p, promptStyle: e.target.value as PromptStyle })}
+          >
+            {STYLE_LABELS.map((s) => (
+              <option key={s.value} value={s.value}>
+                {s.label}
+              </option>
+            ))}
+          </select>
+
+          {/* 自然文モデルは品質タグもネガティブも効かないので、欄ごと出さない（結合もしない） */}
+          {promptStyleOf(p) === 'tags' && (
+            <>
+              <div className="desc" style={{ marginBottom: 4 }}>
+                デフォルトタグ: 生成のたびにプロンプトの先頭へ自動で結合されます（品質・LoRA トリガー等。
+                生成モーダルのプロンプト欄には表示されません）。
+              </div>
+              <textarea
+                rows={2}
+                style={inputStyle}
+                placeholder="デフォルトプロンプト（例: masterpiece, best quality, very aesthetic）"
+                value={p.defaultPositive ?? ''}
+                onChange={(e) => upsertImageProvider({ ...p, defaultPositive: e.target.value })}
+              />
+              {(p.kind === 'comfyui' || p.kind === 'modelslab') && (
+                <textarea
+                  rows={2}
+                  style={inputStyle}
+                  placeholder="デフォルトネガティブ（例: low quality, worst quality, bad anatomy）"
+                  value={p.defaultNegative ?? ''}
+                  onChange={(e) => upsertImageProvider({ ...p, defaultNegative: e.target.value })}
+                />
+              )}
+            </>
           )}
 
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>

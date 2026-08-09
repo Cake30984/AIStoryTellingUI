@@ -5,7 +5,6 @@ import {
   CONTINUE_PROMPT,
   SCENE_START_PROMPT,
   illustrationContextUser,
-  illustrationPromptSystem,
 } from '../lib/prompts'
 import { sceneTokensOf, tokenLevel } from '../lib/tokens'
 import { getImage, useImageUrl } from '../lib/imageStore'
@@ -1231,7 +1230,6 @@ export default function ChatPanel({ session }: Props) {
                     : 'この場面の挿絵を生成'
               }
               draftContext={{
-                system: illustrationPromptSystem(),
                 user: illustrationContextUser({
                   sceneTitle: sc.title,
                   sceneNote: sc.note,

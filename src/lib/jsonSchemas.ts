@@ -5,7 +5,7 @@
 // `@名前「セリフ」` の行形式で書かせる機能で、別物。こちらは API の `response_format`
 // （json_schema）で**裏方の JSON を機械的に強制する**もの＝本書では「JSON スキーマ」と呼ぶ。
 
-import type { OpenRouterModel } from '../types'
+import type { OpenRouterModel, PromptStyle } from '../types'
 import type { ReviewPart } from './prompts'
 
 /** `response_format: { type:'json_schema' }` へ渡す1件ぶん */
@@ -105,9 +105,16 @@ export const NEXT_SCENE_SCHEMA: JsonSchemaSpec = {
 }
 
 /** 画像プロンプトの起案 */
-export const IMAGE_DRAFT_SCHEMA: JsonSchemaSpec = {
-  name: 'image_prompt_draft',
-  schema: obj({ prompt: str, negative: str }),
+/**
+ * 画像プロンプト起案。**自然文スタイルでは `negative` を契約から外す**
+ * （Flux / gpt-image 系にネガティブは無く、書かせると余計な語が prompt に混ざる。
+ * docs/設計_画像生成の簡易化.md §5.1）。
+ */
+export function imageDraftSchema(style: PromptStyle): JsonSchemaSpec {
+  return {
+    name: 'image_prompt_draft',
+    schema: style === 'natural' ? obj({ prompt: str }) : obj({ prompt: str, negative: str }),
+  }
 }
 
 /** 発見キャラのキャラクター JSON 起案（FB7-E。`characterDraftSystem` と対） */

@@ -3,16 +3,17 @@ import { useStore } from '../store'
 import { streamChat } from '../lib/openrouter'
 import { parseModelRef, modelRefLabel } from '../lib/providers'
 import { extractJson } from '../lib/json'
-import { IMAGE_DRAFT_SCHEMA, jsonModeFor } from '../lib/jsonSchemas'
-import { ensureTags } from '../lib/promptTags'
+import { imageDraftSchema, jsonModeFor } from '../lib/jsonSchemas'
+import { illustrationPromptSystem } from '../lib/prompts'
+import { artStyleText, ensureTags } from '../lib/promptTags'
 import { useBlobUrl, type ImageJobTarget } from '../lib/imageJobs'
 import ModelPicker from './ModelPicker'
 import ModalShell from './ModalShell'
 import ZoomOverlay from './ZoomOverlay'
 import NumberInput from './NumberInput'
-import { MODELSLAB_SCHEDULERS } from '../lib/imageGen'
+import { MODELSLAB_SCHEDULERS, promptStyleOf } from '../lib/imageGen'
 import { costLineOf } from '../lib/cost'
-import type { ImageQuality } from '../types'
+import type { ArtStyle, ImageQuality } from '../types'
 import { Icon } from './icons'
 
 /** API の値をそのまま3択で見せる（docs/設計_画像生成の簡易化.md §6.3） */
@@ -20,6 +21,13 @@ const QUALITY_LABELS: { value: ImageQuality; label: string }[] = [
   { value: 'low', label: '標準' },
   { value: 'medium', label: '高品質' },
   { value: 'high', label: '最高品質' },
+]
+
+/** 画風3択。ラベルは日本語、実際に足される英語は接続先のスタイルで決まる（§5.3） */
+const ART_LABELS: { value: ArtStyle; label: string }[] = [
+  { value: 'anime', label: 'アニメ' },
+  { value: 'realistic', label: '実写' },
+  { value: 'custom', label: '自由入力' },
 ]
 
 /** サイズプリセット（openai系は API 側の許容値に依存。エラーはそのまま表示する） */
@@ -48,8 +56,12 @@ function ResultThumb({ blob, busy, onUse }: { blob: Blob; busy: boolean; onUse: 
 interface Props {
   /** モーダル見出し */
   title: string
-  /** プロンプト起案に使う文脈（system/user）。省略時は起案ボタン非表示 */
-  draftContext?: { system: string; user: string; modelRef: string }
+  /**
+   * プロンプト起案に使う文脈。省略時は起案ボタン非表示。
+   * **system は渡さない**——作法（タグ/自然文）は「モーダル内で選ばれた接続先」で決まるため、
+   * `illustrationPromptSystem` の呼び出しはここで行う。
+   */
+  draftContext?: { user: string; modelRef: string }
   /** 初期プロンプト（キャラの imagePrompt 等。再生成時は元の記録のプロンプト） */
   initialPrompt?: string
   /** 初期ネガティブプロンプト（再生成時は元の記録のネガティブ） */
@@ -93,9 +105,10 @@ export default function ImageGenModal({
   const [providerId, setProviderId] = useState(
     imageProviders.some((p) => p.id === lastImageProviderId) ? lastImageProviderId! : imageProviders[0]?.id ?? '',
   )
-  const [quality, setQuality] = useState<ImageQuality>(
-    imageProviders.find((p) => p.id === lastImageProviderId)?.quality ?? imageProviders[0]?.quality ?? 'low',
-  )
+  const initialProvider = imageProviders.find((p) => p.id === lastImageProviderId) ?? imageProviders[0]
+  const [quality, setQuality] = useState<ImageQuality>(initialProvider?.quality ?? 'low')
+  const [artStyle, setArtStyle] = useState<ArtStyle>(initialProvider?.artStyle ?? 'anime')
+  const [artCustom, setArtCustom] = useState(initialProvider?.artStyleCustom ?? '')
   const [sizeIdx, setSizeIdx] = useState(0) // -1 = カスタム
   const [customW, setCustomW] = useState(SIZE_PRESETS[0]?.width ?? 1024)
   const [customH, setCustomH] = useState(SIZE_PRESETS[0]?.height ?? 1024)
@@ -117,14 +130,20 @@ export default function ImageGenModal({
   const job = imageJobs.find((j) => j.id === jobId)
   const isModelsLab = provider?.kind === 'modelslab'
   const isOpenRouter = provider?.kind === 'openrouter-image'
-  const showNegative = provider?.kind === 'comfyui' || isModelsLab
+  const style = provider ? promptStyleOf(provider) : 'tags'
+  // 自然文スタイルではネガティブが効かないので欄ごと消す（結合も generateImage 側でしない）
+  const showNegative = style === 'tags' && (provider?.kind === 'comfyui' || isModelsLab)
+  // 生成時に自動付加されるもの（画風＋定型タグ）を隠さず見せる
+  const autoPositive = [artStyleText(style, artStyle, artCustom), style === 'tags' ? provider?.defaultPositive : '']
+    .filter((s) => s && s.trim())
+    .join(style === 'tags' ? ', ' : ' ')
   const size = sizeIdx >= 0 ? SIZE_PRESETS[sizeIdx] : { width: customW, height: customH }
   // コストを返す接続先だけ表示する（返さない接続先で推測値を出さない）
   const costLine =
     provider && isOpenRouter ? costLineOf(provider, provider.model, quality, size.width, size.height) : null
 
   const draft = async () => {
-    if (!draftContext) return
+    if (!draftContext || !provider) return
     const { provider: llm, model } = parseModelRef(draftModel, providers)
     if (!llm?.apiKey || !model) {
       setError('起案に使うモデルを選択してください（API キー設定済みの接続先）。')
@@ -139,13 +158,14 @@ export default function ImageGenModal({
           provider: llm,
           model,
           messages: [
-            { role: 'system', content: draftContext.system },
+            // 作法は選択中の接続先で決まる（タグ羅列 / 自然文）
+            { role: 'system', content: illustrationPromptSystem(style) },
             { role: 'user', content: draftContext.user },
           ],
           temperature: 0.7,
           maxTokens: 4000,
           // 対応モデルなら JSON を強制する（起案の取りこぼしを防ぐ）
-          jsonSchema: IMAGE_DRAFT_SCHEMA,
+          jsonSchema: imageDraftSchema(style),
           jsonMode: jsonModeFor(model, modelsByProvider[llm.id]),
         },
         () => {},
@@ -202,8 +222,14 @@ export default function ImageGenModal({
     if (jobId) dismissImageJob(jobId)
     setError('')
     setLastImageProviderId(provider.id)
-    // 選んだ品質は接続先に書き戻す＝次回の既定になる（設定画面に往復させない）
-    if (isOpenRouter && provider.quality !== quality) upsertImageProvider({ ...provider, quality })
+    // 選んだ品質・画風は接続先に書き戻す＝次回の既定になる（設定画面に往復させない）
+    const next = {
+      ...provider,
+      ...(isOpenRouter ? { quality } : {}),
+      artStyle,
+      artStyleCustom: artStyle === 'custom' ? artCustom : provider.artStyleCustom,
+    }
+    if (JSON.stringify(next) !== JSON.stringify(provider)) upsertImageProvider(next)
     const id = startImageJob({
       label,
       target,
@@ -267,16 +293,19 @@ export default function ImageGenModal({
           ) : (
             <>
               <div className="field">
-                <label>接続先・サイズ・枚数</label>
-                <div style={{ display: 'flex', gap: 8 }}>
+                <label>接続先・画風・サイズ・枚数</label>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   <select
                     value={providerId}
                     onChange={(e) => {
                       setProviderId(e.target.value)
-                      // 接続先ごとに既定の品質が違うので追従させる
-                      setQuality(imageProviders.find((p) => p.id === e.target.value)?.quality ?? 'low')
+                      // 接続先ごとに既定の品質・画風が違うので追従させる
+                      const np = imageProviders.find((p) => p.id === e.target.value)
+                      setQuality(np?.quality ?? 'low')
+                      setArtStyle(np?.artStyle ?? 'anime')
+                      setArtCustom(np?.artStyleCustom ?? '')
                     }}
-                    style={{ flex: 1 }}
+                    style={{ flex: 1, minWidth: 140 }}
                   >
                     {imageProviders.map((p) => (
                       <option key={p.id} value={p.id}>
@@ -284,7 +313,18 @@ export default function ImageGenModal({
                       </option>
                     ))}
                   </select>
-                  <select value={sizeIdx} onChange={(e) => setSizeIdx(Number(e.target.value))} style={{ flex: 1 }}>
+                  <select
+                    value={artStyle}
+                    onChange={(e) => setArtStyle(e.target.value as ArtStyle)}
+                    style={{ width: 120 }}
+                  >
+                    {ART_LABELS.map((a) => (
+                      <option key={a.value} value={a.value}>
+                        {a.label}
+                      </option>
+                    ))}
+                  </select>
+                  <select value={sizeIdx} onChange={(e) => setSizeIdx(Number(e.target.value))} style={{ flex: 1, minWidth: 140 }}>
                     {SIZE_PRESETS.map((s, i) => (
                       <option key={i} value={i}>
                         {s.label}
@@ -313,6 +353,14 @@ export default function ImageGenModal({
                     ))}
                   </select>
                 </div>
+                {artStyle === 'custom' && (
+                  <input
+                    style={{ width: '100%', marginTop: 6 }}
+                    placeholder="画風を英語で入力（例: watercolor painting / oil painting）"
+                    value={artCustom}
+                    onChange={(e) => setArtCustom(e.target.value)}
+                  />
+                )}
                 {sizeIdx < 0 && (
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6 }}>
                     <span className="desc" style={{ margin: 0 }}>幅</span>
@@ -342,10 +390,17 @@ export default function ImageGenModal({
                     </button>
                   </div>
                 )}
-                <textarea rows={4} value={prompt} placeholder="例: 1girl, long black hair, school uniform, ..." onChange={(e) => setPrompt(e.target.value)} />
-                {provider?.defaultPositive?.trim() && (
-                  <div className="desc">生成時に自動付加: {provider.defaultPositive}</div>
-                )}
+                <textarea
+                  rows={4}
+                  value={prompt}
+                  placeholder={
+                    style === 'natural'
+                      ? '例: A silver-haired girl stands in a rainy neon-lit alley at night, looking back.'
+                      : '例: 1girl, long black hair, school uniform, ...'
+                  }
+                  onChange={(e) => setPrompt(e.target.value)}
+                />
+                {autoPositive && <div className="desc">生成時に自動付加: {autoPositive}</div>}
               </div>
 
               {showNegative && (

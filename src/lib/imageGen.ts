@@ -1,6 +1,19 @@
-import type { ImageProvider, ImageProviderKind, ImageQuality, Provider } from '../types'
+import type { ImageProvider, ImageProviderKind, ImageQuality, PromptStyle, Provider } from '../types'
 import { appFetch } from './platform'
-import { combineWithDefaults } from './promptTags'
+import { applyArtStyle, artStyleText, combineWithDefaults } from './promptTags'
+
+/**
+ * 接続先の既定のプロンプトスタイル。**必ず上書き可**（ComfyUI で Flux を回す人がいる）。
+ * openrouter-image の推奨モデルはいずれも自然文系なので `natural`。
+ */
+export function defaultPromptStyleOf(kind: ImageProviderKind): PromptStyle {
+  return kind === 'openrouter-image' || kind === 'openai-image' ? 'natural' : 'tags'
+}
+
+/** 実際に使うプロンプトスタイル（未設定なら kind から導く） */
+export function promptStyleOf(p: ImageProvider): PromptStyle {
+  return p.promptStyle ?? defaultPromptStyleOf(p.kind)
+}
 
 function uid(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
@@ -79,6 +92,8 @@ export function newImageProvider(kind: ImageProviderKind): ImageProvider {
       model: OPENROUTER_IMAGE_MODELS[0].id,
       workflowJson: '',
       quality: 'low',
+      promptStyle: 'natural',
+      artStyle: 'anime',
     }
   }
   if (kind === 'comfyui') {
@@ -395,16 +410,26 @@ export function resolveImageApiKey(p: ImageProvider, providers: Provider[]): str
   return providers.find((x) => x.kind === 'openrouter' && x.apiKey.trim())?.apiKey.trim() ?? ''
 }
 
-/** プロバイダ種別を吸収して1枚生成する。接続先のデフォルトタグをここで結合する。失敗は throw（呼び出し側で表示） */
+/**
+ * プロバイダ種別を吸収して1枚生成する。**定型タグ・画風の結合はここ1箇所のみ**
+ * （UI 側で足さない。AGENTS.md の不変条件）。失敗は throw（呼び出し側で表示）。
+ *
+ * `natural` スタイルでは品質タグもネガティブも効かないので、UI で欄を隠すだけでなく
+ * **結合自体をしない**（スタイルを切り替えた後に古いタグが見えないまま混ざるのを防ぐ）。
+ */
 export async function generateImage(
   p: ImageProvider,
   req: ImageGenRequest,
   signal?: AbortSignal,
 ): Promise<ImageGenResult> {
+  const style = promptStyleOf(p)
+  const art = artStyleText(style, p.artStyle, p.artStyleCustom)
+  const withDefaults = style === 'tags' ? combineWithDefaults(p.defaultPositive, req.prompt) : req.prompt.trim()
   const merged: ImageGenRequest = {
     ...req,
-    prompt: combineWithDefaults(p.defaultPositive, req.prompt),
-    negative: combineWithDefaults(p.defaultNegative, req.negative ?? '') || undefined,
+    prompt: applyArtStyle(style, withDefaults, art),
+    negative:
+      style === 'tags' ? combineWithDefaults(p.defaultNegative, req.negative ?? '') || undefined : undefined,
   }
   if (p.kind === 'comfyui') return { blob: await generateComfy(p, merged, signal) }
   if (p.kind === 'modelslab') return { blob: await generateModelslab(p, merged, signal) }

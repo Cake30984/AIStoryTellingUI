@@ -786,6 +786,19 @@ export type ImageProviderKind = 'comfyui' | 'openai-image' | 'modelslab' | 'open
 /** 生成品質。API の値をそのまま持ち、UI では日本語ラベル（標準/高品質/最高品質）に翻訳して見せる */
 export type ImageQuality = 'low' | 'medium' | 'high'
 
+/**
+ * プロンプトの作法。モデル世代で二分される（docs/設計_画像生成の簡易化.md §5）。
+ * - `tags`   … SD1.5 / SDXL / Illustrious / Pony 系。カンマ区切りタグ。品質タグ・ネガティブが効く
+ * - `natural`… Flux / SD3 / DALL·E / gpt-image / nano banana 系。自然文。品質タグ・ネガティブは不要
+ *
+ * **これは欄を増やす設定ではなく欄を消す設定**: `natural` を選ぶとネガティブ欄・
+ * デフォルトタグ欄が UI から消え、結合もされなくなる。
+ */
+export type PromptStyle = 'tags' | 'natural'
+
+/** 画風。`custom` のときだけ `artStyleCustom` の英語文字列をそのまま使う */
+export type ArtStyle = 'anime' | 'realistic' | 'custom'
+
 /** 画像生成の接続先（LLM の Provider とは別系統）。localStorage のみ保存・エクスポート除外 */
 export interface ImageProvider {
   id: string
@@ -805,6 +818,12 @@ export interface ImageProvider {
   defaultNegative?: string
   /** openrouter-image / civitai: 既定の生成品質（生成モーダルの選択が書き戻る） */
   quality?: ImageQuality
+  /** プロンプトの作法。未設定なら kind から既定を決める（`promptStyleOf`）。必ず上書き可 */
+  promptStyle?: PromptStyle
+  /** 画風。生成モーダルの選択がそのまま書き戻る＝「最後に選んだ画風」 */
+  artStyle?: ArtStyle
+  /** `artStyle === 'custom'` のときの英語文字列 */
+  artStyleCustom?: string
   /** アダプタ固有の値の袋。接続先の種類を増やしても型が破綻しないよう最初から分けておく（docs/設計_画像生成の簡易化.md §3） */
   params?: Record<string, unknown>
 }
