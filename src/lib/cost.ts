@@ -1,30 +1,54 @@
-import type { ImageCostSample, ImageProvider, ImageQuality } from '../types'
+import type { ImageProvider } from '../types'
 
 /**
- * 概算表示専用の為替レート。**厳密な請求額ではない**（表示は必ず「約」を伴う）。
- * 設定項目にはしない（画像生成の設定を増やさない方針。docs/設計_画像生成の簡易化.md §6.2）。
+ * 生成コストの表示（I1・I5 で単位方針を改訂）。
+ *
+ * **円に換算しない。各サービスが実際に課金する単位のまま出す。**
+ * 換算すると (a) 前払いクレジットは購入時のレート・パッケージで実額が変わり、
+ * (b) USD 建ては為替で変わるため、**こちらが示した額とユーザーの実負担がずれる**。
+ * ずれはそのままトラブルの原因になる。Buzz は Buzz、USD は USD で見せる。
+ * 円の目安が要るのは「買う前」なので、それは説明書側の仕事にする。
  */
-export const USD_JPY = 150
 
-/** 表示の分母。1枚だと桁が小さすぎ、100枚だと総額が大きく見える（同 §6.1） */
-export const COST_UNIT = 10
+/** そのサービスの課金単位での、画像1枚あたりのコスト */
+export interface ImageCost {
+  unit: 'usd' | 'buzz'
+  /** 1枚あたりの量 */
+  amount: number
+}
 
-/**
- * Buzz 1 あたりの USD。Civitai の課金単位は Buzz なので、表示前にここで USD へ寄せて
- * 表示経路を1本に保つ。**概算専用**（購入時のレート・パッケージで前後する）。
- */
-export const BUZZ_USD = 0.001
+/** 同一条件（モデル・品質・サイズ）での直近1回の実測。「前回の実績」としてのみ表示する */
+export interface ImageCostSample extends ImageCost {
+  /** `${model}|${quality}|${width}x${height}` */
+  key: string
+  at: number
+}
+
+/** USD 表示の分母。1枚だと桁が小さすぎて読めないため（$0.0023 → $0.023/10枚） */
+export const USD_UNIT = 10
 
 /** コスト実測値のキー。同じ条件でだけ「前回の実績」として使い回す */
-export function costKeyOf(model: string, quality: ImageQuality | undefined, width: number, height: number): string {
+export function costKeyOf(model: string, quality: string | undefined, width: number, height: number): string {
   return `${model}|${quality ?? '-'}|${width}x${height}`
 }
 
-/** USD/枚 → 「10枚で約 3.5 円」。小額でも桁が潰れないよう 10 円未満は小数1桁 */
-export function formatCostPerUnit(usdPerImage: number): string {
-  const yen = usdPerImage * COST_UNIT * USD_JPY
-  const shown = yen < 10 ? yen.toFixed(1) : String(Math.round(yen))
-  return `${COST_UNIT}枚で約 ${shown} 円`
+function formatUsd(v: number): string {
+  if (v < 0.01) return `$${v.toFixed(4)}`
+  if (v < 1) return `$${v.toFixed(3)}`
+  return `$${v.toFixed(2)}`
+}
+
+/**
+ * 課金単位のまま1行にする。
+ * - `buzz` … `1枚 3 Buzz`（Buzz は整数で桁も手頃なので1枚あたりが読みやすい）
+ * - `usd`  … `10枚で $0.023`（1枚あたりだと桁が小さすぎる）
+ */
+export function formatCost(cost: ImageCost): string {
+  if (cost.unit === 'buzz') {
+    const n = Number.isInteger(cost.amount) ? String(cost.amount) : cost.amount.toFixed(1)
+    return `1枚 ${n} Buzz`
+  }
+  return `${USD_UNIT}枚で ${formatUsd(cost.amount * USD_UNIT)}`
 }
 
 /** 接続先に記録された実測値から、この条件の「前回の実績」を引く */
@@ -35,36 +59,23 @@ export function findCostSample(p: ImageProvider, key: string): ImageCostSample |
 }
 
 /**
- * 実測が無いときの目安（USD/枚）。docs/設計_画像生成の簡易化.md §4.1 の実測表から。
- * **必ず「目安」と明示して表示すること**（確定値に見せない）。
- */
-export const OPENROUTER_COST_HINT_USD: Record<string, Partial<Record<ImageQuality, number>>> = {
-  'openai/gpt-5-image-mini': { low: 0.0023, medium: 0.0084, high: 0.033 },
-  'google/gemini-2.5-flash-image': { low: 0.039, medium: 0.039, high: 0.039 },
-  'black-forest-labs/flux.2-klein-4b': { low: 0.014, medium: 0.014, high: 0.014 },
-}
-
-/**
- * 表示用の1行を作る。実測があればそれを「前回の実績」、無ければ目安、どちらも無ければ null。
- * null のときは行ごと出さない（推測で数字を出さない）。
+ * 表示用の1行。**実測があるときだけ出す**（無ければ null＝行ごと出さない）。
+ * 推測の数字を出さないための設計。目安は説明書側で扱う。
  */
 export function costLineOf(
   p: ImageProvider,
   model: string,
-  quality: ImageQuality | undefined,
+  quality: string | undefined,
   width: number,
   height: number,
 ): string | null {
-  const sample = findCostSample(p, costKeyOf(model, quality, width, height))
-  if (sample) return `${formatCostPerUnit(sample.usd)}（前回の実績）`
-  const hint = OPENROUTER_COST_HINT_USD[model]?.[quality ?? 'low']
-  if (hint != null) return `${formatCostPerUnit(hint)}（目安）`
-  return null
+  const s = findCostSample(p, costKeyOf(model, quality, width, height))
+  return s ? `${formatCost(s)}（前回の実績）` : null
 }
 
 /** 実測値を1件だけ差し替えて返す（同一 key は上書き。無制限に溜めない） */
-export function withCostSample(p: ImageProvider, key: string, usd: number): ImageProvider {
+export function withCostSample(p: ImageProvider, key: string, cost: ImageCost): ImageProvider {
   const prev = Array.isArray(p.params?.costSamples) ? (p.params!.costSamples as ImageCostSample[]) : []
-  const next = [{ key, usd, at: Date.now() }, ...prev.filter((s) => s && s.key !== key)].slice(0, 20)
+  const next = [{ key, ...cost, at: Date.now() }, ...prev.filter((s) => s && s.key !== key)].slice(0, 20)
   return { ...p, params: { ...(p.params ?? {}), costSamples: next } }
 }

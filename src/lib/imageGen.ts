@@ -1,6 +1,6 @@
 import type { ImageProvider, ImageProviderKind, ImageQuality, PromptStyle, Provider } from '../types'
 import { appFetch } from './platform'
-import { BUZZ_USD } from './cost'
+import type { ImageCost } from './cost'
 import { applyArtStyle, artStyleText, combineWithDefaults } from './promptTags'
 import {
   analyzeComfyWorkflow,
@@ -45,19 +45,42 @@ export interface ImageGenRequest {
   quality?: ImageQuality
 }
 
-/** 生成結果。コストを返す接続先（openrouter-image）だけ `costUsd` が入る */
+/** 生成結果。コストを返す接続先だけ `cost` が入る（**単位はサービスごと**。円に換算しない） */
 export interface ImageGenResult {
   blob: Blob
-  /** 実測コスト（USD/枚）。「前回の実績」表示に使う。返さない接続先では undefined */
-  costUsd?: number
+  /** 実測コスト（1枚あたり）。「前回の実績」表示に使う。返さない接続先では undefined */
+  cost?: ImageCost
 }
 
-/** OpenRouter の推奨画像モデル。全 42 モデルから絞った3つ＋自由入力（docs/設計_画像生成の簡易化.md §4.1） */
-export const OPENROUTER_IMAGE_MODELS: { id: string; label: string }[] = [
-  { id: 'openai/gpt-5-image-mini', label: '安い・十分な品質（おすすめ）' },
-  { id: 'google/gemini-2.5-flash-image', label: '高品質' },
-  { id: 'black-forest-labs/flux.2-klein-4b', label: '別系統（好みで）' },
-]
+/**
+ * 新規作成時の初期モデル。**「推奨モデル一覧」はここに持たない**
+ * （推奨は変わるので、ハードコードすると腐る。一覧は `fetchOpenRouterImageModels` で
+ * 実サービスから取り、推奨は説明書側で扱う）。これは動く初期値が1つ要るだけのもの。
+ */
+export const OPENROUTER_DEFAULT_IMAGE_MODEL = 'openai/gpt-5-image-mini'
+
+/** OpenRouter で画像出力できるモデル一覧。**非永続のプロセス内キャッシュ**（増減するので都度取り直す） */
+const orImageModelCache = new Map<string, { id: string; name: string }[]>()
+
+export async function fetchOpenRouterImageModels(
+  p: ImageProvider,
+  force = false,
+): Promise<{ id: string; name: string }[]> {
+  const base = stripSlash(p.baseUrl)
+  if (!force) {
+    const hit = orImageModelCache.get(base)
+    if (hit) return hit
+  }
+  const res = await appFetch(`${base}/models?output_modalities=image`)
+  if (!res.ok) throw new Error(`モデル一覧を取得できませんでした (${res.status})`)
+  const json = await res.json()
+  const list = (Array.isArray(json?.data) ? json.data : [])
+    .filter((m: unknown): m is { id: string; name?: string } => typeof (m as { id?: unknown })?.id === 'string')
+    .map((m: { id: string; name?: string }) => ({ id: m.id, name: m.name || m.id }))
+    .sort((a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name))
+  orImageModelCache.set(base, list)
+  return list
+}
 
 /** ModelsLab の scheduler（サンプラー）候補。UI のプルダウンで使う */
 export const MODELSLAB_SCHEDULERS = [
@@ -102,7 +125,7 @@ export function newImageProvider(kind: ImageProviderKind): ImageProvider {
       baseUrl: 'https://openrouter.ai/api/v1',
       // 空のまま＝文章側の OpenRouter プロバイダのキーを流用する（resolveImageApiKey）
       apiKey: '',
-      model: OPENROUTER_IMAGE_MODELS[0].id,
+      model: OPENROUTER_DEFAULT_IMAGE_MODEL,
       workflowJson: '',
       quality: 'low',
       promptStyle: 'natural',
@@ -395,11 +418,12 @@ async function generateOpenRouterImage(
 
   const json = await res.json()
   const item = json.data?.[0]
-  const costUsd = typeof json.usage?.cost === 'number' ? json.usage.cost : undefined
-  if (item?.b64_json) return { blob: b64ToBlob(item.b64_json, item.media_type), costUsd }
+  const usd = typeof json.usage?.cost === 'number' ? json.usage.cost : undefined
+  const cost: ImageCost | undefined = usd == null ? undefined : { unit: 'usd', amount: usd }
+  if (item?.b64_json) return { blob: b64ToBlob(item.b64_json, item.media_type), cost }
   if (item?.url) {
     const r = await appFetch(item.url, { signal })
-    if (r.ok) return { blob: await r.blob(), costUsd }
+    if (r.ok) return { blob: await r.blob(), cost }
     throw new Error('画像 URL からの取得に失敗しました。')
   }
   throw new Error('画像データが返されませんでした。')
@@ -474,8 +498,10 @@ async function civitaiError(res: Response): Promise<Error> {
   const text = await res.text().catch(() => '')
   if (res.status === 401 || res.status === 403) return new Error('Civitai の API キーが無効です。')
   if (res.status === 402 || /buzz/i.test(text)) {
+    // 残高不足が最も多い。種別の話（成人向けは Yellow Buzz）は補足に留める
     return new Error(
-      `Buzz が不足しているか、この生成に使えない種別です（成人向けの生成には Yellow Buzz が必要です）。［${res.status}］${text.slice(0, 200)}`,
+      'Buzz が足りません。Civitai で残高を確認してください。' +
+        '（成人向けモデル・成人向け出力には Yellow Buzz が必要で、無料の Blue Buzz とカードで買える Green Buzz は全年齢向けのみです）',
     )
   }
   return new Error(`Civitai エラー (${res.status}): ${text.slice(0, 300) || res.statusText}`)
@@ -531,7 +557,7 @@ async function generateCivitai(
   while (Date.now() < deadline) {
     if (signal?.aborted) throw new DOMException('中断されました', 'AbortError')
     const g = await appFetch(img.url, { signal })
-    if (g.ok) return { blob: await g.blob(), costUsd: costBuzz != null ? costBuzz * BUZZ_USD : undefined }
+    if (g.ok) return { blob: await g.blob(), cost: costBuzz == null ? undefined : { unit: 'buzz', amount: costBuzz } }
     await sleep(2000)
   }
   throw new Error('生成がタイムアウトしました（5分）。')

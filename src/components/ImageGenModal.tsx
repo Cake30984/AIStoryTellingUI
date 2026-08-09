@@ -19,7 +19,7 @@ import {
   sharedOpenRouterKey,
 } from '../lib/imageGen'
 import { dismissImageSetup } from '../lib/imageSetup'
-import { BUZZ_USD, costLineOf, formatCostPerUnit } from '../lib/cost'
+import { costLineOf, formatCost } from '../lib/cost'
 import type { ArtStyle, ImageQuality } from '../types'
 import { Icon } from './icons'
 
@@ -171,7 +171,7 @@ export default function ImageGenModal({
           { prompt: prompt.trim() || 'preview', width: size.width, height: size.height },
           ctrl.signal,
         )
-        setEstimate(buzz == null ? null : `${formatCostPerUnit(buzz * BUZZ_USD)}（見積り・${buzz} Buzz/枚）`)
+        setEstimate(buzz == null ? null : `${formatCost({ unit: 'buzz', amount: buzz })}（見積り）`)
       } catch {
         setEstimate(null) // 見積りが取れないだけなので黙って落とす（生成はできる）
       }

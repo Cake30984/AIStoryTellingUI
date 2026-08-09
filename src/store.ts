@@ -2483,7 +2483,7 @@ export const useStore = create<AppState>()(
           try {
             // openrouter-image はキーが空なら文章側の OpenRouter プロバイダのキーを流用する
             const resolved = { ...provider, apiKey: resolveImageApiKey(provider, get().providers) }
-            const { blob, costUsd } = await generateImage(
+            const { blob, cost } = await generateImage(
               resolved,
               {
                 prompt: args.prompt,
@@ -2500,10 +2500,10 @@ export const useStore = create<AppState>()(
             set((st) => ({
               imageJobs: st.imageJobs.map((j) => (j.id === id ? { ...j, results: [...j.results, blob] } : j)),
             }))
-            if (costUsd != null) {
+            if (cost) {
               // 「前回の実績」として同条件のときだけ表示に使う（推測値を確定値に見せない）
               const key = costKeyOf(provider.model, args.quality, args.width, args.height)
-              get().upsertImageProvider(withCostSample(provider, key, costUsd))
+              get().upsertImageProvider(withCostSample(provider, key, cost))
             }
           } catch (e) {
             if ((e as Error).name === 'AbortError') {

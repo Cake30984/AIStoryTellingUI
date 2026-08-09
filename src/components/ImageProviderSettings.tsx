@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useStore } from '../store'
 import {
   newImageProvider,
@@ -8,7 +8,7 @@ import {
   fetchComfyChoices,
   civitaiParamsOf,
   CIVITAI_SCHEDULERS,
-  OPENROUTER_IMAGE_MODELS,
+  fetchOpenRouterImageModels,
   type ComfyChoices,
   type CivitaiParams,
 } from '../lib/imageGen'
@@ -76,24 +76,48 @@ function OpenRouterFields({
   setShow: (v: boolean) => void
   onChange: (p: ImageProvider) => void
 }) {
-  const known = OPENROUTER_IMAGE_MODELS.some((m) => m.id === p.model)
+  /*
+   * モデル一覧は **OpenRouter から取る**（推奨をここにハードコードしない。
+   * 推奨は変わるので腐るし、一覧に無いモデルを手打ちさせるのも面倒。docs §4.1）。
+   */
+  const [models, setModels] = useState<{ id: string; name: string }[] | null>(null)
+  const [modelsError, setModelsError] = useState('')
+  useEffect(() => {
+    let alive = true
+    fetchOpenRouterImageModels(p)
+      .then((l) => alive && setModels(l))
+      .catch((e) => alive && setModelsError((e as Error).message))
+    return () => {
+      alive = false
+    }
+    // baseUrl 単位でキャッシュされるので、接続先の URL が変わったときだけ取り直す
+  }, [p.baseUrl])
+
+  const known = !!models?.some((m) => m.id === p.model)
   return (
     <>
       <div style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
-        <select
-          style={{ flex: 1 }}
-          value={known ? p.model : '__custom__'}
-          onChange={(e) =>
-            onChange({ ...p, model: e.target.value === '__custom__' ? '' : e.target.value })
-          }
-        >
-          {OPENROUTER_IMAGE_MODELS.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.label}（{m.id}）
-            </option>
-          ))}
-          <option value="__custom__">その他（モデル名を直接入力）</option>
-        </select>
+        {models && models.length > 0 ? (
+          <select
+            style={{ flex: 1 }}
+            value={known ? p.model : '__custom__'}
+            onChange={(e) => onChange({ ...p, model: e.target.value === '__custom__' ? '' : e.target.value })}
+          >
+            {models.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}（{m.id}）
+              </option>
+            ))}
+            <option value="__custom__">その他（モデル名を直接入力）</option>
+          </select>
+        ) : (
+          <input
+            style={{ ...inputStyle, flex: 1, width: 'auto', marginBottom: 0 }}
+            placeholder="モデル名（例: openai/gpt-5-image-mini）"
+            value={p.model}
+            onChange={(e) => onChange({ ...p, model: e.target.value })}
+          />
+        )}
         <select
           style={{ width: 130 }}
           value={p.quality ?? 'low'}
@@ -106,14 +130,15 @@ function OpenRouterFields({
           ))}
         </select>
       </div>
-      {!known && (
+      {models && !known && (
         <input
           style={inputStyle}
-          placeholder="モデル名（例: openai/gpt-image-1-mini）"
+          placeholder="モデル名を直接入力"
           value={p.model}
           onChange={(e) => onChange({ ...p, model: e.target.value })}
         />
       )}
+      {modelsError && <div className="desc" style={{ marginBottom: 6 }}>モデル一覧: {modelsError}</div>}
 
       <label style={{ display: 'flex', gap: 8, alignItems: 'center', margin: '2px 0 6px', fontSize: 13 }}>
         <input
