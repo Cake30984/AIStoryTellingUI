@@ -1,4 +1,4 @@
-import type { ImageProvider, ImageProviderKind } from '../types'
+import type { ImageProvider, ImageProviderKind, ImageQuality, Provider } from '../types'
 import { appFetch } from './platform'
 import { combineWithDefaults } from './promptTags'
 
@@ -20,7 +20,23 @@ export interface ImageGenRequest {
   sampler?: string
   /** ガイダンススケール／CFG（modelslab: guidance_scale。comfyui/openai は未使用） */
   cfg?: number
+  /** 生成品質（openrouter-image のみ。コストが十数倍変わるので UI にも出す） */
+  quality?: ImageQuality
 }
+
+/** 生成結果。コストを返す接続先（openrouter-image）だけ `costUsd` が入る */
+export interface ImageGenResult {
+  blob: Blob
+  /** 実測コスト（USD/枚）。「前回の実績」表示に使う。返さない接続先では undefined */
+  costUsd?: number
+}
+
+/** OpenRouter の推奨画像モデル。全 42 モデルから絞った3つ＋自由入力（docs/設計_画像生成の簡易化.md §4.1） */
+export const OPENROUTER_IMAGE_MODELS: { id: string; label: string }[] = [
+  { id: 'openai/gpt-5-image-mini', label: '安い・十分な品質（おすすめ）' },
+  { id: 'google/gemini-2.5-flash-image', label: '高品質' },
+  { id: 'black-forest-labs/flux.2-klein-4b', label: '別系統（好みで）' },
+]
 
 /** ModelsLab の scheduler（サンプラー）候補。UI のプルダウンで使う */
 export const MODELSLAB_SCHEDULERS = [
@@ -52,6 +68,19 @@ export const DEFAULT_COMFY_WORKFLOW = `{
 }`
 
 export function newImageProvider(kind: ImageProviderKind): ImageProvider {
+  if (kind === 'openrouter-image') {
+    return {
+      id: uid(),
+      label: 'OpenRouter（画像）',
+      kind,
+      baseUrl: 'https://openrouter.ai/api/v1',
+      // 空のまま＝文章側の OpenRouter プロバイダのキーを流用する（resolveImageApiKey）
+      apiKey: '',
+      model: OPENROUTER_IMAGE_MODELS[0].id,
+      workflowJson: '',
+      quality: 'low',
+    }
+  }
   if (kind === 'comfyui') {
     return {
       id: uid(),
@@ -212,12 +241,7 @@ async function generateOpenAiImage(p: ImageProvider, req: ImageGenRequest, signa
   }
   const json = await res.json()
   const item = json.data?.[0]
-  if (item?.b64_json) {
-    // 画像バイナリの base64。atob → Latin-1 → Uint8Array（cards.ts の b64decode は UTF-8 テキスト用なので使わない）
-    const bin = atob(item.b64_json)
-    const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0))
-    return new Blob([bytes as BlobPart], { type: 'image/png' })
-  }
+  if (item?.b64_json) return b64ToBlob(item.b64_json, item.media_type)
   if (item?.url) {
     try {
       const r = await appFetch(item.url, { signal })
@@ -226,6 +250,72 @@ async function generateOpenAiImage(p: ImageProvider, req: ImageGenRequest, signa
       // CORS 失敗は下の明示エラーへ
     }
     throw new Error('このプロバイダは URL 返却のみで、ブラウザから画像を取得できませんでした（CORS 制限）。')
+  }
+  throw new Error('画像データが返されませんでした。')
+}
+
+/**
+ * 画像バイナリの base64 → Blob。`atob` の戻りは Latin-1 文字列なので charCodeAt で戻す。
+ * cards.ts の `b64decode` は UTF-8 テキスト用なので流用しないこと。
+ */
+function b64ToBlob(b64: string, mime?: string): Blob {
+  const bin = atob(b64)
+  const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0))
+  return new Blob([bytes as BlobPart], { type: mime || 'image/png' })
+}
+
+/**
+ * OpenRouter の画像生成。**`/chat/completions` + `modalities` ではなく専用の `/images` を使う**
+ * （前者は reasoning トークンが乗って割高なうえ size/quality を指定できない。実測は
+ * docs/設計_画像生成の簡易化.md §1.1）。レスポンスは OpenAI images 互換で `data[0].b64_json`。
+ * `usage.cost`（USD）が返るので「前回の実績」表示に使う。
+ */
+async function generateOpenRouterImage(
+  p: ImageProvider,
+  req: ImageGenRequest,
+  signal?: AbortSignal,
+): Promise<ImageGenResult> {
+  const base = stripSlash(p.baseUrl)
+  const size = `${req.width ?? 1024}x${req.height ?? 1024}`
+
+  const send = async (withQuality: boolean): Promise<Response> => {
+    const body: Record<string, unknown> = { model: p.model, prompt: req.prompt, n: 1, size }
+    if (withQuality && req.quality) body.quality = req.quality
+    return appFetch(`${base}/images`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${p.apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal,
+    })
+  }
+
+  let res = await send(true)
+  if (res.status === 400 && req.quality) {
+    // quality 非対応モデルへの追従。openrouter.ts の JSON モード降格と同じ idiom で1段だけ落として投げ直す
+    const text = await res.text().catch(() => '')
+    if (/quality/i.test(text)) res = await send(false)
+    else throw new Error(`OpenRouter エラー (400): ${text || res.statusText}`)
+  }
+  if (res.status === 401 || res.status === 403) {
+    throw new Error(
+      p.apiKey
+        ? 'OpenRouter の API キーが無効です。'
+        : 'OpenRouter の API キーが見つかりません。文章側の OpenRouter 接続先にキーを設定するか、この接続先に直接入力してください。',
+    )
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new Error(`OpenRouter エラー (${res.status}): ${text || res.statusText}`)
+  }
+
+  const json = await res.json()
+  const item = json.data?.[0]
+  const costUsd = typeof json.usage?.cost === 'number' ? json.usage.cost : undefined
+  if (item?.b64_json) return { blob: b64ToBlob(item.b64_json, item.media_type), costUsd }
+  if (item?.url) {
+    const r = await appFetch(item.url, { signal })
+    if (r.ok) return { blob: await r.blob(), costUsd }
+    throw new Error('画像 URL からの取得に失敗しました。')
   }
   throw new Error('画像データが返されませんでした。')
 }
@@ -294,16 +384,32 @@ async function generateModelslab(p: ImageProvider, req: ImageGenRequest, signal?
   return img.blob()
 }
 
+/**
+ * 接続先が API キーを持たない場合の解決。`openrouter-image` は**文章側の OpenRouter キーを流用する**
+ * ＝画像生成のためにキーを取り直させない（docs/設計_画像生成の簡易化.md §4.1）。
+ * store に依存させないため、呼び出し側が `providers` を渡す。
+ */
+export function resolveImageApiKey(p: ImageProvider, providers: Provider[]): string {
+  if (p.apiKey.trim()) return p.apiKey.trim()
+  if (p.kind !== 'openrouter-image') return ''
+  return providers.find((x) => x.kind === 'openrouter' && x.apiKey.trim())?.apiKey.trim() ?? ''
+}
+
 /** プロバイダ種別を吸収して1枚生成する。接続先のデフォルトタグをここで結合する。失敗は throw（呼び出し側で表示） */
-export async function generateImage(p: ImageProvider, req: ImageGenRequest, signal?: AbortSignal): Promise<Blob> {
+export async function generateImage(
+  p: ImageProvider,
+  req: ImageGenRequest,
+  signal?: AbortSignal,
+): Promise<ImageGenResult> {
   const merged: ImageGenRequest = {
     ...req,
     prompt: combineWithDefaults(p.defaultPositive, req.prompt),
     negative: combineWithDefaults(p.defaultNegative, req.negative ?? '') || undefined,
   }
-  if (p.kind === 'comfyui') return generateComfy(p, merged, signal)
-  if (p.kind === 'modelslab') return generateModelslab(p, merged, signal)
-  return generateOpenAiImage(p, merged, signal)
+  if (p.kind === 'comfyui') return { blob: await generateComfy(p, merged, signal) }
+  if (p.kind === 'modelslab') return { blob: await generateModelslab(p, merged, signal) }
+  if (p.kind === 'openrouter-image') return generateOpenRouterImage(p, merged, signal)
+  return { blob: await generateOpenAiImage(p, merged, signal) }
 }
 
 /** 接続テスト。到達可否と簡単なメッセージを返す（throw しない） */
@@ -320,6 +426,20 @@ export async function testImageProvider(p: ImageProvider): Promise<{ ok: boolean
       // ModelsLab は無料の疎通確認エンドポイントが無い（生成はクレジット消費）。キー有無だけ確認する
       if (!p.apiKey.trim()) return { ok: false, message: 'API キーを入力してください。' }
       return { ok: true, message: 'API キーが設定されています。実際の生成でキー・モデルの有効性を確認します。' }
+    }
+    if (p.kind === 'openrouter-image') {
+      // /key はキー自身の情報を返す＝モデル一覧（公開）と違い「キーが有効か」を実際に判定できる
+      if (!p.apiKey) {
+        return {
+          ok: false,
+          message:
+            'API キーが見つかりません。文章側の OpenRouter 接続先にキーを設定するか、この接続先に直接入力してください。',
+        }
+      }
+      const res = await appFetch(`${base}/key`, { headers: { Authorization: `Bearer ${p.apiKey}` } })
+      if (res.ok) return { ok: true, message: 'OpenRouter に接続できました。' }
+      if (res.status === 401 || res.status === 403) return { ok: false, message: 'API キーが無効です。' }
+      return { ok: false, message: `応答はありますがエラーです (${res.status})` }
     }
     const res = await appFetch(`${base}/models`, {
       headers: p.apiKey ? { Authorization: `Bearer ${p.apiKey}` } : undefined,

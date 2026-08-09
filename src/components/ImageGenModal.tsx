@@ -11,7 +11,16 @@ import ModalShell from './ModalShell'
 import ZoomOverlay from './ZoomOverlay'
 import NumberInput from './NumberInput'
 import { MODELSLAB_SCHEDULERS } from '../lib/imageGen'
+import { costLineOf } from '../lib/cost'
+import type { ImageQuality } from '../types'
 import { Icon } from './icons'
+
+/** API の値をそのまま3択で見せる（docs/設計_画像生成の簡易化.md §6.3） */
+const QUALITY_LABELS: { value: ImageQuality; label: string }[] = [
+  { value: 'low', label: '標準' },
+  { value: 'medium', label: '高品質' },
+  { value: 'high', label: '最高品質' },
+]
 
 /** サイズプリセット（openai系は API 側の許容値に依存。エラーはそのまま表示する） */
 const SIZE_PRESETS = [
@@ -79,9 +88,13 @@ export default function ImageGenModal({
     setView,
     recordUsage,
     modelsByProvider,
+    upsertImageProvider,
   } = useStore()
   const [providerId, setProviderId] = useState(
     imageProviders.some((p) => p.id === lastImageProviderId) ? lastImageProviderId! : imageProviders[0]?.id ?? '',
+  )
+  const [quality, setQuality] = useState<ImageQuality>(
+    imageProviders.find((p) => p.id === lastImageProviderId)?.quality ?? imageProviders[0]?.quality ?? 'low',
   )
   const [sizeIdx, setSizeIdx] = useState(0) // -1 = カスタム
   const [customW, setCustomW] = useState(SIZE_PRESETS[0]?.width ?? 1024)
@@ -103,7 +116,12 @@ export default function ImageGenModal({
   const provider = imageProviders.find((p) => p.id === providerId)
   const job = imageJobs.find((j) => j.id === jobId)
   const isModelsLab = provider?.kind === 'modelslab'
+  const isOpenRouter = provider?.kind === 'openrouter-image'
   const showNegative = provider?.kind === 'comfyui' || isModelsLab
+  const size = sizeIdx >= 0 ? SIZE_PRESETS[sizeIdx] : { width: customW, height: customH }
+  // コストを返す接続先だけ表示する（返さない接続先で推測値を出さない）
+  const costLine =
+    provider && isOpenRouter ? costLineOf(provider, provider.model, quality, size.width, size.height) : null
 
   const draft = async () => {
     if (!draftContext) return
@@ -182,9 +200,10 @@ export default function ImageGenModal({
       return
     }
     if (jobId) dismissImageJob(jobId)
-    const size = sizeIdx >= 0 ? SIZE_PRESETS[sizeIdx] : { width: customW, height: customH }
     setError('')
     setLastImageProviderId(provider.id)
+    // 選んだ品質は接続先に書き戻す＝次回の既定になる（設定画面に往復させない）
+    if (isOpenRouter && provider.quality !== quality) upsertImageProvider({ ...provider, quality })
     const id = startImageJob({
       label,
       target,
@@ -196,6 +215,7 @@ export default function ImageGenModal({
       steps: isModelsLab ? steps : undefined,
       sampler: isModelsLab ? sampler : undefined,
       cfg: isModelsLab ? cfg : undefined,
+      quality: isOpenRouter ? quality : undefined,
       count,
     })
     setJobId(id)
@@ -230,7 +250,8 @@ export default function ImageGenModal({
           {imageProviders.length === 0 ? (
             <>
               <p className="desc">
-                画像生成の接続先が未設定です。ComfyUI・ModelsLab・画像 API のいずれかを追加すると生成できます。
+                画像生成の接続先が未設定です。<b>OpenRouter</b>{' '}
+                を追加すると、文章用に設定済みの API キーをそのまま使って生成できます（キーの取り直しは不要です）。
               </p>
               {/* FB8-E4: 文章で案内するだけでなく、その場から設定へ直行できるようにする */}
               <button
@@ -248,11 +269,18 @@ export default function ImageGenModal({
               <div className="field">
                 <label>接続先・サイズ・枚数</label>
                 <div style={{ display: 'flex', gap: 8 }}>
-                  <select value={providerId} onChange={(e) => setProviderId(e.target.value)} style={{ flex: 1 }}>
+                  <select
+                    value={providerId}
+                    onChange={(e) => {
+                      setProviderId(e.target.value)
+                      // 接続先ごとに既定の品質が違うので追従させる
+                      setQuality(imageProviders.find((p) => p.id === e.target.value)?.quality ?? 'low')
+                    }}
+                    style={{ flex: 1 }}
+                  >
                     {imageProviders.map((p) => (
                       <option key={p.id} value={p.id}>
-                        {p.label ||
-                          (p.kind === 'comfyui' ? 'ComfyUI' : p.kind === 'modelslab' ? 'ModelsLab' : '画像API')}
+                        {p.label || p.kind}
                       </option>
                     ))}
                   </select>
@@ -264,6 +292,19 @@ export default function ImageGenModal({
                     ))}
                     <option value={-1}>カスタム（数値指定）</option>
                   </select>
+                  {isOpenRouter && (
+                    <select
+                      value={quality}
+                      onChange={(e) => setQuality(e.target.value as ImageQuality)}
+                      style={{ width: 110 }}
+                    >
+                      {QUALITY_LABELS.map((q) => (
+                        <option key={q.value} value={q.value}>
+                          {q.label}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                   <select value={count} onChange={(e) => setCount(Number(e.target.value))} style={{ width: 90 }}>
                     {[1, 2, 3, 4].map((n) => (
                       <option key={n} value={n}>
@@ -350,10 +391,16 @@ export default function ImageGenModal({
                       <Icon name="palette" size={13} /> {job ? 'もう一度生成' : '生成'}
                     </button>
                   )}
-                  {job?.status === 'running' && (
+                  {job?.status === 'running' ? (
                     <span className="desc" style={{ alignSelf: 'center' }}>
                       生成中…（{job.results.length}/{job.count} 枚完了。ComfyUI は数十秒かかることがあります）
                     </span>
+                  ) : (
+                    costLine && (
+                      <span className="desc" style={{ alignSelf: 'center', margin: 0 }}>
+                        {costLine}
+                      </span>
+                    )
                   )}
                 </div>
               </div>

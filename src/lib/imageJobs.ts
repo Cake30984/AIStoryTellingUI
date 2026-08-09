@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import type { ImageQuality } from '../types'
 
 /** バックグラウンド画像生成ジョブの対象（保存先）。Blob を含むため store 側でも localStorage には入れない */
 export type ImageJobTarget =
@@ -20,6 +21,8 @@ export interface ImageJob {
   steps?: number
   sampler?: string
   cfg?: number
+  /** openrouter-image のみ: 生成品質 */
+  quality?: ImageQuality
   /** 生成枚数（1〜4） */
   count: number
   status: 'running' | 'selecting' | 'error' | 'canceled'

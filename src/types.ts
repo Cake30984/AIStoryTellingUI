@@ -781,7 +781,10 @@ export interface UsageRecord {
 }
 
 /** 画像生成の接続先種別 */
-export type ImageProviderKind = 'comfyui' | 'openai-image' | 'modelslab'
+export type ImageProviderKind = 'comfyui' | 'openai-image' | 'modelslab' | 'openrouter-image'
+
+/** 生成品質。API の値をそのまま持ち、UI では日本語ラベル（標準/高品質/最高品質）に翻訳して見せる */
+export type ImageQuality = 'low' | 'medium' | 'high'
 
 /** 画像生成の接続先（LLM の Provider とは別系統）。localStorage のみ保存・エクスポート除外 */
 export interface ImageProvider {
@@ -790,9 +793,9 @@ export interface ImageProvider {
   kind: ImageProviderKind
   /** ComfyUI: http://127.0.0.1:8188 / OpenAI互換: https://api.openai.com/v1 等 */
   baseUrl: string
-  /** openai-image / modelslab で使用（comfyui は通常不要） */
+  /** openai-image / modelslab / openrouter-image で使用（comfyui は通常不要）。openrouter-image は空なら文章側の OpenRouter キーを流用する */
   apiKey: string
-  /** openai-image: モデル名（dall-e-3 等） / modelslab: model_id（コミュニティモデル。空ならデフォルト） */
+  /** openai-image: モデル名（dall-e-3 等） / modelslab: model_id / openrouter-image: モデルスラッグ（openai/gpt-5-image-mini 等） */
   model: string
   /** comfyui のみ: API Format の workflow JSON（%PROMPT% 等のプレースホルダ入り文字列） */
   workflowJson: string
@@ -800,6 +803,21 @@ export interface ImageProvider {
   defaultPositive?: string
   /** 生成時にネガティブ先頭へ自動結合される定型タグ（comfyui / modelslab で有効。openai-image は API 非対応） */
   defaultNegative?: string
+  /** openrouter-image / civitai: 既定の生成品質（生成モーダルの選択が書き戻る） */
+  quality?: ImageQuality
+  /** アダプタ固有の値の袋。接続先の種類を増やしても型が破綻しないよう最初から分けておく（docs/設計_画像生成の簡易化.md §3） */
+  params?: Record<string, unknown>
+}
+
+/**
+ * 同一条件（モデル・品質・サイズ）での直近1回の実測コスト。
+ * 「前回の実績」としてのみ表示する＝推測値を確定値のように見せないため（同 §6.2）。
+ */
+export interface ImageCostSample {
+  /** `${model}|${quality}|${width}x${height}` */
+  key: string
+  usd: number
+  at: number
 }
 
 /** 次シーンの提案 */

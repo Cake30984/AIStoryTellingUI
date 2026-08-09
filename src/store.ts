@@ -21,6 +21,7 @@ import type {
   ExportBundle,
   GroupSubClause,
   ImageProvider,
+  ImageQuality,
   LoreEntry,
   Message,
   MoodChange,
@@ -56,7 +57,8 @@ import { checkpointStore, PERSIST_KEY, stateStorage } from './lib/platform'
 import { gunzipText, gzipText } from './lib/checkpoint'
 import { normalizeImage } from './lib/avatarGen'
 import { matchCharacterByName, NARRATION_NAMES, parseStructured, plainTextOf } from './lib/structured'
-import { generateImage } from './lib/imageGen'
+import { generateImage, resolveImageApiKey } from './lib/imageGen'
+import { costKeyOf, withCostSample } from './lib/cost'
 import {
   abortJobController,
   clearJobAbort,
@@ -1486,6 +1488,7 @@ interface AppState {
     steps?: number
     sampler?: string
     cfg?: number
+    quality?: ImageQuality
     count: number
   }) => string
   cancelImageJob: (jobId: string) => void
@@ -2462,6 +2465,7 @@ export const useStore = create<AppState>()(
           steps?: number
           sampler?: string
           cfg?: number
+          quality?: ImageQuality
           count: number
         },
       ): Promise<void> {
@@ -2477,8 +2481,10 @@ export const useStore = create<AppState>()(
             break
           }
           try {
-            const blob = await generateImage(
-              provider,
+            // openrouter-image はキーが空なら文章側の OpenRouter プロバイダのキーを流用する
+            const resolved = { ...provider, apiKey: resolveImageApiKey(provider, get().providers) }
+            const { blob, costUsd } = await generateImage(
+              resolved,
               {
                 prompt: args.prompt,
                 negative: args.negative,
@@ -2487,12 +2493,18 @@ export const useStore = create<AppState>()(
                 steps: args.steps,
                 sampler: args.sampler,
                 cfg: args.cfg,
+                quality: args.quality,
               },
               ctrl.signal,
             )
             set((st) => ({
               imageJobs: st.imageJobs.map((j) => (j.id === id ? { ...j, results: [...j.results, blob] } : j)),
             }))
+            if (costUsd != null) {
+              // 「前回の実績」として同条件のときだけ表示に使う（推測値を確定値に見せない）
+              const key = costKeyOf(provider.model, args.quality, args.width, args.height)
+              get().upsertImageProvider(withCostSample(provider, key, costUsd))
+            }
           } catch (e) {
             if ((e as Error).name === 'AbortError') {
               clearJobAbort(id)
@@ -4775,6 +4787,7 @@ export const useStore = create<AppState>()(
             steps: args.steps,
             sampler: args.sampler,
             cfg: args.cfg,
+            quality: args.quality,
             count: args.count,
             status: 'running',
             results: [],
