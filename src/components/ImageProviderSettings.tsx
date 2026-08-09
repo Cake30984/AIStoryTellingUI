@@ -251,8 +251,12 @@ export default function ImageProviderSettings() {
           )}
 
           {p.kind === 'comfyui' && (
-            <>
-              <div className="desc" style={{ marginBottom: 4 }}>
+            /* workflow は通常触らない前提なので畳んでおく（docs/設計_画像生成の簡易化.md §7.3） */
+            <details style={{ marginBottom: 6 }}>
+              <summary className="desc" style={{ cursor: 'pointer' }}>
+                ワークフロー（詳細）
+              </summary>
+              <div className="desc" style={{ margin: '6px 0 4px' }}>
                 workflow（API Format）。%PROMPT% / %NEGATIVE% / "%SEED%" / "%WIDTH%" / "%HEIGHT%"
                 がプレースホルダとして置換されます。ckpt_name はご自身の環境のモデル名に書き換えてください。
               </div>
@@ -262,7 +266,7 @@ export default function ImageProviderSettings() {
                 value={p.workflowJson}
                 onChange={(e) => upsertImageProvider({ ...p, workflowJson: e.target.value })}
               />
-            </>
+            </details>
           )}
 
           <div className="desc" style={{ marginBottom: 4 }}>

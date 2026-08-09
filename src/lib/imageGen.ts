@@ -407,6 +407,11 @@ async function generateModelslab(p: ImageProvider, req: ImageGenRequest, signal?
 export function resolveImageApiKey(p: ImageProvider, providers: Provider[]): string {
   if (p.apiKey.trim()) return p.apiKey.trim()
   if (p.kind !== 'openrouter-image') return ''
+  return sharedOpenRouterKey(providers)
+}
+
+/** 文章側に設定済みの OpenRouter キー（無ければ空文字）。流用の可否判定はここに一本化する */
+export function sharedOpenRouterKey(providers: Provider[]): string {
   return providers.find((x) => x.kind === 'openrouter' && x.apiKey.trim())?.apiKey.trim() ?? ''
 }
 

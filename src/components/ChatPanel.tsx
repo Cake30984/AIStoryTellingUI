@@ -11,6 +11,7 @@ import { getImage, useImageUrl } from '../lib/imageStore'
 import { downloadBlob } from '../lib/io'
 import { hasStructuredLines, plainTextOf } from '../lib/structured'
 import { appConfirm } from '../lib/dialogs'
+import { isImageSetupDismissed } from '../lib/imageSetup'
 import { PIN_MARK_ATTR, pinsByAnchor, useAmbientScape } from '../lib/ambient'
 import { ambientSoundLabel } from '../lib/ambientSounds'
 import { ensureAudio, isAudioReady } from '../lib/ambientAudio'
@@ -183,6 +184,12 @@ export default function ChatPanel({ session }: Props) {
   const [illustGenFor, setIllustGenFor] = useState<
     { sceneId: string; messageId?: string; regenPrompt?: string; regenNegative?: string } | null
   >(null)
+  /*
+   * 挿絵ボタンは**未設定でも出す**（機能の存在を知らせる価値がある）。押した先の案内を
+   * 「今はしない」で断った人にだけ、以後このアプリ起動中は出さない（§7.1）。
+   * `illustGenFor` の開閉で再評価されるので購読は不要。
+   */
+  const showIllustButtons = useStore((s) => s.imageProviders.length > 0) || !isImageSetupDismissed()
   const [showCassetteEditor, setShowCassetteEditor] = useState(false)
   const [showMenu, setShowMenu] = useState(false)
   const [showFinale, setShowFinale] = useState(false)
@@ -535,7 +542,7 @@ export default function ChatPanel({ session }: Props) {
           </button>
         )}
         {/* 任意のメッセージをアンカーに後付け生成（過去シーンも可。FB6-B） */}
-        {(m.sceneId ?? session.currentSceneId) && (
+        {showIllustButtons && (m.sceneId ?? session.currentSceneId) && (
           <button
             onClick={() =>
               setIllustGenFor({ sceneId: (m.sceneId ?? session.currentSceneId)!, messageId: m.id })
@@ -1060,14 +1067,16 @@ export default function ChatPanel({ session }: Props) {
                   )}
                 <div style={{ flex: 1 }} />
                 {/* 挿絵生成は「進行しながら使う」操作なので入力欄付近にも置く（⋯メニューとも両導線。F3/R9） */}
-                <button
-                  className="composer-tool-btn"
-                  disabled={!scene}
-                  title={scene ? 'この場面の挿絵を生成' : '物語を開始すると生成できます'}
-                  onClick={() => scene && setIllustGenFor({ sceneId: scene.id })}
-                >
-                  <Icon name="palette" size={14} /> 挿絵
-                </button>
+                {showIllustButtons && (
+                  <button
+                    className="composer-tool-btn"
+                    disabled={!scene}
+                    title={scene ? 'この場面の挿絵を生成' : '物語を開始すると生成できます'}
+                    onClick={() => scene && setIllustGenFor({ sceneId: scene.id })}
+                  >
+                    <Icon name="palette" size={14} /> 挿絵
+                  </button>
+                )}
                 {!isFinalized && (
                   <button className="composer-tool-btn" onClick={() => setShowSceneEditor(true)}>
                     <Icon name="pencil" size={14} /> シーン編集

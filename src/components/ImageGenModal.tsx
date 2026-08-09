@@ -11,7 +11,8 @@ import ModelPicker from './ModelPicker'
 import ModalShell from './ModalShell'
 import ZoomOverlay from './ZoomOverlay'
 import NumberInput from './NumberInput'
-import { MODELSLAB_SCHEDULERS, promptStyleOf } from '../lib/imageGen'
+import { MODELSLAB_SCHEDULERS, newImageProvider, promptStyleOf, sharedOpenRouterKey } from '../lib/imageGen'
+import { dismissImageSetup } from '../lib/imageSetup'
 import { costLineOf } from '../lib/cost'
 import type { ArtStyle, ImageQuality } from '../types'
 import { Icon } from './icons'
@@ -128,6 +129,8 @@ export default function ImageGenModal({
 
   const provider = imageProviders.find((p) => p.id === providerId)
   const job = imageJobs.find((j) => j.id === jobId)
+  // 文章側に OpenRouter のキーがあるか（未設定時の案内を「1クリック」にできるかの分岐）
+  const sharedKey = sharedOpenRouterKey(providers)
   const isModelsLab = provider?.kind === 'modelslab'
   const isOpenRouter = provider?.kind === 'openrouter-image'
   const style = provider ? promptStyleOf(provider) : 'tags'
@@ -247,6 +250,22 @@ export default function ImageGenModal({
     setJobId(id)
   }
 
+  /** 文章側の OpenRouter キーで既定の接続先を1つ作り、そのまま生成画面へ（設定画面に行かせない） */
+  const setUpWithSharedKey = () => {
+    const p = newImageProvider('openrouter-image')
+    upsertImageProvider(p)
+    setProviderId(p.id)
+    setQuality(p.quality ?? 'low')
+    setArtStyle(p.artStyle ?? 'anime')
+    setArtCustom('')
+  }
+
+  /** 断られたら黙って引き下がる。以後このアプリ起動中は挿絵ボタン自体を出さない */
+  const declineSetup = () => {
+    dismissImageSetup()
+    onClose()
+  }
+
   const accept = async (idx: number) => {
     if (!job) return
     setAccepting(true)
@@ -274,104 +293,52 @@ export default function ImageGenModal({
       }
     >
           {imageProviders.length === 0 ? (
-            <>
-              <p className="desc">
-                画像生成の接続先が未設定です。<b>OpenRouter</b>{' '}
-                を追加すると、文章用に設定済みの API キーをそのまま使って生成できます（キーの取り直しは不要です）。
-              </p>
-              {/* FB8-E4: 文章で案内するだけでなく、その場から設定へ直行できるようにする */}
-              <button
-                className="btn primary"
-                onClick={() => {
-                  onClose()
-                  setView('system')
-                }}
-              >
-                <Icon name="settings" size={14} /> 設定・データ管理を開く
-              </button>
-            </>
+            /*
+             * 未設定時はここで完結させる。物語の途中で設定画面へ飛ばさない
+             * （docs/設計_画像生成の簡易化.md §7.1）。文章側に OpenRouter のキーが
+             * あれば、押すだけで既定値の接続先が出来て生成画面に切り替わる。
+             */
+            <div className="field">
+              {sharedKey ? (
+                <>
+                  <p className="desc" style={{ marginBottom: 10 }}>
+                    文章と同じ接続（OpenRouter）で画像も生成できます。
+                    <b>API キーを取り直す必要はありません。</b>
+                  </p>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <button className="btn primary" onClick={setUpWithSharedKey}>
+                      <Icon name="palette" size={14} /> この接続で生成する
+                    </button>
+                    <button className="btn" onClick={declineSetup}>
+                      今はしない
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="desc" style={{ marginBottom: 10 }}>
+                    画像生成には接続先の設定が必要です。文章用に <b>OpenRouter</b>{' '}
+                    を設定しておくと、そのキーをそのまま使えます。
+                  </p>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <button
+                      className="btn primary"
+                      onClick={() => {
+                        onClose()
+                        setView('system')
+                      }}
+                    >
+                      <Icon name="settings" size={14} /> 設定を開く
+                    </button>
+                    <button className="btn" onClick={declineSetup}>
+                      今はしない
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           ) : (
             <>
-              <div className="field">
-                <label>接続先・画風・サイズ・枚数</label>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <select
-                    value={providerId}
-                    onChange={(e) => {
-                      setProviderId(e.target.value)
-                      // 接続先ごとに既定の品質・画風が違うので追従させる
-                      const np = imageProviders.find((p) => p.id === e.target.value)
-                      setQuality(np?.quality ?? 'low')
-                      setArtStyle(np?.artStyle ?? 'anime')
-                      setArtCustom(np?.artStyleCustom ?? '')
-                    }}
-                    style={{ flex: 1, minWidth: 140 }}
-                  >
-                    {imageProviders.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.label || p.kind}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    value={artStyle}
-                    onChange={(e) => setArtStyle(e.target.value as ArtStyle)}
-                    style={{ width: 120 }}
-                  >
-                    {ART_LABELS.map((a) => (
-                      <option key={a.value} value={a.value}>
-                        {a.label}
-                      </option>
-                    ))}
-                  </select>
-                  <select value={sizeIdx} onChange={(e) => setSizeIdx(Number(e.target.value))} style={{ flex: 1, minWidth: 140 }}>
-                    {SIZE_PRESETS.map((s, i) => (
-                      <option key={i} value={i}>
-                        {s.label}
-                      </option>
-                    ))}
-                    <option value={-1}>カスタム（数値指定）</option>
-                  </select>
-                  {isOpenRouter && (
-                    <select
-                      value={quality}
-                      onChange={(e) => setQuality(e.target.value as ImageQuality)}
-                      style={{ width: 110 }}
-                    >
-                      {QUALITY_LABELS.map((q) => (
-                        <option key={q.value} value={q.value}>
-                          {q.label}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                  <select value={count} onChange={(e) => setCount(Number(e.target.value))} style={{ width: 90 }}>
-                    {[1, 2, 3, 4].map((n) => (
-                      <option key={n} value={n}>
-                        {n}枚
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                {artStyle === 'custom' && (
-                  <input
-                    style={{ width: '100%', marginTop: 6 }}
-                    placeholder="画風を英語で入力（例: watercolor painting / oil painting）"
-                    value={artCustom}
-                    onChange={(e) => setArtCustom(e.target.value)}
-                  />
-                )}
-                {sizeIdx < 0 && (
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6 }}>
-                    <span className="desc" style={{ margin: 0 }}>幅</span>
-                    <NumberInput value={customW} min={64} max={2048} step={64} integer onChange={setCustomW} style={{ width: 90 }} />
-                    <span className="desc" style={{ margin: 0 }}>× 高さ</span>
-                    <NumberInput value={customH} min={64} max={2048} step={64} integer onChange={setCustomH} style={{ width: 90 }} />
-                    <span className="desc" style={{ margin: 0 }}>px</span>
-                  </div>
-                )}
-              </div>
-
               <div className="field">
                 <label>プロンプト（英語）</label>
                 {draftContext && (
@@ -413,27 +380,59 @@ export default function ImageGenModal({
                 </div>
               )}
 
-              {isModelsLab && (
-                <div className="field">
-                  <label>生成パラメータ（ModelsLab）</label>
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <span className="desc" style={{ margin: 0 }}>サンプラー</span>
-                    <select value={sampler} onChange={(e) => setSampler(e.target.value)} style={{ flex: 1 }}>
-                      {MODELSLAB_SCHEDULERS.map((s) => (
-                        <option key={s} value={s}>
-                          {s}
+              {/*
+                表に出すのは 画風・サイズ・品質 の3つだけ（docs/設計_画像生成の簡易化.md §7.2）。
+                接続先・枚数・サンプラー・ステップ・CFG・カスタムサイズは「詳細設定」へ降格。
+              */}
+              <div className="field">
+                <label>画風・サイズ{isOpenRouter ? '・品質' : ''}</label>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <select
+                    value={artStyle}
+                    onChange={(e) => setArtStyle(e.target.value as ArtStyle)}
+                    style={{ width: 120 }}
+                  >
+                    {ART_LABELS.map((a) => (
+                      <option key={a.value} value={a.value}>
+                        {a.label}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={sizeIdx}
+                    onChange={(e) => setSizeIdx(Number(e.target.value))}
+                    style={{ flex: 1, minWidth: 140 }}
+                  >
+                    {SIZE_PRESETS.map((s, i) => (
+                      <option key={i} value={i}>
+                        {s.label}
+                      </option>
+                    ))}
+                    <option value={-1}>カスタム（数値指定）</option>
+                  </select>
+                  {isOpenRouter && (
+                    <select
+                      value={quality}
+                      onChange={(e) => setQuality(e.target.value as ImageQuality)}
+                      style={{ width: 110 }}
+                    >
+                      {QUALITY_LABELS.map((q) => (
+                        <option key={q.value} value={q.value}>
+                          {q.label}
                         </option>
                       ))}
                     </select>
-                  </div>
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6 }}>
-                    <span className="desc" style={{ margin: 0 }}>ステップ数</span>
-                    <NumberInput value={steps} min={1} max={100} step={1} integer onChange={setSteps} style={{ width: 80 }} />
-                    <span className="desc" style={{ margin: 0 }}>CFG（ガイダンス）</span>
-                    <NumberInput value={cfg} min={1} max={20} step={0.5} onChange={setCfg} style={{ width: 80 }} />
-                  </div>
+                  )}
                 </div>
-              )}
+                {artStyle === 'custom' && (
+                  <input
+                    style={{ width: '100%', marginTop: 6 }}
+                    placeholder="画風を英語で入力（例: watercolor painting / oil painting）"
+                    value={artCustom}
+                    onChange={(e) => setArtCustom(e.target.value)}
+                  />
+                )}
+              </div>
 
               <div className="field">
                 <div style={{ display: 'flex', gap: 8 }}>
@@ -459,6 +458,83 @@ export default function ImageGenModal({
                   )}
                 </div>
               </div>
+
+              {/*
+                詳細設定。**サンプラー・ステップは接続先ごとに語彙が違い、最適値もモデル依存**
+                （知らずに動かすと品質が下がる方向にしか動かない）ので主線から外す。§7.2
+              */}
+              <details className="field">
+                <summary className="desc" style={{ cursor: 'pointer' }}>
+                  詳細設定{imageProviders.length > 1 ? '（接続先・枚数ほか）' : '（枚数ほか）'}
+                </summary>
+                <div style={{ marginTop: 8 }}>
+                  {imageProviders.length > 1 && (
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
+                      <span className="desc" style={{ margin: 0, whiteSpace: 'nowrap' }}>接続先</span>
+                      <select
+                        value={providerId}
+                        onChange={(e) => {
+                          setProviderId(e.target.value)
+                          // 接続先ごとに既定の品質・画風が違うので追従させる
+                          const np = imageProviders.find((p) => p.id === e.target.value)
+                          setQuality(np?.quality ?? 'low')
+                          setArtStyle(np?.artStyle ?? 'anime')
+                          setArtCustom(np?.artStyleCustom ?? '')
+                        }}
+                        style={{ flex: 1 }}
+                      >
+                        {imageProviders.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.label || p.kind}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <span className="desc" style={{ margin: 0, whiteSpace: 'nowrap' }}>枚数</span>
+                    <select value={count} onChange={(e) => setCount(Number(e.target.value))} style={{ width: 90 }}>
+                      {[1, 2, 3, 4].map((n) => (
+                        <option key={n} value={n}>
+                          {n}枚
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {sizeIdx < 0 && (
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6 }}>
+                      <span className="desc" style={{ margin: 0 }}>幅</span>
+                      <NumberInput value={customW} min={64} max={2048} step={64} integer onChange={setCustomW} style={{ width: 90 }} />
+                      <span className="desc" style={{ margin: 0 }}>× 高さ</span>
+                      <NumberInput value={customH} min={64} max={2048} step={64} integer onChange={setCustomH} style={{ width: 90 }} />
+                      <span className="desc" style={{ margin: 0 }}>px</span>
+                    </div>
+                  )}
+
+                  {isModelsLab && (
+                    <>
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6 }}>
+                        <span className="desc" style={{ margin: 0 }}>サンプラー</span>
+                        <select value={sampler} onChange={(e) => setSampler(e.target.value)} style={{ flex: 1 }}>
+                          {MODELSLAB_SCHEDULERS.map((s) => (
+                            <option key={s} value={s}>
+                              {s}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6 }}>
+                        <span className="desc" style={{ margin: 0 }}>ステップ数</span>
+                        <NumberInput value={steps} min={1} max={100} step={1} integer onChange={setSteps} style={{ width: 80 }} />
+                        <span className="desc" style={{ margin: 0 }}>CFG（ガイダンス）</span>
+                        <NumberInput value={cfg} min={1} max={20} step={0.5} onChange={setCfg} style={{ width: 80 }} />
+                      </div>
+                    </>
+                  )}
+                </div>
+              </details>
 
               {job?.status === 'error' && <p className="notice">生成に失敗しました: {job.error}</p>}
 

@@ -3,6 +3,7 @@ import type { Avatar } from '../../types'
 import { normalizeImage } from '../../lib/avatarGen'
 import { putImage } from '../../lib/imageStore'
 import type { ImageJobTarget } from '../../lib/imageJobs'
+import { isImageSetupDismissed } from '../../lib/imageSetup'
 import { avatarContextUser } from '../../lib/prompts'
 import { useStore } from '../../store'
 import EntityAvatar from '../EntityAvatar'
@@ -83,7 +84,8 @@ export default function AvatarField({ avatar, name, genContext, target, onChange
               </>
             )}
           </button>
-          {genContext && imageProviders.length > 0 && (
+          {/* 未設定でも出す（押した先で1クリック設定）。断られた場合だけ以後出さない。§7.1 */}
+          {genContext && (imageProviders.length > 0 || !isImageSetupDismissed()) && (
             <button
               type="button"
               className="btn"

@@ -47,6 +47,7 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist`。storage は
 - `avatarGen.ts` — `generateDefaultAvatar`（イニシャル＋色 canvas）/`normalizeImage`（縮小・PNG化）
 - `png.ts` — PNG tEXt チャンク読み書き（`readTextChunks`/`writeTextChunk`）。**組み立てはセグメント連結方式＝`push(...spread)` は数MB級でスタックオーバーフローするため禁止**
 - `imageGen.ts` — 画像生成抽象層。`generateImage`（**openrouter-image: POST `/images`（`/chat/completions` ではない）→ `data[0].b64_json`＋`usage.cost`。I1**／comfyui: /prompt→/history→/view／openai-image: b64_json／modelslab: /images/text2img→processing なら /images/fetch ポーリング→出力URL取得。FB8-C）は **`ImageGenResult{blob,costUsd?}` を返す**（Blob 単体ではない）/`resolveImageApiKey`（openrouter-image はキー未設定なら**文章側の `kind:'openrouter'` プロバイダのキーを流用**）/`testImageProvider`（openrouter-image は `/key`）/`fillWorkflow`/`DEFAULT_COMFY_WORKFLOW`/`MODELSLAB_SCHEDULERS`/`OPENROUTER_IMAGE_MODELS`。`ImageGenRequest` に `steps?/sampler?/cfg?`（modelslab のみ）・`quality?`（openrouter-image のみ）。`promptStyleOf`/`defaultPromptStyleOf`＝接続先の作法（未設定なら kind から導出。**必ず上書き可**）。**接続先の `defaultPositive`/`defaultNegative` の結合はここ1箇所のみ**（`combineWithDefaults`）
+- `imageSetup.ts` — 画像生成の初回案内を「今はしない」で断ったかのモジュール変数（I3）。**非永続・store に置かない**（アプリ起動ごとに1度だけ機会を作り直す）。`isImageSetupDismissed`/`dismissImageSetup`
 - `cost.ts` — 生成コストの表示（I1）。`USD_JPY`（概算専用の固定レート）/`COST_UNIT=10`/`costKeyOf`/`formatCostPerUnit`（「10枚で約 3.4 円」）/`costLineOf`（実測があれば「前回の実績」、無ければ `OPENROUTER_COST_HINT_USD` から「目安」、どちらも無ければ `null`＝行ごと出さない）/`withCostSample`
 - `promptTags.ts` — `ensureTags`（pins のタグ欠け補完）＋`combineWithDefaults`（接続先デフォルトタグの先頭結合・重複除去）＋`artStyleText`（`ArtStyle × PromptStyle` の対応表4行）/`applyArtStyle`（**tags は先頭結合・natural は末尾に1文**。I2）
 - `ambientSounds.ts` — 内蔵環境音カタログ（AM1）。`AMBIENT_SOUNDS`/`AMBIENT_CATEGORIES`/`ambientSoundById`/`ambientSoundLabel`。実体は `src/assets/ambient/<id>.flac` を `import.meta.glob('...?url', eager)` で解決し、**宣言があってファイルが無い id は起動時に落とす**（＝音源の調達と実装を非同期にできる・別バージョンの `soundId` も黙ってスキップ）。id は `uid()` にせず `'rain-soft'` のような安定・可読キー。**音源は全て VSQ plus+ 由来・FLAC（可逆）・ステレオ・48kHz**（素材が 320kbps MP3 なので非可逆で再エンコードすると世代劣化する。モノラル化・リサンプルもしない）。25本で約127MB
@@ -230,6 +231,7 @@ Play 領域:
 - **`capabilities/default.json` の http スコープはポート成分 `:*` を省略しない**（`http://*:*`）。`http://**` と書くとポートが空文字＝デフォルトポート 80/443 限定になり、ローカルサーバ（ComfyUI の :8188 等）が `url not allowed on the configured scope` で全滅する。検証は URLPattern の **constructor-string 形式**で行うこと（object 形式は省略した `port` が `*` に既定化されて誤判定する）
 - **画像生成のプロンプトへ定型タグ・画風を UI 側で結合しない**。結合は `generateImage`（imageGen.ts）1箇所のみ。`ImageJob.prompt`/`SceneIllustration.prompt` は結合前のユーザープロンプトを保つ
 - **`promptStyle==='natural'` では `defaultPositive`/`defaultNegative` を結合しない**（I2）。UI で欄を隠すだけだと、スタイル切り替え後に古いタグが見えないまま混ざる。**「欄を隠す」と「結合しない」は必ずセット**
+- **画像生成が未設定でも挿絵・アバター生成のボタンを消さない**（I3）。押した先の `ImageGenModal` 内で設定を完結させる（文章側の OpenRouter キーがあれば1クリック）。**物語の途中で設定画面へ自動遷移させない**。断られたときだけ `imageSetup` のフラグでボタンを引っ込める
 - **画像プロンプト起案の system を呼び出し側で組み立てない**（I2）。作法は「モーダル内で選ばれた接続先」で決まるので `illustrationPromptSystem(style)` の呼び出しは `ImageGenModal` の中だけ。`draftContext` は `{user, modelRef}` のみを渡す
 - **構造化出力のパース失敗行は必ず narration に落とす**（graceful degradation）。名前解決は `matchCharacterByName`（`structured.ts`）に一本化し、他所でコピーしない
 - **構造化レンダラのフォールバック判定はメッセージ単位**（`hasStructuredLines`）。トグルでレンダラを直接切り替えると旧平文・フォーマット無視応答で表示が崩れる
@@ -301,7 +303,7 @@ Play 領域:
 
 - **T1 で判明した既知の問題**: ①選択肢生成中に本編生成が始まると選択肢側 AbortController が追従せず `Cannot read properties of null (reading 'signal')`（再現手順が不明で切り分け未着手のまま据え置き）
 - **T4（配布）**: NSIS・GitHub Releases。ユーザー判断で当面見送り（まだ公開しない）
-- **画像生成の簡易化（I1・I2 実装済み・I3〜I5 未着手）**: 設計 → `docs/設計_画像生成の簡易化.md`。接続先を **OpenRouter（既定・文章側のキーを再利用）／Civitai（成人向け）／ComfyUI（パワーユーザー）の3枠**に固定し、設定項目を「プロンプト・画風・サイズ・品質」の4つへ削る。プロンプトスタイル（タグ羅列／自然文）は**欄を消す設定**として定義。コストは常に円で表示。**API 仕様・料金は 2026-08-09 に実APIで実測済み**（OpenRouter `/api/v1/images` は `quality:"low"` で 0.35円/枚・Civitai は `orchestration.civitai.com` の `textToImage` で 3 Buzz・`whatif=true` で生成前見積り）。残り: **I3**=モーダル4要素化・未設定時の導線・設定画面再編、**I4**=ComfyUI 自動注入＋`/object_info`、**I5**=Civitai（Buzz 購入経路の確認待ち）。I1〜I3 で出荷可能
+- **画像生成の簡易化（I1〜I3 実装済み＝出荷可能ライン・I4/I5 未着手）**: 設計 → `docs/設計_画像生成の簡易化.md`。接続先を **OpenRouter（既定・文章側のキーを再利用）／Civitai（成人向け）／ComfyUI（パワーユーザー）の3枠**に固定し、設定項目を「プロンプト・画風・サイズ・品質」の4つへ削る。プロンプトスタイル（タグ羅列／自然文）は**欄を消す設定**として定義。コストは常に円で表示。**API 仕様・料金は 2026-08-09 に実APIで実測済み**（OpenRouter `/api/v1/images` は `quality:"low"` で 0.35円/枚・Civitai は `orchestration.civitai.com` の `textToImage` で 3 Buzz・`whatif=true` で生成前見積り）。残り: **I4**=ComfyUI 自動注入＋`/object_info`、**I5**=Civitai（Buzz 購入経路の確認待ち）
 - **ワークフローテンプレ拡充**（SDXL 以外・LoRA ノード入り）。※**上記 I4（workflow の自動注入＋`/object_info` プルダウン）が入れば不要になる可能性が高い**ので、I4 より先にやらない。ComfyUI の実機動作確認は**接続テスト・実生成（`/prompt`→`/history`→`/view`）とも完了（2026-08-08）**。通常起動での接続不可（旧「T1 の既知の問題②」）も原因特定・修正済み。残る未検証は plugin-http 経由の POST とバイナリ blob のみ（`docs/設計_Tauri化.md` の T1 節）
 - **openai-image 系の実プロバイダ確認**（`response_format: b64_json` 非対応 API への追従が必要になったら `imageGen.ts` の openai 経路にバリエーション追加）
 
