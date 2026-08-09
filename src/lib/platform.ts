@@ -7,14 +7,35 @@ export function isTauri(): boolean {
 /** zustand persist の永続化キー。Tauri のファイル移行判定（旧 WebView localStorage の検出）にも使う */
 export const PERSIST_KEY = 'ai-storytelling-store-v3'
 
+export interface AppFetchInit extends RequestInit {
+  /**
+   * Origin ヘッダを送らない。Tauri の plugin-http は Rust 側で実行するにもかかわらず WebView の
+   * origin（dev: `http://localhost:5173` / 本番: `http://tauri.localhost`）を Origin として必ず付与する。
+   * ComfyUI を通常起動（`--enable-cors-header` なし）すると origin_only_middleware が
+   * 「Host がループバック かつ Origin のホスト名が Host と不一致」を 403 で落とすため、
+   * ローカルサーバ相手にはこれを立てて Origin を外す。Web ではブラウザが Origin を管理するので無視される。
+   */
+  omitOrigin?: boolean
+}
+
 /** 環境に応じた fetch。Tauri では Rust 側で実行され CORS の制約を受けない */
-export async function appFetch(input: string, init?: RequestInit): Promise<Response> {
+export async function appFetch(input: string, init?: AppFetchInit): Promise<Response> {
+  const { omitOrigin, ...rest } = init ?? {}
   if (isTauri()) {
     // 動的 import: Web ビルドに plugin コードを混ぜない
     const { fetch: tauriFetch } = await import('@tauri-apps/plugin-http')
-    return tauriFetch(input, init)
+    // 空文字の Origin を渡すと plugin-http 側がヘッダごと削除する（unsafe-headers feature が必要）
+    const headers = omitOrigin ? { ...headersToObject(rest.headers), Origin: '' } : rest.headers
+    return tauriFetch(input, { ...rest, headers })
   }
-  return window.fetch(input, init)
+  return window.fetch(input, rest)
+}
+
+function headersToObject(headers: HeadersInit | undefined): Record<string, string> {
+  if (!headers) return {}
+  if (headers instanceof Headers) return Object.fromEntries(headers.entries())
+  if (Array.isArray(headers)) return Object.fromEntries(headers)
+  return { ...headers }
 }
 
 /**

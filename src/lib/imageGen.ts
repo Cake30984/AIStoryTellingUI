@@ -109,8 +109,18 @@ export function fillWorkflow(template: string, req: ImageGenRequest): string {
     .replaceAll('%NEGATIVE%', esc(req.negative ?? ''))
 }
 
-const CORS_HINT =
-  'ComfyUI に接続できません。CORS 許可付きで起動しているか確認してください（例: python main.py --enable-cors-header \'*\'）。'
+const CONN_HINT =
+  'ComfyUI に接続できません。ComfyUI が起動しているか、URL（既定 http://127.0.0.1:8188）が正しいか確認してください。'
+  + 'ブラウザ版から使う場合のみ CORS 許可付きの起動が必要です（例: python main.py --enable-cors-header \'*\'）。'
+
+/**
+ * ComfyUI の origin_only_middleware（`--enable-cors-header` なしの通常起動時に有効）は
+ * 「Host がループバック かつ Origin のホスト名が Host と不一致」を 403 で落とす。
+ * デスクトップ版は appFetch の omitOrigin で Origin を外して回避しているので、ここに来るのは想定外。
+ */
+const FORBIDDEN_HINT =
+  'ComfyUI が 403 を返しました。ComfyUI の Origin チェックにブロックされています。'
+  + 'ブラウザ版では CORS 許可付きの起動（python main.py --enable-cors-header \'*\'）が必要です。'
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
@@ -132,11 +142,13 @@ async function generateComfy(p: ImageProvider, req: ImageGenRequest, signal?: Ab
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt: workflow, client_id: clientId }),
       signal,
+      omitOrigin: true,
     })
   } catch (e) {
     if ((e as Error).name === 'AbortError') throw e
-    throw new Error(CORS_HINT)
+    throw new Error(CONN_HINT + detailOf(e))
   }
+  if (res.status === 403) throw new Error(FORBIDDEN_HINT)
   if (!res.ok) {
     const text = await res.text().catch(() => '')
     throw new Error(`ComfyUI エラー (${res.status}): ${text || res.statusText}`)
@@ -149,7 +161,7 @@ async function generateComfy(p: ImageProvider, req: ImageGenRequest, signal?: Ab
   while (Date.now() < deadline) {
     if (signal?.aborted) throw new DOMException('中断されました', 'AbortError')
     await sleep(1500)
-    const h = await appFetch(`${base}/history/${encodeURIComponent(promptId)}`, { signal })
+    const h = await appFetch(`${base}/history/${encodeURIComponent(promptId)}`, { signal, omitOrigin: true })
     if (!h.ok) continue
     const json = await h.json()
     const entry = json?.[promptId]
@@ -167,7 +179,7 @@ async function generateComfy(p: ImageProvider, req: ImageGenRequest, signal?: Ab
           `subfolder=${encodeURIComponent(img.subfolder ?? '')}`,
           `type=${encodeURIComponent(img.type ?? 'output')}`,
         ].join('&')
-        const v = await appFetch(`${base}/view?${q}`, { signal })
+        const v = await appFetch(`${base}/view?${q}`, { signal, omitOrigin: true })
         if (!v.ok) throw new Error(`生成画像の取得に失敗しました (${v.status})`)
         return v.blob()
       }
@@ -299,8 +311,9 @@ export async function testImageProvider(p: ImageProvider): Promise<{ ok: boolean
   const base = stripSlash(p.baseUrl)
   try {
     if (p.kind === 'comfyui') {
-      const res = await appFetch(`${base}/system_stats`)
+      const res = await appFetch(`${base}/system_stats`, { omitOrigin: true })
       if (res.ok) return { ok: true, message: 'ComfyUI に接続できました。' }
+      if (res.status === 403) return { ok: false, message: FORBIDDEN_HINT }
       return { ok: false, message: `応答はありますがエラーです (${res.status})` }
     }
     if (p.kind === 'modelslab') {
@@ -314,10 +327,22 @@ export async function testImageProvider(p: ImageProvider): Promise<{ ok: boolean
     if (res.ok) return { ok: true, message: 'API に接続できました。' }
     if (res.status === 401 || res.status === 403) return { ok: false, message: 'API キーが無効です。' }
     return { ok: false, message: `応答はありますがエラーです (${res.status})` }
-  } catch {
+  } catch (e) {
+    // 例外の中身（scope 拒否・接続失敗・ヘッダ不正など原因が全く違う）を握り潰さない
     return {
       ok: false,
-      message: p.kind === 'comfyui' ? CORS_HINT : '接続できませんでした。URL と CORS を確認してください。',
+      message:
+        (p.kind === 'comfyui' ? CONN_HINT : '接続できませんでした。URL と CORS を確認してください。') +
+        detailOf(e),
     }
   }
+}
+
+/**
+ * 例外の生メッセージを表示用に短く添える。原因が全く違う（capabilities のスコープ拒否・接続失敗・
+ * ヘッダ不正など）ものが同じ文言に潰れると切り分け不能になるため、握り潰さないこと。
+ */
+function detailOf(e: unknown): string {
+  const msg = e instanceof Error ? e.message : String(e ?? '')
+  return msg ? `［詳細: ${msg}］` : ''
 }

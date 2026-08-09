@@ -30,7 +30,7 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist`。storage は
 - `src-tauri/` — Tauri シェル（Rust）。設定・権限のみで独自ロジックはほぼ無し。`tauri.conf.json`・`capabilities/default.json`（`http`/`fs`/`dialog` 権限。fs は `$APPDATA/**` 再帰読み書きにスコープ）・`src/lib.rs`（plugin 登録のみ）
 
 ### `src/lib/`
-- `platform.ts` — 環境差アダプタ層。`isTauri()`/`appFetch`（Tauri は plugin-http で CORS-free、Web は `window.fetch`）/`saveBlob`（Tauri は保存ダイアログ、Web は `<a download>`）/`PERSIST_KEY`/`stateStorage`（Tauri は state.json のアトミック書込＋500msデバウンス＋close時flush・旧WebViewデータからの初回自動移行）/`CheckpointStore` interface（Web:IndexedDB `aist-checkpoints` / Tauri:`data/checkpoints/<sessionId>/<nodeId>.bin`）。gzip 済みバイナリをそのまま扱う
+- `platform.ts` — 環境差アダプタ層。`isTauri()`/`appFetch`（Tauri は plugin-http で CORS-free、Web は `window.fetch`。`omitOrigin: true` で Origin ヘッダを外す＝ComfyUI を通常起動で叩くのに必須。`unsafe-headers` feature 前提）/`saveBlob`（Tauri は保存ダイアログ、Web は `<a download>`）/`PERSIST_KEY`/`stateStorage`（Tauri は state.json のアトミック書込＋500msデバウンス＋close時flush・旧WebViewデータからの初回自動移行）/`CheckpointStore` interface（Web:IndexedDB `aist-checkpoints` / Tauri:`data/checkpoints/<sessionId>/<nodeId>.bin`）。gzip 済みバイナリをそのまま扱う
 - `checkpoint.ts` — チェックポイント用 gzip ヘルパ（`gzipText`/`gunzipText`）
 - `providers.ts` — `Provider` 型・プリセット・`parseModelRef`/`makeModelRef`/`splitRef`/`modelRefLabel`
 - `openrouter.ts` — SSE ストリーミング補完・モデル一覧取得（provider オブジェクト駆動）。送信直前に `withCacheControl` を通す（**Anthropic 系にだけ** `cache_control` を2箇所付ける。それ以外は同一参照で素通し。PC-C）。`ChatParams.jsonSchema`＋`jsonMode` を渡すと `response_format` を付ける（schema は strict＋OpenRouter なら `provider:{require_parameters:true}`＝スキーマを無視する上流へ回されるのを防ぐ）。**弾かれたら `schema`→`object`→素と1段ずつ落として投げ直し、通った段をモデルごとに記憶**（プロセス内のみ・非永続）＝対応判定が外れても壊れない。**降格の判定はエラー文言に頼らず 401/403/429 以外の失敗すべて**（自前の互換サーバは曖昧なエラーを返すため）。モードを渡さない呼び出しのリクエストは従来と1バイトも変わらない
@@ -226,6 +226,7 @@ Play 領域:
 - **`<a download>` は Tauri の WebView で機能しない**。ファイル DL は必ず `io.ts` の `downloadBundle`/`downloadBlob`（内部で `saveBlob` 経由）を使う
 - **`isTauri()` 分岐は `platform.ts`（と `imageStore.ts`）の外に書かない**。コンポーネント・store に環境分岐を持ち込まない
 - **Tauri plugin の JS パッケージ（`@tauri-apps/plugin-*`）は必ず動的 import**（Web バンドルを汚さない・Web 実行時に評価させない）
+- **`capabilities/default.json` の http スコープはポート成分 `:*` を省略しない**（`http://*:*`）。`http://**` と書くとポートが空文字＝デフォルトポート 80/443 限定になり、ローカルサーバ（ComfyUI の :8188 等）が `url not allowed on the configured scope` で全滅する。検証は URLPattern の **constructor-string 形式**で行うこと（object 形式は省略した `port` が `*` に既定化されて誤判定する）
 - **画像生成のプロンプトへ定型タグを UI 側で結合しない**。結合は `generateImage`（imageGen.ts）1箇所のみ。`ImageJob.prompt`/`SceneIllustration.prompt` は結合前のユーザープロンプトを保つ
 - **構造化出力のパース失敗行は必ず narration に落とす**（graceful degradation）。名前解決は `matchCharacterByName`（`structured.ts`）に一本化し、他所でコピーしない
 - **構造化レンダラのフォールバック判定はメッセージ単位**（`hasStructuredLines`）。トグルでレンダラを直接切り替えると旧平文・フォーマット無視応答で表示が崩れる
@@ -295,9 +296,9 @@ Play 領域:
 
 **この節には「まだ手を付けていないこと」だけを置く。** 決着した項目は下の「決着済み（参照用）」へ移す。
 
-- **T1 で判明した既知の問題**: ①選択肢生成中に本編生成が始まると選択肢側 AbortController が追従せず `Cannot read properties of null (reading 'signal')`（再現手順が不明で切り分け未着手のまま据え置き）②ComfyUI が通常起動（`--enable-cors-header` なし）で接続できない＝設計通りでないバグ。**未解決・現在も再現する**。appFetch 未置換経路や `isTauri()` 誤判定を疑い切り分けが必要（詳細は `docs/設計_Tauri化.md`）
+- **T1 で判明した既知の問題**: ①選択肢生成中に本編生成が始まると選択肢側 AbortController が追従せず `Cannot read properties of null (reading 'signal')`（再現手順が不明で切り分け未着手のまま据え置き）
 - **T4（配布）**: NSIS・GitHub Releases。ユーザー判断で当面見送り（まだ公開しない）
-- **ComfyUI 実機動作確認・ワークフローテンプレ拡充**（SDXL 以外・LoRA ノード入り）
+- **ワークフローテンプレ拡充**（SDXL 以外・LoRA ノード入り）。※ComfyUI の実機動作確認は**接続テスト・実生成（`/prompt`→`/history`→`/view`）とも完了（2026-08-08）**。通常起動での接続不可（旧「T1 の既知の問題②」）も原因特定・修正済み。残る未検証は plugin-http 経由の POST とバイナリ blob のみ（`docs/設計_Tauri化.md` の T1 節）
 - **openai-image 系の実プロバイダ確認**（`response_format: b64_json` 非対応 API への追従が必要になったら `imageGen.ts` の openai 経路にバリエーション追加）
 
 ### 公開に向けた未着手フェーズ（最大の残ブロック）

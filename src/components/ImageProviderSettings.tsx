@@ -37,8 +37,9 @@ export default function ImageProviderSettings() {
     <div className="field">
       <label>画像生成の接続先</label>
       <div className="desc">
-        アバター・挿絵の生成に使います。ComfyUI はローカル起動時に CORS 許可が必要です（例:{' '}
-        <code>python main.py --enable-cors-header '*'</code>）。API キーはこのブラウザ内にのみ保存されます。
+        アバター・挿絵の生成に使います。ComfyUI は通常起動のまま使えます（デスクトップ版）。ブラウザ版から使う場合のみ
+        CORS 許可付きの起動が必要です（例: <code>python main.py --enable-cors-header '*'</code>）。API
+        キーはこの端末内にのみ保存されます。
       </div>
 
       {imageProviders.map((p) => (

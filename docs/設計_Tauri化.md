@@ -139,11 +139,48 @@ Rust command `stream_chat(url, headers, body, channel)` を自作: `reqwest` の
 ### 既知の問題（次セッションで対応。T1 の完了自体は妨げない）
 
 1. **選択肢生成中に次シーンの本編生成が始まると、選択肢生成側の AbortController が追従せず `Cannot read properties of null (reading 'signal')` が発生（3回試行後にエラー表示）**。本編生成の中断は `stop`/`stopChoices`/`stopReview` に独立済み（V5d）だが、「次の本文の生成を開始したら、進行中の選択肢生成も自動的に中断する」導線が無い。本編生成開始時に `stopChoices` 相当のキャンセルを先んじて呼ぶ修正が必要。
-2. **ComfyUI が `--enable-cors-header` なしの通常起動では接続できなかった（設計通りの挙動ではない＝バグ）**。T1 の目的の一つが「plugin-http で Rust 側から HTTP を実行し CORS 制約を受けない」ことである以上、Tauri シェルで起動している限り ComfyUI 側のフラグは不要になるはずで、これは明確に設計との齟齬。考えられる原因（次セッションで切り分け）:
-   - `ImageProviderSettings`/`ImageGenModal`/`imageGen.ts` の接続テスト・生成経路のどこかに `appFetch` へ未置換の `fetch` が残っている、または `imageGen.ts` の `appFetch` importが効いていない（ビルドキャッシュ等）
-   - 検証時にブラウザ版（`npm run dev`、ポート5173をブラウザで直接開いた場合）で確認してしまい、Tauri ウィンドウ経由ではなかった
-   - `isTauri()` の判定（`'__TAURI_INTERNALS__' in window`）が何らかの理由で false になっている（生成対象のiframe/worker等、別コンテキストで実行されている可能性）
-   - plugin-http 自体は CORS を無視するが、ComfyUI 側のレスポンスヘッダ欠如が別の理由（例: リダイレクトやcontent-type起因)でブロックされている
+2. ~~**ComfyUI が `--enable-cors-header` なしの通常起動では接続できなかった**~~ → **原因特定・修正済み（2026-08-08）。下の「ComfyUI にデスクトップ版から接続できない」節を参照。CORS は無関係だった**（設計「Tauri なら ComfyUI 側のフラグは不要」自体は正しい）
+
+### ComfyUI にデスクトップ版から接続できない（2026-08-08 解決）
+
+**症状**: `--enable-cors-header` なしで起動した ComfyUI に、デスクトップ版から接続できない。
+
+**原因は独立に 2 つあった**。①スコープがポート付き URL を弾いていた（そもそもリクエストが出ていなかった）②Origin ヘッダで ComfyUI の CSRF 対策に 403 される。①を直すと②が露出する関係なので、両方直さないと通らない。
+
+#### 原因①: capabilities の URL パターンがポートを許していなかった
+
+`capabilities/default.json` の `{"url": "http://**"}` は、**ポート成分が空文字＝デフォルトポート限定**として解釈される。plugin-http のスコープは constructor-string 形式で `UrlPattern` を組み（`scope.rs` の `parse_url_pattern`）、pathname/search/hash が空のときだけ `*` に補正するが、**port は補正しない**。結果、`http://127.0.0.1:8188/...` は `url not allowed on the configured scope` で拒否される。**OpenRouter が動いていたのは https の 443＝デフォルトポートだったから**で、ローカルサーバ全般が使えない状態だった。
+
+**修正**: スコープを `http://*:*` / `https://*:*` に変更（ポート成分 `:*` を明示）。
+
+**落とし穴**: URLPattern を object 形式（`{protocol, hostname, ...}`）で検証すると、省略した `port` が `*` に既定化されるため**マッチすると誤判定する**。Tauri が使うのは constructor-string 形式なので、検証もその形で行うこと。
+
+#### 原因②: plugin-http が付ける Origin ヘッダで 403
+
+**CORS ではなく ComfyUI の CSRF 対策**。ComfyUI は `--enable-cors-header` を「CORS ヘッダを足すフラグ」ではなく **`origin_only_middleware` と排他のフラグ**として扱う（`server.py`: `if args.enable_cors_header: … else: middlewares.append(create_origin_only_middleware())`）。フラグなし起動だと「Host がループバック かつ Origin のホスト名が Host と不一致」の全リクエストを **403** で落とす。一方 `tauri-plugin-http` は Rust 側で実行するにもかかわらず **WebView の origin を Origin ヘッダとして必ず付与する**（`commands.rs` の "ensure we have an Origin header set"）。dev は `http://localhost:5173`、本番 Windows は `http://tauri.localhost` が乗るため Host（`127.0.0.1:8188`）と食い違い、403 になっていた。
+
+実測（稼働中の ComfyUI に curl で直接）: Origin なし→200 / `Origin: http://127.0.0.1:8188`→200 / `Origin: http://localhost:5173`→**403** / Referer だけ→200。
+
+**修正（②に対して）**:
+
+- `src-tauri/Cargo.toml` の `tauri-plugin-http` に **`unsafe-headers` feature** を付ける。これが無いと呼び出し側の Origin は forbidden header として捨てられ、上書きもできない。
+- `platform.ts` の `appFetch` に **`omitOrigin` オプション**を追加。Tauri 経路でのみ `Origin: ''` を送る（plugin-http は空の Origin をヘッダごと削除する実装。`commands.rs` の "Some services do not like Origin header"）。Web ではブラウザが Origin を管理するので無視。**環境分岐を platform.ts の外に出さないため、呼び出し側は「Origin を外したい」という意図だけを宣言する**。
+- `imageGen.ts` の ComfyUI 経路 4 箇所（`/prompt`・`/history`・`/view`・接続テストの `/system_stats`）で `omitOrigin: true`。403 は専用メッセージに分岐（従来は `res.ok === false` なので CORS ヒントに落ちず「応答はありますがエラーです (403)」と出ていた＝誤誘導）。
+- 設定 UI とエラー文言を「デスクトップ版は通常起動のままでよい／CORS 許可が要るのはブラウザ版だけ」に修正。
+
+**注意**: `unsafe-headers` は Origin 以外の forbidden header（Host・Cookie・Referer 等）も呼び出し側から指定可能にする。ヘッダを直に触る新規コードを書くときはこの前提を意識すること。
+
+#### 検証結果
+
+`npm run tauri:dev` で **`--enable-cors-header` なしで起動した ComfyUI への接続テスト成功**（2026-08-08）。①だけ直した段階では 403（＝②が露出）、②まで直して 200。
+
+実生成も同日に実機確認済み（`imageGen.ts` を esbuild でバンドルし Node から `generateImage` を直接実行。Node の fetch は Origin を付けないので Origin 除去後の Tauri と同条件）: `fillWorkflow` の置換が `"`・日本語・改行入りで壊れないこと／`POST /prompt` 200／`/history` ポーリングの離脱／`GET /view` → 550KB の `image/png`（PNG シグネチャ一致・1024×1024）まで通過、41.2 秒。**未検証は plugin-http 経由の POST（JSON ボディ）とバイナリ blob だけ**（GET は接続テストで検証済み、POST は OpenRouter で実績あり）。
+
+**環境依存の詰まり方**: 既定ワークフローの `ckpt_name`（`sd_xl_base_1.0.safetensors`）は書き換え前提のプレースホルダなので、そのままだと `ComfyUI エラー (400): {"error":{"type":"prompt_outputs_failed_validation" … "value_not_in_list"}}` の生 JSON が出る。読みやすい日本語への翻訳は公開フェーズ Phase 3（`docs/公開計画_マネタイズと配布.md` §5.7「エラーを日本語の原因に翻訳する」）でまとめて扱う方針とし、今回は入れていない。
+
+#### 教訓: 接続エラーの文言で例外を握り潰さない
+
+この件は「CORS が原因」という**誤った文言**（`catch` で一律に CORS ヒントを返していた）が診断を丸ごと誤らせ、原因①に至るまでに 2 回の切り分けを要した。実際の例外は `url not allowed on the configured scope: …` で、**一目で原因が分かる文字列だった**。`testImageProvider`／`generateComfy` は例外の生メッセージを `［詳細: …］` として必ず添える（`detailOf`）。**推測でエラー文言を書かない・原因の違うものを同じ文言に潰さない**。
 
 ## T2: 環境アダプタ層の整備（保存ダイアログ・ストレージ interface）
 
