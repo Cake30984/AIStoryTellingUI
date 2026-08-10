@@ -60,7 +60,7 @@ function commonHeaders(provider: Provider): Record<string, string> {
   // OpenRouter 推奨の任意ヘッダ（ランキング表示などに使われる）
   if (provider.kind === 'openrouter') {
     headers['HTTP-Referer'] = location.origin
-    headers['X-Title'] = 'AI Storytelling Studio'
+    headers['X-Title'] = 'Delist'
   }
   return headers
 }

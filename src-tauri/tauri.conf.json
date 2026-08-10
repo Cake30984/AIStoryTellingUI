@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "AI Storytelling Studio",
+  "productName": "Delist",
   "version": "0.1.0",
-  "identifier": "com.cake30984.aistorytelling",
+  "identifier": "com.tokatokage.delist",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "AI Storytelling Studio",
+        "title": "デリスト",
         "width": 1280,
         "height": 800,
         "minWidth": 960,

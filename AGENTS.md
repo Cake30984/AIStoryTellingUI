@@ -1,4 +1,7 @@
-# AGENTS.md — AI Storytelling Studio
+# AGENTS.md — デリスト（Delist / Delusion Story）
+
+> **名称（2026-08-10 確定）**: サークル名 **とかとかげ**（ドメイン `tokatokage.com`）／製品名 **デリスト**（正式名称・略さない）、フルネームは **Delusion Story**（副題扱い）。Tauri の `productName` は ASCII の `Delist`、ウィンドウタイトルは `デリスト`。**識別子は `com.tokatokage.delist`（公開後は変更不可＝`%APPDATA%\<identifier>\` がデータ保存先）。**
+> **`cards.ts` の `extensions.aistorytelling` はカードのデータ形式キーなので改名しない**（既存カードが読めなくなる）。改名対象は表示名だけ。
 
 マルチプロバイダ（OpenRouter・OpenAI 互換等）で好きなモデルを使い、AI とのロールプレイ／自動進行する物語づくりを行うクライアント完結型アプリ。**Tauri 2 デスクトップ版が正式版**（`%APPDATA%` 配下にセッション・画像を保存）＋ **Web 版併存**（開発・検証用）。UI 文言・コメントは日本語。ユーザーは日本語でやり取りする。
 
@@ -267,7 +270,7 @@ Play 領域:
 2. **ロジック検証**: 純粋関数・store 関数は esbuild でバンドルして node で直叩き（アサーション形式）。「目視では追えないもの」——byte 一致・注入位置・件数・境界条件——はこちらで固める
 3. **見た目・UX 検証**: dev サーバを起動 → 対象画面へ遷移 → スクリーンショット → 目視判断。console のエラー0件も併せて確認する。**変更した画面は必ず1枚は撮る。** 検証後は seed したデータを片付けてサーバを停止する
 4. 完了報告には**撮った画面と、そこで何を確認したか**を書く（「〜を確認してください」ではなく「〜を確認した」）
-5. **Tauri 固有部**（appFetch/saveBlob/ファイルストレージ）だけは自動確認できないため、`npm run tauri:dev` の手動チェックリストを提示する（本編ストリーミング＋停止／ComfyUI 生成→採用／保存ダイアログでカード PNG・JSON 保存／再起動でデータ保持＝`%APPDATA%\com.cake30984.aistorytelling\data\` の state.json・images/／旧 WebView データの自動移行）
+5. **Tauri 固有部**（appFetch/saveBlob/ファイルストレージ）だけは自動確認できないため、`npm run tauri:dev` の手動チェックリストを提示する（本編ストリーミング＋停止／ComfyUI 生成→採用／保存ダイアログでカード PNG・JSON 保存／再起動でデータ保持＝`%APPDATA%\com.tokatokage.delist\data\` の state.json・images/／旧 WebView データの自動移行）
 
 ## 実装状況
 **主要機能はすべて実装済み**。セッション(RP/物語)・素材ライブラリ（キャラ/世界観/ペルソナ）・ロアブック・グループ会話・シーン管理・タイムライン・選択肢進行・統合レビュー・世界観イベント自動発火・文体切替・マルチプロバイダ・会話編集/削除/作り直し・エクスポート/インポート・出力停止対策、および以下の大型フェーズが完了:

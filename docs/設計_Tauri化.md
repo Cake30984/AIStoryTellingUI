@@ -87,7 +87,7 @@ Rust ツールチェーンが未導入（2026-07-05 確認済み。Node は v24 
 
 - `npm i -D @tauri-apps/cli` / `npm i @tauri-apps/api @tauri-apps/plugin-http`
 - `npx tauri init` で `src-tauri/` を生成。主要設定（`tauri.conf.json`）:
-  - `productName: "AI Storytelling Studio"` / `identifier: "com.cake30984.aistorytelling"` / `version` は package.json と揃える
+  - `productName: "Delist"`（**ASCII。実行ファイル名・インストーラ名になる**。ウィンドウ `title` だけ `デリスト`）／ `identifier: "com.tokatokage.delist"`（**2026-08-10 に `com.cake30984.aistorytelling` から変更。公開後は変更不可＝データ保存先がここで決まる**）／ `version` は package.json と揃える
   - `build`: `beforeDevCommand: "npm run dev"` / `devUrl: "http://localhost:5173"` / `beforeBuildCommand: "npm run build"` / `frontendDist: "../dist"`
   - ウィンドウ: 1280×800・タイトル同名
 - `vite.config.ts`: Tauri 起動時（`process.env.TAURI_ENV_PLATFORM` あり）は `server.strictPort: true`（devUrl とポートがずれると白画面になるため。5173 占有時は `npx kill-port 5173`）

@@ -1,4 +1,4 @@
-# AI Storytelling Studio
+# デリスト（Delist / Delusion Story）
 
 OpenRouter API を使って、好きな LLM で **AI ロールプレイ** と **自動ストーリー進行** を楽しめる Web UI です。
 

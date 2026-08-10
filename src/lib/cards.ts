@@ -112,7 +112,7 @@ function buildCharaCard(character: Character): CharaCardV2 {
       scenario: '',
       first_mes: character.greeting,
       mes_example: character.exampleDialogues,
-      creator_notes: 'AI Storytelling Studio で作成',
+      creator_notes: 'デリストで作成',
       system_prompt: '',
       post_history_instructions: '',
       alternate_greetings: [],
