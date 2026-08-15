@@ -53,7 +53,15 @@ import type {
 import { DEFAULT_UI, normalizeUiPrefs } from './types'
 import { fetchModels, streamChat } from './lib/openrouter'
 import { base64ToBlob, blobToBase64, gcImages, getImage, listImageIds, putImage, putImageAs } from './lib/imageStore'
-import { checkpointStore, PERSIST_KEY, stateStorage } from './lib/platform'
+import { blockStateWrites, checkpointStore, PERSIST_KEY, stateStorage } from './lib/platform'
+import {
+  APP_STATE_VERSION,
+  CURRENT_SCHEMA_VERSIONS,
+  migrateAppState,
+  migrateSubSchemas,
+  type SchemaError,
+  type SchemaVersions,
+} from './lib/schema'
 import { gunzipText, gzipText } from './lib/checkpoint'
 import { normalizeImage } from './lib/avatarGen'
 import { matchCharacterByName, NARRATION_NAMES, parseStructured, plainTextOf } from './lib/structured'
@@ -1268,6 +1276,12 @@ interface AppState {
   imageJobToasts: { jobId: string; label: string }[]
   /** 一時的な案内メッセージ（没入モード起動時など。非永続・info トーストで表示。F2） */
   infoNotice: string | null
+  /**
+   * 永続データを読めなかった理由（R1。非永続・partialize から除外）。
+   * セットされている間は App.tsx が本編を描かず案内画面に差し替え、`blockStateWrites()` で
+   * 保存済みデータへの上書きも封じている＝この状態から通常操作へ戻る導線は作らない。
+   */
+  schemaError: SchemaError | null
   /**
    * ツリー行クリックの本文スクロール先（FB7-B。非永続・partialize から除外）。
    * ChatPanel が消化して null に戻す。seq は同じメッセージへの連続移動でも effect を再発火させるための通番。
@@ -2563,6 +2577,7 @@ export const useStore = create<AppState>()(
         imageJobs: [],
         imageJobToasts: [],
         infoNotice: null,
+        schemaError: null,
         scrollTarget: null,
         characterDraftQueue: [],
         usageLog: [],
@@ -4945,12 +4960,23 @@ export const useStore = create<AppState>()(
       }
     },
     {
-      // クリーンブレイク：Avatar 型刷新（絵文字廃止→画像参照）に伴い persist キーを再度刷新（旧 v2 は破棄）。
-      // 後方互換は不要なため migrate 連鎖は持たない。キー文字列は platform.ts の PERSIST_KEY と共有
-      // （Tauri のファイル backend が旧 WebView localStorage からの移行判定に使う）。
+      // キー文字列は platform.ts の PERSIST_KEY と共有（Tauri のファイル backend が旧 WebView
+      // localStorage からの移行判定に使う）。
       name: PERSIST_KEY,
       storage: createJSONStorage(() => stateStorage),
+      // スキーマ版番（R1）。入れ物＝ここ、セーブデータとカセット定義＝partialize の schemaVersions。
+      // 移行の定義は lib/schema.ts に集約する（**この2行と migrate 本体を消さない**）
+      version: APP_STATE_VERSION,
+      migrate: (persisted, from) => {
+        const result = migrateAppState(persisted, from)
+        if (result.ok) return result.state
+        // 読めないデータを既定値で上書きしない。書き込みを封印したまま案内画面へ（App.tsx）
+        blockStateWrites()
+        return { schemaError: result.error } as Partial<AppState>
+      },
       partialize: (st) => ({
+        // セーブデータ／カセット定義の版番（入れ物の版番が据え置きでも単独で上げられる）
+        schemaVersions: CURRENT_SCHEMA_VERSIONS,
         providers: st.providers,
         // 画像生成の接続先も API キーを含むため localStorage のみ（exportBundle には含めない）
         imageProviders: st.imageProviders,
@@ -4974,7 +5000,18 @@ export const useStore = create<AppState>()(
       // 空の pending メッセージは削除、内容があるものは途中で切れた可能性が高いため
       // truncated を立てて「⤵ 続きを生成」で復帰できるようにする。
       merge: (persisted, current) => {
-        const p = (persisted as Partial<AppState>) ?? {}
+        // セーブデータ／カセット定義の移行はここで毎回判定する（入れ物の版番が変わらない限り
+        // zustand の migrate は呼ばれないため。R1）
+        const sub = migrateSubSchemas(persisted ?? {})
+        if (!sub.ok) {
+          blockStateWrites()
+          return { ...current, schemaError: sub.error }
+        }
+        // 版番はストアの状態としては持ち回らない（書き出しは partialize が毎回付け直す）
+        const { schemaVersions: _versions, ...rest } = (sub.state ?? {}) as Partial<AppState> & {
+          schemaVersions?: SchemaVersions
+        }
+        const p = rest
         // ui は normalizeUiPrefs で現行スキーマへ正規化（旧・段階式の文字列値を数値へ引き継ぐ。F2）
         const merged = { ...current, ...p, ui: normalizeUiPrefs({ ...current.ui, ...(p.ui ?? {}) }) }
         merged.worlds = (merged.worlds ?? []).map((w) => stripLegacyFlagClauses(w)).map((world) => ({

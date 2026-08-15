@@ -5,6 +5,7 @@ import { generateDefaultAvatar, normalizeImage } from './avatarGen'
 import { downloadBlob } from './io'
 import { appConfirm } from './dialogs'
 import { normalizeIntroBindings, normalizeIntroTags, normalizeRoleAssignments, normalizeWorldRoles } from './casting'
+import { APP_VERSION, compareVersions, majorOf } from './version'
 
 function uid(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
@@ -63,6 +64,88 @@ export interface CassetteBundle extends SessionCardBundle {
   description?: string
 }
 
+// ---------- 読み込みの検証入口（R2。docs/設計_公開前実装.md） ----------
+// 全ての読み込み経路（Library の D&D・Sidebar の D&D・store.importAnyFile）は parseCardPng を
+// 通るので、検証はここ1箇所に集約する。**厳格にしすぎない**：未知のフィールドは無視して読み進み、
+// 拒否するのは「本体が古くて正しく読めない（minRuntimeVersion）」「種別・形式が違う」だけ。
+
+/** カードを載せる PNG テキストチャンクのキーワード＝カードの種別 */
+export type CardChunkKeyword = 'aist_cassette' | 'aist_world' | 'aist_persona' | 'chara'
+
+/**
+ * 書き出すカードに刻む「必要な本体バージョン」。
+ * **本体のバージョンに自動追随させない。** カードの中身に破壊的変更を入れて、古い本体では
+ * 半分しか動かなくなる時にだけ手で上げる（自動追随させると、形式が変わっていないのに新しい
+ * 本体で作ったカードを古い本体が一律で拒否するようになる）。
+ */
+const CARD_MIN_RUNTIME_VERSION = '0.1.0'
+
+interface CardRule {
+  label: string
+  /** 受理する spec（種別）。カードに spec が無ければ判定しない（旧カード・chara_card v1 互換） */
+  specs: string[]
+  /**
+   * この本体が読める spec_version。メジャーが上なら拒否し、マイナー増は読み進む（＝未知フィールド無視）。
+   * chara_card は他ツール由来で版が独自に進むため判定しない（undefined）
+   */
+  specVersion?: string
+}
+
+const CARD_RULES: Record<CardChunkKeyword, CardRule> = {
+  aist_cassette: { label: 'ゲームカセット', specs: ['aist_cassette'], specVersion: '1.0' },
+  aist_world: { label: '世界観カード', specs: ['aist_world'], specVersion: '1.0' },
+  aist_persona: { label: 'ペルソナカード', specs: ['aist_persona'], specVersion: '1.0' },
+  chara: { label: 'キャラカード', specs: ['chara_card_v1', 'chara_card_v2', 'chara_card_v3'] },
+}
+
+/**
+ * カードの封筒（`{ spec, spec_version, minRuntimeVersion, data }`）を検証する。
+ * 読めないものは throw する（呼び出し側は全経路でメッセージをそのまま表示している）。
+ */
+export function validateCard(parsed: any, chunk: CardChunkKeyword): void {
+  const rule = CARD_RULES[chunk]
+  if (!parsed || typeof parsed !== 'object') throw new Error('カードのデータが壊れています。')
+
+  // ① 本体が古い場合は明示的に拒否する。黙って半分だけ動くのが最悪の壊れ方
+  const min = parsed.minRuntimeVersion
+  if (typeof min === 'string' && min.trim() && compareVersions(min, APP_VERSION) > 0) {
+    throw new Error(
+      `このカードは本体 v${min.trim()} 以降が必要です（この本体は v${APP_VERSION}）。本体を更新してください。`,
+    )
+  }
+
+  // ② 種別違い（世界観カードをキャラとして読む等）
+  const spec = parsed.spec
+  if (typeof spec === 'string' && spec.trim() && !rule.specs.includes(spec.trim())) {
+    throw new Error(`${rule.label}として読めない形式です（spec: ${spec}）。`)
+  }
+
+  // ③ 形式のメジャー版。マイナー増は前方互換として読み進む
+  const specVersion = parsed.spec_version
+  if (
+    rule.specVersion &&
+    typeof specVersion === 'string' &&
+    specVersion.trim() &&
+    majorOf(specVersion) > majorOf(rule.specVersion)
+  ) {
+    throw new Error(`このカードは新しい形式です（${rule.label} spec_version ${specVersion}）。本体を更新してください。`)
+  }
+
+  // ④ 署名（R8）の検証はここへ相乗りさせる。ただし未署名は拒否せず「作者未確認」として通す方針
+}
+
+/** カードチャンク（base64 の JSON）を復号し、検証を通してから返す */
+function decodeCardChunk(text: string, chunk: CardChunkKeyword): any {
+  let parsed: any
+  try {
+    parsed = JSON.parse(b64decode(text))
+  } catch {
+    throw new Error('カードのデータが壊れています。')
+  }
+  validateCard(parsed, chunk)
+  return parsed
+}
+
 export type ParsedCard =
   | { kind: 'character'; character: Character }
   | { kind: 'world'; world: World }
@@ -79,6 +162,8 @@ interface CharacterExtension {
 interface CharaCardV2 {
   spec: 'chara_card_v2'
   spec_version: '2.0'
+  /** この本体独自の追加キー（R2）。chara_card_v2 を読む他ツールは未知キーとして無視する */
+  minRuntimeVersion: string
   data: {
     name: string
     description: string
@@ -105,6 +190,7 @@ function buildCharaCard(character: Character): CharaCardV2 {
   return {
     spec: 'chara_card_v2',
     spec_version: '2.0',
+    minRuntimeVersion: CARD_MIN_RUNTIME_VERSION,
     data: {
       name: character.name,
       description,
@@ -188,11 +274,12 @@ function characterFromNativeCard(data: any): Character {
 interface WorldCard {
   spec: 'aist_world'
   spec_version: '1.0'
+  minRuntimeVersion: string
   data: Omit<World, never>
 }
 
 function buildWorldCard(world: World): WorldCard {
-  return { spec: 'aist_world', spec_version: '1.0', data: world }
+  return { spec: 'aist_world', spec_version: '1.0', minRuntimeVersion: CARD_MIN_RUNTIME_VERSION, data: world }
 }
 
 /** 世界観を PNG カード（独自形式）として書き出しダウンロードさせる */
@@ -268,6 +355,7 @@ function normalizeWorldFromData(raw: any): World {
 interface PersonaCard {
   spec: 'aist_persona'
   spec_version: '1.0'
+  minRuntimeVersion: string
   data: Omit<Persona, 'avatar'> & { avatar: { color: string } }
 }
 
@@ -275,6 +363,7 @@ function buildPersonaCard(persona: Persona): PersonaCard {
   return {
     spec: 'aist_persona',
     spec_version: '1.0',
+    minRuntimeVersion: CARD_MIN_RUNTIME_VERSION,
     data: { ...persona, avatar: { color: persona.avatar.color } },
   }
 }
@@ -432,7 +521,12 @@ export async function exportCassetteCard(
 
   const normalized = await normalizeImage(cardImageBlob, 1024)
   const pngBytes = new Uint8Array(await normalized.arrayBuffer())
-  const card = { spec: 'aist_cassette', spec_version: '1.0', data: bundle }
+  const card = {
+    spec: 'aist_cassette',
+    spec_version: '1.0',
+    minRuntimeVersion: CARD_MIN_RUNTIME_VERSION,
+    data: bundle,
+  }
   const withChunk = writeTextChunk(pngBytes, 'aist_cassette', b64encode(JSON.stringify(card)))
   const outBlob = new Blob([withChunk as BlobPart], { type: 'image/png' })
   downloadBlob(outBlob, `cassette_${session.title || 'story'}.png`)
@@ -468,14 +562,17 @@ function normalizeSessionBundle(raw: any): SessionCardBundle | null {
   }
 }
 
-/** PNG バイト列からカード情報を解釈する。カードチャンクが無ければ null */
+/**
+ * PNG バイト列からカード情報を解釈する。カードチャンクが無ければ null。
+ * 読める形式でない場合（本体が古い・種別違い・破損）は理由を持った Error を throw する（R2）。
+ */
 export function parseCardPng(bytes: Uint8Array): ParsedCard | null {
   const chunks = readTextChunks(bytes)
 
   // ゲームカセット（W2）はセッションカードより先に判定する
   const cassetteChunk = chunks.find((c) => c.keyword === 'aist_cassette')
   if (cassetteChunk) {
-    const json = JSON.parse(b64decode(cassetteChunk.text))
+    const json = decodeCardChunk(cassetteChunk.text, 'aist_cassette')
     const raw = json.data ?? json
     const bundle = normalizeSessionBundle(raw)
     if (bundle) {
@@ -487,19 +584,19 @@ export function parseCardPng(bytes: Uint8Array): ParsedCard | null {
 
   const worldChunk = chunks.find((c) => c.keyword === 'aist_world')
   if (worldChunk) {
-    const json = JSON.parse(b64decode(worldChunk.text))
+    const json = decodeCardChunk(worldChunk.text, 'aist_world')
     return { kind: 'world', world: normalizeWorldFromData(json.data ?? json) }
   }
 
   const personaChunk = chunks.find((c) => c.keyword === 'aist_persona')
   if (personaChunk) {
-    const json = JSON.parse(b64decode(personaChunk.text))
+    const json = decodeCardChunk(personaChunk.text, 'aist_persona')
     return { kind: 'persona', persona: normalizePersonaFromData(json.data ?? json) }
   }
 
   const charaChunk = chunks.find((c) => c.keyword === 'chara')
   if (charaChunk) {
-    const json = JSON.parse(b64decode(charaChunk.text))
+    const json = decodeCardChunk(charaChunk.text, 'chara')
     // chara_card_v2（data ラッパあり）/ v1（トップレベル）どちらも許容
     const data = json.data ?? json
     const ext = data?.extensions?.aistorytelling

@@ -16,6 +16,8 @@ import DialogHost from './components/DialogHost'
 import CommandPalette from './components/CommandPalette'
 import { useGlobalShortcuts } from './lib/shortcuts'
 import { ensureAudio, setMasterVolume } from './lib/ambientAudio'
+import { stateLocationLabel } from './lib/platform'
+import { schemaErrorMessage } from './lib/schema'
 import { Icon, type IconName } from './components/icons'
 
 // 積層トーストの1件。autoCloseMs があれば一定時間後に自動で onClose を呼ぶ（UI-0）
@@ -71,6 +73,7 @@ export default function App() {
     dismissImageJobToasts,
     infoNotice,
     setInfoNotice,
+    schemaError,
     ui,
   } = useStore()
   // storage は async 化済み（Web は同期 localStorage・Tauri は T3 のファイル backend）。
@@ -102,11 +105,13 @@ export default function App() {
   }, [hydrated])
 
   // 起動時に木へ対応しない孤児チェックポイント（書込み中断等の残骸）を掃除する（C3）。
-  // 画像記録のバックフィル（FB6-A・初回1回）も同じタイミングで裏実行する
+  // 画像記録のバックフィル（FB6-A・初回1回）も同じタイミングで裏実行する。
+  // スキーマを読めなかった時は走らせない（既定値の state を基準に実データを消しかねないため。R1）
   useEffect(() => {
-    if (!hydrated) return
+    if (!hydrated || schemaError) return
     void useStore.getState().cleanupOrphanCheckpoints()
     void useStore.getState().backfillImageLogs()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hydrated])
 
   // リーダー設定を CSS 変数へ反映（UI-4・F2で数値化）
@@ -142,10 +147,36 @@ export default function App() {
 
   if (!hydrated) {
     return (
-      <div className="app">
+      <div className="app solo">
         <div className="main">
           <div className="empty">
             <p>読み込み中…</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // 保存データを読めなかった場合（R1）。本編を描かず、上書きしていないことと退避手順だけを伝える。
+  // 「無視して続ける」は置かない（続けた先の保存が全部封印されているため、できることが無い）
+  if (schemaError) {
+    return (
+      <div className="app solo">
+        <div className="main">
+          <div className="empty">
+            <div className="schema-block">
+              <h2>このデータはこのバージョンでは読めません</h2>
+              <p>{schemaErrorMessage(schemaError)}</p>
+              <p>
+                保存されているデータは<strong>書き換えていません</strong>。このまま本体を新しいバージョンへ
+                更新すると、そのまま読み込めます。
+              </p>
+              <p>
+                更新の前に、次の場所をコピーしてバックアップを取ってください。
+                <br />
+                <code>{stateLocationLabel()}</code>
+              </p>
+            </div>
           </div>
         </div>
       </div>

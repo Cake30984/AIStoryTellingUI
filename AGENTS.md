@@ -28,12 +28,12 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist`。storage は
 各ファイルの「現在の責務」を1行で。深い経緯は `docs/設計_*.md` を参照。
 
 - `src/types.ts` — 全データ型（**最初に読む**）
-- `src/store.ts` — zustand ストア。状態・全アクション・永続化（クリーンブレイク・移行なし）・状態エンジン（関係性 prose／事実の数）・世界観イベント自動発火・チェックポイント記録/復元など中核ロジック
+- `src/store.ts` — zustand ストア。状態・全アクション・永続化（`version`/`migrate`＝移行の定義は `lib/schema.ts`。R1）・状態エンジン（関係性 prose／事実の数）・世界観イベント自動発火・チェックポイント記録/復元など中核ロジック
 - `src/styles/` — `index.css` の分割先6ファイル（`tokens`/`base`/`layout`/`chat`/`composer`/`panels`.css。`index.css` は順に `@import` するだけ）。意味色・z-index・spacing・リーダー設定用の CSS 変数は `tokens.css` の `:root` に集約
 - `src-tauri/` — Tauri シェル（Rust）。設定・権限のみで独自ロジックはほぼ無し。`tauri.conf.json`・`capabilities/default.json`（`http`/`fs`/`dialog` 権限。fs は `$APPDATA/**` 再帰読み書きにスコープ）・`src/lib.rs`（plugin 登録のみ）
 
 ### `src/lib/`
-- `platform.ts` — 環境差アダプタ層。`isTauri()`/`appFetch`（Tauri は plugin-http で CORS-free、Web は `window.fetch`。`omitOrigin: true` で Origin ヘッダを外す＝ComfyUI を通常起動で叩くのに必須。`unsafe-headers` feature 前提）/`saveBlob`（Tauri は保存ダイアログ、Web は `<a download>`）/`PERSIST_KEY`/`stateStorage`（Tauri は state.json のアトミック書込＋500msデバウンス＋close時flush・旧WebViewデータからの初回自動移行）/`CheckpointStore` interface（Web:IndexedDB `aist-checkpoints` / Tauri:`data/checkpoints/<sessionId>/<nodeId>.bin`）。gzip 済みバイナリをそのまま扱う
+- `platform.ts` — 環境差アダプタ層。`isTauri()`/`appFetch`（Tauri は plugin-http で CORS-free、Web は `window.fetch`。`omitOrigin: true` で Origin ヘッダを外す＝ComfyUI を通常起動で叩くのに必須。`unsafe-headers` feature 前提）/`saveBlob`（Tauri は保存ダイアログ、Web は `<a download>`）/`PERSIST_KEY`/`stateStorage`（Tauri は state.json のアトミック書込＋500msデバウンス＋close時flush・旧WebViewデータからの初回自動移行）/`blockStateWrites`＋`stateLocationLabel`（スキーマを読めなかった時に書き込みを封印し、バックアップ場所を案内する。R1）/`CheckpointStore` interface（Web:IndexedDB `aist-checkpoints` / Tauri:`data/checkpoints/<sessionId>/<nodeId>.bin`）。gzip 済みバイナリをそのまま扱う
 - `checkpoint.ts` — チェックポイント用 gzip ヘルパ（`gzipText`/`gunzipText`）
 - `providers.ts` — `Provider` 型・プリセット・`parseModelRef`/`makeModelRef`/`splitRef`/`modelRefLabel`
 - `openrouter.ts` — SSE ストリーミング補完・モデル一覧取得（provider オブジェクト駆動）。送信直前に `withCacheControl` を通す（**Anthropic 系にだけ** `cache_control` を2箇所付ける。それ以外は同一参照で素通し。PC-C）。`ChatParams.jsonSchema`＋`jsonMode` を渡すと `response_format` を付ける（schema は strict＋OpenRouter なら `provider:{require_parameters:true}`＝スキーマを無視する上流へ回されるのを防ぐ）。**弾かれたら `schema`→`object`→素と1段ずつ落として投げ直し、通った段をモデルごとに記憶**（プロセス内のみ・非永続）＝対応判定が外れても壊れない。**降格の判定はエラー文言に頼らず 401/403/429 以外の失敗すべて**（自前の互換サーバは曖昧なエラーを返すため）。モードを渡さない呼び出しのリクエストは従来と1バイトも変わらない
@@ -45,7 +45,9 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist`。storage は
 - `json.ts` — `extractJson`（モデル出力からの堅牢な JSON 抽出。**`repairJsonText` による修復フォールバック付き**＝素の `JSON.parse` が失敗した時だけ「文字列内の生の改行・タブ」と「末尾カンマ」を直して再挑戦する。モデルが最も多くやる2種の崩れで、直しても意味が変わらないものだけが対象＝途中で切れた出力等は直さない。PC-A 追修）＋`partialString(buf, key)`（**ストリーミング途中の未完成 JSON** から指定キーの文字列値を読めるところまで取り出す純関数。閉じ引用符が未到達ならそこまで返す＝レビューのあらすじをタイプライタ表示するのに使う。PC-A A-1）
 - `structured.ts` — 構造化出力（`@名前「セリフ」`行タグ）のパーサ。全て純粋関数。`parseLine`/`parseStructured`/`matchCharacterByName`（名前解決の一本化窓口）/`hasStructuredLines`（レンダラ分岐用・メッセージ単位）/`plainTextOf`（マークアップ除去）/`NARRATION_NAMES`（`地の文`等の予約話者名＝ラベル非表示救済）。パース失敗行は必ず narration に落とす（graceful degradation）。**話者名は行頭 `@` から最初の `「` まで**（`/^([^「]{1,24})/`）＝後方互換は持たない。旧データに残る感情タグ `@美咲(joy)「…」` は話者チップに `(joy)` が出る（`matchCharacterByName` の前方一致でアイコンは正しく解決される）、`@地の文(感情)「…」` はラベル非表示の救済が効かず話者行として描かれる
 - `tokens.ts` — `estimateTokens`/`tokenLevel`/`sceneTokensOf`（現在シーンの推定トークン）＋ペース制御閾値 `SCENE_WIND_DOWN_TOKENS`(3000)/`SCENE_WRAP_UP_TOKENS`(4500)。バッジ・提案チップ・ナッジの3者はこの閾値を共有する（FB5-①）。原文窓（PC3）の予算 `RAW_WINDOW_TOKENS`(12000)/畳み込み率 `RAW_WINDOW_KEEP_RATIO`(0.6)/橋 `RAW_WINDOW_BRIDGE_TOKENS`(1000) もここ
-- `io.ts` — `downloadBundle`/`downloadBlob`（内部で `saveBlob` を呼ぶ）/`parseBundle`（取り込み検証）。バンドル組み立て本体は `store.exportBundle`
+- `io.ts` — `downloadBundle`/`downloadBlob`（内部で `saveBlob` を呼ぶ）/`parseBundle`（取り込み検証。**ホワイトリスト再構築をやめ未知のトップレベルキーはそのまま持ち回る**＝新しい版で足された項目を古い本体が黙って捨てない。R2）。バンドル組み立て本体は `store.exportBundle`
+- `schema.ts` — 永続データのスキーマ版番と移行（R1）。`APP_STATE_VERSION`/`SAVE_DATA_VERSION`/`CASSETTE_DATA_VERSION`＋各移行連鎖＋`migrateAppState`/`migrateSubSchemas`/`schemaErrorMessage`。詳細は「永続化とスキーマ版番」節
+- `version.ts` — 本体バージョン `APP_VERSION`（`vite.config.ts` の define で package.json から注入。参照はこのファイルに一本化）＋`compareVersions`/`majorOf`。カードの `minRuntimeVersion` 判定に使う（R2）
 - `imageStore.ts` — アバター・カード画像ストア。`putImage`/`putImageAs`/`getImage`/`deleteImage`/`listImageIds`/`gcImages`＋`blobToBase64`/`base64ToBlob`＋表示用 `useImageUrl`。内部は `BlobStore` interface（Web:IndexedDB / Tauri:`data/images/<id>.<拡張子>`）。localStorage には画像を入れない
 - `avatarGen.ts` — `generateDefaultAvatar`（イニシャル＋色 canvas）/`normalizeImage`（縮小・PNG化）
 - `png.ts` — PNG tEXt チャンク読み書き（`readTextChunks`/`writeTextChunk`）。**組み立てはセグメント連結方式＝`push(...spread)` は数MB級でスタックオーバーフローするため禁止**
@@ -59,7 +61,7 @@ React 18 + TypeScript + Vite / 状態管理は zustand（`persist`。storage は
 - `ambientAudio.ts` — 環境音の再生エンジン（AM1・React 非依存のモジュールレベル状態）。`ensureAudio`（**ユーザー操作の中から呼ぶ**＝自動再生ポリシー）/`setMasterVolume`/`applyTargets`/`previewSound`/`stopPreview`/`previewingSound`/`stopAll`。**試聴はピン再生と別チャンネル＋世代トークンで `await` を守る**（相乗り・トークン無しだと、デコード待ちの隙間に次のクリックが入って前の音のノードが迷子になり「試聴が止まらない」／試聴停止でピンの音まで巻き添えで切れる）。**声は soundId ごとに1つ**（同じ音の近接ピンは max で畳む＝二重再生で音量が跳ねない）・`loop=true`・目標音量へ一定速度追従（`RATE=0.4/s`）・0 が 1.5 秒続いたら source を破棄。`<audio loop>` は継ぎ目のギャップと音量制御の粗さのため使わない
 - `ambient.ts` — 環境音ピンの位置解決と音量計算（AM1）。純関数＝`ambientGain`（raised cosine・両端の傾き0）/`clampLineIndex`/`resolvePinAnchor`/`pinsByAnchor`（messageId→行番号→ピンの索引）/`mergeTargets`（soundId ごとに max・上位 `AMBIENT_MAX_VOICES`=3本）＋フック `useAmbientScape`（80ms ティックでマーカーの実測 Y を読み `applyTargets`）。`AMBIENT_DEFAULT_RADIUS`/`AMBIENT_RADIUS_CHOICES`/`AMBIENT_RADIUS_LIMITS`/`PIN_MARK_ATTR`。半径の入力 UI は `AmbientRadiusField`（3択ボタン＋スライダーの二段構え。モーダルとピンのメニューで共有）
 - `imageJobs.ts` — バックグラウンド画像生成ジョブの型（`ImageJobTarget`/`ImageJob`）とヘルパ。Blob を含むため **partialize から除外**。AbortController はモジュールレベル `Map`（`registerJobAbort`/`clearJobAbort`/`abortJobController`）。`useBlobUrl` フック
-- `cards.ts` — キャラカード（`chara_card_v2` 互換）／世界カード（`aist_world`）／ペルソナカード（`aist_persona`）／ゲームカセット（`aist_cassette`＝開始状態に初期化したセッション＋素材＋画像の全部入り＋紹介文メタ）の組み立て・解釈。`exportCharacterCard`/`exportWorldCard`/`exportPersonaCard`/`exportCassetteCard`/`parseCardPng`/`attachCardImage`＋`freshSessionOf`（プレイ記録・モデル参照を初期化。カセット下書きの種にも使う・export）。画像収集/サイズ確認/model 除去は `collectCardImages`/`confirmImageSize`/`stripCharacterModels`。`model`/`avatar.imageId` は通常カードから除外（カセットのみ同梱）。**セッションカード（`aist_session`）は FB3-D で読み書きとも撤去**（過去に書き出した PNG は読めない。共有はカセット・バックアップは System のデータ書き出し）
+- `cards.ts` — キャラカード（`chara_card_v2` 互換）／世界カード（`aist_world`）／ペルソナカード（`aist_persona`）／ゲームカセット（`aist_cassette`＝開始状態に初期化したセッション＋素材＋画像の全部入り＋紹介文メタ）の組み立て・解釈。`exportCharacterCard`/`exportWorldCard`/`exportPersonaCard`/`exportCassetteCard`/`parseCardPng`/`validateCard`/`attachCardImage`＋`freshSessionOf`（プレイ記録・モデル参照を初期化。カセット下書きの種にも使う・export）。画像収集/サイズ確認/model 除去は `collectCardImages`/`confirmImageSize`/`stripCharacterModels`。`model`/`avatar.imageId` は通常カードから除外（カセットのみ同梱）。**セッションカード（`aist_session`）は FB3-D で読み書きとも撤去**（過去に書き出した PNG は読めない。共有はカセット・バックアップは System のデータ書き出し）。**読み込みの検証入口は `validateCard` 1本**（全経路が `parseCardPng` を通る。R2）＝`minRuntimeVersion`（**本体が古ければ明示的に拒否**＝黙って半分だけ動かせない。書き出し側は `CARD_MIN_RUNTIME_VERSION` を刻む。**本体バージョンに自動追随させない**）／`spec`（種別違い）／`spec_version`（メジャーが上なら拒否・マイナー増と未知フィールドは読み進む）。R8 の署名検証もここへ相乗りさせる
 - `useCardDrop.ts` — PNG カード D&D 受付フック（`dragOver`＋`dropProps`）
 - `useMultiSelect.ts` — カード/セッション一覧の複数選択フック（Ctrl/Cmd=個別トグル・Shift=範囲・右クリック選択）。`handleClick` は修飾キー付きのみ true（＝開かない）。FB2-D
 - `modalStack.ts` — `useModalEscape`（最前面モーダルだけ Escape で閉じる）/`modalStackSize`
@@ -113,7 +115,7 @@ Play 領域:
 
 - `要件定義書.md` — 利用者視点の機能要件（実装非依存）
 - `公開計画_マネタイズと配布.md` — 公開に向けた事業判断と、それに紐づく**公開前実装要件**（2026-07-25 合意・**2026-08-10 に商品構成と実装順序を改訂**）。製品の位置づけ（VN ではなく「挿絵入りの本」＝立ち絵・全面背景は廃止）／プラットフォーム規約（DLsite＝棚・BOOTH＝母艦・Steam 回避・AI生成フロア判定・SPLL・成人向けの3分割）／三層モデルと価格（**入口は無料版＋無料カセット**。有料カセットとの差は質でなく**長さ**）／マーケティング（**2026-08-11 に全面改訂＝DLsite をオプションに降格し、集客の本体を「製品の出力物」へ**。理由＝①ツール棚に流入が無い〔販売数は0〜10件が大半＝棚ではなくレジ〕②**DLsite は無料配布ができない**〔確定〕③接続依存・単体非動作の可否が未確認。**今後 DLsite の規約に製品設計を合わせない**）／必要手続き（問い合わせは送るが**回答を待たずに Phase 1〜3 を進める**）／**実装要件**（無料版と有料版の線引きと抜け道7件・ビルド分離・認証はまず作らない・カセット署名〔暗号化ではなく〕・`schemaVersion` 追加＝公開ブロッカー・初回ウィザード＋**ローカルモデル**）／実装順序 Phase 1〜5（**抜け道潰しは Phase 2 → Phase 4 へ後退し、ファネルと需要検証が前**）
-- `設計_公開前実装.md` — 上記の**事業判断を実装へ落とす側**（R1〜R10・**全て未着手**）。**R5' ローカルモデルの通し動作検証が Phase 2 の最優先**（DLsite の「接続が必要な作品は不可」への唯一の反論材料＝検証前にこの主張をしない）／**R10 物語の書き出し＝集客の本体**（DLsite 降格で、許可も常駐も要らない集客経路がこれだけになった。要件は「出力できる」でなく「貼りたくなる」）。R1 `schemaVersion`+migrate（公開ブロッカー）／R2 カード検証入口＋`parseBundle` 未知キー保存／R3 **API キーを平文 `state.json` から OS 資格情報ストアへ**（現状 `partialize` が `providers`/`imageProviders` をそのまま永続化＝キーが平文。Stronghold はパスワードを要求するので不採用）／R4 **OpenRouter OAuth（PKCE）**＝コピペを消す（無料になる話ではない）・手動貼付は残す／R5 初回ウィザード（Gemini 無料枠を無条件の初期値にしない＝入力が改善利用されうる旨を添える・ローカルモデルは「最初の5分」でなく継続利用の受け皿）／R6 **体験用カセットは3シーン以内**（1ターンに複数回呼ぶので5シーンだと無料枠の日次上限に触れて途中で止まる）／R7 無料版の境界＝**`SessionOverlay` だけ開ける**（素材は閉じたまま。ただし `addDiscoveredCharacter` が素材に書くので a/b 判断が Phase 0 に残る）＋ビルド分離／R8 カセット署名（**同一性証明にはならない**・初期は未署名も読む）／R9 配布（CSP・更新通知は入れる／**コード署名は計測後に判断**）
+- `設計_公開前実装.md` — 上記の**事業判断を実装へ落とす側**（R1〜R10・**R1/R2 実装済み〔2026-08-15〕・R3 以降は未着手**）。**R5' ローカルモデルの通し動作検証が Phase 2 の最優先**（DLsite の「接続が必要な作品は不可」への唯一の反論材料＝検証前にこの主張をしない）／**R10 物語の書き出し＝集客の本体**（DLsite 降格で、許可も常駐も要らない集客経路がこれだけになった。要件は「出力できる」でなく「貼りたくなる」）。R1 `schemaVersion`+migrate（公開ブロッカー）／R2 カード検証入口＋`parseBundle` 未知キー保存／R3 **API キーを平文 `state.json` から OS 資格情報ストアへ**（現状 `partialize` が `providers`/`imageProviders` をそのまま永続化＝キーが平文。Stronghold はパスワードを要求するので不採用）／R4 **OpenRouter OAuth（PKCE）**＝コピペを消す（無料になる話ではない）・手動貼付は残す／R5 初回ウィザード（Gemini 無料枠を無条件の初期値にしない＝入力が改善利用されうる旨を添える・ローカルモデルは「最初の5分」でなく継続利用の受け皿）／R6 **体験用カセットは3シーン以内**（1ターンに複数回呼ぶので5シーンだと無料枠の日次上限に触れて途中で止まる）／R7 無料版の境界＝**`SessionOverlay` だけ開ける**（素材は閉じたまま。ただし `addDiscoveredCharacter` が素材に書くので a/b 判断が Phase 0 に残る）＋ビルド分離／R8 カセット署名（**同一性証明にはならない**・初期は未署名も読む）／R9 配布（CSP・更新通知は入れる／**コード署名は計測後に判断**）
 - `環境_ローカルツール_AI用.md` — このマシンで CLI から使えるコマンドの一覧（`winget list`＋`choco list` 由来・2026-07-23 時点）
 - `設計_環境音ピン_実験.md` — 環境音ピン（スクロール連動サウンドスケープ）の**要望まとめ・確定方針**（2026-07-26 合意）。製品方針の文脈（立ち絵・全面背景・BGM を作らない理由／残す視覚聴覚要素の判定軸＝pull型・準備ゼロ・位置固定）・v1 スコープと非スコープ・音源は内蔵カタログのみで blob ストア/GC/カセット同梱が全部不要になる根拠・却下案
 - `設計_環境音ピン.md` — 上記を実装可能な設計へ落としたもの（AM1〜AM3・**実装済み**）。挿絵実装の実測調査を踏まえ、要望書の未決点（アンカー粒度・型・半径・カーブ）を全部確定。アンカーは `{messageId, lineIndex}`＝原文 `split('\n')` の行番号で、**Range 方式は却下し「レンダラの行位置に不可視マーカー要素を差し込む」方式**（マーカーが Y の測定点とガター表示を兼ねる＝位置計算の JS が不要）。半径はチャット領域高さの倍数、カーブは raised cosine、追従は一定速度、同時発音は上位3本、声は soundId ごとに1つ
@@ -191,10 +193,16 @@ Play 領域:
 
 ヘルパ: `mainModelOf(session, character?)`/`reviewModelOf(session)`/`choicesModelOf(session)`（store.ts エクスポート）
 
-## 永続化（クリーンブレイク方針）
-`store.ts` の persist `name: 'ai-storytelling-store-v3'`。**後方互換は持たない（ADR-1）**：`version`/`migrate` は廃止し、破壊的スキーマ変更時は persist キーを変えて旧データを破棄する（optional 追加ならキー据え置き可）。`exportBundle.version` は現行 `1`、`importBundle` は現行スキーマのみ id マージ。
+## 永続化とスキーマ版番（R1・2026-08-15 実装。クリーンブレイク方針は終了）
+`store.ts` の persist `name: 'ai-storytelling-store-v3'`。**公開後を見据えて `version`/`migrate` を導入した**（旧「後方互換は持たない・移行連鎖を全廃」＝ADR-1 に添えられていた前提は失効。ADR-1 本体〔状態の表現方式〕は有効）。 移行の定義は `src/lib/schema.ts` に集約する。
 
-**スキーマ変更時の手順: 型更新 → 初期state/factory更新 → exportBundle/importBundle 反映 → partialize に新フィールド。**（破壊的なら persist キーも更新）
+- **3系統を別々にバージョニングする**（片方の変更でもう片方を壊さないため）。`APP_STATE_VERSION`＝永続化の入れ物（zustand persist の `version`）／`SAVE_DATA_VERSION`＝セーブデータ（`sessions`/`branchTrees`/チェックポイント）／`CASSETTE_DATA_VERSION`＝カセット定義。いずれも現行 `1`
+- 入れ物の版番は zustand が持つ仕組み（`migrate`）に乗る。**セーブ／カセットは `partialize` が書く `schemaVersions: {save, cassette}` を `merge` 側で毎回見る**（入れ物の版番が据え置きでも単独で上げられるようにするため）
+- 移行は `migrations[from]` を1段ずつ適用する連鎖。**段を飛ばす一発変換を書かない**（途中の版から上げてきたデータが素通りする）
+- **読めなかったときは黙って落とさない。** `blockStateWrites()`（`platform.ts`）で以後の書き込みを封印して保存済みデータを原状のまま残し、`AppState.schemaError` を立てて App.tsx が案内画面（`.app.solo` ＋ `.schema-block`。バックアップの場所を提示）に差し替える。**「無視して続ける」導線は作らない**（保存が全部封印されているため、続けても何もできない）
+- `exportBundle.version` は現行 `1`、`importBundle` は現行スキーマのみ id マージ
+
+**スキーマ変更時の手順: 型更新 → 初期state/factory更新 → exportBundle/importBundle 反映 → partialize に新フィールド → 破壊的なら `schema.ts` の該当版番を +1 して移行関数を1本足す。**（persist キーは変えない＝旧データを捨てない）
 
 ## 主要な振る舞い
 - **シーン進行**: `このシーンを終える` → `prepareSceneReview`（要約＋`nextScheduledEvent`＋成長案＋関係値差分。max_tokens 途中切れ対策＝拡大＋`finish_reason==='length'` で最大2回再試行、失敗時は明示エラー。**開始と同時に `reviewProgress` を立てモーダルを開き、あらすじを流し込む**〔`partialString`・16ms スロットリング〕。**`Session.reviewSplit !== false` なら A/B の2本を `Promise.all` で並列実行**〔`reviewController` は1つ共有＝中止で両方止まる・usage は2件記録・**片方が失敗しても続行**してその項目だけ空になる・両方失敗時のみエラー〕。PC-A）→ レビュー確認 → `confirmSceneReview`（成長/イベント反映・関係値加算/気分更新・タイムライン前進・新シーン作成。新シーンのタイトルは 提案タイトル → イベント名 → 連番 の優先＝ユーザー編集を優先。FB5-C）→ `beginScene()` → 選択肢。物語開始は `startStory()`。**導入（`story.opening`）が非空なら AI 生成せずその文章を最初の assistant メッセージとして掲載**（`openingTitle` があれば見出しに採用）→ 選択肢生成＋チェックポイント（FB2-B）
@@ -323,7 +331,7 @@ Play 領域:
 事業判断は `docs/公開計画_マネタイズと配布.md` §6、実装は `docs/設計_公開前実装.md`（R1〜R9）。**順序は 2026-08-10 に改訂。Phase 1 の `schemaVersion` は「唯一あとから足せない」もの**なので他より先に潰す。
 
 - **Phase 0（済＋1件）**: ✅サークル名/製品名/ドメイン・DLsite サークル登録・BOOTH 開設／□ **R7 の a/b 判断**（`SessionOverlay` にキャラを持たせるか＝Phase 1 のスキーマに効く。推奨は a）
-- **Phase 1（公開ブロッカー）**: R1 `schemaVersion` + migrate／R2 カード検証入口＋`parseBundle` 未知キー保存
+- **Phase 1（公開ブロッカー）**: ✅**R1 `schemaVersion` + migrate／R2 カード検証入口＋`parseBundle` 未知キー保存（2026-08-15 実装済み）**
 - **Phase 2（ファネルと集客装置）**: **R5' ローカルモデルの通し動作検証（最優先）**／R3 キーの安全な保存／R4 OpenRouter OAuth／R5 初回ウィザード／**R10 物語の書き出し＋組版改善（＝集客の本体・旧 Phase 3 から繰り上げ）**／公開版の API 案内ページ＋動画
 - **Phase 3（需要検証）**: R9 CSP・更新通知／R6 短編カセット2〜3本（**3シーン以内・本文は人力執筆**）→ ファネル指標を実測。初回生成到達率が低ければ Phase 4 に進まず Phase 2 へ戻る／**BOOTH で無料版＋無料カセットを公開**（無料の入口はここ。DLsite では不可）／制作者向け公開β
 - **Phase 4（線引き）**: Session の書き込み境界・ペルソナのスキーマ・プレイ中の編集経路・R7 ビルド分離・R8 署名。**売れる確証が出てから**（守る相手は「JSON を手書きできる層」＝最初から顧客ではない）
@@ -363,7 +371,7 @@ Play 領域:
   - **イベントの LLM 言語判定発火**: 非再現・早漏発火／**人による承認制発火**: 無粋で没入を損なう、ため不採用
   - **旧来の連続数値（信頼60 等）**: LLM が数値更新を苦手＋機微を非可逆圧縮するため不採用
 - **共有/コミュニティ観点**: 構造（固定 aspect・名前付きイベント・実績）と発火の再現性が「共有可能なゲーム」の要。prose は没入、数は再現、で役割分担
-- **後方互換**: 不要。クリーンブレイク（persist キー変更で旧データ破棄・移行連鎖を全廃）
+- ~~**後方互換**: 不要。クリーンブレイク（persist キー変更で旧データ破棄・移行連鎖を全廃）~~ → **2026-08-15 に終了**。公開後は前提が崩れるため R1 で `version`/`migrate` を導入した（「永続化とスキーマ版番」節）
 
 ## ユーザーの進め方の好み
 - 大きめの要望は「機能検討（設計提案＋選択式質問）→合意→実装→検証→要約報告」の流れを好む

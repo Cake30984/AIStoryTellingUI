@@ -1088,6 +1088,11 @@ export interface EndingRecord {
 }
 
 /** エクスポート/インポート用のデータ束 */
+/**
+ * 全データの書き出し／取り込み単位（JSON バックアップ）。
+ * 読み込み（`io.ts` の `parseBundle`）は未知のトップレベルキーをそのまま持ち回るため、
+ * 新しいバージョンで作られたバンドルは**ここに宣言されていない項目を実体として持ちうる**（R2）。
+ */
 export interface ExportBundle {
   type: 'ai-storytelling-studio'
   version: number

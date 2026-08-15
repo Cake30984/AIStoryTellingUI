@@ -71,10 +71,35 @@ export interface StateStorageLike {
   removeItem(name: string): void | Promise<void>
 }
 
+// --- 読めない永続データの封印（R1） ---
+// スキーマ移行に失敗した状態でアプリを動かすと、既定値で state を上書きしてユーザーのセーブを
+// 復旧不能にする。失敗を検知した時点で以後の書き込みを全て握り潰し、保存済みデータを原状のまま残す。
+let stateWritesBlocked = false
+
+/** 以後の永続化書き込みを封印する（デバウンス待ちの分も捨てる）。解除手段は持たない＝再起動まで */
+export function blockStateWrites(): void {
+  stateWritesBlocked = true
+  if (stateWriteTimer) {
+    clearTimeout(stateWriteTimer)
+    stateWriteTimer = null
+  }
+  pendingStateValue = null
+}
+
+/** 永続データの保存場所（バックアップを促す案内の表示用。identifier は tauri.conf.json と対応） */
+export function stateLocationLabel(): string {
+  return isTauri()
+    ? '%APPDATA%\\com.tokatokage.delist\\data\\state.json'
+    : `ブラウザの localStorage（キー: ${PERSIST_KEY}）`
+}
+
 /** Web 実装（localStorage の薄いラッパ） */
 const webStateStorage: StateStorageLike = {
   getItem: (name) => localStorage.getItem(name),
-  setItem: (name, value) => localStorage.setItem(name, value),
+  setItem: (name, value) => {
+    if (stateWritesBlocked) return
+    localStorage.setItem(name, value)
+  },
   removeItem: (name) => localStorage.removeItem(name),
 }
 
@@ -113,7 +138,7 @@ async function flushStateWrite(): Promise<void> {
     clearTimeout(stateWriteTimer)
     stateWriteTimer = null
   }
-  if (pendingStateValue === null) return
+  if (pendingStateValue === null || stateWritesBlocked) return
   const value = pendingStateValue
   pendingStateValue = null
   try {
@@ -124,6 +149,7 @@ async function flushStateWrite(): Promise<void> {
 }
 
 function scheduleStateWrite(value: string): void {
+  if (stateWritesBlocked) return
   pendingStateValue = value
   if (stateWriteTimer) clearTimeout(stateWriteTimer)
   stateWriteTimer = setTimeout(() => {

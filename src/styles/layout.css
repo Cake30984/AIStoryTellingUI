@@ -9,6 +9,11 @@
 .app.no-side {
   grid-template-columns: 48px 1fr;
 }
+/* レールもサイドバーも出さない全画面（起動中スプラッシュ・スキーマ案内）。
+   付け忘れると .main が先頭列＝48px に入って縦一列に潰れる */
+.app.solo {
+  grid-template-columns: 1fr;
+}
 
 /* ---------- レール（Play/Library/System切替。UI-5・F5でラベル＋暗色面） ---------- */
 .rail {
@@ -571,6 +576,31 @@
 .empty .cta button.ghost {
   background: var(--bg-elev2);
   border: 1px solid var(--border);
+}
+
+/* 保存データを読めなかった時の案内（R1）。文章が続くので中央寄せをやめて読める幅に収める */
+.schema-block {
+  /* 親（.empty）が place-items: center のグリッドなので、幅を指定しないと min-content まで潰れる */
+  width: min(560px, 100%);
+  text-align: left;
+  line-height: 1.7;
+}
+.schema-block h2 {
+  text-align: center;
+  margin-bottom: 14px;
+}
+.schema-block p {
+  margin-bottom: 12px;
+}
+.schema-block code {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 4px 8px;
+  background: var(--bg-elev2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  word-break: break-all;
 }
 
 /* ---------- ナビ（文脈サイドバーの Library 縦ナビ。UI-5でセッション/レール分を分離） ---------- */
