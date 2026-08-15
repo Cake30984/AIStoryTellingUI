@@ -566,6 +566,13 @@ export interface Relation {
  * セッション内で発見・深化した設定の上乗せ（オーバーレイ）。
  * 元 Character/World は不変に保ち、レビュー承認による追記はここへ積む（素材を汚さないため）。
  * 本編プロンプトへは「素材＋オーバーレイ」を合成した実効ビューで注入する。
+ *
+ * **キャラそのものは持たない（R7 = 案 a・2026-08-15 決定）。** 発見キャラ（FB7-E）は
+ * `addDiscoveredCharacter` → `upsertCharacter` で素材（`characters`）に入る。無料版はここを
+ * 閲覧のみにするため発見キャラのキャラ化を出さない、という線引きを採った。ここに
+ * `characters: Character[]` を足す案（b）は、素材とオーバーレイの合成ビュー・カード書き出し・
+ * 配役・状態エンジンの全経路に「素材でないキャラ」を持ち込むため見送っている
+ * （＝**思いつきで足さない**。docs/設計_公開前実装.md R7）。
  */
 export interface SessionOverlay {
   /** 発見追加されたロア（元 World.entries とは別に積む。addedInStory は true 固定） */

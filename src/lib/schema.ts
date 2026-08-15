@@ -16,7 +16,15 @@
 /** 永続化の入れ物の版番（zustand persist の `version`）。v1 が初版 */
 export const APP_STATE_VERSION = 1
 
-/** セーブデータ（sessions / branchTrees / チェックポイント）の版番 */
+/**
+ * セーブデータ（sessions / branchTrees / チェックポイント）の版番。
+ *
+ * **v1 は R7 = 案 a（発見キャラは素材に入れたまま・`SessionOverlay` にキャラを持たせない）を
+ * 前提に確定した**（2026-08-15 決定。docs/設計_公開前実装.md R7）。将来 b へ寝返る場合は
+ * `SessionOverlay` に `characters` を足したうえでこの版番を 2 に上げ、`saveDataMigrations[1]` を
+ * 1本書く（＝**もう「あとから足せない」状態ではない**。migrate が入ったのでスキーマの
+ * 判断を先送りしても復旧可能になった）。
+ */
 export const SAVE_DATA_VERSION = 1
 
 /** カセット定義（cassettes）の版番 */
