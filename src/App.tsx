@@ -12,6 +12,7 @@ import LibraryBar from './components/LibraryBar'
 import SceneReviewModal from './components/SceneReviewModal'
 import SessionEditor from './components/SessionEditor'
 import CastingModal from './components/CastingModal'
+import FirstRunWizard from './components/FirstRunWizard'
 import DialogHost from './components/DialogHost'
 import CommandPalette from './components/CommandPalette'
 import { useGlobalShortcuts } from './lib/shortcuts'
@@ -58,7 +59,6 @@ export default function App() {
     sessions,
     activeId,
     view,
-    setView,
     providers,
     error,
     clearError,
@@ -123,9 +123,12 @@ export default function App() {
     }
   }, [hydrated, schemaError])
 
+  // 使える接続先が無ければ初回ウィザードを開く（R5）。System 画面への強制遷移はやめた
+  // ——ウィザードがその場で接続先を作るところまで面倒を見るため、行き先を奪う必要がない
+  const [showFirstRunWizard, setShowFirstRunWizard] = useState(false)
   useEffect(() => {
     if (!hydrated || !secretsReady) return
-    if (!hasUsableProvider) setView('system')
+    if (!hasUsableProvider) setShowFirstRunWizard(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hydrated, secretsReady])
 
@@ -288,6 +291,8 @@ export default function App() {
         view === 'sessions' && <SceneReviewModal />}
 
       {castingSessionId && <CastingModal sessionId={castingSessionId} />}
+
+      {showFirstRunWizard && <FirstRunWizard onClose={() => setShowFirstRunWizard(false)} />}
 
       {newEditorSession && (
         <SessionEditor session={newEditorSession} onClose={() => setNewEditorId(null)} />

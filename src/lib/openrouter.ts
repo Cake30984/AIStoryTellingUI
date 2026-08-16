@@ -323,3 +323,114 @@ export async function fetchModels(provider: Provider): Promise<OpenRouterModel[]
   const data: OpenRouterModel[] = json.data ?? []
   return data.filter(m => m.id).sort((a, b) => (a.name ?? a.id).localeCompare(b.name ?? b.id))
 }
+
+/** 接続テストの結果種別。R5 のエラー翻訳表と対応させる（ウィザードが `kind` で導線を出し分ける） */
+export type ConnectionTestKind = 'invalid_key' | 'quota' | 'invalid_model' | 'content_filter' | 'unreachable' | 'unknown'
+
+export type ConnectionTestResult =
+  | { ok: true; message: string }
+  | { ok: false; kind: ConnectionTestKind; message: string }
+
+/** レスポンスのエラー文言にコンテンツフィルタ系のキーワードが含まれるか（プロバイダ間で文言がまちまちなため緩めに拾う） */
+function looksLikeContentFilter(text: string): boolean {
+  return /moderation|flagged|content[ _-]?filter|content policy|safety system|blocked by/i.test(text)
+}
+
+function looksLikeModelError(text: string): boolean {
+  return /model/i.test(text) && /not found|does not exist|invalid model|unknown model|no such model/i.test(text)
+}
+
+/**
+ * 極小のリクエストで接続を確認する（R5）。**投げっぱなしにしない**：生の API エラーはここで
+ * 日本語の導線付きメッセージへ翻訳し、呼び出し側（ウィザード）は `kind` で次の一手を出し分ける。
+ */
+export async function testProviderConnection(provider: Provider, model: string): Promise<ConnectionTestResult> {
+  if (!provider.baseUrl.trim()) {
+    return { ok: false, kind: 'unreachable', message: 'Base URL が未入力です。' }
+  }
+  if (!isLocalEndpoint(provider.baseUrl) && !provider.apiKey.trim()) {
+    return { ok: false, kind: 'invalid_key', message: 'API キーが未入力です。貼り付けてください。' }
+  }
+  if (!model.trim()) {
+    return { ok: false, kind: 'invalid_model', message: 'モデルを選択してください。' }
+  }
+
+  let res: Response
+  try {
+    res = await appFetch(`${provider.baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: commonHeaders(provider),
+      omitOrigin: isLocalEndpoint(provider.baseUrl),
+      body: JSON.stringify({
+        model,
+        messages: [{ role: 'user', content: 'Hi' }],
+        max_tokens: 1,
+        stream: false,
+      }),
+    })
+  } catch (e) {
+    return {
+      ok: false,
+      kind: 'unreachable',
+      message: `接続先に到達できませんでした。Base URL や起動状態を確認してください（${(e as Error).message}）。`,
+    }
+  }
+
+  if (res.ok) {
+    const json = await res.json().catch(() => null)
+    if (json?.choices?.[0]?.finish_reason === 'content_filter') {
+      return {
+        ok: false,
+        kind: 'content_filter',
+        message: 'コンテンツフィルタにより応答がブロックされました。モデルを変更してください。',
+      }
+    }
+    return { ok: true, message: '接続できました。' }
+  }
+
+  const text = await res.text().catch(() => '')
+  let detail = text
+  try {
+    detail = JSON.parse(text)?.error?.message ?? text
+  } catch {
+    // JSON でないボディはそのまま使う
+  }
+  const snippet = detail.slice(0, 200)
+
+  if (res.status === 401 || res.status === 403) {
+    if (looksLikeContentFilter(detail)) {
+      return {
+        ok: false,
+        kind: 'content_filter',
+        message: `コンテンツフィルタにより拒否されました。表現の制限が緩いモデルへの変更を検討してください。（${snippet}）`,
+      }
+    }
+    return {
+      ok: false,
+      kind: 'invalid_key',
+      message: `API キーが正しくないか、権限がありません。キーを貼り直してください。（${snippet}）`,
+    }
+  }
+  if (res.status === 429) {
+    return {
+      ok: false,
+      kind: 'quota',
+      message: `利用上限（残高不足またはレート制限）に達しています。課金状況を確認するか、時間をおいて再試行してください。（${snippet}）`,
+    }
+  }
+  if (res.status === 404 || looksLikeModelError(detail)) {
+    return {
+      ok: false,
+      kind: 'invalid_model',
+      message: `モデル名が正しくありません。モデルを選び直してください。（${snippet}）`,
+    }
+  }
+  if (looksLikeContentFilter(detail)) {
+    return {
+      ok: false,
+      kind: 'content_filter',
+      message: `コンテンツフィルタにより拒否されました。モデル選択画面から別のモデルを試してください。（${snippet}）`,
+    }
+  }
+  return { ok: false, kind: 'unknown', message: `接続に失敗しました（HTTP ${res.status}）。${snippet}` }
+}
