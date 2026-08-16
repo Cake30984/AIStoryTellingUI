@@ -23,6 +23,7 @@ import type { AmbientPin, DockTab, Message, Scene, SceneIllustration, Session } 
 import SessionEditor from './SessionEditor'
 import SceneEditor from './SceneEditor'
 import StoryLogModal from './StoryLogModal'
+import StoryExportModal from './StoryExportModal'
 import StatusPanel from './StatusPanel'
 import DiscoveryPanel, { type DiscoveryScope } from './DiscoveryPanel'
 import CharacterDraftModal from './CharacterDraftModal'
@@ -191,6 +192,7 @@ export default function ChatPanel({ session }: Props) {
    */
   const showIllustButtons = useStore((s) => s.imageProviders.length > 0) || !isImageSetupDismissed()
   const [showCassetteEditor, setShowCassetteEditor] = useState(false)
+  const [showExport, setShowExport] = useState(false)
   const [showMenu, setShowMenu] = useState(false)
   const [showFinale, setShowFinale] = useState(false)
   const [speaker, setSpeaker] = useState<string | undefined>(undefined)
@@ -818,6 +820,15 @@ export default function ChatPanel({ session }: Props) {
                 className="menu-item"
                 onClick={() => {
                   setShowMenu(false)
+                  setShowExport(true)
+                }}
+              >
+                <Icon name="download" size={15} /> 物語を書き出す…
+              </button>
+              <button
+                className="menu-item"
+                onClick={() => {
+                  setShowMenu(false)
                   setShowCassetteEditor(true)
                 }}
               >
@@ -1272,6 +1283,8 @@ export default function ChatPanel({ session }: Props) {
       {showCassetteEditor && (
         <CassetteEditor seedSession={session} onClose={() => setShowCassetteEditor(false)} />
       )}
+
+      {showExport && <StoryExportModal sessionId={session.id} onClose={() => setShowExport(false)} />}
 
       {/* 完結オーバーレイ（簡素な演出。将来ここにエンディング CG・スタッフロールを足せる） */}
       {showFinale && session.ending && (

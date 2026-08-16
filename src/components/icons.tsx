@@ -54,6 +54,7 @@ export type IconName =
   | 'alert-triangle'
   | 'panel-right'
   | 'volume-2'
+  | 'copy'
 
 const PATHS: Record<IconName, ReactNode> = {
   'more-horizontal': (
@@ -368,6 +369,12 @@ const PATHS: Record<IconName, ReactNode> = {
       <path d="M11 5 6 9H2v6h4l5 4z" />
       <path d="M15.5 8.5a5 5 0 0 1 0 7" />
       <path d="M18.5 5.5a9 9 0 0 1 0 13" />
+    </>
+  ),
+  copy: (
+    <>
+      <rect x="9" y="9" width="12" height="12" rx="2" />
+      <path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1" />
     </>
   ),
 }

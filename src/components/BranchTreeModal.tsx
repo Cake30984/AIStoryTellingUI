@@ -5,6 +5,7 @@ import { useImageUrl } from '../lib/imageStore'
 import { appConfirm, appPrompt } from '../lib/dialogs'
 import { Icon } from './icons'
 import MenuPopover from './MenuPopover'
+import StoryExportModal from './StoryExportModal'
 
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`
@@ -259,6 +260,7 @@ export function BranchTreeBody({ session }: { session: Session }) {
   const [busyAction, setBusyAction] = useState(false)
   const [tab, setTab] = useState<'tree' | 'starred'>('tree')
   const [menuFor, setMenuFor] = useState<string | null>(null)
+  const [exportNodeId, setExportNodeId] = useState<string | null>(null)
   // 「現在の分岐だけ表示」（非破壊のビュー絞り込み。FB8-D #8）
   const [onlyCurrentPath, setOnlyCurrentPath] = useState(false)
   const busy = generating || busyAction
@@ -566,6 +568,17 @@ export function BranchTreeBody({ session }: { session: Session }) {
                   </button>
                 )}
                 <button
+                  className="menu-item"
+                  disabled={busy}
+                  title="この時点までの進行を書き出します（プレーンテキスト・Markdown・画像カード）"
+                  onClick={() => {
+                    setMenuFor(null)
+                    setExportNodeId(node.id)
+                  }}
+                >
+                  <Icon name="download" size={14} /> ここまでを書き出す
+                </button>
+                <button
                   className="menu-item danger"
                   disabled={busy || onPath}
                   title={onPath ? '現在の分岐上のため削除できません' : ''}
@@ -666,6 +679,10 @@ export function BranchTreeBody({ session }: { session: Session }) {
         )
       ) : (
         <div className="bg-list">{graph.rows.map(renderRow)}</div>
+      )}
+
+      {exportNodeId && (
+        <StoryExportModal sessionId={session.id} nodeId={exportNodeId} onClose={() => setExportNodeId(null)} />
       )}
     </>
   )
