@@ -1,5 +1,6 @@
 import type { OpenRouterModel, Provider, Role } from '../types'
 import { appFetch } from './platform'
+import { isLocalEndpoint } from './providers'
 import { weakerJsonMode, type JsonMode, type JsonSchemaSpec } from './jsonSchemas'
 import { estimateTokens } from './tokens'
 
@@ -57,8 +58,18 @@ function commonHeaders(provider: Provider): Record<string, string> {
     Authorization: `Bearer ${provider.apiKey}`,
     'Content-Type': 'application/json',
   }
-  // OpenRouter 推奨の任意ヘッダ（ランキング表示などに使われる）
-  if (provider.kind === 'openrouter') {
+  /*
+   * OpenRouter 推奨の任意ヘッダ（ランキング表示などに使われる）。
+   *
+   * **ローカルの接続先へは送らない。** 既定の接続先（`kind:'openrouter'`）の Base URL だけを
+   * Ollama / LM Studio に書き換える使い方は自然だが、そのとき種別は openrouter のまま残る。
+   * `X-Title` は単純ヘッダではないためブラウザがプリフライトを打ち、Ollama の
+   * `Access-Control-Allow-Headers` に無いので**本番の POST が全部 CORS で落ちる**
+   * （Web 版のみ。Tauri 版は plugin-http なので CORS 対象外）。
+   * ランキングに載せる相手でもないので、送る意味も無い。
+   * 判定は種別ではなく接続先で行う＝実際の openrouter.ai 宛のリクエストは1バイトも変わらない。
+   */
+  if (provider.kind === 'openrouter' && !isLocalEndpoint(provider.baseUrl)) {
     headers['HTTP-Referer'] = location.origin
     headers['X-Title'] = 'Delist'
   }

@@ -1,10 +1,8 @@
 import { useState } from 'react'
 import { useStore } from '../../store'
 import type { Character } from '../../types'
-import { modelRefLabel } from '../../lib/providers'
 import AvatarField from './AvatarField'
 import CsvInput from '../CsvInput'
-import ModelPicker from '../ModelPicker'
 import { exportCharacterCard } from '../../lib/cards'
 import { appConfirm } from '../../lib/dialogs'
 import ModalShell from '../ModalShell'
@@ -25,9 +23,8 @@ interface Props {
 }
 
 export default function CharacterEditor({ character, onClose, draft, draftNotice, onSaved }: Props) {
-  const { upsertCharacter, deleteCharacter, providers } = useStore()
+  const { upsertCharacter, deleteCharacter } = useStore()
   const [d, setD] = useState<Character>(character)
-  const [showModelPicker, setShowModelPicker] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [dirty, setDirty] = useState(false)
   const patch = (p: Partial<Character>) => {
@@ -228,30 +225,7 @@ export default function CharacterEditor({ character, onClose, draft, draftNotice
             />
           </div>
 
-          <div className="field">
-            <label>専用モデル（任意・会話劇の話者確定時のみ有効）</label>
-            <div className="desc">
-              会話劇でこのキャラクターが話者として確定した場合のみ使用。小説形式・おまかせ生成はセッション本編モデルを使います。
-            </div>
-            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-              <button className="model-chip" style={{ flex: 1 }} onClick={() => setShowModelPicker(true)}>
-                {d.model ? modelRefLabel(d.model, providers) : '未設定（セッション本編モデルを使用）'}
-              </button>
-              {d.model && (
-                <button className="btn" style={{ whiteSpace: 'nowrap' }} onClick={() => patch({ model: undefined })}>
-                  クリア
-                </button>
-              )}
-            </div>
-          </div>
     </ModalShell>
-      {showModelPicker && (
-        <ModelPicker
-          current={d.model ?? ''}
-          onPick={(ref) => patch({ model: ref || undefined })}
-          onClose={() => setShowModelPicker(false)}
-        />
-      )}
     </>
   )
 }

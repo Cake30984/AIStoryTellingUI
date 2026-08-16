@@ -111,7 +111,12 @@ import {
   NEXT_SCENE_SCHEMA,
   reviewSchema,
 } from './lib/jsonSchemas'
-import { defaultOpenRouterProvider, parseModelRef } from './lib/providers'
+import {
+  defaultOpenRouterProvider,
+  isProviderUsable,
+  parseModelRef,
+  providerUnusableMessage,
+} from './lib/providers'
 import {
   castingIssueLabel,
   normalizeIntroBindings,
@@ -807,12 +812,9 @@ export function newDevelopment(text: string): Development {
   return { id: uid(), text, enabled: true }
 }
 
-/**
- * 本編生成に使うモデル参照。
- * chat 群像で話者が確定している場合、そのキャラ専用モデルを優先する。
- */
-export function mainModelOf(s: Session, character?: Character): string {
-  return character?.model?.trim() || s.model || DEFAULT_MODEL
+/** 本編生成に使うモデル参照。 */
+export function mainModelOf(s: Session): string {
+  return s.model || DEFAULT_MODEL
 }
 
 /** レビュー（シーン終了解析）用モデル参照。未指定なら本編モデルを使う */
@@ -1332,7 +1334,6 @@ interface AppState {
   /** カードからのインポート専用。id が既存と衝突する場合は振り直して常に新規追加する */
   importCharacterCard: (c: Character) => void
   deleteCharacter: (id: string) => void
-  bulkSetCharacterModel: (characterIds: string[], modelRef: string) => void
   upsertWorld: (w: World) => void
   /** カードからのインポート専用。id が既存と衝突する場合は振り直して常に新規追加する */
   importWorldCard: (w: World) => void
@@ -2225,9 +2226,10 @@ export const useStore = create<AppState>()(
         const speaker = novel ? undefined : refs.characters.find((c) => c.id === speakerId)
 
         // モデル参照を解決してプロバイダとモデルIDを確定（キャラ別 → セッション本編の優先順）
-        const { provider, model: mainModel } = parseModelRef(mainModelOf(s, speaker), get().providers)
-        if (!provider?.apiKey.trim()) {
-          set({ error: `接続先「${provider?.label ?? ''}」の API キーが未設定です。設定から登録してください。` })
+        const { provider, model: mainModel } = parseModelRef(mainModelOf(s), get().providers)
+        // ローカル接続先（Ollama / LM Studio）はキーを持たないので `isProviderUsable` で見る
+        if (!isProviderUsable(provider)) {
+          set({ error: providerUnusableMessage(provider) })
           return
         }
 
@@ -2302,7 +2304,7 @@ export const useStore = create<AppState>()(
             finishReason = res.finishReason
             get().recordUsage({
               kind: 'main',
-              modelRef: mainModelOf(s, speaker),
+              modelRef: mainModelOf(s),
               upstream: res.usage?.upstream,
               promptTokens: res.usage?.promptTokens ?? 0,
               cachedTokens: res.usage?.cachedTokens ?? 0,
@@ -2374,9 +2376,9 @@ export const useStore = create<AppState>()(
       /** 直近のアシスタント応答に対する選択肢を生成して付与 */
       async function genChoices(session: Session, messageId: string): Promise<void> {
         const { provider, model } = parseModelRef(choicesModelOf(session), get().providers)
-        if (!provider?.apiKey.trim()) {
+        if (!isProviderUsable(provider)) {
           console.warn(
-            `[choices] 選択肢用モデルの接続先「${provider?.label ?? '?'}」にAPIキーが無いため生成をスキップしました。設定で選択肢用モデル/キーを確認してください。`,
+            `[choices] 選択肢用モデルを利用できないため生成をスキップしました: ${providerUnusableMessage(provider)}`,
           )
           return
         }
@@ -2700,15 +2702,6 @@ export const useStore = create<AppState>()(
                 ),
               },
             })),
-          })),
-
-        bulkSetCharacterModel: (characterIds, modelRef) =>
-          set((st) => ({
-            characters: st.characters.map((c) =>
-              characterIds.includes(c.id)
-                ? { ...c, model: modelRef || undefined, updatedAt: Date.now() }
-                : c,
-            ),
           })),
 
         upsertWorld: (w) =>
@@ -3093,8 +3086,8 @@ export const useStore = create<AppState>()(
 
           // レビュー用モデルを解決
           const { provider, model } = parseModelRef(reviewModelOf(s), get().providers)
-          if (!provider?.apiKey.trim()) {
-            set({ error: `接続先「${provider?.label ?? ''}」の API キーが未設定です。` })
+          if (!isProviderUsable(provider)) {
+            set({ error: providerUnusableMessage(provider) })
             return
           }
 
@@ -3981,8 +3974,8 @@ export const useStore = create<AppState>()(
           const scene = s.scenes.find((sc) => sc.id === review.sceneId)
           if (!scene) return
           const { provider, model } = parseModelRef(reviewModelOf(s), get().providers)
-          if (!provider?.apiKey.trim()) {
-            set({ error: `接続先「${provider?.label ?? ''}」の API キーが未設定です。` })
+          if (!isProviderUsable(provider)) {
+            set({ error: providerUnusableMessage(provider) })
             return
           }
           // 過去シーンの再レビューでは、ライブの現在タイムラインではなく既存の次シーンの時刻を使う
@@ -4092,14 +4085,18 @@ export const useStore = create<AppState>()(
           const s = get().sessions.find((x) => x.id === sessionId)
           if (!s) return
           const known = knownSpeakersOf(s, get().characters, get().personas)
+          // **ライブラリに同名がいる場合も「新キャラ」ではない。** 参加していないだけの既存キャラを
+          // ここで作ると同名が二重にできる（レビューの newCharacters 承認経路もここを通る）
+          const library = get().characters.map((c) => ({ id: c.id, name: c.name }))
           set((st) => {
             const queued = st.characterDraftQueue
             const add: { sessionId: string; name: string; note?: string }[] = []
             for (const item of items) {
               const name = item.name.trim()
               if (!name || NARRATION_NAMES.has(name.toLowerCase())) continue
-              // 既存の参加キャラ・ペルソナに解決できる名前は「新キャラ」ではない
+              // 既存の参加キャラ・ペルソナ・ライブラリに解決できる名前は「新キャラ」ではない
               if (matchCharacterByName(name, known)) continue
+              if (matchCharacterByName(name, library)) continue
               const dup = (x: { sessionId: string; name: string }) =>
                 x.sessionId === sessionId && x.name === name
               if (queued.some(dup) || add.some(dup)) continue

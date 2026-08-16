@@ -377,6 +377,11 @@
   grid-template-columns: 1fr 1fr;
   gap: 14px;
 }
+/* グリッド項目も既定は `min-width: auto` ＝ 内容幅より縮まない。
+   長いモデル名を入れた列が `1fr` を無視して広がるのを止める（裏方用モデルの2列）。 */
+.row2 > * {
+  min-width: 0;
+}
 
 .btn {
   display: inline-flex;
@@ -1431,6 +1436,11 @@
   min-height: 0;
   align-items: stretch;
   gap: 14px;
+  /* **flex 項目の既定 `min-width: auto` は内容幅より縮まない。**
+     これが無いと、長いモデル名（`.model-chip`）が中で省略されずに列を押し広げ、
+     モーダル全体が横スクロールする＝「ボタンの表示が崩れる」。
+     ここで 0 を明示して初めて、内側の `min-width: 0` が効いて省略記号まで届く。 */
+  min-width: 0;
 }
 .se-nav-btn {
   display: flex;

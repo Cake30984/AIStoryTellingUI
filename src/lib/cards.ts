@@ -186,7 +186,7 @@ function buildCharaCard(character: Character): CharaCardV2 {
   const description = character.appearance
     ? `${character.persona}\n\n【外見】\n${character.appearance}`
     : character.persona
-  const { avatar, model, ...rest } = character
+  const { avatar, ...rest } = character
   return {
     spec: 'chara_card_v2',
     spec_version: '2.0',
@@ -437,14 +437,6 @@ async function confirmImageSize(totalBytes: number): Promise<boolean> {
   return true
 }
 
-/** キャラの model（ModelRef）は環境固有のため除外する（受け手側で providers[0] にフォールバック） */
-function stripCharacterModels(characters: Character[]): Character[] {
-  return characters.map((c) => {
-    const { model, ...rest } = c
-    return rest as Character
-  })
-}
-
 /**
  * セッションを「開始状態」に初期化する（ゲームカセット書き出し・カセット下書き用。W2 / FB3-D）。
  * プレイ記録（会話・シーン・状態・オーバーレイ・消化イベント・表情）を全て空にし、
@@ -512,7 +504,7 @@ export async function exportCassetteCard(
 
   const bundle: CassetteBundle = {
     session: fresh,
-    characters: stripCharacterModels(refs.characters),
+    characters: refs.characters,
     world: refs.world,
     persona: refs.persona,
     images,

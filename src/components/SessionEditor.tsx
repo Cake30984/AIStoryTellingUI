@@ -15,7 +15,7 @@ import NumberInput from './NumberInput'
 import IntroTagDefEditor from './IntroTagDefEditor'
 import IntroTagFields from './IntroTagFields'
 
-type PickerTarget = 'main' | 'review' | 'choices' | 'bulk'
+type PickerTarget = 'main' | 'review' | 'choices'
 /** FB8-E3: 「基本＝誰と・どの世界で」「物語＝どう始まるか」「進行」「AIと出力」の4タブ */
 type Tab = 'basic' | 'story' | 'progress' | 'ai'
 
@@ -25,8 +25,7 @@ interface Props {
 }
 
 export default function SessionEditor({ session, onClose }: Props) {
-  const { updateSession, characters, worlds, personas, providers, setView, bulkSetCharacterModel } =
-    useStore()
+  const { updateSession, characters, worlds, personas, providers, setView } = useStore()
   const [d, setD] = useState<Session>(session)
   const [tab, setTab] = useState<Tab>('basic')
   const [pickerTarget, setPickerTarget] = useState<PickerTarget | null>(null)
@@ -81,6 +80,8 @@ export default function SessionEditor({ session, onClose }: Props) {
       narrativeStyle: d.narrativeStyle,
       structuredOutput: d.structuredOutput,
       reviewSplit: d.reviewSplit,
+      // 本編モデル。**裏方2つだけ書いて本編を落とすと、変更が保存されず元に戻る**
+      model: d.model,
       reviewModel: d.reviewModel,
       choicesModel: d.choicesModel,
       eventAutoFire: d.eventAutoFire,
@@ -542,27 +543,17 @@ export default function SessionEditor({ session, onClose }: Props) {
                 <div className="desc">
                   物語本文の生成に使うモデル。未設定なら「設定・データ管理」の既定モデルを使います。
                 </div>
-                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                  <button className="model-chip" style={{ flex: 1 }} onClick={() => setPickerTarget('main')}>
+                <div className="model-chip-row">
+                  <button className="model-chip grow" onClick={() => setPickerTarget('main')}>
                     {d.model ? modelRefLabel(d.model, providers) || d.model : '既定モデルを使用'}
                   </button>
                   {d.model && (
-                    <button className="btn" style={{ whiteSpace: 'nowrap' }} onClick={() => patch({ model: '' })}>
+                    <button className="btn" onClick={() => patch({ model: '' })}>
                       クリア
                     </button>
                   )}
                 </div>
               </div>
-
-              {d.characterIds.length > 0 && d.narrativeStyle === 'chat' && (
-                <div className="field">
-                  <label>登場キャラクターの一括モデル設定</label>
-                  <div className="desc">会話劇の登場キャラクター全員に同じモデルをまとめて設定します。</div>
-                  <button className="btn" style={{ fontSize: 12 }} onClick={() => setPickerTarget('bulk')}>
-                    登場キャラクターに一括でモデルを設定
-                  </button>
-                </div>
-              )}
 
               {/* 裏方用モデル（役割別） */}
               <div className="field">
@@ -573,12 +564,14 @@ export default function SessionEditor({ session, onClose }: Props) {
                 <div className="row2" style={{ marginTop: 4 }}>
                   <div>
                     <div className="sub-label" style={{ marginBottom: 5 }}>レビュー用（シーン要約・提案）</div>
-                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                      <button className="model-chip" style={{ flex: 1 }} onClick={() => setPickerTarget('review')}>
-                        {d.reviewModel || '本編と同じ'}
+                    <div className="model-chip-row">
+                      {/* 生の参照（`providerId::model`）ではなくラベルで出す。
+                          カスタム接続先の providerId は UUID なので、そのまま出すと桁外れに長くなる */}
+                      <button className="model-chip grow" onClick={() => setPickerTarget('review')}>
+                        {d.reviewModel ? modelRefLabel(d.reviewModel, providers) || d.reviewModel : '本編と同じ'}
                       </button>
                       {d.reviewModel && (
-                        <button className="btn" style={{ whiteSpace: 'nowrap' }} onClick={() => patch({ reviewModel: '' })}>
+                        <button className="btn" onClick={() => patch({ reviewModel: '' })}>
                           クリア
                         </button>
                       )}
@@ -586,12 +579,12 @@ export default function SessionEditor({ session, onClose }: Props) {
                   </div>
                   <div>
                     <div className="sub-label" style={{ marginBottom: 5 }}>選択肢用（行動候補の生成）</div>
-                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                      <button className="model-chip" style={{ flex: 1 }} onClick={() => setPickerTarget('choices')}>
-                        {d.choicesModel || '本編と同じ'}
+                    <div className="model-chip-row">
+                      <button className="model-chip grow" onClick={() => setPickerTarget('choices')}>
+                        {d.choicesModel ? modelRefLabel(d.choicesModel, providers) || d.choicesModel : '本編と同じ'}
                       </button>
                       {d.choicesModel && (
-                        <button className="btn" style={{ whiteSpace: 'nowrap' }} onClick={() => patch({ choicesModel: '' })}>
+                        <button className="btn" onClick={() => patch({ choicesModel: '' })}>
                           クリア
                         </button>
                       )}
@@ -707,16 +700,6 @@ export default function SessionEditor({ session, onClose }: Props) {
         <ModelPicker
           current={d.choicesModel}
           onPick={(ref) => patch({ choicesModel: ref })}
-          onClose={() => setPickerTarget(null)}
-        />
-      )}
-      {pickerTarget === 'bulk' && (
-        <ModelPicker
-          current=""
-          onPick={(ref) => {
-            bulkSetCharacterModel(d.characterIds, ref)
-            setPickerTarget(null)
-          }}
           onClose={() => setPickerTarget(null)}
         />
       )}

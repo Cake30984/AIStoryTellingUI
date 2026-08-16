@@ -117,15 +117,25 @@ export function imageDraftSchema(style: PromptStyle): JsonSchemaSpec {
   }
 }
 
-/** 発見キャラのキャラクター JSON 起案（FB7-E。`characterDraftSystem` と対） */
+/**
+ * 発見キャラのキャラクター JSON 起案（FB7-E。`characterDraftSystem` と対）。
+ *
+ * **`Character` の記入欄を一通り埋める契約**にしてある（起案の後に人手で全部書き足すなら起案の意味が薄い）。
+ * `exampleDialogues` と `tags` は配列で受け、受け側が改行結合・正規化する
+ * （モデルは「5個」のような個数指示を配列のほうが守りやすい。`minItems` は strict の
+ * 対応が接続先ごとにまちまちなので**スキーマではなく文章で要求する**）。
+ */
 export const CHARACTER_DRAFT_SCHEMA: JsonSchemaSpec = {
   name: 'character_draft',
   schema: obj({
     name: str,
     persona: str,
     speechStyle: str,
+    /** 自然言語の描写文。タグ列にはしない（画像生成側の作法変換は起案時に行わない） */
     appearance: str,
+    exampleDialogues: arrayOf(str),
     greeting: str,
+    tags: arrayOf(str),
   }),
 }
 

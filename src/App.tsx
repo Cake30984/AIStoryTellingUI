@@ -17,6 +17,7 @@ import CommandPalette from './components/CommandPalette'
 import { useGlobalShortcuts } from './lib/shortcuts'
 import { ensureAudio, setMasterVolume } from './lib/ambientAudio'
 import { stateLocationLabel } from './lib/platform'
+import { isProviderUsable } from './lib/providers'
 import { schemaErrorMessage } from './lib/schema'
 import { Icon, type IconName } from './components/icons'
 
@@ -85,8 +86,10 @@ export default function App() {
   const startNew = (mode: 'roleplay' | 'story') => setNewEditorId(createSession(mode))
   const newEditorSession = newEditorId ? sessions.find((s) => s.id === newEditorId) : undefined
 
-  // いずれかのプロバイダに API キーが設定されているか
-  const hasApiKey = providers.some((p) => p.apiKey.trim() !== '')
+  // 使える接続先が1つでもあるか。**キーの有無ではなく「使えるか」で見る**
+  // ——ローカル接続先（Ollama / LM Studio）はキーを持たないので、キーで数えると
+  // 正しく設定できている人に「キーを登録してください」と出てしまう（R5）
+  const hasUsableProvider = providers.some(isProviderUsable)
 
   const active = sessions.find((s) => s.id === activeId)
 
@@ -100,7 +103,7 @@ export default function App() {
 
   useEffect(() => {
     if (!hydrated) return
-    if (!hasApiKey) setView('system')
+    if (!hasUsableProvider) setView('system')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hydrated])
 
@@ -120,10 +123,11 @@ export default function App() {
     root.setProperty('--font-size-prose', `${ui.fontSize}px`)
     root.setProperty('--line-height-prose', String(ui.lineHeight))
     root.setProperty('--content-width', `${ui.contentWidth}px`)
+    root.setProperty('--speaker-icon-size', `${ui.speakerIconSize}px`)
     // 色分けONは tokens.css の既定（--dialogue）に戻す。OFF のときだけ本文色で上書き（A7）
     if (ui.dialogueTint) root.removeProperty('--dialogue')
     else root.setProperty('--dialogue', 'var(--text)')
-  }, [ui.fontSize, ui.lineHeight, ui.contentWidth, ui.dialogueTint])
+  }, [ui.fontSize, ui.lineHeight, ui.contentWidth, ui.speakerIconSize, ui.dialogueTint])
 
   // 環境音のマスター音量（AM1）。ピンの音量制御とは独立に、出口のゲインだけを動かす
   useEffect(() => {
@@ -244,9 +248,10 @@ export default function App() {
                   物語を始める
                 </button>
               </div>
-              {!hasApiKey && (
+              {!hasUsableProvider && (
                 <p style={{ marginTop: 20, fontSize: 13, color: 'var(--text-faint)' }}>
-                  左のレール最下段の「設定」から OpenRouter の API キーを登録してください。
+                  左のレール最下段の「設定」から接続先を登録してください（OpenRouter 等の API キー、
+                  または Ollama / LM Studio のようなローカルの OpenAI 互換サーバ）。
                 </p>
               )}
             </div>

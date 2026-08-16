@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { currentScene, knownSpeakersOf, newCharacter, reviewModelOf, useStore } from '../store'
 import { streamChat } from '../lib/openrouter'
-import { parseModelRef } from '../lib/providers'
+import { isProviderUsable, parseModelRef } from '../lib/providers'
 import { extractJson } from '../lib/json'
 import { CHARACTER_DRAFT_SCHEMA, jsonModeFor } from '../lib/jsonSchemas'
 import { characterDraftContextUser, characterDraftSystem } from '../lib/prompts'
@@ -37,16 +37,14 @@ export default function CharacterDraftModal({ session, name, note, onClose }: Pr
     useStore()
   const [draft, setDraft] = useState<Character | null>(null)
   const [error, setError] = useState('')
-  const abortRef = useRef<AbortController | null>(null)
-  // 対象が変わらない限り起案は1回だけ（StrictMode の二重実行・再描画で投げ直さない）
-  const startedRef = useRef('')
 
+  // **「起案済みフラグ」で二重実行を止めてはいけない。**
+  // StrictMode は「効果 → 後始末 → 効果」を同じインスタンスで走らせるため、
+  // フラグで2回目を弾くと *後始末で中断された1回目* だけが残り、`draft` が永久に null＝
+  // 「設定を起案中…」から進まなくなる。中断と適用の制御は AbortController と
+  // `canceled` フラグが担っており、本番（StrictMode 無し）では効果は1回しか走らない。
   useEffect(() => {
-    const key = `${session.id}:${name}`
-    if (startedRef.current === key) return
-    startedRef.current = key
     const controller = new AbortController()
-    abortRef.current = controller
     let canceled = false
 
     const run = async () => {
@@ -54,8 +52,9 @@ export default function CharacterDraftModal({ session, name, note, onClose }: Pr
       const { provider, model } = parseModelRef(modelRef, providers)
       // 起案に失敗しても空の下書きは開ける（手書きで定義したい人を止めない）
       const blank = (): Character => ({ ...newCharacter(), name, tags: ['発見'] })
-      if (!provider?.apiKey.trim() || !model) {
-        setError('起案に使うモデルの API キーが未設定です。空の下書きから記入できます。')
+      // ローカル接続先（Ollama / LM Studio）はキーを持たないので「使えるか」で見る
+      if (!isProviderUsable(provider) || !model) {
+        setError('起案に使うモデルを利用できません。空の下書きから記入できます。')
         setDraft(blank())
         return
       }
@@ -114,6 +113,15 @@ export default function CharacterDraftModal({ session, name, note, onClose }: Pr
         if (canceled) return
         const json = extractJson<Record<string, unknown>>(res.text)
         const pick = (key: string) => (typeof json?.[key] === 'string' ? (json[key] as string).trim() : '')
+        /**
+         * 配列で受ける項目を取り出す。**文字列で返ってきても拾う**
+         * （スキーマを無視する接続先・降格して素で投げた場合に改行区切りの1文字列が来る）。
+         */
+        const pickList = (key: string): string[] => {
+          const v = json?.[key]
+          const raw = Array.isArray(v) ? v : typeof v === 'string' ? v.split('\n') : []
+          return raw.map((x) => String(x).trim()).filter(Boolean)
+        }
         if (!json) {
           setError('起案結果を読み取れませんでした。空の下書きから記入できます。')
           setDraft(blank())
@@ -121,12 +129,20 @@ export default function CharacterDraftModal({ session, name, note, onClose }: Pr
         }
         setDraft({
           ...blank(),
-          // 名前だけは検出した表記を優先する（本文の呼び名と食い違うとバッジが消えない）
-          name: pick('name') || name,
+          // **名前は検出した表記を優先する**（`pick('name')` ではない）。
+          // 本文の呼び名と食い違うと `matchCharacterByName` が解決できず、
+          // 定義したのに「?」バッジが消えないままになる
+          // （実測: 「謎の男」が起案で "Mysterious Man" に訳されて返る）。
+          // 起案側の名前が良ければ、この後の編集画面で書き換えられる。
+          name,
           persona: pick('persona'),
           speechStyle: pick('speechStyle'),
           appearance: pick('appearance'),
+          // `Character.exampleDialogues` は「1行1セリフ」の1文字列（編集画面の textarea と同じ形）
+          exampleDialogues: pickList('exampleDialogues').join('\n'),
           greeting: pick('greeting'),
+          // 「発見」は残す＝起案由来だと後から辿れる
+          tags: [...new Set(['発見', ...pickList('tags')])],
         })
       } catch (e) {
         if (canceled || (e as Error).name === 'AbortError') return

@@ -620,6 +620,7 @@ export default function ChatPanel({ session }: Props) {
               dropTarget={dropTarget}
               renderPins={(pins, lineAnchor) => <PinMark pins={pins} lineAnchor={lineAnchor} />}
               onDefineSpeaker={defineSpeaker}
+              libraryCharacters={characters}
             />
           ) : (
             <>
@@ -655,6 +656,7 @@ export default function ChatPanel({ session }: Props) {
             persona={persona}
             pending={!!m.pending && isStreaming}
             onDefineSpeaker={defineSpeaker}
+            libraryCharacters={characters}
           />
           {msgActions(m)}
         </div>

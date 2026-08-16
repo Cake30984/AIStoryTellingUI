@@ -33,14 +33,15 @@
   }
 }
 
+/* 会話劇の吹き出しアイコン。既定 32px＝基準（22px）の 32/22 倍を保ったまま設定に追従する */
 .avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: 9px;
+  width: calc(var(--speaker-icon-size) * 32 / 22);
+  height: calc(var(--speaker-icon-size) * 32 / 22);
+  border-radius: calc(var(--speaker-icon-size) * 9 / 22);
   flex-shrink: 0;
   display: grid;
   place-items: center;
-  font-size: 14px;
+  font-size: calc(var(--speaker-icon-size) * 14 / 22);
   font-weight: 700;
   overflow: hidden;
   color: #fff;
@@ -346,14 +347,15 @@
   gap: 8px;
   margin: 4px 0;
 }
+/* 小説形式の行頭アイコン。`--speaker-icon-size` の基準そのもの */
 .st-speaker {
-  width: 22px;
-  height: 22px;
-  border-radius: 7px;
+  width: var(--speaker-icon-size);
+  height: var(--speaker-icon-size);
+  border-radius: calc(var(--speaker-icon-size) * 7 / 22);
   flex-shrink: 0;
   display: grid;
   place-items: center;
-  font-size: 10px;
+  font-size: calc(var(--speaker-icon-size) * 10 / 22);
   font-weight: 700;
   overflow: hidden;
   color: #fff;

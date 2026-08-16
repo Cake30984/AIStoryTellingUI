@@ -37,12 +37,6 @@ export interface Character {
   /** 画像生成用の固定英語タグ（画風・髪色・LoRA トリガー等。挿絵/アバター生成時に自動結合） */
   imagePrompt?: string
   tags: string[]
-  /**
-   * このキャラ専用の本編モデル参照（ModelRef 形式）。
-   * chat 群像で話者として確定した場合のみ有効。おまかせ・小説形式ではセッション本編モデルを使う。
-   * 空（未設定）のときはセッション本編モデルにフォールバック。
-   */
-  model?: string
   createdAt: number
   updatedAt: number
 }
@@ -1002,6 +996,12 @@ export interface UiPrefs {
   lineHeight: number
   /** 本文の幅（px。--content-width と連動。既定 760。F2で数値化） */
   contentWidth: number
+  /**
+   * セリフに付く話者アイコンの大きさ（px。`--speaker-icon-size` と連動。既定 22）。
+   * 小説形式の行頭アイコン（`.st-speaker`）と会話劇の吹き出しアイコン（`.avatar`）の両方に効く。
+   * 文字サイズを上げるとアイコンだけ相対的に小さく見えるため、同じ場所で調整できるようにしてある。
+   */
+  speakerIconSize: number
   /** セリフ（「」）を色分け表示するか（false なら本文と同色） */
   dialogueTint: boolean
   /** 環境音ピンを鳴らすか（AM1。OFF で全ピンを停止＝ピン自体は消えない） */
@@ -1018,6 +1018,7 @@ export const DEFAULT_UI: UiPrefs = {
   fontSize: 15.5,
   lineHeight: 1.9,
   contentWidth: 760,
+  speakerIconSize: 22,
   dialogueTint: true,
   ambientEnabled: true,
   ambientVolume: 0.6,
@@ -1029,6 +1030,7 @@ export const UI_LIMITS = {
   fontSize: { min: 12, max: 22, step: 0.5 },
   lineHeight: { min: 1.4, max: 2.4, step: 0.05 },
   contentWidth: { min: 560, max: 1200, step: 20 },
+  speakerIconSize: { min: 16, max: 48, step: 1 },
   ambientVolume: { min: 0, max: 1, step: 0.05 },
   dockWidth: { min: 300, max: 560 },
 } as const
@@ -1060,6 +1062,8 @@ export function normalizeUiPrefs(raw: unknown): UiPrefs {
     typeof r.contentWidth === 'number'
       ? clamp(r.contentWidth, 560, 1200, 760)
       : (widthFromScale[String(r.contentWidth)] ?? 760)
+  // 旧データにはキーが無いので既定 22 で補われる（clamp が非数値を既定値へ落とす）
+  const speakerIconSize = clamp(r.speakerIconSize, 16, 48, 22)
   const validTabs: DockTab[] = ['status', 'discovery', 'gallery', 'branch', 'jobs']
   return {
     dockTab: validTabs.includes(r.dockTab as DockTab) ? (r.dockTab as DockTab) : null,
@@ -1067,6 +1071,7 @@ export function normalizeUiPrefs(raw: unknown): UiPrefs {
     fontSize,
     lineHeight,
     contentWidth,
+    speakerIconSize,
     dialogueTint: r.dialogueTint !== false,
     ambientEnabled: r.ambientEnabled !== false,
     ambientVolume: clamp(r.ambientVolume, 0, 1, 0.6),

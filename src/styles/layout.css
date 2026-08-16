@@ -280,6 +280,33 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  /* **flex 項目の既定 `min-width: auto` は内容幅より縮まない。**
+     `flex: 1` で置かれた場合（セッション設定のモデル欄）、長いモデル名は
+     省略記号にならず箱を押し広げて隣のボタンごとレイアウトを壊す。
+     0 を明示して「縮んで省略する」を選ばせる。 */
+  min-width: 0;
+  /* 文字が入らない時に中身が潰れないよう、テキストは左寄せで確保する */
+  text-align: left;
+}
+/* 幅を持たせて置く用途（`flex: 1`）では 220px の上限を外す
+   ——上限が効いたままだと、広い欄でも 220px で切られて余白が余る */
+.model-chip.grow {
+  max-width: none;
+  flex: 1;
+}
+
+/* モデルチップ＋「クリア」ボタンの行。
+   **「クリア」は後から現れる**（モデルを選ぶまで存在しない）ので、その幅を先に確保しておかないと
+   出現した瞬間に行が広がってはみ出す。チップ側だけを縮ませ、ボタンは縮めも伸ばしもしない。 */
+.model-chip-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.model-chip-row > .btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 .model-chip:hover {
   border-color: var(--accent);

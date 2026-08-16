@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useStore } from '../store'
 import { streamChat } from '../lib/openrouter'
-import { parseModelRef, modelRefLabel } from '../lib/providers'
+import { parseModelRef, modelRefLabel, isProviderUsable } from '../lib/providers'
 import { extractJson } from '../lib/json'
 import { imageDraftSchema, jsonModeFor } from '../lib/jsonSchemas'
 import { illustrationPromptSystem } from '../lib/prompts'
@@ -187,8 +187,9 @@ export default function ImageGenModal({
   const draft = async () => {
     if (!draftContext || !provider) return
     const { provider: llm, model } = parseModelRef(draftModel, providers)
-    if (!llm?.apiKey || !model) {
-      setError('起案に使うモデルを選択してください（API キー設定済みの接続先）。')
+    // ローカル接続先はキーを持たない＝キーの有無ではなく「使えるか」で見る
+    if (!isProviderUsable(llm) || !model) {
+      setError('起案に使うモデルを選択してください（使用できる接続先のモデル）。')
       return
     }
     setDrafting(true)
@@ -391,7 +392,7 @@ export default function ImageGenModal({
                         </>
                       )}
                     </button>
-                    <button className="model-chip" style={{ flex: 1 }} onClick={() => setShowModelPicker(true)}>
+                    <button className="model-chip grow" onClick={() => setShowModelPicker(true)}>
                       {draftModel ? modelRefLabel(draftModel, providers) : '起案モデルを選択…'}
                     </button>
                   </div>

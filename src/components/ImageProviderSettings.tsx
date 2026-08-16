@@ -665,12 +665,14 @@ export default function ImageProviderSettings() {
       ))}
 
       <div style={{ display: 'flex', gap: 8 }}>
+        {/* 3つとも横並びの同格。**特定の接続先を推奨しない**
+            （事実だけを書き、用途の推奨・勧誘はしない＝下の注記と同じ方針） */}
         <button
-          className="btn primary"
+          className="btn"
           style={{ flex: 1 }}
           onClick={() => upsertImageProvider(newImageProvider('openrouter-image'))}
         >
-          <Icon name="plus" size={14} /> OpenRouter を追加（おすすめ）
+          <Icon name="plus" size={14} /> OpenRouter を追加
         </button>
         <button className="btn" style={{ flex: 1 }} onClick={() => upsertImageProvider(newImageProvider('comfyui'))}>
           <Icon name="plus" size={14} /> ComfyUI を追加

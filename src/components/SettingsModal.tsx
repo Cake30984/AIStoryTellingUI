@@ -185,7 +185,7 @@ export function SettingsBody() {
                     value={localKeys[p.id] ?? ''}
                     onChange={(e) => setLocalKeys((k) => ({ ...k, [p.id]: e.target.value }))}
                   />
-                  <button className="btn" style={{ whiteSpace: 'nowrap' }} onClick={() => toggleShowKey(p.id)}>
+                  <button className="btn" onClick={() => toggleShowKey(p.id)}>
                     {showKeys[p.id] ? '隠す' : '表示'}
                   </button>
                   <button className="btn primary" style={{ whiteSpace: 'nowrap' }} onClick={() => saveKey(p)}>
@@ -251,7 +251,7 @@ export function SettingsBody() {
                     value={addKey}
                     onChange={(e) => setAddKey(e.target.value)}
                   />
-                  <button className="btn" style={{ whiteSpace: 'nowrap' }} onClick={() => setShowAddKey((s) => !s)}>
+                  <button className="btn" onClick={() => setShowAddKey((s) => !s)}>
                     {showAddKey ? '隠す' : '表示'}
                   </button>
                 </div>
@@ -286,14 +286,14 @@ export function SettingsBody() {
               新しいセッションの作成時とカセット開始時に、最初からこのモデルが選択された状態になります
               （セッションごとの変更は今までどおり可能です）。
             </div>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <button className="model-chip" style={{ flex: 1 }} onClick={() => setShowDefaultPicker(true)}>
+            <div className="model-chip-row">
+              <button className="model-chip grow" onClick={() => setShowDefaultPicker(true)}>
                 {defaultModelRef
                   ? modelRefLabel(defaultModelRef, providers) || defaultModelRef
                   : '未設定（OpenRouter におまかせ）'}
               </button>
               {defaultModelRef && (
-                <button className="btn" style={{ whiteSpace: 'nowrap' }} onClick={() => setDefaultModelRef('')}>
+                <button className="btn" onClick={() => setDefaultModelRef('')}>
                   クリア
                 </button>
               )}

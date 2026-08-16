@@ -1,5 +1,5 @@
 import { Fragment, useMemo, type ReactNode } from 'react'
-import { parseStructured, type StructuredLine } from '../lib/structured'
+import { matchCharacterByName, parseStructured, type StructuredLine } from '../lib/structured'
 import type { AmbientPin, Character, Persona } from '../types'
 import EntityAvatar from './EntityAvatar'
 import { Icon } from './icons'
@@ -43,6 +43,12 @@ interface BodyProps {
    * 渡すとその話者チップの隣にバッジが出て、クリックで呼ばれる。未指定ならバッジを描かない。
    */
   onDefineSpeaker?: (name: string) => void
+  /**
+   * ライブラリに既にいるキャラクター（**このセッションの参加者とは限らない**）。
+   * ここに名前が当たる話者には「新規キャラクターにする」バッジを出さない
+   * ——押せば同名のキャラクターが二重に作られるだけで、必要なのは作成ではなく参加させること。
+   */
+  libraryCharacters?: { id: string; name: string }[]
 }
 
 /**
@@ -72,6 +78,19 @@ function useSpeakers(participants: Character[], persona?: Persona) {
   )
 }
 
+/**
+ * 「新規キャラクターにする」バッジを出してよいかの判定。
+ * 話者が未解決でも、**同じ名前のキャラクターがライブラリに既にいるなら出さない**
+ * （押しても同名の重複が増えるだけ。参加させるのはセッション設定の仕事）。
+ * 照合は話者解決と同じ `matchCharacterByName`＝表記ゆれの扱いを一致させる。
+ */
+function useCanDefine(libraryCharacters?: { id: string; name: string }[]) {
+  return useMemo(() => {
+    const lib = libraryCharacters ?? []
+    return (name: string) => !matchCharacterByName(name, lib)
+  }, [libraryCharacters])
+}
+
 /** 小説形式: 地の文はそのまま流し込み、セリフ行は話者チップ付きの行として表示する */
 export function StructuredNovelBody({
   content,
@@ -82,8 +101,10 @@ export function StructuredNovelBody({
   dropTarget,
   renderPins,
   onDefineSpeaker,
+  libraryCharacters,
 }: BodyProps) {
   const speakers = useSpeakers(participants, persona)
+  const canDefine = useCanDefine(libraryCharacters)
   const lines = useMemo(() => parseStructured(content, speakers), [content, speakers])
   const endsWithNewline = content.endsWith('\n')
   const settled = pending && !endsWithNewline ? lines.slice(0, -1) : lines
@@ -112,7 +133,7 @@ export function StructuredNovelBody({
               avatar={speakers.find((c) => c.id === line.characterId)?.avatar ?? { color: '#666' }}
               name={line.name}
             />
-            {!line.characterId && onDefineSpeaker && (
+            {!line.characterId && onDefineSpeaker && canDefine(line.name) && (
               <UnknownSpeakerBadge name={line.name} onClick={() => onDefineSpeaker(line.name)} />
             )}
             <span className="dialogue">{line.text}</span>
@@ -160,8 +181,10 @@ export function StructuredChatBody({
   persona,
   pending,
   onDefineSpeaker,
+  libraryCharacters,
 }: BodyProps) {
   const speakers = useSpeakers(participants, persona)
+  const canDefine = useCanDefine(libraryCharacters)
   const lines = useMemo(() => parseStructured(content, speakers), [content, speakers])
   const endsWithNewline = content.endsWith('\n')
   const settled = pending && !endsWithNewline ? lines.slice(0, -1) : lines
@@ -185,7 +208,7 @@ export function StructuredChatBody({
             <div className="bubble">
               <div className="name">
                 {g.name}
-                {!g.characterId && onDefineSpeaker && (
+                {!g.characterId && onDefineSpeaker && canDefine(g.name) && (
                   <UnknownSpeakerBadge name={g.name} onClick={() => onDefineSpeaker(g.name)} />
                 )}
               </div>

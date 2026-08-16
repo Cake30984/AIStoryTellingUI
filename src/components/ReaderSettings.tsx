@@ -66,6 +66,7 @@ export default function ReaderSettings() {
       fontSize: DEFAULT_UI.fontSize,
       lineHeight: DEFAULT_UI.lineHeight,
       contentWidth: DEFAULT_UI.contentWidth,
+      speakerIconSize: DEFAULT_UI.speakerIconSize,
       dialogueTint: DEFAULT_UI.dialogueTint,
       ambientEnabled: DEFAULT_UI.ambientEnabled,
       ambientVolume: DEFAULT_UI.ambientVolume,
@@ -76,7 +77,7 @@ export default function ReaderSettings() {
       <button
         className="icon-btn"
         onClick={() => setOpen((v) => !v)}
-        title="表示設定（文字サイズ・行間・環境音・没入モード）"
+        title="表示設定（文字サイズ・行間・話者アイコン・環境音・没入モード）"
       >
         Aa
       </button>
@@ -100,6 +101,13 @@ export default function ReaderSettings() {
               value={ui.contentWidth}
               {...UI_LIMITS.contentWidth}
               onChange={(contentWidth) => setUiPrefs({ contentWidth })}
+            />
+            {/* 文字サイズを上げるとアイコンだけ相対的に小さく見えるので、同じ場所で揃えられるようにする */}
+            <RsField
+              label="話者アイコン"
+              value={ui.speakerIconSize}
+              {...UI_LIMITS.speakerIconSize}
+              onChange={(speakerIconSize) => setUiPrefs({ speakerIconSize })}
             />
             <label className="chk rs-chk">
               <input

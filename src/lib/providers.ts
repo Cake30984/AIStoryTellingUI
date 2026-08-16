@@ -38,6 +38,57 @@ export function defaultOpenRouterProvider(apiKey: string): Provider {
   }
 }
 
+/**
+ * ローカル（同一 PC／宅内 LAN）で動いている接続先か。
+ *
+ * Ollama / LM Studio のようなローカルの OpenAI 互換サーバは **API キーを持たない**。
+ * ここを見ずに「キーが空＝設定漏れ」と扱うと、**正しく設定できている構成が警告になり、
+ * 生成そのものが止まる**（R5「PC で動かす」の導線）。
+ */
+export function isLocalEndpoint(baseUrl: string): boolean {
+  let host: string
+  try {
+    host = new URL(baseUrl).hostname.toLowerCase()
+  } catch {
+    return false
+  }
+  // URL の hostname は IPv6 を角括弧付きで返す
+  const h = host.replace(/^\[|\]$/g, '')
+  if (h === 'localhost' || h.endsWith('.localhost')) return true
+  if (h === '::1' || h === '0.0.0.0') return true
+  if (h.endsWith('.local')) return true // mDNS（宅内の別 PC で動かす構成）
+  // 127.0.0.0/8
+  if (/^127\./.test(h)) return true
+  // RFC1918（宅内 LAN の別 PC に Ollama を置く構成は珍しくない）
+  if (/^10\./.test(h)) return true
+  if (/^192\.168\./.test(h)) return true
+  if (/^172\.(1[6-9]|2\d|3[01])\./.test(h)) return true
+  return false
+}
+
+/**
+ * この接続先は API キーを要求するか。
+ * **キーの有無を判定する側は必ずこれを通す**（`apiKey.trim()` を直接見ない）。
+ */
+export function requiresApiKey(provider: Provider): boolean {
+  return !isLocalEndpoint(provider.baseUrl)
+}
+
+/** 接続先として使える状態か（キーが要るならキーがある、要らないなら常に true） */
+export function isProviderUsable(provider: Provider | undefined): provider is Provider {
+  if (!provider) return false
+  return !requiresApiKey(provider) || provider.apiKey.trim() !== ''
+}
+
+/**
+ * 使えない接続先の理由を日本語で返す（`isProviderUsable` が false のときだけ呼ぶ）。
+ * **「接続先が無い」と「キーが無い」は別の失敗**なので文言を分ける。
+ */
+export function providerUnusableMessage(provider: Provider | undefined): string {
+  if (!provider) return '接続先が設定されていません。設定から登録してください。'
+  return `接続先「${provider.label}」の API キーが未設定です。設定から登録してください。`
+}
+
 /** 空の新規プロバイダを生成 */
 export function newProvider(): Provider {
   return {
