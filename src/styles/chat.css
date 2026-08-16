@@ -329,13 +329,40 @@
   white-space: pre-wrap;
   animation: fade 0.25s ease;
 }
+/* 書き手への指示（IN1）。地の文でもセリフでもないと分かる形にする＝破線の枠＋ラベル。
+   文体（小説／会話劇）では見た目を変えない（舞台裏の表示は物語の描き方と無関係） */
+.prose-directive {
+  margin: 0 0 18px;
+  padding: 8px 12px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elev);
+  color: var(--text-dim);
+  font-size: 13px;
+  white-space: pre-wrap;
+  animation: fade 0.25s ease;
+}
+.prose-directive .directive-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-faint);
+  font-size: 11px;
+  margin-bottom: 4px;
+}
+.prose-directive .directive-body {
+  white-space: pre-wrap;
+}
+
 /* 小説形式でも操作ボタンをホバー表示 */
 .prose-block,
-.prose-action {
+.prose-action,
+.prose-directive {
   position: relative;
 }
 .prose-block:hover .msg-actions,
-.prose-action:hover .msg-actions {
+.prose-action:hover .msg-actions,
+.prose-directive:hover .msg-actions {
   opacity: 1;
 }
 

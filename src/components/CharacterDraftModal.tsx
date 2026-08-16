@@ -4,7 +4,7 @@ import { streamChat } from '../lib/openrouter'
 import { isProviderUsable, parseModelRef } from '../lib/providers'
 import { extractJson } from '../lib/json'
 import { CHARACTER_DRAFT_SCHEMA, jsonModeFor } from '../lib/jsonSchemas'
-import { characterDraftContextUser, characterDraftSystem } from '../lib/prompts'
+import { characterDraftContextUser, characterDraftSystem, isDirective } from '../lib/prompts'
 import { plainTextOf } from '../lib/structured'
 import type { Character, Session } from '../types'
 import ModalShell from './ModalShell'
@@ -63,7 +63,10 @@ export default function CharacterDraftModal({ session, name, note, onClose }: Pr
       // 本文は現在シーンの末尾から予算ぶん遡る（裏方文脈なので `plainTextOf` で自然表記へ整流）
       const recent: string[] = []
       let used = 0
-      const pool = session.messages.filter((m) => m.content.trim() && (!scene || !m.sceneId || m.sceneId === scene.id))
+      // 書き手への指示は本文ではないので起案の材料から落とす（IN1）
+      const pool = session.messages.filter(
+        (m) => m.content.trim() && !isDirective(m) && (!scene || !m.sceneId || m.sceneId === scene.id),
+      )
       for (let i = pool.length - 1; i >= 0; i--) {
         const text = plainTextOf(pool[i].content)
         if (used + text.length > CONTEXT_BUDGET && recent.length > 0) break

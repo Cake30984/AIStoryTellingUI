@@ -9,7 +9,7 @@
 
 import type { Character, Message, Scene, SceneIllustration, Session } from '../types'
 import { plainTextOf } from './structured'
-import { CONTINUE_PROMPT, SCENE_START_PROMPT } from './prompts'
+import { CONTINUE_PROMPT, isDirective, SCENE_START_PROMPT } from './prompts'
 import { blobToBase64, getImage } from './imageStore'
 import { checkpointStore } from './platform'
 import { gunzipText } from './checkpoint'
@@ -19,6 +19,15 @@ export type ExportUnit = { kind: 'session' } | { kind: 'scene'; sceneId: string 
 
 /** 進行用の内部マーカー本文（「物語をはじめる」「続けて」等）。書き出しには不要 */
 const MARKER_CONTENTS = new Set([CONTINUE_PROMPT, SCENE_START_PROMPT])
+
+/**
+ * 書き出しに載せない舞台裏のメッセージか。
+ * system・進行マーカーに加え、**書き手への指示**（IN1）も落とす＝要件は「貼りたくなる出力」であって
+ * 制作過程の記録ではない。
+ */
+function isBackstage(m: Message): boolean {
+  return m.role === 'system' || MARKER_CONTENTS.has(m.content.trim()) || isDirective(m)
+}
 
 /** そのメッセージが属するシーン id（未確定＝進行中シーンのぶんは currentSceneId を補う） */
 function effectiveSceneId(m: Message, session: Session): string | undefined {
@@ -57,8 +66,7 @@ export function sessionToText(
   let sceneSeen = false
 
   for (const m of session.messages) {
-    if (m.role === 'system') continue
-    if (MARKER_CONTENTS.has(m.content.trim())) continue
+    if (isBackstage(m)) continue
     const sceneId = effectiveSceneId(m, session)
     if (unit.kind === 'scene' && sceneId !== unit.sceneId) continue
 
@@ -118,8 +126,7 @@ export async function sessionToIllustratedMarkdown(
   let sceneSeen = false
 
   for (const m of session.messages) {
-    if (m.role === 'system') continue
-    if (MARKER_CONTENTS.has(m.content.trim())) continue
+    if (isBackstage(m)) continue
     const sceneId = effectiveSceneId(m, session)
     if (unit.kind === 'scene' && sceneId !== unit.sceneId) continue
 
@@ -179,7 +186,7 @@ export async function loadSessionSnapshot(sessionId: string, nodeId: string): Pr
 export function exportableScenes(session: Session): Scene[] {
   const idsWithContent = new Set(
     session.messages
-      .filter((m) => m.role !== 'system' && !MARKER_CONTENTS.has(m.content.trim()) && plainTextOf(m.content).trim())
+      .filter((m) => !isBackstage(m) && plainTextOf(m.content).trim())
       .map((m) => effectiveSceneId(m, session))
       .filter((id): id is string => !!id),
   )

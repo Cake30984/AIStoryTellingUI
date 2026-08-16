@@ -145,6 +145,41 @@
   text-align: center;
 }
 
+/* ---------- 入力の二分化（IN1）: セリフ・行動 ／ 書き手への指示 ---------- */
+.input-mode-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.input-mode-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-faint);
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+}
+.input-mode-chip:hover {
+  color: var(--text-dim);
+  border-color: var(--border);
+}
+.input-mode-chip.on {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--text);
+}
+/* 指示モードは送信前に見た目で分かるようにする（誤って主人公に喋らせないため） */
+.input-row:has(textarea.directive) {
+  border-style: dashed;
+  border-color: var(--warn);
+}
+.input-row:has(textarea.directive):focus-within {
+  border-color: var(--warn);
+}
+
 /* ---------- 話し手選択 ---------- */
 .speaker-row {
   display: flex;

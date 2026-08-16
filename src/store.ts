@@ -24,6 +24,7 @@ import type {
   ImageQuality,
   LoreEntry,
   Message,
+  MessageKind,
   MoodChange,
   NextSceneSuggestion,
   Op,
@@ -100,6 +101,7 @@ import {
   choicesSystem,
   CONTINUATION_NUDGE,
   CONTINUE_PROMPT,
+  isDirective,
   nextSceneSystem,
   reviewSystem,
   SCENE_START_PROMPT,
@@ -1464,7 +1466,12 @@ interface AppState {
 
   // 生成
   startSession: () => void
-  send: (text: string, speakerId?: string) => Promise<void>
+  /**
+   * ユーザー入力を1通積んで生成を回す。
+   * `kind:'directive'`＝主人公のセリフ・行動ではなく**書き手への指示**として積む（IN1）。
+   * どちらも送信でそのまま生成が走る（指示は「方向づけ付きの続ける」に相当）。
+   */
+  send: (text: string, speakerId?: string, kind?: MessageKind) => Promise<void>
   continueStory: (speakerId?: string) => Promise<void>
   regenerate: (speakerId?: string) => Promise<void>
   startStory: () => Promise<void>
@@ -1782,6 +1789,7 @@ function actionCheckpointLabel(session: Session): string {
       (m) =>
         m.role === 'user' &&
         m.content.trim() &&
+        !isDirective(m) && // 「もっと暗くして」等の指示がツリーの行ラベルになると中身が分からない（IN1）
         m.content !== SCENE_START_PROMPT &&
         m.content !== CONTINUE_PROMPT,
     )
@@ -3109,8 +3117,9 @@ export const useStore = create<AppState>()(
           if (!scene) return
           // レビュー確定はシーンノードを積む＝復元で線の途中に居るならここで上書きガード（FB6-C）
           if (!(await ensureLineTip(s.id, get().branchTrees[s.id]?.currentId))) return
+          // 書き手への指示は「起きたこと」ではないのでレビューの評価対象から落とす（IN1）
           const sceneMsgs = s.messages.filter(
-            (m) => m.sceneId === scene.id && m.content.trim().length > 0,
+            (m) => m.sceneId === scene.id && m.content.trim().length > 0 && !isDirective(m),
           )
           if (sceneMsgs.length === 0) {
             set({ error: 'このシーンにはまだ会話がありません。' })
@@ -4187,7 +4196,7 @@ export const useStore = create<AppState>()(
           }
         },
 
-        send: async (text, speakerId) => {
+        send: async (text, speakerId, kind) => {
           const s = active()
           if (!s || get().isStreaming || isSessionFinalized(s)) return
           const trimmed = text.trim()
@@ -4200,6 +4209,7 @@ export const useStore = create<AppState>()(
               {
                 id: uid(),
                 role: 'user',
+                ...(kind ? { kind } : {}),
                 sceneId: s.currentSceneId ?? undefined,
                 content: trimmed,
                 createdAt: Date.now(),

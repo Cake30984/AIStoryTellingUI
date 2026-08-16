@@ -5,6 +5,7 @@ import {
   CONTINUE_PROMPT,
   SCENE_START_PROMPT,
   illustrationContextUser,
+  isDirective,
 } from '../lib/prompts'
 import { sceneTokensOf, tokenLevel } from '../lib/tokens'
 import { getImage, useImageUrl } from '../lib/imageStore'
@@ -176,6 +177,11 @@ export default function ChatPanel({ session }: Props) {
   } = useStore()
 
   const [text, setText] = useState('')
+  /**
+   * 入力の種類（IN1）。`speech`＝主人公のセリフ・行動／`directive`＝書き手 AI への指示。
+   * セッションを切り替えたら `speech` に戻す（前の物語の気分を引きずらせない）。
+   */
+  const [inputMode, setInputMode] = useState<'speech' | 'directive'>('speech')
   const [showEditor, setShowEditor] = useState(false)
   const [showSceneEditor, setShowSceneEditor] = useState(false)
   const [showLog, setShowLog] = useState(false)
@@ -374,6 +380,7 @@ export default function ChatPanel({ session }: Props) {
   useEffect(() => {
     startSession()
     setSpeaker(undefined)
+    setInputMode('speech')
     setExpanded(new Set())
     // セッションを開いた直後は最新地点を表示（自分でセッションを開く操作の直後の1回）
     lastScrolledRef.current = null
@@ -393,7 +400,8 @@ export default function ChatPanel({ session }: Props) {
     const t = text
     setText('')
     requestAnimationFrame(autoGrow)
-    await send(t, effectiveSpeaker)
+    // 指示も送信でそのまま生成が走る（＝方向づけ付きの「続ける」。IN1）
+    await send(t, effectiveSpeaker, inputMode === 'directive' ? 'directive' : undefined)
   }
 
   const onKey = (e: React.KeyboardEvent) => {
@@ -502,15 +510,54 @@ export default function ChatPanel({ session }: Props) {
   const sceneMessagesUpto = (sceneId: string, uptoMessageId?: string): Message[] => {
     const isCur = sceneId === session.currentSceneId
     const msgs = session.messages.filter(
-      (m) => (m.sceneId === sceneId || (isCur && !m.sceneId)) && !isMarker(m) && m.content.trim(),
+      (m) =>
+        (m.sceneId === sceneId || (isCur && !m.sceneId)) &&
+        !isMarker(m) &&
+        !isDirective(m) && // 書き手への指示は絵にする対象ではない（IN1）
+        m.content.trim(),
     )
     if (!uptoMessageId) return msgs
     const idx = msgs.findIndex((m) => m.id === uptoMessageId)
     return idx >= 0 ? msgs.slice(0, idx + 1) : msgs
   }
 
+  /**
+   * メッセージ操作行。書き手への指示（IN1）では本文に紐づく操作を出さない——
+   * 挿絵・環境音ピンは「本文の一点」に紐づく機能で、指示行に置く意味がないうえ、
+   * ピンは `messageId` 必須なので指示行へ置かれると表示先を失う。
+   */
   const msgActions = (m: Message) => {
     if (isStreaming || m.pending) return null
+    const directive = isDirective(m)
+    if (directive) {
+      return (
+        <div className="msg-actions">
+          {!isFinalized && (
+            <>
+              <button onClick={() => startEdit(m)}>
+                <Icon name="pencil" size={13} /> 編集
+              </button>
+              <button onClick={() => regenerateFrom(m.id)} title="この指示以降を作り直す">
+                <Icon name="rotate-ccw" size={13} /> ここから
+              </button>
+            </>
+          )}
+          {(!isFinalized || m.id !== lastMessageId) && (
+            <button
+              onClick={() => branchFromMessage(m.id)}
+              title="今の続きを分岐として残してから、ここから作り直す"
+            >
+              <Icon name="git-branch" size={13} /> 分岐
+            </button>
+          )}
+          {!isFinalized && (
+            <button onClick={() => deleteMessage(m.id)}>
+              <Icon name="trash-2" size={13} /> 削除
+            </button>
+          )}
+        </div>
+      )
+    }
     return (
       <div className="msg-actions">
         {/* 完結した物語は書き換えない。続きを描く手段は「分岐」だけに絞る（FB9-A） */}
@@ -643,7 +690,23 @@ export default function ChatPanel({ session }: Props) {
     )
   }
 
+  /**
+   * 書き手への指示（IN1）。地の文でもセリフでもないことがひと目で分かる形で描く。
+   * **文体（novel / chat）では見た目を変えない**——文体は物語の描き方の設定であって、
+   * 舞台裏の表示を変える理由がないため。
+   */
+  const renderDirectiveMessage = (m: Message) => (
+    <div className="prose-directive" data-msg-id={m.id} key={m.id}>
+      <div className="directive-label">
+        <Icon name="clapperboard" size={12} /> 書き手への指示
+      </div>
+      {editingId === m.id ? editBox() : <div className="directive-body">{m.content}</div>}
+      {msgActions(m)}
+    </div>
+  )
+
   const renderMessage = (m: Message) => {
+    if (isDirective(m)) return renderDirectiveMessage(m)
     if (novel) return renderNovelMessage(m)
     // 会話形式（吹き出し）は行とDOMが1対1にならない（StructuredChatBody が行をグループへ畳む）ため、
     // ピンはメッセージ先頭にまとめて置く＝メッセージ単位の精度に落とす（設計 §1.3）
@@ -1133,15 +1196,36 @@ export default function ChatPanel({ session }: Props) {
                   <Icon name="flag" size={13} /> この物語は完結しました。続きを描くには、分かれ目にしたい場面の「分岐」から新しい世界線を作ってください。
                 </div>
               ) : (
+                <>
+                {/* 入力の二分化（IN1）。送信前に「どちらとして送るか」が見えている状態を作る */}
+                <div className="input-mode-row">
+                  <button
+                    className={'input-mode-chip' + (inputMode === 'speech' ? ' on' : '')}
+                    onClick={() => setInputMode('speech')}
+                    title="書いた内容を主人公の発言・行動として物語に入れます"
+                  >
+                    <Icon name="message-circle" size={13} /> 主人公として書く
+                  </button>
+                  <button
+                    className={'input-mode-chip' + (inputMode === 'directive' ? ' on' : '')}
+                    onClick={() => setInputMode('directive')}
+                    title="書いた内容を書き手 AI への指示として渡します（主人公は何も言いません）"
+                  >
+                    <Icon name="clapperboard" size={13} /> 書き手に指示
+                  </button>
+                </div>
                 <div className="input-row">
                   <textarea
                     ref={taRef}
                     rows={1}
                     value={text}
+                    className={inputMode === 'directive' ? 'directive' : undefined}
                     placeholder={
-                      session.mode === 'roleplay'
-                        ? 'メッセージや行動を入力（Enter で送信 / Shift+Enter で改行）'
-                        : '物語への介入や方向づけを入力（任意）'
+                      inputMode === 'directive'
+                        ? '書き手への指示を入力（例: そろそろ雨を降らせて緊張感を出して）'
+                        : session.mode === 'roleplay'
+                          ? 'メッセージや行動を入力（Enter で送信 / Shift+Enter で改行）'
+                          : '主人公のセリフ・行動を入力（任意）'
                     }
                     onChange={(e) => {
                       setText(e.target.value)
@@ -1154,11 +1238,17 @@ export default function ChatPanel({ session }: Props) {
                       <Icon name="square" size={13} />
                     </button>
                   ) : (
-                    <button className="send-btn" onClick={submit} disabled={!text.trim()} title="送信">
+                    <button
+                      className="send-btn"
+                      onClick={submit}
+                      disabled={!text.trim()}
+                      title={inputMode === 'directive' ? '指示を送って続きを書かせる' : '送信'}
+                    >
                       <Icon name="arrow-up" size={16} />
                     </button>
                   )}
                 </div>
+                </>
               )}
               {/* ヒントは会話開始前のみ（常時表示だと本文を1行ぶん間延びさせる。F0/A2） */}
               {session.messages.length === 0 && (
@@ -1166,8 +1256,8 @@ export default function ChatPanel({ session }: Props) {
                   {groupMode
                     ? '「次に話す」で発言者を選べます。登場キャラはシーン編集で絞れます。'
                     : session.mode === 'story'
-                      ? '入力ありで介入、空のまま「続ける」で自動進行します。'
-                      : 'キャラクターになりきって応答します。設定は右上のメニューから。'}
+                      ? '入力欄の上で「主人公として書く」と「書き手に指示」を切り替えられます。空のまま「続ける」で自動進行します。'
+                      : 'キャラクターになりきって応答します。「書き手に指示」に切り替えると、物語の方向づけだけを渡せます。'}
                 </div>
               )}
             </div>

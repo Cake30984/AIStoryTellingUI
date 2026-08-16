@@ -528,7 +528,10 @@ export function buildMessages(
     return { role: m.role, content: m.content }
   }
 
-  const filled = session.messages.filter((m) => m.content.trim().length > 0)
+  const filled = session.messages
+    .filter((m) => m.content.trim().length > 0)
+    // 書き手への指示は枠付きの user メッセージとして送る（IN1）。枠は常に同じ文面＝履歴が byte 安定に保たれる
+    .map((m) => (isDirective(m) ? { ...m, content: directivePromptText(m.content) } : m))
   // 原文で送る範囲（PC3）。窓が未確定なら従来どおり現在シーンのみ（過去シーンは要約で引き継ぐ）
   const win = rawWindowOf(session, refs.currentSceneId)
   const history: ChatMessage[] = filled
@@ -552,6 +555,29 @@ export function buildMessages(
   const body = depth3 ? insertAtDepth(withBridge, INJECT_DEPTH, depth3) : withBridge
   const depth0 = depthZeroContent(session, refs, activeCharacter)
   return depth0 ? [system, ...body, { role: 'user', content: depth0 }] : [system, ...body]
+}
+
+/**
+ * 「書き手への指示」（IN1）を本編プロンプトへ載せるときの枠。
+ *
+ * **文面は常に固定**にする。「最新の指示だけ丁寧な枠・古いものは短縮形」にすると、新しい指示を送るたびに
+ * 過去メッセージの中身が変わってプロンプトキャッシュが切れる（キャッシュ粒度はメッセージ単位＝
+ * `docs/詳細設計_プロンプト構造とキャッシュ.md` §2）。枠が固定なら履歴は byte 安定のまま伸びる。
+ *
+ * system には何も足さない＝指示を1度も使わないセッションが説明文を毎ターン払わずに済む（PC1+PC4）。
+ */
+export const DIRECTIVE_HEADER =
+  '【書き手への指示】これは登場人物の発言ではなく、書き手であるあなたへの指示です。' +
+  '主人公が言った・行ったこととして扱わず、この指示文そのものを本文に書かずに、続きの描写へ反映してください。'
+
+/** そのメッセージが「書き手への指示」か（判定はここに一本化する） */
+export function isDirective(m: Pick<Message, 'kind'>): boolean {
+  return m.kind === 'directive'
+}
+
+/** 指示の本文を、API へ送る枠付きテキストへ変換する */
+export function directivePromptText(content: string): string {
+  return `${DIRECTIVE_HEADER}\n${content}`
 }
 
 export const CONTINUE_PROMPT = '（続けて。物語をさらに展開させてください。）'
@@ -621,6 +647,8 @@ function recentPlainLines(session: Session, refs: ResolvedRefs, count: number): 
   const nameOf = (id?: string) => refs.characters.find((c) => c.id === id)?.name
   const history = session.messages
     .filter((m) => m.content.trim().length > 0)
+    // 書き手への指示は物語の本文ではない＝主人公の次の行動案の材料にしない（IN1）
+    .filter((m) => !isDirective(m))
     .filter((m) => !refs.currentSceneId || !m.sceneId || m.sceneId === refs.currentSceneId)
   return history.slice(-count).map((m) => {
     const text = plainTextOf(m.content)

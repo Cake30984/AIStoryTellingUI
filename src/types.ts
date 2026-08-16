@@ -367,9 +367,21 @@ export interface Choice {
   text: string
 }
 
+/**
+ * 通常の本文ではない特別な入力の種別（IN1）。
+ * `'directive'`＝書き手 AI への指示（物語の方向づけ）。主人公の発言・行動としては扱わない。
+ */
+export type MessageKind = 'directive'
+
 export interface Message {
   id: string
   role: Role
+  /**
+   * 通常の本文なら未設定（＝旧データもすべてこちら）。
+   * `'directive'` のときだけ、プロンプトでは枠付きの指示として送られ、
+   * 裏方 LLM の文脈・物語の書き出しからは落ちる（IN1・`docs/設計_入力の二分化とローカルLLM案内.md`）。
+   */
+  kind?: MessageKind
   /** グループ会話で「誰の発言か」を示す（assistant のみ） */
   characterId?: string
   /** どのシーンに属する発言か */
