@@ -29,3 +29,5 @@ tauri-plugin-log = "2"
 tauri-plugin-http = { version = "2.5.9", features = ["unsafe-headers"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
+# R3: API キーを OS の資格情報ストアへ分離（平文 state.json に置かない）
+keyring = { version = "3.6", features = ["windows-native"] }

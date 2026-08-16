@@ -356,6 +356,96 @@ const tauriCheckpointStore: CheckpointStore = {
 /** 環境に応じたチェックポイント実体ストア。Web は IndexedDB、Tauri は %APPDATA%/data/checkpoints/ */
 export const checkpointStore: CheckpointStore = isTauri() ? tauriCheckpointStore : webCheckpointStore
 
+// --- 資格情報ストア（R3: API キーを平文 state.json から出す）---
+// Tauri: Rust 側の save_secret/load_secret/delete_secret（OS の資格情報ストア）。
+// Web: 何もしない（apiKey はこれまで通り partialize でそのまま localStorage に入る。
+// Web 版は開発・検証用であり配布物ではないため R3 の対象外）。
+
+/** providers の資格情報ストアの id プレフィックス（Rust 側の account 名） */
+export const PROVIDER_SECRET_PREFIX = 'provider:'
+/** imageProviders の資格情報ストアの id プレフィックス */
+export const IMAGE_PROVIDER_SECRET_PREFIX = 'imageProvider:'
+
+async function tauriSaveSecret(id: string, value: string): Promise<void> {
+  const { invoke } = await import('@tauri-apps/api/core')
+  await invoke('save_secret', { id, value })
+}
+
+async function tauriLoadSecret(id: string): Promise<string> {
+  const { invoke } = await import('@tauri-apps/api/core')
+  try {
+    return (await invoke<string | null>('load_secret', { id })) ?? ''
+  } catch (e) {
+    console.error('[platform] 資格情報の読み込みに失敗', id, e)
+    return ''
+  }
+}
+
+async function tauriDeleteSecret(id: string): Promise<void> {
+  const { invoke } = await import('@tauri-apps/api/core')
+  try {
+    await invoke('delete_secret', { id })
+  } catch (e) {
+    console.error('[platform] 資格情報の削除に失敗', id, e)
+  }
+}
+
+/**
+ * apiKey を資格情報ストアへ保存する（Tauri のみ。Web は no-op）。
+ * store.ts の upsertProvider / upsertImageProvider から呼ぶ。空文字なら削除として扱う
+ * （「キーを消して保存」で古い値が資格情報ストアに残り続けるのを防ぐ）。
+ */
+export async function persistProviderSecret(prefix: string, id: string, apiKey: string): Promise<void> {
+  if (!isTauri()) return
+  if (!apiKey) {
+    await tauriDeleteSecret(`${prefix}${id}`)
+    return
+  }
+  await tauriSaveSecret(`${prefix}${id}`, apiKey)
+}
+
+/** 資格情報ストアから削除する（Tauri のみ）。store.ts の deleteProvider / deleteImageProvider から呼ぶ */
+export async function removeProviderSecret(prefix: string, id: string): Promise<void> {
+  if (!isTauri()) return
+  await tauriDeleteSecret(`${prefix}${id}`)
+}
+
+/**
+ * persist 保存直前に apiKey を落とす（Tauri のみ。Web はそのまま）。store.ts の partialize から呼ぶ。
+ * 資格情報ストアが唯一の保存先になるので、ここで落とさないと state.json に平文が残り続ける。
+ */
+export function stripApiKeyForPersist<T extends { apiKey: string }>(items: T[]): T[] {
+  if (!isTauri()) return items
+  return items.map((item) => ({ ...item, apiKey: '' }))
+}
+
+/**
+ * 起動時（ハイドレーション後）に1回呼ぶ。資格情報ストアの値を優先して apiKey を埋め直す。
+ * **既存ユーザーの移行も兼ねる**：資格情報ストアが空で、persist から読み込まれた apiKey が
+ * まだ残っている（旧 state.json に平文で書かれていた）場合はそれを資格情報ストアへ移し、
+ * 以後は partialize が落とすので state.json 側は次回保存時に自然に空へ上書きされる。
+ * Web では何もしない（isTauri() でない限り items をそのまま返す）。
+ */
+export async function syncProviderSecrets<T extends { id: string; apiKey: string }>(
+  items: T[],
+  prefix: string,
+): Promise<T[]> {
+  if (!isTauri() || items.length === 0) return items
+  return Promise.all(
+    items.map(async (item) => {
+      const secretId = `${prefix}${item.id}`
+      const stored = await tauriLoadSecret(secretId)
+      if (stored) return { ...item, apiKey: stored }
+      if (item.apiKey) {
+        // 旧 state.json 由来の平文キーを資格情報ストアへ移行
+        await tauriSaveSecret(secretId, item.apiKey)
+        return item
+      }
+      return { ...item, apiKey: '' }
+    }),
+  )
+}
+
 // ウィンドウの close 要求時、デバウンス中の書き込みを flush してから閉じる
 if (isTauri()) {
   void (async () => {

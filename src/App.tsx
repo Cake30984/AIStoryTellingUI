@@ -80,6 +80,10 @@ export default function App() {
   // storage は async 化済み（Web は同期 localStorage・Tauri は T3 のファイル backend）。
   // ハイドレーション完了までスプラッシュを表示する。
   const [hydrated, setHydrated] = useState(() => useStore.persist.hasHydrated())
+  // R3: providers/imageProviders の apiKey を資格情報ストアから埋め直すまでの間、
+  // hasUsableProvider を空キーのまま評価して System へ誤って飛ばさないためのゲート
+  // （Web では hydrateProviderSecrets が即resolveするため体感の遅延はない）
+  const [secretsReady, setSecretsReady] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
   // 空状態から新規作成した直後に開くセッション設定（F3/R15）
   const [newEditorId, setNewEditorId] = useState<string | null>(null)
@@ -103,9 +107,27 @@ export default function App() {
 
   useEffect(() => {
     if (!hydrated) return
+    if (schemaError) {
+      setSecretsReady(true) // 読めない状態では資格情報同期をしない（本編を描かない画面になる）
+      return
+    }
+    let cancelled = false
+    void useStore
+      .getState()
+      .hydrateProviderSecrets()
+      .finally(() => {
+        if (!cancelled) setSecretsReady(true)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [hydrated, schemaError])
+
+  useEffect(() => {
+    if (!hydrated || !secretsReady) return
     if (!hasUsableProvider) setView('system')
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hydrated])
+  }, [hydrated, secretsReady])
 
   // 起動時に木へ対応しない孤児チェックポイント（書込み中断等の残骸）を掃除する（C3）。
   // 画像記録のバックフィル（FB6-A・初回1回）も同じタイミングで裏実行する。
@@ -149,7 +171,7 @@ export default function App() {
   // グローバルショートカット（UI-7）: Ctrl+K/1/2/3/G/.。没入モードの Ctrl+. トグルもここに集約（旧 UI-4 実装を移管）
   useGlobalShortcuts(() => setPaletteOpen((v) => !v))
 
-  if (!hydrated) {
+  if (!hydrated || !secretsReady) {
     return (
       <div className="app solo">
         <div className="main">

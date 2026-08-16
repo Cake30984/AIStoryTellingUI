@@ -53,7 +53,18 @@ import type {
 import { DEFAULT_UI, normalizeUiPrefs } from './types'
 import { fetchModels, streamChat } from './lib/openrouter'
 import { base64ToBlob, blobToBase64, gcImages, getImage, listImageIds, putImage, putImageAs } from './lib/imageStore'
-import { blockStateWrites, checkpointStore, PERSIST_KEY, stateStorage } from './lib/platform'
+import {
+  blockStateWrites,
+  checkpointStore,
+  IMAGE_PROVIDER_SECRET_PREFIX,
+  PERSIST_KEY,
+  persistProviderSecret,
+  PROVIDER_SECRET_PREFIX,
+  removeProviderSecret,
+  stateStorage,
+  stripApiKeyForPersist,
+  syncProviderSecrets,
+} from './lib/platform'
 import {
   APP_STATE_VERSION,
   CURRENT_SCHEMA_VERSIONS,
@@ -1320,6 +1331,11 @@ interface AppState {
   toggleFavorite: (modelId: string) => void
   /** 新規セッション・カセット開始時の既定モデルを設定する（空文字でクリア） */
   setDefaultModelRef: (ref: string) => void
+  /**
+   * 起動時に1回呼ぶ（R3）。providers / imageProviders の apiKey を資格情報ストアの値で埋め直す
+   * （Tauri のみ。旧 state.json 由来の平文キーの移行も兼ねる）。Web では no-op。
+   */
+  hydrateProviderSecrets: () => Promise<void>
 
   // 画像生成の接続先
   upsertImageProvider: (p: ImageProvider) => void
@@ -2607,27 +2623,44 @@ export const useStore = create<AppState>()(
           }),
         clearUsageLog: () => set({ usageLog: [] }),
 
-        upsertProvider: (p) =>
+        upsertProvider: (p) => {
           set((st) => ({
             providers: st.providers.some((x) => x.id === p.id)
               ? st.providers.map((x) => (x.id === p.id ? p : x))
               : [...st.providers, p],
-          })),
+          }))
+          void persistProviderSecret(PROVIDER_SECRET_PREFIX, p.id, p.apiKey)
+        },
 
-        deleteProvider: (id) =>
+        deleteProvider: (id) => {
           set((st) => ({
             providers: st.providers.length > 1 ? st.providers.filter((p) => p.id !== id) : st.providers,
-          })),
+          }))
+          void removeProviderSecret(PROVIDER_SECRET_PREFIX, id)
+        },
 
-        upsertImageProvider: (p) =>
+        upsertImageProvider: (p) => {
           set((st) => ({
             imageProviders: st.imageProviders.some((x) => x.id === p.id)
               ? st.imageProviders.map((x) => (x.id === p.id ? p : x))
               : [...st.imageProviders, p],
-          })),
+          }))
+          void persistProviderSecret(IMAGE_PROVIDER_SECRET_PREFIX, p.id, p.apiKey)
+        },
 
-        deleteImageProvider: (id) =>
-          set((st) => ({ imageProviders: st.imageProviders.filter((p) => p.id !== id) })),
+        deleteImageProvider: (id) => {
+          set((st) => ({ imageProviders: st.imageProviders.filter((p) => p.id !== id) }))
+          void removeProviderSecret(IMAGE_PROVIDER_SECRET_PREFIX, id)
+        },
+
+        hydrateProviderSecrets: async () => {
+          const st = get()
+          const [providers, imageProviders] = await Promise.all([
+            syncProviderSecrets(st.providers, PROVIDER_SECRET_PREFIX),
+            syncProviderSecrets(st.imageProviders, IMAGE_PROVIDER_SECRET_PREFIX),
+          ])
+          set({ providers, imageProviders })
+        },
 
         setLastImageProviderId: (id) => set({ lastImageProviderId: id }),
         setLastDraftModel: (ref) => set({ lastDraftModel: ref }),
@@ -4974,9 +5007,10 @@ export const useStore = create<AppState>()(
       partialize: (st) => ({
         // セーブデータ／カセット定義の版番（入れ物の版番が据え置きでも単独で上げられる）
         schemaVersions: CURRENT_SCHEMA_VERSIONS,
-        providers: st.providers,
+        // R3: Tauri では apiKey を落として保存する（唯一の保存先は資格情報ストア。stripApiKeyForPersist）
+        providers: stripApiKeyForPersist(st.providers),
         // 画像生成の接続先も API キーを含むため localStorage のみ（exportBundle には含めない）
-        imageProviders: st.imageProviders,
+        imageProviders: stripApiKeyForPersist(st.imageProviders),
         lastImageProviderId: st.lastImageProviderId,
         lastDraftModel: st.lastDraftModel,
         defaultModelRef: st.defaultModelRef,
