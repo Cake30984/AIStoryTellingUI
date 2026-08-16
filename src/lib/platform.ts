@@ -4,6 +4,11 @@ export function isTauri(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 }
 
+/** R4: OAuth (PKCE) 接続はローカル受け口を Rust 側で立てる関係で Tauri 限定（Web には実装しない） */
+export function oauthPkceAvailable(): boolean {
+  return isTauri()
+}
+
 /** zustand persist の永続化キー。Tauri のファイル移行判定（旧 WebView localStorage の検出）にも使う */
 export const PERSIST_KEY = 'ai-storytelling-store-v3'
 

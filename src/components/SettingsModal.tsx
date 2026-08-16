@@ -1,7 +1,9 @@
 import { useRef, useState } from 'react'
 import { useStore } from '../store'
 import { downloadBundle, downloadBlob } from '../lib/io'
-import { PROVIDER_PRESETS, modelRefLabel, newProvider } from '../lib/providers'
+import { PROVIDER_PRESETS, defaultOpenRouterProvider, modelRefLabel, newProvider } from '../lib/providers'
+import { oauthPkceAvailable } from '../lib/platform'
+import { startOpenRouterOAuth } from '../lib/oauthPkce'
 import ImageProviderSettings from './ImageProviderSettings'
 import ModelPicker from './ModelPicker'
 import { appConfirm } from '../lib/dialogs'
@@ -62,8 +64,27 @@ export function SettingsBody() {
   const [showAddKey, setShowAddKey] = useState(false)
   const [includeImages, setIncludeImages] = useState(true)
   const [showDefaultPicker, setShowDefaultPicker] = useState(false)
+  const [oauthBusy, setOauthBusy] = useState(false)
+  const [oauthError, setOauthError] = useState('')
 
   const fileRef = useRef<HTMLInputElement>(null)
+
+  const connectOpenRouterOAuth = async () => {
+    setOauthBusy(true)
+    setOauthError('')
+    try {
+      const apiKey = await startOpenRouterOAuth()
+      const existing = providers.find((p) => p.id === 'openrouter')
+      const next = existing ? { ...existing, apiKey } : defaultOpenRouterProvider(apiKey)
+      upsertProvider(next)
+      setLocalKeys((k) => ({ ...k, [next.id]: apiKey }))
+      setNotice('OpenRouter にブラウザ承認で接続しました。')
+    } catch (e) {
+      setOauthError((e as Error).message)
+    } finally {
+      setOauthBusy(false)
+    }
+  }
 
   const saveKey = (p: Provider) => {
     upsertProvider({ ...p, apiKey: localKeys[p.id] ?? '' })
@@ -143,6 +164,25 @@ export function SettingsBody() {
               </a>
               ）。
             </div>
+
+            {oauthPkceAvailable() && (
+              <div style={{ marginBottom: 10 }}>
+                <button className="btn primary" style={{ width: '100%' }} onClick={connectOpenRouterOAuth} disabled={oauthBusy}>
+                  {oauthBusy ? (
+                    '承認待ち…（ブラウザで承認してください）'
+                  ) : (
+                    <>
+                      <Icon name="refresh-cw" size={14} /> OpenRouter にブラウザで接続（キーの貼り付け不要）
+                    </>
+                  )}
+                </button>
+                {oauthError && (
+                  <p className="desc" style={{ color: 'var(--danger)' }}>
+                    {oauthError}
+                  </p>
+                )}
+              </div>
+            )}
 
             {providers.map((p) => (
               <div key={p.id} className="lore-entry" style={{ marginBottom: 10 }}>

@@ -31,3 +31,5 @@ tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 # R3: API キーを OS の資格情報ストアへ分離（平文 state.json に置かない）
 keyring = { version = "3.6", features = ["windows-native"] }
+# R4: OAuth 承認ページをシステム既定ブラウザで開く（WebView 内で開くと OpenRouter 側に拒否されうる）
+tauri-plugin-opener = "2"

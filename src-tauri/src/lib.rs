@@ -1,3 +1,5 @@
+mod oauth;
+
 // R3: API キーを OS の資格情報ストアへ分離する（平文 state.json に置かない）。
 // service 名はアプリの identifier（tauri.conf.json）に固定し、id（"provider:<uuid>" 等。
 // platform.ts の PROVIDER_SECRET_PREFIX / IMAGE_PROVIDER_SECRET_PREFIX）を account 名に使う。
@@ -35,7 +37,13 @@ pub fn run() {
     .plugin(tauri_plugin_http::init())
     .plugin(tauri_plugin_fs::init())
     .plugin(tauri_plugin_dialog::init())
-    .invoke_handler(tauri::generate_handler![save_secret, load_secret, delete_secret])
+    .plugin(tauri_plugin_opener::init())
+    .invoke_handler(tauri::generate_handler![
+      save_secret,
+      load_secret,
+      delete_secret,
+      oauth::oauth_pkce_listen
+    ])
     .setup(|app| {
       if cfg!(debug_assertions) {
         app.handle().plugin(
