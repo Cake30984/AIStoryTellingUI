@@ -306,6 +306,8 @@ function normalizeStartPreset(raw: any): WorldStartPreset | undefined {
   if (typeof raw.openingTitle === 'string') p.openingTitle = raw.openingTitle
   if (typeof raw.initialDirective === 'string') p.initialDirective = raw.initialDirective
   if (typeof raw.authorNote === 'string') p.authorNote = raw.authorNote
+  // 開始シーンの状況メモ（CS2）
+  if (typeof raw.openingSceneNote === 'string') p.openingSceneNote = raw.openingSceneNote
   // 新しい登場人物の登場ポリシー（FB7-E）。未知の値は読み捨てる
   if (raw.newCharacterPolicy === 'allow' || raw.newCharacterPolicy === 'avoid') {
     p.newCharacterPolicy = raw.newCharacterPolicy
@@ -448,7 +450,6 @@ export function freshSessionOf(session: Session): Session {
   const scene: Scene = {
     id: uid(),
     title: 'シーン 1',
-    activeCharacterIds: session.characterIds,
     note: '',
     summary: '',
     createdAt: now,

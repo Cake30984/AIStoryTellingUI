@@ -28,10 +28,8 @@ export const CONSEQUENCE_CLAUSE =
   '関係性の記述と矛盾しない態度・口調・距離感で各キャラを描写してください。'
 
 export interface ResolvedRefs {
-  /** 現在のシーンに登場するキャラ */
+  /** セッションの参加キャラ全員（CS1 以降、シーン単位の絞り込みは無い） */
   characters: Character[]
-  /** セッション参加キャラ全員（配役の動的解決用。現在シーン外も含む） */
-  allCharacters: Character[]
   world?: World
   persona?: Persona
   /** 過去シーンの引き継ぎ要約（これまでのあらすじ） */
@@ -67,7 +65,7 @@ function characterBlock(c: Character, label?: string): string {
 function castingBlock(session: Session, refs: ResolvedRefs): string | undefined {
   const roles = (refs.world?.roles ?? []).filter((role) => role.id.trim() && role.name.trim())
   if (roles.length === 0) return undefined
-  const members = roleMembers(roles, session.roleAssignments, refs.allCharacters)
+  const members = roleMembers(roles, session.roleAssignments, refs.characters)
   const safe = (text: string) => text.trim().replaceAll('@', '＠')
   const lines = roles.flatMap((role) => {
     const characters = members.get(role.id) ?? []
@@ -794,7 +792,8 @@ export function reviewSystem(
   const schema = [
     a &&
       `  "summary": "このシーンの引き継ぎ要約（日本語の文字列。改行は \\\\n で表現。重要な出来事・関係や心情の変化・約束や未解決事項・終了時の状況を含む）",`,
-    a && `  "suggestions": [ {"title":"次シーンの短い見出し","note":"次シーンの状況・方向性の説明（2〜3文）"} ],`,
+    a &&
+      `  "suggestions": [ {"title":"次シーンの短い見出し","note":"次シーンの状況・方向性の説明（2〜3文）。時・場所と、その場に居合わせる人物を必ず含める"} ],`,
     a && `  "characterGrowth": [ {"name":"キャラ名","addition":"今回の展開で新たに判明/深化した性格・背景を一文で"} ],`,
     a && `  "worldGrowth": [ {"keys":["トリガー語"],"content":"新たに判明した世界設定"} ],`,
     a &&
@@ -812,6 +811,8 @@ export function reviewSystem(
     a && `- summary は必ず JSON 文字列（string）で返す。配列や改行そのままは不可。`,
     a &&
       `- suggestions は2〜3個。**各案はこのシーン終了直後の「同一の起点」から分岐する、相互に排他な"次シーンの候補"**。案どうしは時系列でつながってはならない。【次シーンの時間】があればその時刻にふさわしい状況で書く（直前の続きをそのまま続けない）。`,
+    a &&
+      `- 各案の note には、その場面に居合わせる人物を明記する。登場人物として定義されていても、その場に居ないことはある（全員が同席する必然性が無ければ一部でよい）。`,
     a && `- characterGrowth / worldGrowth は、既存設定に無い"新しく分かったこと"のみ。無ければ空配列。`,
     a &&
       `- **newCharacters**：このシーンで初めて登場した人物のうち、【登場人物の現行設定】にも【ユーザーが演じる人物】にも載っていない**名前を持つ人物**だけを挙げる（名前の無い通行人・店員などのモブは挙げない）。既に挙がっている人物・既存キャラの別名は挙げない。無ければ空配列。`,
@@ -847,7 +848,7 @@ export function reviewSystem(
 export function nextSceneSystem(): string {
   return (
     `あなたは物語編集アシスタントです。直前までのあらすじと「次シーンの方向性」を踏まえ、次シーンの候補のみを JSON で出力してください（前後に文章・コードフェンスを付けない）。\n` +
-    `{ "suggestions": [ {"title":"次シーンの短い見出し","note":"次シーンの状況・方向性の説明（2〜3文）"} ] }\n` +
+    `{ "suggestions": [ {"title":"次シーンの短い見出し","note":"次シーンの状況・方向性の説明（2〜3文）。時・場所と、その場に居合わせる人物を必ず含める"} ] }\n` +
     `指針:\n` +
     `- suggestions は2〜3個。**各案はこのシーン終了直後の「同一の起点」から分岐する、相互に排他な候補**。案どうしは時系列でつながってはならない（案2が案1の続き・結果になってはいけない）。\n` +
     `- 与えられた【次シーンの方向性】に必ず沿う。【次シーンの時間】があれば、その時刻にふさわしい（時間が経過した後の）場面として書く。`

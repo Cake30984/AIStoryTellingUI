@@ -308,8 +308,9 @@ Clause（節）は 4 種類:
       "openingTitle": "…"       // startPreset.openingTitle と同じ
     },
     "scenes": [
-      { "id": "scene_1", "title": "シーン 1", "activeCharacterIds": ["c_a","c_b"],
-        "note": "", "summary": "", "createdAt": 0 }
+      { "id": "scene_1", "title": "シーン 1",
+        "note": "開始シーンの時・場所・その場に居る人物（例: 入学式の翌朝の教室。主人公と幼馴染の二人）",
+        "summary": "", "createdAt": 0 }
     ],
     "currentSceneId": "scene_1", // scenes[0].id と一致させる
     "timeline": {
@@ -399,7 +400,7 @@ Clause（節）は 4 種類:
       "id": "s1", "title": "", "mode": "story", "model": "", "reviewModel": "", "choicesModel": "",
       "characterIds": ["c1"], "worldId": "w1", "personaId": "p1", "roleAssignments": [],
       "authorNote": "", "story": { "premise": "", "genre": "", "opening": "", "openingTitle": "" },
-      "scenes": [{ "id": "sc1", "title": "シーン 1", "activeCharacterIds": ["c1"], "note": "", "summary": "", "createdAt": 0 }],
+      "scenes": [{ "id": "sc1", "title": "シーン 1", "note": "", "summary": "", "createdAt": 0 }],
       "currentSceneId": "sc1",
       "timeline": { "enabled": true, "slots": ["朝","昼","夜"], "totalDays": null, "spanLabel": "",
         "currentDay": 1, "currentSlot": 0, "startDay": 1, "startSlot": 0 },

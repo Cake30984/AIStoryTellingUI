@@ -227,7 +227,6 @@ export default function ChatPanel({ session }: Props) {
     ? session.scenes.find((sc) => sc.id === session.ending!.epilogueSceneId)
     : undefined
   const isFinalized = !!session.ending && !!epilogueScene?.endedAt
-  const castIds = scene && scene.activeCharacterIds.length > 0 ? scene.activeCharacterIds : session.characterIds
 
   // ── 環境音ピン（AM1）─────────────────────────────────
   // 全シーンのピンを1つの索引にまとめ、レンダラが「このメッセージのこの行」で引けるようにする。
@@ -266,12 +265,13 @@ export default function ChatPanel({ session }: Props) {
     return () => el.removeEventListener('wheel', onWheel)
   }, [ui.ambientEnabled, ambientPins.length])
 
+  // 登場キャラはセッションの顔ぶれ（CS1。シーン単位の絞り込みは廃止）
   const participants = useMemo(
     () =>
-      castIds
+      session.characterIds
         .map((id) => characters.find((c) => c.id === id))
         .filter((c): c is NonNullable<typeof c> => !!c),
-    [castIds, characters],
+    [session.characterIds, characters],
   )
   const world = worlds.find((w) => w.id === session.worldId)
   const endingDef = session.ending
@@ -493,14 +493,6 @@ export default function ChatPanel({ session }: Props) {
 
   const isMarker = (m: Message) =>
     m.role === 'user' && (m.content === CONTINUE_PROMPT || m.content === SCENE_START_PROMPT)
-
-  // FB6-B: 対象シーンの参加キャラ（過去シーンはそのシーンの配役を使う）
-  const sceneParticipants = (sc: Scene) => {
-    const ids = sc.activeCharacterIds.length > 0 ? sc.activeCharacterIds : session.characterIds
-    return ids
-      .map((id) => characters.find((c) => c.id === id))
-      .filter((c): c is NonNullable<typeof c> => !!c)
-  }
 
   /**
    * 対象シーンの本文メッセージ（マーカー・空を除く）をアンカーまで返す（FB6-B）。
@@ -825,7 +817,7 @@ export default function ChatPanel({ session }: Props) {
         </div>
 
         {scene && (
-          <button className="scene-chip" onClick={() => setShowSceneEditor(true)} title="登場キャラクター・シーン編集">
+          <button className="scene-chip" onClick={() => setShowSceneEditor(true)} title="シーン名・状況メモの編集">
             <Icon name="book-open" size={14} />
             <span className="scene-chip-title">
               {scene.title}
@@ -958,9 +950,6 @@ export default function ChatPanel({ session }: Props) {
                   )
                   if (msgs.length === 0 && !sc.summary && !isCurrent) return null
                   const open = isCurrent || expanded.has(sc.id)
-                  const castNames = sc.activeCharacterIds
-                    .map((id) => characters.find((c) => c.id === id)?.name)
-                    .filter(Boolean)
                   // シーンに本文（マーカー以外）か要約があれば見出しを表示（FB3-A1）。
                   // 「複数シーンあれば無条件で見出し」は、本文を全削除した空シーンでもタイトルだけ残る
                   // 原因だったので外した（FB8-A #4）。健全なシーンは本文か要約を必ず持つのでこれで十分。
@@ -973,9 +962,6 @@ export default function ChatPanel({ session }: Props) {
                           <span className="scene-title">
                             <Icon name="book-open" size={13} className="scene-title-icon" /> {sc.title}
                           </span>
-                          {castNames.length > 0 && (
-                            <span className="scene-cast">{castNames.join('・')}</span>
-                          )}
                           {!isCurrent && msgs.length > 0 && (
                             <button className="scene-toggle" onClick={() => toggleScene(sc.id)}>
                               {open ? '会話を隠す' : '会話を表示'}
@@ -1288,7 +1274,7 @@ export default function ChatPanel({ session }: Props) {
           )
         })()}
       {showSceneEditor && scene && (
-        <SceneEditor session={session} scene={scene} onClose={() => setShowSceneEditor(false)} />
+        <SceneEditor scene={scene} onClose={() => setShowSceneEditor(false)} />
       )}
       {showLog && (
         <StoryLogModal
@@ -1320,7 +1306,8 @@ export default function ChatPanel({ session }: Props) {
           // 対象シーンは現在シーンに限らない（過去シーン・任意メッセージへの後付け生成。FB6-B）
           const sc = session.scenes.find((s) => s.id === illustGenFor.sceneId)
           if (!sc) return null
-          const cast = sceneParticipants(sc)
+          // 顔ぶれはセッション共通（CS1）。過去シーンでも同じ
+          const cast = participants
           const ctxMsgs = sceneMessagesUpto(sc.id, illustGenFor.messageId)
           // アンカーから遡って文字数予算でキャップ（推定 8,000 文字 ≒ 4,000〜5,000 トークン程度）
           const budget = 8000

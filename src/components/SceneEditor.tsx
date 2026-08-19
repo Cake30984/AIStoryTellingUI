@@ -1,35 +1,21 @@
 import { useState } from 'react'
 import { useStore } from '../store'
-import type { Scene, Session } from '../types'
-import EntityAvatar from './EntityAvatar'
+import type { Scene } from '../types'
 import ModalShell from './ModalShell'
 
 interface Props {
-  session: Session
   scene: Scene
   onClose: () => void
 }
 
-export default function SceneEditor({ session, scene, onClose }: Props) {
-  const { updateScene, characters } = useStore()
+export default function SceneEditor({ scene, onClose }: Props) {
+  const { updateScene } = useStore()
   const [d, setD] = useState<Scene>(scene)
   const [dirty, setDirty] = useState(false)
   const patch = (p: Partial<Scene>) => {
     setD((s) => ({ ...s, ...p }))
     setDirty(true)
   }
-
-  // 候補はセッションの登場キャラ（ロスター）
-  const roster = session.characterIds
-    .map((id) => characters.find((c) => c.id === id))
-    .filter((c): c is NonNullable<typeof c> => !!c)
-
-  const toggle = (id: string) =>
-    patch({
-      activeCharacterIds: d.activeCharacterIds.includes(id)
-        ? d.activeCharacterIds.filter((c) => c !== id)
-        : [...d.activeCharacterIds, id],
-    })
 
   return (
     <ModalShell
@@ -46,7 +32,6 @@ export default function SceneEditor({ session, scene, onClose }: Props) {
             onClick={() => {
               updateScene(d.id, {
                 title: d.title,
-                activeCharacterIds: d.activeCharacterIds,
                 note: d.note,
                 summary: d.summary,
               })
@@ -68,30 +53,10 @@ export default function SceneEditor({ session, scene, onClose }: Props) {
           </div>
 
           <div className="field">
-            <label>このシーンの登場キャラ</label>
+            <label>状況メモ（時・場所・その場に居る人物）</label>
             <div className="desc">
-              選んだキャラだけが登場・発言します。空にすると全員が対象になります。
+              ここに書いた顔ぶれが、このシーンに登場する人物の目安になります。
             </div>
-            {roster.length === 0 ? (
-              <p className="inline-empty">セッション設定で登場キャラクターを追加してください。</p>
-            ) : (
-              <div className="pick-grid">
-                {roster.map((c) => (
-                  <button
-                    key={c.id}
-                    className={'pick-chip' + (d.activeCharacterIds.includes(c.id) ? ' on' : '')}
-                    onClick={() => toggle(c.id)}
-                  >
-                    <EntityAvatar className="dot-avatar" avatar={c.avatar} name={c.name || '無名'} />
-                    {c.name || '無名'}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="field">
-            <label>状況メモ（時・場所・状況）</label>
             <textarea
               rows={2}
               value={d.note}

@@ -771,6 +771,20 @@ export default function WorldEditor({ world, onClose }: Props) {
                   onChange={(e) => patchPreset({ initialDirective: e.target.value })}
                 />
               </div>
+              {/* 開始シーンの状況メモ（CS2）。2シーン目以降はレビューが書く */}
+              <div className="field">
+                <label>開始シーンの状況メモ（任意）</label>
+                <div className="desc">
+                  最初のシーンの「時・場所・その場に居る人物」です。ここに書いた顔ぶれが、開始直後に
+                  登場する人物の目安になります（2シーン目以降はシーンを終えるたびに自動で書かれます）。
+                </div>
+                <textarea
+                  rows={2}
+                  value={sp.openingSceneNote ?? ''}
+                  placeholder="例: 入学式の翌朝、教室。主人公と幼馴染の二人だけ。"
+                  onChange={(e) => patchPreset({ openingSceneNote: e.target.value })}
+                />
+              </div>
               {/* 新しい登場人物の登場ポリシー（発見キャラ・FB7-E） */}
               <div className="field">
                 <label>新しい登場人物</label>
@@ -802,6 +816,8 @@ export default function WorldEditor({ world, onClose }: Props) {
                   毎回「常に踏まえる重要事項」として AI に渡されます。文体・禁則などの指示向きで、ロールプレイモードでも有効です。
                   毎ターン送り直されるので短く保ってください。「頼まれても簡単には引き受けない人物」のような
                   人物の芯は、ここよりキャラクターの人格欄に書く方がよく効きます。
+                  「人の出入りが多い場所」のような登場の作法もここに書けます（誰がその場に居るかは
+                  シーンの状況メモが持つので、ここには世界ぜんたいの傾向だけを書きます）。
                 </div>
                 <textarea
                   rows={2}

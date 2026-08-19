@@ -1150,10 +1150,6 @@
   font-weight: 600;
   font-size: 14px;
 }
-.log-cast {
-  font-size: 11px;
-  color: var(--text-faint);
-}
 .log-summary {
   font-size: 13.5px;
   color: var(--text-dim);

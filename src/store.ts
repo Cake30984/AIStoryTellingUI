@@ -885,6 +885,7 @@ export function hasStartPreset(world: World | undefined | null): boolean {
     p.openingTitle?.trim() ||
     p.initialDirective?.trim() ||
     p.authorNote?.trim() ||
+    p.openingSceneNote?.trim() ||
     !!p.newCharacterPolicy ||
     (p.introTags?.length ?? 0) > 0 ||
     (p.timeline && p.timeline.slots.length > 0)
@@ -1022,15 +1023,10 @@ export function newGroupSubClause(kind: GroupSubClause['kind'], world: World): G
   }
 }
 
-export function newScene(
-  title: string,
-  activeCharacterIds: string[] = [],
-  timeLabel?: string,
-): Scene {
+export function newScene(title: string, timeLabel?: string): Scene {
   return {
     id: uid(),
     title,
-    activeCharacterIds: [...activeCharacterIds],
     note: '',
     summary: '',
     timeLabel,
@@ -2177,11 +2173,6 @@ export const useStore = create<AppState>()(
       function resolveRefs(session: Session): ResolvedRefs {
         const { characters, worlds, personas } = get()
         const scene = currentScene(session)
-        // 登場キャラはシーンの active cast に限定（未設定ならセッションの全キャラ）
-        const castIds =
-          scene && scene.activeCharacterIds.length > 0
-            ? scene.activeCharacterIds
-            : session.characterIds
         // 素材＋オーバーレイの実効ビューを組んでから、解禁条件が未達のロアを落とす（G3）。
         // ここ1箇所で本編・レビュー・状況要約のすべてが「解禁済みだけ」を見る（詳細設計 §3.2）
         const baseWorld = effectiveWorld(
@@ -2192,16 +2183,14 @@ export const useStore = create<AppState>()(
           baseWorld,
           conditionContextOf(session, baseWorld, characters),
         )
-        const allCharacters = session.characterIds
+        // 登場キャラはセッションの顔ぶれで固定（CS1。シーン単位の絞り込みは廃止し、
+        // 「その場に誰が居るか」は【現在の場面】＝ scene.note が伝える）
+        const sessionCharacters = session.characterIds
           .map((id) => characters.find((c) => c.id === id))
           .filter((c): c is Character => !!c)
           .map((c) => effectiveCharacter(c, session.overlay))
         return {
-          characters: castIds
-            .map((id) => characters.find((c) => c.id === id))
-            .filter((c): c is Character => !!c)
-            .map((c) => effectiveCharacter(c, session.overlay)),
-          allCharacters,
+          characters: sessionCharacters,
           world: effWorld,
           persona: personas.find((p) => p.id === session.personaId) ?? undefined,
           priorSummaries: session.scenes
@@ -2725,10 +2714,6 @@ export const useStore = create<AppState>()(
               ...s,
               characterIds: s.characterIds.filter((cid) => cid !== id),
               roleAssignments: (s.roleAssignments ?? []).filter((assignment) => assignment.characterId !== id),
-              scenes: s.scenes.map((sc) => ({
-                ...sc,
-                activeCharacterIds: sc.activeCharacterIds.filter((cid) => cid !== id),
-              })),
               state: {
                 ...s.state,
                 relations: s.state.relations.filter((r) => r.fromId !== id && r.toId !== id),
@@ -3848,7 +3833,7 @@ export const useStore = create<AppState>()(
             const subjects = firingSubjects
             const parties = partiesOf(subjects)
             const endingName = bindRoleNames(ending.name, subjects)
-            const epiScene = newScene(`エピローグ：${endingName}`, scene.activeCharacterIds, 'エピローグ')
+            const epiScene = newScene(`エピローグ：${endingName}`, 'エピローグ')
             // エピローグ指針の @ロール名/@相手 を当事者名へ置換して注入
             epiScene.note = bindRoleNames(ending.epilogueGuidance, subjects)
             const reachedAt = Date.now()
@@ -3934,7 +3919,7 @@ export const useStore = create<AppState>()(
           const title =
             [nextLabel, base].filter(Boolean).join('：') ||
             `シーン ${s.scenes.length + 1}`
-          const next = newScene(title, scene.activeCharacterIds, nextLabel)
+          const next = newScene(title, nextLabel)
           next.note = sug?.note || evNote || ''
           // キャラの組ごとの独立発火（FB7-D）: 消化キーは eventKey（`eventId@charId…`）を積む
           const usedEventIds = event
@@ -4159,22 +4144,26 @@ export const useStore = create<AppState>()(
           get().upsertCharacter(character)
           const s = get().sessions.find((x) => x.id === sessionId)
           if (!s || s.characterIds.includes(character.id)) return
-          const cur = currentScene(s)
           get().updateSession(sessionId, {
             characterIds: [...s.characterIds, character.id],
-            scenes: cur
-              ? s.scenes.map((sc) =>
-                  sc.id === cur.id
-                    ? { ...sc, activeCharacterIds: [...sc.activeCharacterIds, character.id] }
-                    : sc,
-                )
-              : s.scenes,
           })
         },
 
         startSession: () => {
           const s = active()
           if (!s || s.messages.length > 0) return
+          // 開始シーンの状況メモ（CS2）。2シーン目以降はレビューが書くが、1シーン目だけは
+          // 書き手が居ないので世界観の開始テンプレートから写す。既に何か書かれていれば触らない
+          // （ユーザーの記入 > テンプレート）。ここで入れておけば、最初の生成より前に
+          // シーン設定で読んで直せる。
+          const preset = get().worlds.find((w) => w.id === s.worldId)?.startPreset
+          const openingNote = preset?.openingSceneNote?.trim()
+          const cur = currentScene(s)
+          if (openingNote && cur && !cur.note.trim()) {
+            patchActive({
+              scenes: s.scenes.map((sc) => (sc.id === cur.id ? { ...sc, note: openingNote } : sc)),
+            })
+          }
           const refs = resolveRefs(s)
           // ロールプレイで単一キャラ＋挨拶があれば最初の発話に
           if (s.mode === 'roleplay' && refs.characters.length === 1) {

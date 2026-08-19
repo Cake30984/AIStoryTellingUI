@@ -1,4 +1,3 @@
-import { useStore } from '../store'
 import type { Session } from '../types'
 import ModalShell from './ModalShell'
 import { Icon } from './icons'
@@ -11,8 +10,6 @@ interface Props {
 }
 
 export default function StoryLogModal({ session, onClose, onGenIllustration }: Props) {
-  const characters = useStore((s) => s.characters)
-
   const recap = session.scenes
     .filter((sc) => sc.summary.trim())
     .map((sc) => `■ ${sc.timeLabel ? `${sc.timeLabel}｜` : ''}${sc.title}\n${sc.summary.trim()}`)
@@ -48,9 +45,6 @@ export default function StoryLogModal({ session, onClose, onGenIllustration }: P
           ) : (
             <div className="log-list">
               {session.scenes.map((sc) => {
-                const cast = sc.activeCharacterIds
-                  .map((id) => characters.find((c) => c.id === id)?.name)
-                  .filter(Boolean)
                 const isCurrent = sc.id === session.currentSceneId
                 return (
                   <div key={sc.id} className="log-item">
@@ -58,7 +52,6 @@ export default function StoryLogModal({ session, onClose, onGenIllustration }: P
                       {sc.timeLabel && <span className="log-time">{sc.timeLabel}</span>}
                       <span className="log-title">{sc.title}</span>
                       {isCurrent && <span className="badge">進行中</span>}
-                      {cast.length > 0 && <span className="log-cast">{cast.join('・')}</span>}
                       <span style={{ flex: 1 }} />
                       {onGenIllustration && (
                         <button

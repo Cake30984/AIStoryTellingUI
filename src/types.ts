@@ -275,6 +275,12 @@ export interface WorldStartPreset {
   /** 固定メモ（→ session.authorNote） */
   authorNote?: string
   /**
+   * 開始シーンの状況メモ（→ 1シーン目の `Scene.note`。CS2）。
+   * 2シーン目以降はシーン終了レビューが自動で書くが、1シーン目だけは書き手が居ない。
+   * 「誰がこの場に居るか」を作者が指定できる唯一の場所。空なら何もしない。
+   */
+  openingSceneNote?: string
+  /**
    * 置換タグの定義（→ session.story.introTags。A-1）。世界選択時に他項目と同じ規則でセッションへ
    * コピーされ、以後はセッション側で自由に追加・削除できる（素材＝再利用資源のため実名は焼き込まない）。
    */
@@ -480,9 +486,10 @@ export interface AmbientPin {
 export interface Scene {
   id: string
   title: string
-  /** このシーンに登場するキャラ（session.characterIds の部分集合） */
-  activeCharacterIds: string[]
-  /** 時・場所・状況メモ */
+  /**
+   * 時・場所・状況メモ。**その場に居る人物もここに書く**（CS1/CS2）。
+   * 【現在の場面】として注入され、シーン終了レビューが次シーンぶんを自動で埋める。
+   */
   note: string
   /** 終了時に生成される引き継ぎ要約 */
   summary: string

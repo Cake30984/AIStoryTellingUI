@@ -49,16 +49,13 @@ export default function SessionEditor({ session, onClose }: Props) {
     // （そうしないと保存時に新しく出来たシーンや他の変更が巻き戻ってしまう）。
     const live = useStore.getState().sessions.find((x) => x.id === session.id)
     const liveScenes = live?.scenes ?? d.scenes
-    // 選んだキャラを現在シーンの登場キャラにも反映（顔ぶれ＝初期の登場メンバー）
+    // 現在シーンの時刻ラベルだけ追従させる（顔ぶれはセッション側で持つ＝CS1）
     const cur = live ? currentScene(live) : currentScene(d)
     const label = d.timeline.enabled ? timeLabelOf(d.timeline) : undefined
-    const scenes = cur
-      ? liveScenes.map((sc) =>
-          sc.id === cur.id
-            ? { ...sc, activeCharacterIds: d.characterIds, timeLabel: label ?? sc.timeLabel }
-            : sc,
-        )
-      : liveScenes
+    const scenes =
+      cur && label
+        ? liveScenes.map((sc) => (sc.id === cur.id ? { ...sc, timeLabel: label } : sc))
+        : liveScenes
     // 未開始（メッセージ0件）なら、現在位置を「開始時点」として記録する。
     // カセット初期化（freshSessionOf）やチェックポイントのルートがここへ戻れるようにするため（FB2-B）
     const notStarted = (live?.messages.length ?? d.messages.length) === 0
@@ -248,6 +245,8 @@ export default function SessionEditor({ session, onClose }: Props) {
                     毎回「常に踏まえる重要事項」として AI に渡されます。文体・禁則などの指示向きです。
                     毎ターン送り直されるので短く保ってください。「頼まれても簡単には引き受けない人物」のような
                     人物の芯は、ここよりキャラクターの人格欄に書く方がよく効きます。
+                    「人の出入りが多い場所」のような登場の作法もここに書けます（誰がその場に居るかは
+                    シーンの状況メモが持つので、ここには世界ぜんたいの傾向だけを書きます）。
                   </div>
                   <textarea
                     rows={2}
@@ -344,6 +343,8 @@ export default function SessionEditor({ session, onClose }: Props) {
                   毎回「常に踏まえる重要事項」として AI に渡されます。文体・禁則などの指示向きです。
                   毎ターン送り直されるので短く保ってください。「頼まれても簡単には引き受けない人物」のような
                   人物の芯は、ここよりキャラクターの人格欄に書く方がよく効きます。
+                  「人の出入りが多い場所」のような登場の作法もここに書けます（誰がその場に居るかは
+                  シーンの状況メモが持つので、ここには世界ぜんたいの傾向だけを書きます）。
                 </div>
                 <textarea
                   rows={2}
