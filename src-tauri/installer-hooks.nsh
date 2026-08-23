@@ -30,9 +30,16 @@
     Pop $0
     DetailPrint "資格情報の削除: 終了コード $0"
 
-    ; アンインストーラ自身が $INSTDIR に残ることがあるので念のため片付ける
-    ; （実行中は消せないため、消せなければ再起動時に消す予約を入れる）
-    Delete /REBOOTOK "$INSTDIR\uninstall.exe"
-    RMDir /REBOOTOK "$INSTDIR"
+    ; アンインストーラは自分自身を消せない（$INSTDIR から実行中のため）。Tauri の
+    ; アンインストーラは $TEMP へ自分をコピーし直さないので、uninstall.exe が残る。
+    ;
+    ; `/REBOOTOK` は使えない——再起動時削除は HKLM の PendingFileRenameOperations へ
+    ; 書くので**管理者権限が要る**。本アプリはユーザー単位インストール（管理者不要）なので
+    ; 予約が黙って失敗し、ファイルが永久に残る（2026-08-23 に実機で確認）。
+    ;
+    ; 代わりに、アンインストーラの終了を待ってからフォルダごと消す使い捨てプロセスを投げる。
+    ${If} $INSTDIR != ""
+      Exec `cmd /c ping 127.0.0.1 -n 4 > nul & rmdir /s /q "$INSTDIR"`
+    ${EndIf}
   ${EndIf}
 !macroend
