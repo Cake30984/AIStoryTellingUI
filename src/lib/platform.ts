@@ -451,15 +451,32 @@ export async function syncProviderSecrets<T extends { id: string; apiKey: string
   )
 }
 
-// ウィンドウの close 要求時、デバウンス中の書き込みを flush してから閉じる
+// ウィンドウの close 要求時、デバウンス中の書き込みを flush してから閉じる。
+//
+// **`core:window:allow-destroy` を capabilities に入れておくこと**（`core:window` の既定権限は
+// 取得系だけで destroy を含まない）。preventDefault したあと destroy が権限拒否されると
+// **閉じるのを止めただけで終わり、ウィンドウが二度と閉じられなくなる**（2026-08-23 に実機で再現）。
+// 権限が欠けても詰まないよう、closing フラグを立てて2回目の close 要求は素通しさせる。
 if (isTauri()) {
   void (async () => {
     const { getCurrentWindow } = await import('@tauri-apps/api/window')
     const win = getCurrentWindow()
+    let closing = false
     await win.onCloseRequested(async (event) => {
+      if (closing) return // 2回目は既定の閉じる動作に任せる
       event.preventDefault()
-      await flushStateWrite()
-      await win.destroy()
+      try {
+        await flushStateWrite()
+      } catch (e) {
+        console.error('[platform] 終了時の書き込みに失敗', e)
+      }
+      closing = true
+      try {
+        await win.destroy()
+      } catch (e) {
+        console.error('[platform] destroy に失敗。close で閉じ直す', e)
+        await win.close()
+      }
     })
   })()
 }
