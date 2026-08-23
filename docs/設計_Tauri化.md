@@ -238,7 +238,7 @@ data/
 2. **`<a download>` は Tauri で動かない**。ダウンロードは必ず `io.ts` の `downloadBlob`（内部で saveBlob アダプタ）を経由する。直接アンカー DL を書かない。
 3. **`isTauri()` 分岐を platform.ts（とストレージ実装ファイル）の外に書かない**。コンポーネント・store に環境分岐を持ち込まない。
 4. **Tauri plugin の JS パッケージは動的 import**（Web ビルドのバンドルを汚さない・Web 実行時に評価させない）。
-5. **API キーは state.json に平文**で入る。`data/` をクラウド同期対象にする場合の注意を README に明記（localStorage 時代と保護水準は同等）。
+5. ~~**API キーは state.json に平文**で入る~~ → **R3 で解消（2026-08-16 実装・2026-08-23 実機確認）。** キーは OS の資格情報ストア（Windows 資格情報マネージャー・service `com.tokatokage.delist`）へ分離済みで、`state.json` の `apiKey` は空。**ただし `data/` をクラウド同期対象にする場合の注意は README に要る**——キーは入っていないが、**物語の本文と画像はそのまま入っている**（＋複数 PC での同時起動は `state.json` の上書き事故になる）。
 6. ポート 5173 が他プロセスに占有されていると `tauri:dev` は起動失敗（strictPort）。`npx kill-port 5173` で解放。ブラウザ版 dev との同時起動不可。
 7. T3 以降も WebView 内蔵の旧データは削除しない（移行フラグ方式・ロールバック可能に）。
 8. Rust 側の依存は公式プラグインのみに保つ（自作 command は plugin-http 代替が必要になった場合の 1 個だけ）。
