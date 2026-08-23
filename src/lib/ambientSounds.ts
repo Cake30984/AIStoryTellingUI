@@ -9,24 +9,29 @@ import type { AmbientSoundDef } from '../types'
  * `'rain-soft'` のような安定・可読キーにする（カセットを別バージョンのアプリで開いた時の
  * 解決性とフォールバックのため）。
  *
- * 実体は `src/assets/ambient/<id>.ogg`。**カタログに宣言があってファイルが無い id は
+ * 実体は `src/assets/ambient/<id>.opus`。**カタログに宣言があってファイルが無い id は
  * 起動時に落とす**（`AMBIENT_SOUNDS` は解決できたものだけを持つ）ので、音源の調達と
  * 実装を非同期に進められる。ライセンス確認待ちの音もここに宣言だけしておける。
  */
 
 /**
  * Vite のアセットグラフ経由で同梱音源の URL を解決する（Web / Tauri で同じ結果になる）。
- * 形式は **FLAC（可逆）**。元素材が 320kbps の MP3 なので、そこから非可逆で再エンコードすると
- * 世代劣化が乗る。加工（切り出し・ラウドネス調整・ループのクロスフェード）だけを掛けて
- * 可逆で格納する。ステレオ・48kHz も素材のまま（モノラル化・リサンプルは劣化なので行わない）。
+ * 形式は **Opus 96kbps（非可逆）・ステレオ**。
+ *
+ * **2026-08-23 に FLAC（可逆）から切り替えた。** 旧方針は「元素材が 320kbps MP3 なので
+ * 非可逆で再エンコードすると世代劣化が乗る」という理由で可逆保存を選んでいたが、
+ * **25本で 127MB ＝ 配布物の 99%** になり、アプリ本体（0.69MB）に対して説明のつかない配分だった。
+ * 無料版のダウンロード障壁は初回生成到達率に直結するため、**小音量で流す背景音のループ**という
+ * 用途に対して可逆保存は過剰と判断した（127MB → 12MB）。
+ * 旧 FLAC は git 履歴に残っているので、判断を戻すことはできる。
  */
-const FILES = import.meta.glob('../assets/ambient/*.flac', {
+const FILES = import.meta.glob('../assets/ambient/*.opus', {
   query: '?url',
   import: 'default',
   eager: true,
 }) as Record<string, string>
 
-const urlOf = (id: string): string | undefined => FILES[`../assets/ambient/${id}.flac`]
+const urlOf = (id: string): string | undefined => FILES[`../assets/ambient/${id}.opus`]
 
 /** 音源ファイルの有無に関わらない宣言。実体が無いものは `AMBIENT_SOUNDS` から落ちる */
 interface CatalogEntry {
