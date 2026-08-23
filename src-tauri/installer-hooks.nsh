@@ -19,8 +19,20 @@
     ; ラベル（"Target:"）は環境によって訳語が変わりうるので、ラベルではなく
     ; ターゲット名そのものを正規表現で拾う。接続先の id は動的（provider:<uuid> 等）なので
     ; 静的に列挙できず、前の版が残した孤児エントリもここで一緒に片付く。
-    ; NSIS は `$(...)` を言語文字列として解釈するため、PowerShell 側で部分式を使わないこと。
-    nsExec::ExecToLog 'powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "cmdkey /list | Select-String ''LegacyGeneric:target=[^\s]+com\.tokatokage\.delist'' -AllMatches | ForEach-Object { $_.Matches } | ForEach-Object { $t = $_.Value; cmdkey /delete:$t | Out-Null }"'
+    ;
+    ; **NSIS の文字列は ` で囲むこと。** ' で囲むと PowerShell 側の ' と衝突して
+    ; 最初の ' で文字列が打ち切られ、コマンドが壊れたまま黙って何もしない
+    ; （2026-08-23 に実際に踏んだ。アンインストールしてもキーが残った）。
+    ; PowerShell の $ は NSIS で $$ と書く（$_ をそのまま書くと「不明な変数」警告が出て、
+    ; 未定義の挙動〔今は素通し〕に依存することになる）。部分式 $( ) は NSIS が言語文字列として
+    ; 解釈するため PowerShell 側で使わないこと。
+    nsExec::ExecToLog `powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "cmdkey /list | Select-String 'LegacyGeneric:target=[^\s]+com\.tokatokage\.delist' -AllMatches | ForEach-Object { $$_.Matches } | ForEach-Object { $$t = $$_.Value; cmdkey /delete:$$t | Out-Null }"`
     Pop $0
+    DetailPrint "資格情報の削除: 終了コード $0"
+
+    ; アンインストーラ自身が $INSTDIR に残ることがあるので念のため片付ける
+    ; （実行中は消せないため、消せなければ再起動時に消す予約を入れる）
+    Delete /REBOOTOK "$INSTDIR\uninstall.exe"
+    RMDir /REBOOTOK "$INSTDIR"
   ${EndIf}
 !macroend
