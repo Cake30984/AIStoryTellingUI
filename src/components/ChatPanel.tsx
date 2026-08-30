@@ -26,6 +26,7 @@ import ImageGenModal from './ImageGenModal'
 import AmbientPinModal from './AmbientPinModal'
 import AmbientPinLayer, { type AmbientDrag } from './AmbientPinLayer'
 import ModalShell from './ModalShell'
+import OpeningBriefing from './OpeningBriefing'
 import type { AmbientPin, DockTab, Message, Scene, SceneIllustration, Session } from '../types'
 import SessionEditor from './SessionEditor'
 import SceneEditor from './SceneEditor'
@@ -759,6 +760,10 @@ export default function ChatPanel({ session }: Props) {
   }
 
   /** メッセージ＋挿絵をアンカー順に描画（アンカー消失分はシーン末尾に集約） */
+  // 開始ブリーフィング（CG3）を差し込む位置＝**セッション最初の本文メッセージ（＝導入文）の直後**。
+  // 「導入文が表示された時点で目標を示す」が要件なので、シーン末尾ではなく導入の直後に置く。
+  const briefingAfterId = session.messages.find((m) => !isMarker(m))?.id
+
   const renderSceneContent = (sc: Scene, msgs: Message[]) => {
     const ills = sc.illustrations ?? []
     const msgIds = new Set(msgs.map((m) => m.id))
@@ -800,6 +805,7 @@ export default function ChatPanel({ session }: Props) {
         <Fragment key={m.id}>
           {renderMessage(m)}
           {(byMessage.get(m.id) ?? []).map(illView)}
+          {m.id === briefingAfterId && <OpeningBriefing session={session} />}
         </Fragment>,
       )
       seenContent = true
@@ -1251,7 +1257,7 @@ export default function ChatPanel({ session }: Props) {
               {session.messages.length === 0 && (
                 <div className="hint">
                   {groupMode
-                    ? '「次に話す」で発言者を選べます。登場キャラはシーン編集で絞れます。'
+                    ? '「次に話す」で発言者を選べます。'
                     : session.mode === 'story'
                       ? '入力欄の上で「主人公として書く」と「書き手に指示」を切り替えられます。空のまま「続ける」で自動進行します。'
                       : 'キャラクターになりきって応答します。「書き手に指示」に切り替えると、物語の方向づけだけを渡せます。'}

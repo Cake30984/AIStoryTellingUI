@@ -1061,7 +1061,10 @@ export interface UiPrefs {
 }
 
 export const DEFAULT_UI: UiPrefs = {
-  dockTab: null,
+  // 初期値は「状態」タブを開いた状態（CG3）。目標＝エンディング・実績・残り日数はここにしか
+  // 出ておらず、既定が null だと**初めて遊ぶ人はパネルの存在にすら気付けない**。
+  // 既に設定を持っている人は `normalizeUiPrefs` が保存値を通すので影響を受けない
+  dockTab: 'status',
   dockWidth: 360,
   fontSize: 15.5,
   lineHeight: 1.9,

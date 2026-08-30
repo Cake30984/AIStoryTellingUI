@@ -210,6 +210,62 @@
 .scene-spine:hover::before {
   border-color: var(--accent);
 }
+/* ---------- 開始ブリーフィング（CG3。導入文の直後に1枚だけ） ---------- */
+.briefing {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  margin: 18px 0 22px;
+  font-size: 13.5px;
+  line-height: 1.75;
+}
+.briefing-head {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.briefing-span {
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+.briefing-block {
+  margin-bottom: 10px;
+}
+.briefing-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-faint);
+  margin-bottom: 4px;
+}
+.briefing-item {
+  margin-bottom: 3px;
+}
+.briefing-item-name {
+  font-weight: 700;
+}
+.briefing-item-desc {
+  color: var(--text-dim);
+}
+.briefing-item-desc::before {
+  content: ' — ';
+  color: var(--text-faint);
+}
+.briefing-note {
+  color: var(--text-dim);
+}
+.briefing-how {
+  color: var(--text-faint);
+  font-size: 12.5px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+
 .scene-summary {
   background: var(--bg-elev);
   border: 1px solid var(--border);
