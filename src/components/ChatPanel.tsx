@@ -273,18 +273,27 @@ export default function ChatPanel({ session }: Props) {
   }, [ui.ambientEnabled, ambientPins.length])
 
   const world = worlds.find((w) => w.id === session.worldId)
-  // 登場キャラはセッションの顔ぶれ（CS1。シーン単位の絞り込みは廃止）から、
-  // 登場条件が未達のキャラを落としたもの（CG1）。話者チップ・「次に話す」の候補になるので、
-  // ここに未解禁キャラが残るとプレイヤーが指名できてしまう
+  // 顔ぶれは2種類ある。**混ぜてはいけない**（CG1 §1.4 の原則＝「AI に渡すもの」だけをゲートし、
+  // 「アプリが同一性を判定するために持つもの」はゲートしない）。
+  //
+  // - `knownCast` … セッションの顔ぶれ全員（CS1）。**既に書かれた本文の話者解決**に使う。
+  //   ここをゲートすると、まだ解禁されていない人物が出てくる導入文や、分岐で解禁前へ戻った
+  //   過去シーンの本文が、未解決話者（？バッジ＝発見キャラの導線）になってしまう
+  // - `participants` … そこから未解禁を落としたもの。**これから作るもの**（話者チップ・「次に話す」・
+  //   後付け画像生成の配役）に使う。ここに未解禁キャラが残るとプレイヤーが指名できてしまう
+  const knownCast = useMemo(
+    () =>
+      session.characterIds
+        .map((id) => characters.find((c) => c.id === id))
+        .filter((c): c is NonNullable<typeof c> => !!c),
+    [session.characterIds, characters],
+  )
   const participants = useMemo(
     () => {
       const locked = lockedCharacterIds(session, conditionContextOf(session, world, characters))
-      return session.characterIds
-        .filter((id) => !locked.has(id))
-        .map((id) => characters.find((c) => c.id === id))
-        .filter((c): c is NonNullable<typeof c> => !!c)
+      return locked.size === 0 ? knownCast : knownCast.filter((c) => !locked.has(c.id))
     },
-    [session, world, characters],
+    [session, world, characters, knownCast],
   )
   const endingDef = session.ending
     ? world?.endings?.find((e) => e.id === session.ending!.defId)
@@ -660,13 +669,13 @@ export default function ChatPanel({ session }: Props) {
     // ドラッグ中は、カーソルが乗っているメッセージにだけ行アンカーを増やす（落とし先の候補）
     const dropTarget = ambientDrag?.overMessageId === m.id
     if (m.role === 'assistant') {
-      const structured = hasStructuredLines(m.content, participants)
+      const structured = hasStructuredLines(m.content, knownCast)
       return (
         <div className="prose-block" data-msg-id={m.id} key={m.id}>
           {structured ? (
             <StructuredNovelBody
               content={m.content}
-              participants={participants}
+              participants={knownCast}
               persona={persona}
               pending={!!m.pending && isStreaming}
               pinsByLine={byLine}
@@ -715,13 +724,13 @@ export default function ChatPanel({ session }: Props) {
     // 会話形式（吹き出し）は行とDOMが1対1にならない（StructuredChatBody が行をグループへ畳む）ため、
     // ピンはメッセージ先頭にまとめて置く＝メッセージ単位の精度に落とす（設計 §1.3）
     const chatPins = [...(pinIndex.get(m.id)?.values() ?? [])].flat()
-    if (m.role === 'assistant' && editingId !== m.id && hasStructuredLines(m.content, participants)) {
+    if (m.role === 'assistant' && editingId !== m.id && hasStructuredLines(m.content, knownCast)) {
       return (
         <div className="st-message" data-msg-id={m.id} key={m.id}>
           <PinMark pins={chatPins} />
           <StructuredChatBody
             content={m.content}
-            participants={participants}
+            participants={knownCast}
             persona={persona}
             pending={!!m.pending && isStreaming}
             onDefineSpeaker={defineSpeaker}
