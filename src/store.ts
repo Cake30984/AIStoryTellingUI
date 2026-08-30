@@ -543,6 +543,44 @@ export function gateLoreByCondition(
   return { ...world, entries: kept }
 }
 
+/** 1件も未解禁が無い場合に返す共有の空集合（毎ターン呼ばれるため無駄な生成を避ける） */
+const EMPTY_LOCKED: ReadonlySet<string> = new Set<string>()
+
+/**
+ * 登場条件（`Session.characterGates`）が未達のキャラ id の集合（CG1）。
+ * `gateLoreByCondition` のキャラ版だが、World ではなく id 集合を返す——キャラは
+ * `resolveRefs` の配役解決だけでなく `buildStateInfo` でも落とす必要があり、
+ * 両方から同じ判定を参照したいため（docs/設計_登場条件と目標提示.md §1.4）。
+ * ゲートを持たないキャラは常に登場する＝未設定のセッションは従来どおり全員入り。
+ */
+export function lockedCharacterIds(
+  session: Session,
+  ctx: ConditionContext,
+): ReadonlySet<string> {
+  const gates = session.characterGates ?? []
+  if (gates.length === 0) return EMPTY_LOCKED
+  const locked = new Set<string>()
+  for (const g of gates) {
+    if (!matchGroups(g.condition, ctx).ok) locked.add(g.characterId)
+  }
+  return locked.size ? locked : EMPTY_LOCKED
+}
+
+/**
+ * 登場条件つきキャラのうち、この文脈で**新たに**解禁されたものの id（CG1。通知は1回だけ）。
+ * 名前はトーストに出さない（ロアが中身を出さないのと同じ理由＝本編で自然に登場するべきもの）。
+ */
+export function newlyRevealedCharacterIds(
+  session: Session,
+  ctx: ConditionContext,
+  alreadyRevealed: string[] | undefined,
+): string[] {
+  const known = new Set(alreadyRevealed ?? [])
+  return (session.characterGates ?? [])
+    .filter((g) => !known.has(g.characterId) && matchGroups(g.condition, ctx).ok)
+    .map((g) => g.characterId)
+}
+
 /**
  * 解禁条件つきロアのうち、この文脈で**新たに**解禁されたものの id（G3。通知は1回だけ）。
  * 中身はトーストに出さない（本編で自然に出るべきもの）ので id だけ返す。
@@ -1797,11 +1835,20 @@ function actionCheckpointLabel(session: Session): string {
  * 状態（関係性 prose ＋ 気分 ＋ 注入対象スタット）をプロンプト用テキストに整形（空なら ''）。
  * 関係性は prose（LLM が読む）、スタットは inject:true のものだけ数値を併記。
  */
-function buildStateInfo(session: Session, characters: Character[], world?: World): string {
-  const relations = session.state?.relations ?? []
-  const moods = session.state?.moods ?? []
-  const stats = session.state?.stats ?? []
-  const counters = session.state?.counters ?? []
+function buildStateInfo(
+  session: Session,
+  characters: Character[],
+  world?: World,
+  /** 登場条件が未達のキャラ id（CG1）。関係性・気分・キャラ別の数を実名ごと落とす */
+  locked: ReadonlySet<string> = EMPTY_LOCKED,
+): string {
+  // 未解禁キャラは「AI に渡すもの」から全部落ちる。ここを塞がないと inject:true の
+  // キャラ別 stat/counter が実名つきで【状態（現在）】に載る（設計 §1.4 の経路1）
+  const visible = (id?: string) => !id || !locked.has(id)
+  const relations = (session.state?.relations ?? []).filter((r) => visible(r.fromId) && visible(r.toId))
+  const moods = (session.state?.moods ?? []).filter((m) => visible(m.characterId))
+  const stats = (session.state?.stats ?? []).filter((s) => visible(s.characterId))
+  const counters = (session.state?.counters ?? []).filter((c) => visible(c.characterId))
   const nameOf = (id: string) => characters.find((c) => c.id === id)?.name ?? 'キャラ'
   const aspectName = (id: string) => world?.relationAspects.find((a) => a.id === id)?.name ?? ''
   const moodOf = (id: string) => moods.find((m) => m.characterId === id)?.mood
@@ -2179,13 +2226,15 @@ export const useStore = create<AppState>()(
           worlds.find((w) => w.id === session.worldId),
           session.overlay,
         )
-        const effWorld = gateLoreByCondition(
-          baseWorld,
-          conditionContextOf(session, baseWorld, characters),
-        )
+        const ctx = conditionContextOf(session, baseWorld, characters)
+        const effWorld = gateLoreByCondition(baseWorld, ctx)
+        // 登場条件が未達のキャラを落とす（CG1）。条件の判定文脈（ctx）は**ゲート前の顔ぶれ**で
+        // 組む＝未解禁キャラの数も条件の材料になる（他のゲートの前提に使える）
+        const locked = lockedCharacterIds(session, ctx)
         // 登場キャラはセッションの顔ぶれで固定（CS1。シーン単位の絞り込みは廃止し、
         // 「その場に誰が居るか」は【現在の場面】＝ scene.note が伝える）
         const sessionCharacters = session.characterIds
+          .filter((id) => !locked.has(id))
           .map((id) => characters.find((c) => c.id === id))
           .filter((c): c is Character => !!c)
           .map((c) => effectiveCharacter(c, session.overlay))
@@ -2201,7 +2250,7 @@ export const useStore = create<AppState>()(
           timelineInfo: timelinePromptInfo(session.timeline),
           // ending が set の間は nearEnd を出さない（「クライマックスへ収束」とエピローグ指示が矛盾するため）
           nearEnd: session.ending ? false : isNearEnd(session.timeline),
-          stateInfo: buildStateInfo(session, characters, effWorld),
+          stateInfo: buildStateInfo(session, characters, effWorld, locked),
           // エピローグシーン滞在中だけエンディング指示を注入する（他シーンでは自由な文体へ戻る）
           ending:
             session.ending && scene?.id === session.ending.epilogueSceneId
@@ -2714,6 +2763,10 @@ export const useStore = create<AppState>()(
               ...s,
               characterIds: s.characterIds.filter((cid) => cid !== id),
               roleAssignments: (s.roleAssignments ?? []).filter((assignment) => assignment.characterId !== id),
+              // 登場条件も一緒に掃除する（CG1。残しても害は無いが、消えたキャラのゲートは読めない）
+              ...(s.characterGates
+                ? { characterGates: s.characterGates.filter((g) => g.characterId !== id) }
+                : {}),
               state: {
                 ...s.state,
                 relations: s.state.relations.filter((r) => r.fromId !== id && r.toId !== id),
@@ -3164,6 +3217,11 @@ export const useStore = create<AppState>()(
                 }`
               })
               .join('\n')
+            // 未解禁キャラ（CG1）はレビューにも渡さない。`refs.characters` が唯一の「解禁済み」の
+            // 供給元なので、そこから可視の id を作って以降の一覧（関係性・数）を絞る。
+            // **発見キャラの重複判定（newCharacters / ？バッジ）はゲート前の `s.characterIds` を
+            // 見続ける**＝未解禁キャラの名前が本文に出ても新キャラとして二重に起案されない（設計 §1.4）
+            const visibleIds = new Set(refs.characters.map((c) => c.id))
             const ctxParts: string[] = []
             if (castDefs) ctxParts.push(`【登場人物の現行設定】\n${castDefs}`)
             if (refs.world) ctxParts.push(`【世界観】${refs.world.name}: ${refs.world.description}`)
@@ -3232,6 +3290,7 @@ export const useStore = create<AppState>()(
                 stateLines.push(`- ${def.name}: ${v}`)
               } else {
                 const vals = s.characterIds
+                  .filter((id) => visibleIds.has(id))
                   .map((id) => {
                     const c = get().characters.find((x) => x.id === id)
                     if (!c) return ''
@@ -3252,6 +3311,7 @@ export const useStore = create<AppState>()(
                 stateLines.push(`- ${def.name}: ${v}`)
               } else {
                 const vals = s.characterIds
+                  .filter((id) => visibleIds.has(id))
                   .map((id) => {
                     const c = get().characters.find((x) => x.id === id)
                     if (!c) return ''
@@ -3271,6 +3331,7 @@ export const useStore = create<AppState>()(
 
             // 現在の関係性 prose（レビューが書き直すための起点）
             const relNow = (s.state?.relations ?? [])
+              .filter((r) => visibleIds.has(r.fromId))
               .map((r) => {
                 const who = get().characters.find((c) => c.id === r.fromId)?.name ?? 'キャラ'
                 const asp = r.aspects
@@ -3707,6 +3768,30 @@ export const useStore = create<AppState>()(
               s.revealedLoreIds,
             )
 
+          /** 新たに解禁されたキャラの id（CG1）。ロアと同じ文脈・同じタイミングで見る */
+          const revealedCharsOf = (usedIds: string[]) =>
+            newlyRevealedCharacterIds(
+              s,
+              conditionContextOf({ ...s, usedEventIds: usedIds }, stateWorld, characters, newState),
+              s.revealedCharacterIds,
+            )
+
+          /**
+           * 解禁トーストの文面。**中身も名前も出さない**——ロアは本編で自然に明かされるべきもので
+           * （詳細設計 §3.3）、人物も同じ（登場そのものがネタバレになる。CG1 §1.5）。
+           */
+          const revealNotice = (lore: string[], chars: string[]): { infoNotice?: string } => {
+            const text =
+              lore.length && chars.length
+                ? '新しい設定と人物が明らかになりました'
+                : lore.length
+                  ? '新しい設定が明らかになりました'
+                  : chars.length
+                    ? '新しい人物が物語に加わりました'
+                    : ''
+            return text ? { infoNotice: text } : {}
+          }
+
           // 発見ロア・キャラ成長はセッションのオーバーレイへ積む（元 Character/World は不変に保つ）
           const nextOverlay = (prev: Session['overlay'] | undefined): Session['overlay'] => {
             const src = prev ?? { lore: [], characterDevelopments: [] }
@@ -3839,6 +3924,7 @@ export const useStore = create<AppState>()(
             const reachedAt = Date.now()
             // usedEventIds はエンディングが勝つため据え置き＝確定前のまま判定する
             const revealedLore = revealedLoreOf(s.usedEventIds)
+            const revealedChars = revealedCharsOf(s.usedEventIds)
             set((st) => ({
               sessions: st.sessions.map((sess) =>
                 sess.id === s.id
@@ -3858,6 +3944,9 @@ export const useStore = create<AppState>()(
                       ...(revealedLore.length
                         ? { revealedLoreIds: [...(sess.revealedLoreIds ?? []), ...revealedLore] }
                         : {}),
+                      ...(revealedChars.length
+                        ? { revealedCharacterIds: [...(sess.revealedCharacterIds ?? []), ...revealedChars] }
+                        : {}),
                       ending: {
                         defId: ending.id,
                         name: endingName,
@@ -3872,8 +3961,7 @@ export const useStore = create<AppState>()(
               sceneReview: null,
               newlyUnlockedAchievements: newlyUnlocked,
               endingToast: { name: endingName },
-              // ロアの中身は出さない（本編で自然に明かされるべきもの。詳細設計 §3.3）
-              ...(revealedLore.length ? { infoNotice: '新しい設定が明らかになりました' } : {}),
+              ...revealNotice(revealedLore, revealedChars),
               // 到達記録（E3）。突入時に追記＝完結ボタンの押し忘れで漏れないため。再到達も追記し表示側で distinct。
               // 集計はセッション単位（ステータス）とカセット単位（棚の通算）の2軸（FB9-B）
               endingRecords: s.worldId
@@ -3926,6 +4014,7 @@ export const useStore = create<AppState>()(
             ? [...s.usedEventIds, review.scheduledEventKey ?? event.id]
             : s.usedEventIds
           const revealedLore = revealedLoreOf(usedEventIds)
+          const revealedChars = revealedCharsOf(usedEventIds)
 
           set((st) => ({
             sessions: st.sessions.map((sess) =>
@@ -3947,14 +4036,16 @@ export const useStore = create<AppState>()(
                     ...(revealedLore.length
                       ? { revealedLoreIds: [...(sess.revealedLoreIds ?? []), ...revealedLore] }
                       : {}),
+                    ...(revealedChars.length
+                      ? { revealedCharacterIds: [...(sess.revealedCharacterIds ?? []), ...revealedChars] }
+                      : {}),
                     updatedAt: Date.now(),
                   }
                 : sess,
             ),
             sceneReview: null,
             newlyUnlockedAchievements: newlyUnlocked,
-            // ロアの中身は出さない（本編で自然に明かされるべきもの。詳細設計 §3.3）
-            ...(revealedLore.length ? { infoNotice: '新しい設定が明らかになりました' } : {}),
+            ...revealNotice(revealedLore, revealedChars),
           }))
           void recordCheckpoint(s.id, 'scene', next.title, s, next.timeLabel)
 

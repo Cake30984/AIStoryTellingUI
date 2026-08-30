@@ -468,6 +468,10 @@ export function freshSessionOf(session: Session): Session {
     state: { relations: [], moods: [], stats: [], counters: [], achievements: [] },
     overlay: { lore: [], characterDevelopments: [] },
     usedEventIds: [],
+    // 解禁通知の記録も初期化する。`characterGates` は作者の仕込みなので**残す**が、
+    // 「もう通知した」の記録を残すと2周目で解禁トーストが出なくなる（G3 / CG1）
+    revealedLoreIds: undefined,
+    revealedCharacterIds: undefined,
     // 到達エンディングを初期化（忘れるとカセット出力→新規プレイで即「完結済み」表示になる。E1）
     ending: undefined,
     // 出自カセットは引き継がない（FB9-B。既存セッションを種に別のカセットを作った時、

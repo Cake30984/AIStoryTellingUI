@@ -176,6 +176,24 @@ export type Clause =
 /** 条件式（all=すべて満たす / any=いずれか満たす）。節が空なら不成立扱い。 */
 export type Condition = { all: Clause[] } | { any: Clause[] }
 
+/**
+ * キャラクターの登場条件（CG1。docs/設計_登場条件と目標提示.md §1）。
+ * 条件が未達のあいだ、そのキャラは **AI に渡すもの全部から落ちる**（【登場人物】【配役】【状態（現在）】・
+ * 選択肢・レビュー・画像生成）＝ AI はその人物の存在を知らないので、勝手に登場させようがない。
+ * `LoreEntry.condition` と同じ考え方だが、対象がロアではなく人物。
+ *
+ * **置き場所が Session なのは、世界と実キャラが出会う層がここだけだから**——条件は World の
+ * `stats[].id` 等を参照し（＝世界依存）、`characterId` を持つ（＝キャスト依存）。World も Character も
+ * 再利用する素材なので、どちらにも置けない（`roleAssignments`・`introBindings` と同じ理由）。
+ *
+ * 判定は毎回条件から導出する（状態として「解禁済み」を持たない）＝分岐で戻れば未解禁に戻る。
+ */
+export interface CharacterGate {
+  characterId: string
+  /** 解禁条件。ゲートを持たないキャラは条件なし＝最初から登場する */
+  condition: Condition
+}
+
 /** 割り当てキャラ1人（id＋現在の実名）。`RoleParty.members` の要素、`bindRoleNames` の置換名にも使う。 */
 export interface Partner {
   characterId: string
@@ -649,6 +667,11 @@ export interface Session {
   choicesModel: string
   /** 参加キャラ（グループ会話のため複数） */
   characterIds: string[]
+  /**
+   * 登場条件つきキャラ（CG1）。ここに載っていないキャラは条件なし＝最初から登場する
+   * （未設定・空配列＝従来どおり全員が最初から居る）。
+   */
+  characterGates?: CharacterGate[]
   worldId: string | null
   personaId: string | null
   /** 世界観ロール（グループ）への配役。多対多。無効な参照は保存したまま開始時には無視する */
@@ -682,6 +705,12 @@ export interface Session {
    * 重複通知の防止だけに使う＝注入の可否は毎回条件で判定するので、この配列は注入を左右しない。
    */
   revealedLoreIds?: string[]
+  /**
+   * 登場条件つきキャラ（`characterGates`）のうち、既に解禁を通知したものの id（CG1）。
+   * `revealedLoreIds` と同じく**重複通知の防止だけ**に使う＝登場の可否は毎回条件で判定するので、
+   * この配列は注入を左右しない。
+   */
+  revealedCharacterIds?: string[]
   /** 感情・関係値の状態（セッション固有） */
   state: SessionState
   /** 発見・深化した設定の上乗せ（セッション固有・素材は不変） */

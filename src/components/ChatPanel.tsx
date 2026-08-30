@@ -1,6 +1,12 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
-import { currentScene, reviewModelOf, useStore } from '../store'
+import {
+  conditionContextOf,
+  currentScene,
+  lockedCharacterIds,
+  reviewModelOf,
+  useStore,
+} from '../store'
 import {
   CONTINUE_PROMPT,
   SCENE_START_PROMPT,
@@ -265,15 +271,20 @@ export default function ChatPanel({ session }: Props) {
     return () => el.removeEventListener('wheel', onWheel)
   }, [ui.ambientEnabled, ambientPins.length])
 
-  // 登場キャラはセッションの顔ぶれ（CS1。シーン単位の絞り込みは廃止）
-  const participants = useMemo(
-    () =>
-      session.characterIds
-        .map((id) => characters.find((c) => c.id === id))
-        .filter((c): c is NonNullable<typeof c> => !!c),
-    [session.characterIds, characters],
-  )
   const world = worlds.find((w) => w.id === session.worldId)
+  // 登場キャラはセッションの顔ぶれ（CS1。シーン単位の絞り込みは廃止）から、
+  // 登場条件が未達のキャラを落としたもの（CG1）。話者チップ・「次に話す」の候補になるので、
+  // ここに未解禁キャラが残るとプレイヤーが指名できてしまう
+  const participants = useMemo(
+    () => {
+      const locked = lockedCharacterIds(session, conditionContextOf(session, world, characters))
+      return session.characterIds
+        .filter((id) => !locked.has(id))
+        .map((id) => characters.find((c) => c.id === id))
+        .filter((c): c is NonNullable<typeof c> => !!c)
+    },
+    [session, world, characters],
+  )
   const endingDef = session.ending
     ? world?.endings?.find((e) => e.id === session.ending!.defId)
     : undefined

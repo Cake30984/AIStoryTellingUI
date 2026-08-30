@@ -3,7 +3,8 @@ import { currentScene, hasStartPreset, startPresetPatch, useStore } from '../sto
 import { advanceTimeline, timeLabelOf } from '../lib/timeline'
 import { modelRefLabel } from '../lib/providers'
 import { appConfirm } from '../lib/dialogs'
-import type { Session } from '../types'
+import type { Condition, Session } from '../types'
+import ConditionEditor from './ConditionEditor'
 import CsvInput from './CsvInput'
 import ModelPicker from './ModelPicker'
 import EntityAvatar from './EntityAvatar'
@@ -41,7 +42,23 @@ export default function SessionEditor({ session, onClose }: Props) {
       characterIds: d.characterIds.includes(id)
         ? d.characterIds.filter((c) => c !== id)
         : [...d.characterIds, id],
+      // 外したキャラの登場条件は残さない（参加していないキャラのゲートは意味を持たない）
+      ...(d.characterIds.includes(id) && d.characterGates
+        ? { characterGates: d.characterGates.filter((g) => g.characterId !== id) }
+        : {}),
     })
+
+  // 登場条件（CG1）。条件は世界の stats/counters/achievements/scheduledEvents/roles を参照するので
+  // 世界が選ばれていないと書けない（＝エディタごと出さない）
+  const gateWorld = worlds.find((w) => w.id === d.worldId)
+  const gateCast = d.characterIds
+    .map((id) => characters.find((c) => c.id === id))
+    .filter((c): c is NonNullable<typeof c> => !!c)
+  const setGate = (characterId: string, condition: Condition | undefined) => {
+    const rest = (d.characterGates ?? []).filter((g) => g.characterId !== characterId)
+    // 条件が空になったらゲートごと外す＝「最初から登場」へ戻る
+    patch({ characterGates: condition ? [...rest, { characterId, condition }] : rest })
+  }
 
   const save = () => {
     // モーダルを開いている間にバックグラウンドでシーンが進行している場合に備え、
@@ -65,6 +82,7 @@ export default function SessionEditor({ session, onClose }: Props) {
     updateSession(session.id, {
       title: d.title,
       characterIds: d.characterIds,
+      characterGates: d.characterGates,
       worldId: d.worldId,
       personaId: d.personaId,
       roleAssignments: d.roleAssignments,
@@ -172,6 +190,48 @@ export default function SessionEditor({ session, onClose }: Props) {
                     {d.characterIds.length > 0 && d.narrativeStyle === 'chat' && (
                       <div className="desc" style={{ marginTop: 8 }}>
                         キャラ別モデルの一括設定は「AIと出力」タブから行えます。
+                      </div>
+                    )}
+
+                    {/* 登場条件（CG1）。世界の数・実績・イベントを条件にできるので、世界が要る */}
+                    {d.characterIds.length > 0 && (
+                      <div style={{ marginTop: 12 }}>
+                        <label>登場条件</label>
+                        <div className="desc">
+                          条件を付けたキャラは、それを満たすまで AI に渡りません（存在ごと伏せられます）。
+                          条件なし＝最初から登場します。ロアの解禁条件と同じ仕組みです。
+                        </div>
+                        {!gateWorld ? (
+                          <p className="inline-empty">
+                            世界観を選ぶと、その世界のステータス・実績・特別イベントを条件にできます。
+                          </p>
+                        ) : (
+                          gateCast.map((c) => {
+                            const gate = (d.characterGates ?? []).find((g) => g.characterId === c.id)
+                            return (
+                              <div key={c.id} className="lore-entry">
+                                <div className="lore-entry-top">
+                                  <EntityAvatar
+                                    className="dot-avatar"
+                                    avatar={c.avatar}
+                                    name={c.name || '無名'}
+                                  />
+                                  <span style={{ flex: 1 }}>{c.name || '無名'}</span>
+                                  <span className="badge">
+                                    {gate ? '条件つき' : '最初から登場'}
+                                  </span>
+                                </div>
+                                <ConditionEditor
+                                  condition={gate?.condition}
+                                  world={gateWorld}
+                                  label="登場条件"
+                                  addLabel="登場条件を追加"
+                                  onChange={(condition) => setGate(c.id, condition)}
+                                />
+                              </div>
+                            )
+                          })
+                        )}
                       </div>
                     )}
                   </>
