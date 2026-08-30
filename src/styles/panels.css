@@ -945,6 +945,18 @@
   flex-shrink: 0;
 }
 
+/* 注入されないロアの警告（CG2。トリガー語が空で「常時」もオフ＝黙って死ぬ設定を可視化する） */
+.dead-badge {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--danger);
+  border: 1px solid var(--danger);
+  border-radius: 999px;
+  padding: 2px 8px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 /* ---------- レビュー編集モード（FB5-C） ---------- */
 .review-title-row {
   display: inline-flex;

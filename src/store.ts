@@ -484,7 +484,7 @@ export function evalCondition(cond: Condition | undefined, ctx: ConditionContext
 /**
  * 旧「関係フラグ」節（FB9-C で撤去）を World の条件式から取り除く純関数。persist の merge で通す。
  * 残したままだと union から消えた kind が evalClause の `default: return false` に落ち、実績・
- * エンディング・イベントが恒久的に発火しなくなる。節が空になった条件は `matchGroups` が不成立を
+ * エンディング・イベント・**ロアの解禁**が恒久的に発火しなくなる。節が空になった条件は `matchGroups` が不成立を
  * 返す（空の節リストは false）ので、「条件が空＝常に成立」の事故は起きない。
  * 旧節を持たない World は同一参照のまま返す（起動時の無駄なオブジェクト生成を避ける）。
  */
@@ -511,16 +511,22 @@ export function stripLegacyFlagClauses(world: World): World {
   const achievements = world.achievements ?? []
   const endings = world.endings ?? []
   const events = world.scheduledEvents ?? []
+  // entries（ロアの解禁条件・G3）も対象。旧データにこの組み合わせは無いが、**取り込む JSON は
+  // 手書き・AI 生成でありうる**ので、外から来た旧節をここで落としておく（残すと evalClause の
+  // default:false に落ち、そのロアが永久に解禁されない）
+  const entries = world.entries ?? []
   const touched =
     achievements.some((a) => hasLegacy(a.condition)) ||
     endings.some((e) => hasLegacy(e.condition)) ||
-    events.some((e) => hasLegacy(e.condition))
+    events.some((e) => hasLegacy(e.condition)) ||
+    entries.some((e) => hasLegacy(e.condition))
   if (!touched) return world
   return {
     ...world,
     achievements: achievements.map((a) => ({ ...a, condition: cleanOne(a.condition) })),
     endings: endings.map((e) => ({ ...e, condition: cleanOpt(e.condition) })),
     scheduledEvents: events.map((e) => ({ ...e, condition: cleanOpt(e.condition) })),
+    entries: entries.map((e) => ({ ...e, condition: cleanOpt(e.condition) })),
   }
 }
 

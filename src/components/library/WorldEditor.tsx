@@ -695,6 +695,13 @@ export default function WorldEditor({ world, onClose }: Props) {
             <div key={e.id} className={'lore-entry' + (e.enabled ? '' : ' disabled')}>
               <div className="lore-entry-top">
                 {e.addedInStory && <span className="added-badge">展開で追加</span>}
+                {/* トリガー語が空で「常時」もオフ＝どちらの経路にも乗らず永久に注入されない（CG2）。
+                    黙って死ぬ設定なので、作者が気付けるよう明示する */}
+                {e.enabled && !e.alwaysOn && !e.keys.some((k) => k.trim()) && (
+                  <span className="dead-badge" title="トリガー語を入れるか「常時」をオンにしてください">
+                    注入されません
+                  </span>
+                )}
                 <CsvInput
                   className="lore-keys"
                   value={e.keys}
