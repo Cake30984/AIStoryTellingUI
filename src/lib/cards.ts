@@ -4,7 +4,7 @@ import { getImage, putImage } from './imageStore'
 import { generateDefaultAvatar, normalizeImage } from './avatarGen'
 import { downloadBlob } from './io'
 import { appConfirm } from './dialogs'
-import { normalizeIntroBindings, normalizeIntroTags, normalizeRoleAssignments, normalizeWorldRoles } from './casting'
+import { normalizeIntroBindings, normalizeIntroTags } from './casting'
 import { APP_VERSION, compareVersions, majorOf } from './version'
 
 function uid(): string {
@@ -336,7 +336,6 @@ function normalizeWorldFromData(raw: any): World {
     entries: Array.isArray(raw.entries) ? raw.entries : [],
     scheduledEvents: Array.isArray(raw.scheduledEvents) ? raw.scheduledEvents : [],
     relationAspects: Array.isArray(raw.relationAspects) ? raw.relationAspects : [],
-    roles: normalizeWorldRoles(raw.roles),
     ...(startPreset ? { startPreset } : {}),
     createdAt: typeof raw.createdAt === 'number' ? raw.createdAt : now,
     updatedAt: typeof raw.updatedAt === 'number' ? raw.updatedAt : now,
@@ -528,7 +527,6 @@ function normalizeSessionBundle(raw: any): SessionCardBundle | null {
   return {
     session: {
       ...raw.session,
-      roleAssignments: normalizeRoleAssignments(raw.session?.roleAssignments),
       introBindings: normalizeIntroBindings(raw.session?.introBindings),
       story: { ...raw.session.story, introTags: normalizeIntroTags(raw.session?.story?.introTags) },
     },

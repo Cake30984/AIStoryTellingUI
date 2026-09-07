@@ -130,14 +130,6 @@ export default function WorldLibrary() {
               <div className="entity-body">
                 <div className="entity-name">{w.name || '無名の世界'}</div>
                 <div className="entity-desc">{w.description || '概要なし'}</div>
-                {(w.roles ?? []).filter((role) => role.name.trim()).length > 0 && (
-                  <div className="entity-desc">
-                    配役: {(w.roles ?? [])
-                      .filter((role) => role.name.trim())
-                      .map((role) => `${role.name}${role.required ? '' : '（任意）'}`)
-                      .join('＋')}
-                  </div>
-                )}
                 <div className="tag-row">
                   <span className="tag">ロア {w.entries.length} 項目</span>
                 </div>

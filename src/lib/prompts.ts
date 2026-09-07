@@ -1,6 +1,5 @@
 import type { Character, Message, Persona, PromptStyle, Scene, Session, World } from '../types'
 import type { ChatMessage } from './openrouter'
-import { roleMembers } from './casting'
 import { splitLoreEntries } from './lorebook'
 import { plainTextOf } from './structured'
 import {
@@ -59,22 +58,6 @@ function characterBlock(c: Character, label?: string): string {
   return lines.join('\n')
 }
 
-/** 配役済みロール（グループ）を毎ターン実名で注入する。@記法はモデルへ渡さない（A-2）。 */
-function castingBlock(session: Session, refs: ResolvedRefs): string | undefined {
-  const roles = (refs.world?.roles ?? []).filter((role) => role.id.trim() && role.name.trim())
-  if (roles.length === 0) return undefined
-  const members = roleMembers(roles, session.roleAssignments, refs.characters)
-  const safe = (text: string) => text.trim().replaceAll('@', '＠')
-  const lines = roles.flatMap((role) => {
-    const characters = members.get(role.id) ?? []
-    if (characters.length === 0) return []
-    const names = characters.map((character) => safe(character.name)).join('・')
-    const description = safe(role.description)
-    return [`- ${names} —「${safe(role.name)}」${description ? `: ${description}` : ''}`]
-  })
-  return lines.length ? `【配役】\nこの物語における各キャラクターの立ち位置:\n${lines.join('\n')}` : undefined
-}
-
 /**
  * system プロンプトを組み立てる。
  *
@@ -102,9 +85,6 @@ export function buildSystemPrompt(session: Session, refs: ResolvedRefs): string 
       parts.push(`【世界観: ${refs.world.name}】\n${wParts.join('\n\n')}`)
     }
   }
-
-  const casting = castingBlock(session, refs)
-  if (casting) parts.push(casting)
 
   // 1.5 これまでのあらすじ（過去シーンの引き継ぎ要約）
   if (refs.priorSummaries.length) {
@@ -203,7 +183,7 @@ export function buildSystemPrompt(session: Session, refs: ResolvedRefs): string 
     if (sParts.length) parts.push(`【物語設定】\n${sParts.join('\n')}`)
 
     // 4.5 最初の方向付け（FB5-②）: 最初のシーンに滞在している間だけ注入する非表示の指示。
-    // チャットには出さない。@ 記法はモデルへ渡さない規約に合わせて無害化する（配役の実名は【配役】が伝える）。
+    // チャットには出さない。@ 記法はモデルへ渡さない規約に合わせて無害化する。
     const directive = s.initialDirective?.trim()
     const isFirstScene = session.scenes.length > 0 && session.scenes[0].id === session.currentSceneId
     if (directive && isFirstScene) {

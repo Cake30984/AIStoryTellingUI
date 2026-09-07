@@ -89,7 +89,7 @@ export default function CassetteLibrary() {
   const doExport = async (cas: Cassette) => {
     try {
       const world = worlds.find((w) => w.id === cas.session.worldId)
-      const castingIssues = validateCasting(cas.session, world, characters, personas)
+      const castingIssues = validateCasting(cas.session, characters, personas)
       if (castingIssues.length > 0) {
         setNotice(`書き出せません。${castingIssues.map(castingIssueLabel).join(' ')}`)
         return

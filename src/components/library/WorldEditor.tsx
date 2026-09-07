@@ -10,7 +10,6 @@ import type {
   RelationAspectDef,
   ScheduledEvent,
   World,
-  WorldRole,
   WorldStartPreset,
 } from '../../types'
 import CsvInput from '../CsvInput'
@@ -21,12 +20,10 @@ import { exportWorldCard } from '../../lib/cards'
 import { appConfirm } from '../../lib/dialogs'
 import { advanceTimeline, timeLabelOf } from '../../lib/timeline'
 import { Icon } from '../icons'
-import { NARRATION_NAMES } from '../../lib/structured'
 
 type Section =
   | 'basic'
   | 'start'
-  | 'roles'
   | 'lore'
   | 'events'
   | 'aspects'
@@ -43,10 +40,7 @@ const SECTION_GROUPS: { heading: string; items: { id: Section; label: string }[]
   },
   {
     heading: '登場のしくみ',
-    items: [
-      { id: 'roles', label: '配役' },
-      { id: 'aspects', label: '関係性の次元' },
-    ],
+    items: [{ id: 'aspects', label: '関係性の次元' }],
   },
   {
     heading: 'セッションの雛形',
@@ -65,7 +59,6 @@ export default function WorldEditor({ world, onClose }: Props) {
   const [exporting, setExporting] = useState(false)
   const [dirty, setDirty] = useState(false)
   const [section, setSection] = useState<Section>('basic')
-  const [roleError, setRoleError] = useState('')
   const patch = (p: Partial<World>) => {
     setD((w) => ({ ...w, ...p }))
     setDirty(true)
@@ -99,34 +92,6 @@ export default function WorldEditor({ world, onClose }: Props) {
     patchPreset({ timeline })
   }
 
-  const roles = d.roles ?? []
-  const updateRole = (id: string, p: Partial<WorldRole>) => {
-    setRoleError('')
-    patch({ roles: roles.map((role) => (role.id === id ? { ...role, ...p } : role)) })
-  }
-  const addRole = () => {
-    setRoleError('')
-    patch({ roles: [...roles, { id: uid(), name: '', description: '' }] })
-  }
-  const removeRole = (id: string) => {
-    setRoleError('')
-    patch({ roles: roles.filter((role) => role.id !== id) })
-  }
-  const roleValidationError = (): string | undefined => {
-    const seen = new Set<string>()
-    for (const role of roles) {
-      const name = role.name.trim()
-      if (!name) return 'ロール名が空です。名前を入力するか、不要な行を削除してください。'
-      const key = name.toLowerCase()
-      if (seen.has(key)) return `ロール名「${name}」が重複しています。`
-      if (key === 'ペルソナ' || NARRATION_NAMES.has(key)) {
-        return `ロール名「${name}」は予約語のため使えません。`
-      }
-      seen.add(key)
-    }
-    return undefined
-  }
-
   const updateEntry = (id: string, p: Partial<LoreEntry>) =>
     patch({ entries: d.entries.map((e) => (e.id === id ? { ...e, ...p } : e)) })
 
@@ -154,12 +119,6 @@ export default function WorldEditor({ world, onClose }: Props) {
     patch({ relationAspects: aspects.filter((a) => a.id !== id) })
 
   const save = () => {
-    const problem = roleValidationError()
-    if (problem) {
-      setRoleError(problem)
-      setSection('roles')
-      return
-    }
     // order を現在の並びで振り直して保存
     upsertWorld({ ...d, entries: d.entries.map((e, i) => ({ ...e, order: i })) })
     onClose()
@@ -469,56 +428,6 @@ export default function WorldEditor({ world, onClose }: Props) {
                     })()}
                 </fieldset>
               </div>
-            </>
-          )}
-
-          {section === 'roles' && (
-            <>
-              <div className="lore-head">
-                <label>配役（ロールグループ）</label>
-                <div className="desc">
-                  この世界で必要な立ち位置をグループとして定義します。説明には「宿屋の主人。旅人に情報を売る」のような立場を書き、性格はキャラクター側に書いてください。
-                  1つのロールに複数人を配役でき（例: ヒロイン全員）、1人が複数ロールを兼任することもできます。
-                  プロンプトへは毎ターン【配役】として実名で注入されます（導入文の @名前 置換は「開始テンプレート」の置換タグが担当します）。
-                </div>
-              </div>
-              {roleError && <p className="notice">{roleError}</p>}
-              {roles.length === 0 && (
-                <p className="inline-empty">ロールはまだありません。世界に必要な登場人物の立ち位置を追加できます。</p>
-              )}
-              {roles.map((role) => (
-                <div key={role.id} className="lore-entry">
-                  <div className="lore-entry-top">
-                    <input
-                      className="lore-keys"
-                      value={role.name}
-                      placeholder="ロール名（例: ライバル）"
-                      onChange={(event) => updateRole(role.id, { name: event.target.value })}
-                    />
-                    <label className="chk">
-                      <input
-                        type="checkbox"
-                        checked={role.required ?? false}
-                        onChange={(event) => updateRole(role.id, { required: event.target.checked || undefined })}
-                      />
-                      開始に必須
-                    </label>
-                    <button className="icon-btn small" onClick={() => removeRole(role.id)} title="ロールを削除">
-                      <Icon name="x" size={14} />
-                    </button>
-                  </div>
-                  <textarea
-                    rows={2}
-                    className="lore-content"
-                    value={role.description}
-                    placeholder="立場の説明（例: 宿屋の主人。旅人に情報を売る）"
-                    onChange={(event) => updateRole(role.id, { description: event.target.value })}
-                  />
-                </div>
-              ))}
-              <button className="btn" style={{ marginTop: 8 }} onClick={addRole}>
-                <Icon name="plus" size={13} />ロールを追加
-              </button>
             </>
           )}
 

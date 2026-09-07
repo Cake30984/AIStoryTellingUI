@@ -7,7 +7,6 @@ import { generateDefaultAvatar, normalizeImage } from '../lib/avatarGen'
 import ModalShell from './ModalShell'
 import EntityAvatar from './EntityAvatar'
 import { Icon } from './icons'
-import CastingFields from './CastingFields'
 import IntroTagDefEditor from './IntroTagDefEditor'
 import IntroTagFields from './IntroTagFields'
 
@@ -345,13 +344,6 @@ export default function CassetteEditor({ cassette, seedSession, onClose }: Props
                 characters={characters}
                 personas={personas}
                 onChange={(introBindings) => patchSession({ introBindings })}
-              />
-              <CastingFields
-                session={s}
-                world={world}
-                characters={characters}
-                personas={personas}
-                onChange={(roleAssignments) => patchSession({ roleAssignments })}
               />
               <div className="field">
                 <label>固定メモ（常に踏まえる重要事項・任意）</label>

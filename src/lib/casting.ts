@@ -3,46 +3,18 @@ import type {
   IntroTag,
   IntroTagBinding,
   Persona,
-  RoleAssignment,
   Session,
-  World,
-  WorldRole,
 } from '../types'
 
-export type CastingIssueKind = 'missing-role-assignment' | 'unbound-tag' | 'unresolved-tag-binding'
+export type CastingIssueKind = 'unbound-tag' | 'unresolved-tag-binding'
 
-/** 開始・導入文解決を妨げる配役・置換タグ束縛の不足 */
+/** 導入文解決を妨げる置換タグ束縛の不足 */
 export interface CastingIssue {
   kind: CastingIssueKind
-  roleId?: string
-  roleName?: string
   tag?: string
 }
 
 /** カード・バックアップからの入力を最小限に正規化する（不正な行は読み捨てる） */
-export function normalizeWorldRoles(raw: unknown): WorldRole[] {
-  if (!Array.isArray(raw)) return []
-  return raw.flatMap((role) => {
-    if (!role || typeof role !== 'object') return []
-    const r = role as Record<string, unknown>
-    if (typeof r.id !== 'string' || typeof r.name !== 'string' || typeof r.description !== 'string') return []
-    return [{ id: r.id, name: r.name, description: r.description, ...(r.required === true ? { required: true } : {}) }]
-  })
-}
-
-/** カード・バックアップからの配役を最小限に正規化する（参照先の存在確認は利用時に行う） */
-export function normalizeRoleAssignments(raw: unknown): RoleAssignment[] {
-  if (!Array.isArray(raw)) return []
-  return raw.flatMap((assignment) => {
-    if (!assignment || typeof assignment !== 'object') return []
-    const a = assignment as Record<string, unknown>
-    return typeof a.roleId === 'string' && typeof a.characterId === 'string'
-      ? [{ roleId: a.roleId, characterId: a.characterId }]
-      : []
-  })
-}
-
-/** カード・バックアップからの置換タグ定義を最小限に正規化する（A-1） */
 export function normalizeIntroTags(raw: unknown): IntroTag[] {
   if (!Array.isArray(raw)) return []
   return raw.flatMap((tag) => {
@@ -67,10 +39,6 @@ export function normalizeIntroBindings(raw: unknown): IntroTagBinding[] {
     }
   }
   return result
-}
-
-function usableRoles(roles: WorldRole[] | undefined): WorldRole[] {
-  return (roles ?? []).filter((role) => role.id.trim() && role.name.trim())
 }
 
 function usableTags(tags: IntroTag[] | undefined): IntroTag[] {
@@ -101,35 +69,6 @@ export function findIntroTagRefs(text: string, tags: IntroTag[] | undefined): st
   return [...found]
 }
 
-/**
- * ロールグループのメンバーを解決する（多対多。A-2）。roleId → 配役されたキャラ配列
- * （参加キャラ順を保つため、渡す characters の順序を維持する）。
- */
-export function roleMembers(
-  roles: WorldRole[] | undefined,
-  assignments: RoleAssignment[] | undefined,
-  characters: Character[],
-  allowedCharacterIds?: Set<string>,
-): Map<string, Character[]> {
-  const validRoleIds = new Set(usableRoles(roles).map((role) => role.id))
-  const charactersById = new Map(characters.map((character) => [character.id, character]))
-  const memberIdsByRole = new Map<string, Set<string>>()
-  for (const assignment of assignments ?? []) {
-    if (!validRoleIds.has(assignment.roleId)) continue
-    const character = charactersById.get(assignment.characterId)
-    if (!character || !character.name.trim()) continue
-    if (allowedCharacterIds && !allowedCharacterIds.has(character.id)) continue
-    const set = memberIdsByRole.get(assignment.roleId) ?? new Set<string>()
-    set.add(character.id)
-    memberIdsByRole.set(assignment.roleId, set)
-  }
-  const result = new Map<string, Character[]>()
-  for (const [roleId, ids] of memberIdsByRole) {
-    result.set(roleId, characters.filter((character) => ids.has(character.id)))
-  }
-  return result
-}
-
 /** 置換タグの束縛先を解決する（persona/character の実名。未解決なら undefined） */
 function resolveTagName(
   binding: IntroTagBinding | undefined,
@@ -143,12 +82,11 @@ function resolveTagName(
 }
 
 /**
- * 配役・置換タグ束縛の検証。必要な項目だけを開始ブロッカーとして扱い、古い無効参照は
- * 保存したまま無視する（旧 validateCasting の後継。A-1/A-2）。
+ * 置換タグ束縛の検証。必要な項目だけを開始ブロッカーとして扱い、古い無効参照は
+ * 保存したまま無視する（A-1）。
  */
 export function validateCasting(
   session: Session,
-  world: World | undefined,
   characters: Character[],
   personas: Persona[],
 ): CastingIssue[] {
@@ -171,23 +109,12 @@ export function validateCasting(
     }
   }
 
-  const roles = usableRoles(world?.roles)
-  const members = roleMembers(roles, session.roleAssignments, characters, participantIds)
-  for (const role of roles) {
-    if (!role.required) continue
-    if (!(members.get(role.id)?.length)) {
-      issues.push({ kind: 'missing-role-assignment', roleId: role.id, roleName: role.name })
-    }
-  }
   return issues
 }
 
 export function castingIssueLabel(issue: CastingIssue): string {
   if (issue.kind === 'unbound-tag') return `置換タグ「@${issue.tag}」の対応付けが未設定です。`
-  if (issue.kind === 'unresolved-tag-binding') {
-    return `置換タグ「@${issue.tag}」の対応先（ペルソナ/参加キャラ）が未解決です。`
-  }
-  return `「${issue.roleName ?? '無名のロール'}」が未配役です。`
+  return `置換タグ「@${issue.tag}」の対応先（ペルソナ/参加キャラ）が未解決です。`
 }
 
 /** 導入文の置換タグを実名へ解決する。置換済みの名前を再処理しない単一パス方式（A-1） */

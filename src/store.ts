@@ -19,7 +19,6 @@ import type {
   MoodChange,
   NextSceneSuggestion,
   Partner,
-  PartyRef,
   OpenRouterModel,
   Persona,
   Provider,
@@ -121,8 +120,6 @@ import {
   castingIssueLabel,
   normalizeIntroBindings,
   normalizeIntroTags,
-  normalizeRoleAssignments,
-  normalizeWorldRoles,
   resolveIntroText,
   validateCasting,
 } from './lib/casting'
@@ -155,26 +152,6 @@ export function partnersOf(ids: string[], characters: { id: string; name: string
   return ids.map((id) => ({
     characterId: id,
     name: characters.find((c) => c.id === id)?.name || id,
-  }))
-}
-
-/** RoleParty（名前つき当事者組）を永続化用の PartyRef（参照のみ）へ落とす。メンバー0人の群は含めない */
-export function partiesOf(subjects: RoleParty[]): PartyRef[] {
-  return subjects
-    .filter((p) => p.members.length > 0)
-    .map((p) => ({ roleId: p.roleId, characterIds: p.members.map((m) => m.characterId) }))
-}
-
-/** 永続化された PartyRef を表示・置換用の RoleParty（ロール名・現在の実名つき）へ解決する */
-export function resolveParties(
-  parties: PartyRef[] | undefined,
-  world: World | undefined,
-  characters: { id: string; name: string }[],
-): RoleParty[] {
-  return (parties ?? []).map((p) => ({
-    roleId: p.roleId,
-    roleName: world?.roles?.find((r) => r.id === p.roleId)?.name || '',
-    members: partnersOf(p.characterIds, characters),
   }))
 }
 
@@ -379,7 +356,6 @@ export function newWorld(): World {
     entries: [],
     scheduledEvents: [],
     relationAspects: [newRelationAspect('信頼')],
-    roles: [],
     createdAt: now,
     updatedAt: now,
   }
@@ -496,7 +472,6 @@ function newSession(mode: SessionMode): Session {
     characterIds: [],
     worldId: null,
     personaId: null,
-    roleAssignments: [],
     introBindings: [],
     authorNote: '',
     story: { premise: '', genre: '', opening: '', openingTitle: '', initialDirective: '' },
@@ -721,8 +696,6 @@ interface AppState {
     /** 実行中の呼び出し（分割実行なら2件＝並列に走っていることが画面に出る） */
     calls: ReviewCallProgress[]
   } | null
-  /** 開始時に未配役だったセッション。null なら配役モーダルを閉じる */
-  castingSessionId: string | null
   error: string | null
   /** バックグラウンド画像生成ジョブ（Blob を含むため非永続。partialize から除外） */
   imageJobs: ImageJob[]
@@ -1243,18 +1216,10 @@ export function eventUsedKey(eventId: string, subjects: RoleParty[]): string {
  */
 function eventSubjectsOf(
   memberIds: string[],
-  world: World | undefined,
   characters: { id: string; name: string }[],
 ): RoleParty[] {
   if (memberIds.length === 0) return []
-  const roleId = ''
-  return [
-    {
-      roleId,
-      roleName: world?.roles?.find((r) => r.id === roleId)?.name || '',
-      members: partnersOf(memberIds, characters),
-    },
-  ]
+  return [{ roleId: '', roleName: '', members: partnersOf(memberIds, characters) }]
 }
 
 /**
@@ -1275,7 +1240,7 @@ export function firedEventLog(
     if (!event) continue
     const ids =
       key === event.id ? [] : key.slice(event.id.length + 1).split('+').filter(Boolean)
-    out.push({ key, event, subjects: eventSubjectsOf(ids, world, characters) })
+    out.push({ key, event, subjects: eventSubjectsOf(ids, characters) })
   }
   return out
 }
@@ -1925,7 +1890,6 @@ export const useStore = create<AppState>()(
         isRegenSuggestions: false,
         sceneReview: null,
         reviewProgress: null,
-        castingSessionId: null,
         error: null,
         imageJobs: [],
         imageJobToasts: [],
@@ -2049,7 +2013,6 @@ export const useStore = create<AppState>()(
             sessions: st.sessions.map((s) => ({
               ...s,
               characterIds: s.characterIds.filter((cid) => cid !== id),
-              roleAssignments: (s.roleAssignments ?? []).filter((assignment) => assignment.characterId !== id),
               state: {
                 ...s.state,
                 relations: s.state.relations.filter((r) => r.fromId !== id && r.toId !== id),
@@ -3276,12 +3239,12 @@ export const useStore = create<AppState>()(
           const refs = resolveRefs(s)
           let opening = openingTemplate
           // roleplay では導入文を掲載しないため、残存する導入文中の @タグ で開始をブロックしない
-          // （required ロールは opening 非依存なので、そのまま開始ブロッカーとして機能する）
           const validationSession =
             s.mode === 'story' ? s : { ...s, story: { ...s.story, opening: '' } }
-          const issues = validateCasting(validationSession, refs.world, get().characters, get().personas)
+          const issues = validateCasting(validationSession, get().characters, get().personas)
           if (issues.length > 0) {
-            set({ castingSessionId: s.id, error: null })
+            // 配役モーダルは F1-d で撤去したので、置換タグの不足はエラー文言で伝える
+            set({ error: issues.map(castingIssueLabel).join(' ') })
             return
           }
           if (openingTemplate) {
@@ -3558,14 +3521,12 @@ export const useStore = create<AppState>()(
           const incomingWorlds = (bundle.worlds ?? []).map((w: any) => ({
             ...w,
             relationAspects: Array.isArray(w.relationAspects) ? w.relationAspects : [],
-            roles: normalizeWorldRoles(w.roles),
             ...(w.startPreset
               ? { startPreset: { ...w.startPreset, introTags: normalizeIntroTags(w.startPreset.introTags) } }
               : {}),
           }))
           const incomingSessions = (bundle.sessions ?? []).map((sess: any) => ({
             ...sess,
-            roleAssignments: normalizeRoleAssignments(sess.roleAssignments),
             introBindings: normalizeIntroBindings(sess.introBindings),
             story: { ...sess.story, introTags: normalizeIntroTags(sess.story?.introTags) },
             overlay:
@@ -3592,7 +3553,6 @@ export const useStore = create<AppState>()(
                   session: cassette.session
                     ? {
                         ...cassette.session,
-                        roleAssignments: normalizeRoleAssignments(cassette.session.roleAssignments),
                         introBindings: normalizeIntroBindings(cassette.session.introBindings),
                         story: {
                           ...cassette.session.story,
@@ -4051,7 +4011,6 @@ export const useStore = create<AppState>()(
         const merged = { ...current, ...p, ui: normalizeUiPrefs({ ...current.ui, ...(p.ui ?? {}) }) }
         merged.worlds = (merged.worlds ?? []).map((world) => ({
           ...world,
-          roles: normalizeWorldRoles(world.roles),
           ...(world.startPreset
             ? { startPreset: { ...world.startPreset, introTags: normalizeIntroTags(world.startPreset.introTags) } }
             : {}),
@@ -4075,7 +4034,6 @@ export const useStore = create<AppState>()(
           return {
             ...s,
             story,
-            roleAssignments: normalizeRoleAssignments(s.roleAssignments),
             introBindings: normalizeIntroBindings(s.introBindings),
             messages,
           }
@@ -4084,7 +4042,6 @@ export const useStore = create<AppState>()(
           ...cassette,
           session: {
             ...cassette.session,
-            roleAssignments: normalizeRoleAssignments(cassette.session?.roleAssignments),
             introBindings: normalizeIntroBindings(cassette.session?.introBindings),
             story: {
               ...cassette.session?.story,

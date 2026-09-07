@@ -10,7 +10,6 @@ import EntityAvatar from './EntityAvatar'
 import CassetteEditor from './CassetteEditor'
 import ModalShell from './ModalShell'
 import { Icon, type IconName } from './icons'
-import CastingFields from './CastingFields'
 import NumberInput from './NumberInput'
 import IntroTagDefEditor from './IntroTagDefEditor'
 import IntroTagFields from './IntroTagFields'
@@ -68,7 +67,6 @@ export default function SessionEditor({ session, onClose }: Props) {
       characterIds: d.characterIds,
       worldId: d.worldId,
       personaId: d.personaId,
-      roleAssignments: d.roleAssignments,
       introBindings: d.introBindings,
       authorNote: d.authorNote,
       story: d.story,
@@ -330,13 +328,6 @@ export default function SessionEditor({ session, onClose }: Props) {
                     characters={characters}
                     personas={personas}
                     onChange={(introBindings) => patch({ introBindings })}
-                  />
-                  <CastingFields
-                    session={d}
-                    world={worlds.find((world) => world.id === d.worldId)}
-                    characters={characters}
-                    personas={personas}
-                    onChange={(roleAssignments) => patch({ roleAssignments })}
                   />
 
               <div className="field">

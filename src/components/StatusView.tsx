@@ -3,7 +3,6 @@ import {
   firedEventLog,
   useStore,
 } from '../store'
-import { roleMembers } from '../lib/casting'
 import type { Session } from '../types'
 import EntityAvatar from './EntityAvatar'
 import { Icon } from './icons'
@@ -21,12 +20,6 @@ export default function StatusView({ session }: Props) {
     .map((id) => characters.find((c) => c.id === id))
     .filter((c): c is NonNullable<typeof c> => !!c)
   const aspectName = (id: string) => world?.relationAspects.find((a) => a.id === id)?.name ?? ''
-  const membersByRole = roleMembers(world?.roles, session.roleAssignments, characters)
-  const rolesOf = (characterId: string) =>
-    (world?.roles ?? [])
-      .filter((role) => (membersByRole.get(role.id) ?? []).some((c) => c.id === characterId))
-      .map((role) => role.name)
-      .filter(Boolean)
 
   const st = session.state
 
@@ -39,12 +32,11 @@ export default function StatusView({ session }: Props) {
       {cast.map((c) => {
         const rel = st.relations.find((r) => r.fromId === c.id && r.toId === 'hero')
         const mood = st.moods.find((m) => m.characterId === c.id)?.mood
-        const roleNames = rolesOf(c.id)
         return (
           <div key={c.id} className="field">
             <label>
               <EntityAvatar className="dot-avatar" avatar={c.avatar} name={c.name || '無名'} />{' '}
-              {c.name || '無名'}{roleNames.length > 0 ? `（${roleNames.join('・')}）` : ''} → {heroName}
+              {c.name || '無名'} → {heroName}
             </label>
             {rel ? (
               <>

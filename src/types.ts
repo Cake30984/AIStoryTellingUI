@@ -89,38 +89,19 @@ export interface RelationAspectDef {
   guidance?: string
 }
 
-/** 割り当てキャラ1人（id＋現在の実名）。`RoleParty.members` の要素、`bindRoleNames` の置換名にも使う。 */
+/** 当事者1人（id＋現在の実名）。`RoleParty.members` の要素、`bindRoleNames` の置換名に使う。 */
 export interface Partner {
   characterId: string
   name: string
 }
 
 /**
- * ロールの当事者組（名前つき）。`@ロール名` 置換・エピローグ注入に使う。
+ * 当事者組（名前つき）。特別イベントの `@相手` 置換に使う（F1-e で全廃予定）。
  */
 export interface RoleParty {
   roleId: string
   roleName: string
   members: Partner[]
-}
-
-/**
- * 永続化用の当事者組（名前を持たない参照のみ。リネーム追従のため表示時に `resolveParties` で名前解決する）。
- * リネーム追従のため表示時に `resolveParties` で名前解決する。
- */
-export interface PartyRef {
-  roleId: string
-  characterIds: string[]
-}
-
-/**
- * ロールのメンバー候補集合。n 人を選ぶ UI（エンディングレビューのプルダウン）に使う。
- */
-export interface ExactGroupCandidate {
-  roleId: string
-  roleName: string
-  n: number
-  candidates: Partner[]
 }
 
 /**
@@ -177,21 +158,6 @@ export interface WorldStartPreset {
 }
 
 /**
- * 世界観が求める物語上の立ち位置（ロールグループ。1..N人のメンバーを持てる。A-2）。
- * @名前 による導入文置換は担わない（→ IntroTag へ分離）。プロンプト注入（【配役】）専用。
- */
-export interface WorldRole {
-  /** リネームしても配役を維持するための安定 ID */
-  id: string
-  /** 配役 UI・プロンプト注入での表示名 */
-  name: string
-  /** 性格ではなく、世界における立場・物語上の機能 */
-  description: string
-  /** メンバーが1人も配役されていないと開始できないロール */
-  required?: boolean
-}
-
-/**
  * 導入文専用の置換タグ（A-1）。世界の開始テンプレートで定義する自由な @文字列
  * （実名を含まない・世界選択時にセッションへコピーされる）。実キャラ/ペルソナへの対応付けは
  * セッション/カセット側の `Session.introBindings` が持つ（参照のみ・実名を焼き込まない）。
@@ -219,8 +185,6 @@ export interface World {
   scheduledEvents: ScheduledEvent[]
   /** prose 関係性の次元（ワールド固定） */
   relationAspects: RelationAspectDef[]
-  /** 世界観が定義する配役。未設定の旧データは空配列として扱う */
-  roles?: WorldRole[]
   /** セッション開始テンプレート（世界を選んだ時にセッションへコピーされる推奨初期設定。素材側は不変） */
   startPreset?: WorldStartPreset
   createdAt: number
@@ -447,7 +411,7 @@ export interface Relation {
  * `addDiscoveredCharacter` → `upsertCharacter` で素材（`characters`）に入る。無料版はここを
  * 閲覧のみにするため発見キャラのキャラ化を出さない、という線引きを採った。ここに
  * `characters: Character[]` を足す案（b）は、素材とオーバーレイの合成ビュー・カード書き出し・
- * 配役・状態エンジンの全経路に「素材でないキャラ」を持ち込むため見送っている
+ * 状態エンジンの全経路に「素材でないキャラ」を持ち込むため見送っている
  * （＝**思いつきで足さない**。docs/設計_公開前実装.md R7）。
  */
 export interface SessionOverlay {
@@ -465,15 +429,6 @@ export interface SessionState {
   moods: { characterId: string; mood: string }[]
 }
 
-/**
- * 世界観ロール（グループ）と参加キャラクターの対応（多対多。A-2）。
- * 同一 roleId に複数行＝ロールの複数メンバー、同一 characterId が複数ロール＝兼任。どちらも許可する。
- */
-export interface RoleAssignment {
-  roleId: string
-  characterId: string
-}
-
 export interface Session {
   id: string
   title: string
@@ -487,8 +442,6 @@ export interface Session {
   characterIds: string[]
   worldId: string | null
   personaId: string | null
-  /** 世界観ロール（グループ）への配役。多対多。無効な参照は保存したまま開始時には無視する */
-  roleAssignments?: RoleAssignment[]
   /** 置換タグ（`story.introTags`）→ 実キャラ/ペルソナ の対応付け（A-1） */
   introBindings?: IntroTagBinding[]
   /** 常に記憶させたい固定メモ（作者ノート） */

@@ -11,7 +11,6 @@ import CassetteLibrary from './components/library/CassetteLibrary'
 import LibraryBar from './components/LibraryBar'
 import SceneReviewModal from './components/SceneReviewModal'
 import SessionEditor from './components/SessionEditor'
-import CastingModal from './components/CastingModal'
 import FirstRunWizard from './components/FirstRunWizard'
 import DialogHost from './components/DialogHost'
 import CommandPalette from './components/CommandPalette'
@@ -65,7 +64,6 @@ export default function App() {
     createSession,
     sceneReview,
     reviewProgress,
-    castingSessionId,
     imageJobToasts,
     dismissImageJobToasts,
     infoNotice,
@@ -286,7 +284,6 @@ export default function App() {
       {(sceneReview?.sessionId === activeId || reviewProgress?.sessionId === activeId) &&
         view === 'sessions' && <SceneReviewModal />}
 
-      {castingSessionId && <CastingModal sessionId={castingSessionId} />}
 
       {showFirstRunWizard && <FirstRunWizard onClose={() => setShowFirstRunWizard(false)} />}
 
