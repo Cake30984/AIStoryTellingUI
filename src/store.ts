@@ -2,7 +2,6 @@ import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
 import type {
   AmbientPin,
-  AchievementDef,
   Avatar,
   BranchNode,
   BranchTree,
@@ -10,8 +9,6 @@ import type {
   Character,
   Choice,
   Development,
-  EndingDef,
-  EndingRecord,
   DiscoveredCharacter,
   ExportBundle,
   ImageProvider,
@@ -218,28 +215,6 @@ function mergeImageLogs(
   return out
 }
 
-/** エンディング到達記録を同値 dedupe でマージする（E3。id を持たないため4フィールドの組で判定） */
-function mergeEndingRecords(cur: EndingRecord[], inc: EndingRecord[]): EndingRecord[] {
-  // 同一性は (世界観, エンディング, セッション, 到達時刻)。cassetteId はセッションから導かれる従属値
-  // なのでキーに含めない（含めると FB9-B 以前の記録と以後の記録が別物になり棚が二重計上する）
-  const key = (r: EndingRecord) => `${r.worldId}|${r.endingDefId}|${r.sessionId}|${r.reachedAt}`
-  const merged = [...cur]
-  const at = new Map(merged.map((r, i) => [key(r), i]))
-  for (const r of inc) {
-    if (!r || typeof r.worldId !== 'string' || typeof r.endingDefId !== 'string') continue
-    const k = key(r)
-    const i = at.get(k)
-    if (i == null) {
-      at.set(k, merged.length)
-      merged.push(r)
-      continue
-    }
-    // 既存が FB9-B 以前で出自を持たない場合だけ、取り込み側の cassetteId を補う（棚の取りこぼし防止）
-    if (r.cassetteId && !merged[i].cassetteId) merged[i] = { ...merged[i], cassetteId: r.cassetteId }
-  }
-  return merged
-}
-
 /**
  * レビュー確定で選ばれた変更を state へ適用する純関数（E2）。confirmSceneReview 内の applyState
  * クロージャをモジュールレベルへ抽出したもの。confirmSceneReview（確定）と SceneReviewModal
@@ -254,7 +229,7 @@ export function applyReviewToState(
     moodChanges: MoodChange[]
   },
 ): SessionState {
-  const prev = base ?? { relations: [], moods: [], stats: [], counters: [], achievements: [] }
+  const prev = base ?? { relations: [], moods: [] }
   // 関係性（fromId,toId で upsert。stance は全文置換）
   const relations = prev.relations.map((r) => ({ ...r }))
   for (const u of sel.relationUpdates) {
@@ -290,7 +265,7 @@ export function applyReviewToState(
     if (idx >= 0) moods[idx].mood = m.mood
     else moods.push({ characterId: m.characterId, mood: m.mood })
   }
-  return { relations, moods, achievements: prev.achievements ?? [] }
+  return { relations, moods }
 }
 
 /**
@@ -404,9 +379,7 @@ export function newWorld(): World {
     entries: [],
     scheduledEvents: [],
     relationAspects: [newRelationAspect('信頼')],
-    achievements: [],
     roles: [],
-    endings: [],
     createdAt: now,
     updatedAt: now,
   }
@@ -499,22 +472,6 @@ export function newRelationAspect(name = ''): RelationAspectDef {
   return { id: uid(), name, guidance: '' }
 }
 
-export function newAchievementDef(name = ''): AchievementDef {
-  return { id: uid(), name, description: '', hidden: false }
-}
-
-export function newEndingDef(name = ''): EndingDef {
-  return {
-    id: uid(),
-    name,
-    description: '',
-    epilogueGuidance: '',
-    auto: false,
-    hidden: false,
-    fallback: false,
-  }
-}
-
 export function newScene(title: string, timeLabel?: string): Scene {
   return {
     id: uid(),
@@ -550,7 +507,7 @@ function newSession(mode: SessionMode): Session {
     narrativeStyle: mode === 'story' ? 'novel' : 'chat',
     eventAutoFire: true,
     usedEventIds: [],
-    state: { relations: [], moods: [], achievements: [] },
+    state: { relations: [], moods: [] },
     overlay: { lore: [], characterDevelopments: [] },
     structuredOutput: true,
     messages: [],
@@ -731,8 +688,6 @@ interface AppState {
   sessions: Session[]
   /** ゲームカセット棚（配布物の素材化。FB2-E） */
   cassettes: Cassette[]
-  /** エンディング到達記録（E3。エピローグ突入時に追記・persist・export/import 対象。集計はセッション単位／カセット単位＝FB9-B） */
-  endingRecords: EndingRecord[]
   activeId: string | null
   /** セッションごとの分岐ツリー（軽量メタデータのみ。実体は checkpointStore。C1） */
   branchTrees: Record<string, BranchTree>
@@ -769,8 +724,6 @@ interface AppState {
   /** 開始時に未配役だったセッション。null なら配役モーダルを閉じる */
   castingSessionId: string | null
   error: string | null
-  /** 直近のエンディング到達（🏁 到達トースト用・非永続。エピローグ突入時にセット） */
-  endingToast: { name: string } | null
   /** バックグラウンド画像生成ジョブ（Blob を含むため非永続。partialize から除外） */
   imageJobs: ImageJob[]
   /** 選択待ちに変わったジョブの通知（非永続） */
@@ -801,7 +754,6 @@ interface AppState {
   setView: (v: View) => void
   clearError: () => void
   /** エンディング到達トーストを閉じる（E2） */
-  dismissEndingToast: () => void
   /** 右コンテキストドック等の UI 設定を部分更新する（UI-3）。没入 OFF→ON で案内を出す（F2） */
   setUiPrefs: (patch: Partial<UiPrefs>) => void
   /** 一時案内メッセージのセット/クリア（F2） */
@@ -848,7 +800,7 @@ interface AppState {
   /**
    * 素材の複製（G4-a。取り込んだカセットの世界観を編集して原本を壊すのを防ぐ導線）。
    * 新 id を返す（見つからなければ undefined）。名前は「〜のコピー」（同名があれば連番）。
-   * **世界観の内部 id（ロア・実績・エンディング・ロール・stat/counter の defId）は振り直さない**
+   * **世界観の内部 id（ロア・ロール・イベントの id）は振り直さない**
    * ＝既存セッションの世界観を複製先へ差し替えても state の参照が生きる（詳細設計 §4.1）。
    * アバターの画像 id は共有する（画像は不変・GC は使用中集合で判定するので安全）。
    */
@@ -912,24 +864,15 @@ interface AppState {
     worldGrowthIdx: number[]
     relationUpdateIdx: number[]
     moodChangeIdx: number[]
-    /** 到達エンディングへ進む場合の EndingDef.id（レビューで「エンディングへ進む」を選んだとき。E2） */
-    endingDefId?: string
-    /** exactly な subject group 節の n 人選択（roleId→選んだ characterId 配列。レビューのプルダウン。B-5） */
-    endingExactSelections?: Record<string, string[]>
     /** キャラ化を承認した発見キャラの index（FB7-E。確定後にキャラ化モーダルへ流す） */
     newCharacterIdx?: number[]
   }) => void
-  /**
-   * エピローグシーンを締めて物語を完結する（E2）。レビューをスキップして scene.endedAt をセットし、
-   * チェックポイントを記録する。次シーンは作らない。
-   */
-  finalizeStory: () => void
   /** 現在の方向性で次シーン候補だけを再生成する */
   regenerateSuggestions: () => Promise<void>
   cancelReview: () => void
   /** 直近のアシスタント応答に対して選択肢を手動で生成し直す */
   regenChoices: () => Promise<void>
-  /** 状態パネルの手動編集を保存する（スタットを clamp・実績を再評価して通知） */
+  /** 状態パネルの手動編集を保存する */
   applyStatusEdit: (state: SessionState) => void
 
   // 発見キャラ（FB7-E）
@@ -1199,37 +1142,6 @@ export function rewindScenesFor(
   const idx = session.scenes.findIndex((sc) => sc.id === lastSceneId)
   if (idx < 0) return { scenes: session.scenes, currentSceneId: session.currentSceneId }
   return { scenes: session.scenes.slice(0, idx + 1), currentSceneId: lastSceneId }
-}
-
-/**
- * 巻き戻し後の scenes を見て ending / 完結を整理する（FB9-A）。`rewindScenesFor` の結果に対して掛ける。
- * - エピローグシーンごと消えた → `ending` を解除（普通の物語に戻り、続きを書ける）
- * - エピローグシーンが残った   → `ending` は保ち `endedAt` だけ解除（エピローグ継続中＝再び締められる）
- * `ending` が無ければ何もしないので、未完結の通常の巻き戻しでも無条件に通してよい。
- */
-export function rewindEndingFor(
-  session: Pick<Session, 'ending'>,
-  scenes: Scene[],
-): { ending?: Session['ending']; scenes: Scene[] } {
-  if (!session.ending) return { scenes }
-  const epId = session.ending.epilogueSceneId
-  if (!scenes.some((sc) => sc.id === epId)) return { ending: undefined, scenes }
-  return {
-    ending: session.ending,
-    scenes: scenes.map((sc) => (sc.id === epId ? { ...sc, endedAt: undefined } : sc)),
-  }
-}
-
-/**
- * この物語（分岐）が完結済みか。`ending` が設定され、そのエピローグシーンに `endedAt` が付いた状態。
- * FB8-B（#3/#15）: 完結した分岐では続ける/やり直す/入力を止める（明確な終わりを保つ）。
- * FB9-A: 続きを描く手段は本文の「分岐」だけ＝`branchFromMessage`（`regenerateFrom` の `fromBranch`）。
- * 一番最後の生成文からは分岐させない（同じ線の続きになり、廃止した branchToContinue と等価になるため）。
- */
-export function isSessionFinalized(s: Session): boolean {
-  if (!s.ending) return false
-  const ep = s.scenes.find((sc) => sc.id === s.ending!.epilogueSceneId)
-  return !!ep?.endedAt
 }
 
 /** 枝の中で最も新しい葉（＝ほぼ確実に元の先端）。上書きガードの「⑂残す」の命名先に使う（FB6-C） */
@@ -1645,25 +1557,8 @@ export const useStore = create<AppState>()(
           sceneNote: scene?.note ?? '',
           currentSceneId: scene?.id ?? null,
           timelineInfo: timelinePromptInfo(session.timeline),
-          // ending が set の間は nearEnd を出さない（「クライマックスへ収束」とエピローグ指示が矛盾するため）
-          nearEnd: session.ending ? false : isNearEnd(session.timeline),
+          nearEnd: isNearEnd(session.timeline),
           stateInfo: buildStateInfo(session, characters, effWorld),
-          // エピローグシーン滞在中だけエンディング指示を注入する（他シーンでは自由な文体へ戻る）
-          ending:
-            session.ending && scene?.id === session.ending.epilogueSceneId
-              ? (() => {
-                  const subjects = resolveParties(session.ending!.parties, effWorld, characters)
-                  return {
-                    name: session.ending!.name,
-                    // エピローグ指針の @ロール名/@相手 を当事者名へ置換して注入
-                    guidance: bindRoleNames(
-                      effWorld?.endings?.find((e) => e.id === session.ending!.defId)?.epilogueGuidance ?? '',
-                      subjects,
-                    ),
-                    subjects,
-                  }
-                })()
-              : undefined,
         }
       }
 
@@ -2016,7 +1911,6 @@ export const useStore = create<AppState>()(
         personas: [],
         sessions: [],
         cassettes: [],
-        endingRecords: [],
         activeId: null,
         branchTrees: {},
         sessionImageLogs: {},
@@ -2033,7 +1927,6 @@ export const useStore = create<AppState>()(
         reviewProgress: null,
         castingSessionId: null,
         error: null,
-        endingToast: null,
         imageJobs: [],
         imageJobToasts: [],
         infoNotice: null,
@@ -2044,7 +1937,6 @@ export const useStore = create<AppState>()(
 
         setView: (view) => set({ view }),
         clearError: () => set({ error: null }),
-        dismissEndingToast: () => set({ endingToast: null }),
         setUiPrefs: (patch) =>
           set((s) => {
             // 没入モードを OFF→ON にした瞬間だけ操作方法を案内する（バーが消えて戸惑うため。F2/A8）
@@ -2197,8 +2089,6 @@ export const useStore = create<AppState>()(
             sessions: st.sessions.map((s) =>
               s.worldId === id ? { ...s, worldId: null } : s,
             ),
-            // 該当ワールドのエンディング到達記録を掃除する（E3）
-            endingRecords: st.endingRecords.filter((r) => r.worldId !== id),
           })),
 
         upsertPersona: (p) =>
@@ -2993,7 +2883,6 @@ export const useStore = create<AppState>()(
           const selectedMoods = opts.moodChangeIdx
             .map((i) => review.moodChanges[i])
             .filter(Boolean)
-          const stateWorld = get().worlds.find((w) => w.id === s.worldId)
 
           // レビュー適用後の新 state を1度だけ計算（純関数 applyReviewToState に一本化。E2）。
           // エンディング判定・シーン確定の両方でこの同一結果を使う＝プレビューと発火の不一致を防ぐ。
@@ -3079,94 +2968,6 @@ export const useStore = create<AppState>()(
           const tl = s.timeline.enabled ? advanceTimeline(s.timeline) : s.timeline
           const nextLabel = s.timeline.enabled ? timeLabelOf(tl) : undefined
 
-          // ── エンディング判定（E2）。session.ending が既 set なら判定・発火しない（到達済み）。
-          // 判定は newState（このレビュー適用後の state）に対して行い、モーダルのプレビューと一致させる。
-          const endings = stateWorld?.endings ?? []
-          // 満了モード：確定後に進む先が totalDays を超えるか（enabled かつ totalDays 指定時のみ）
-          const isExpiry =
-            !s.ending &&
-            s.timeline.enabled &&
-            s.timeline.totalDays != null &&
-            tl.currentDay > s.timeline.totalDays
-          // 発火する結末を confirm 側で最終決定する（防御）：
-          //  満了時の fallback だけが発火する（条件による到達は廃止）
-          let firing: EndingDef | undefined
-          const firingSubjects: RoleParty[] = []
-          if (!s.ending && opts.endingDefId) {
-            const chosen = endings.find((e) => e.id === opts.endingDefId)
-            if (chosen?.fallback && isExpiry) firing = chosen
-          }
-
-          if (firing) {
-            // ── エピローグシーンへ突入（E2）。タイムラインは進めない（もう時間の意味が無い）。
-            const ending = firing
-            const subjects = firingSubjects
-            const parties = partiesOf(subjects)
-            const endingName = bindRoleNames(ending.name, subjects)
-            const epiScene = newScene(`エピローグ：${endingName}`, 'エピローグ')
-            // エピローグ指針の @ロール名/@相手 を当事者名へ置換して注入
-            epiScene.note = bindRoleNames(ending.epilogueGuidance, subjects)
-            const reachedAt = Date.now()
-            // usedEventIds はエンディングが勝つため据え置き＝確定前のまま判定する
-            set((st) => ({
-              sessions: st.sessions.map((sess) =>
-                sess.id === s.id
-                  ? {
-                      ...sess,
-                      scenes: sess.scenes
-                        .map((sc) =>
-                          sc.id === scene.id
-                            ? { ...sc, summary: opts.summary.trim(), endedAt: reachedAt }
-                            : sc,
-                        )
-                        .concat(epiScene),
-                      currentSceneId: epiScene.id,
-                      // タイムライン・usedEventIds は据え置き（特別イベント同時発火はエンディングが勝つ＝未消化のまま残す）
-                      state: newState,
-                      overlay: nextOverlay(sess.overlay),
-                      ending: {
-                        defId: ending.id,
-                        name: endingName,
-                        reachedAt,
-                        epilogueSceneId: epiScene.id,
-                        ...(parties.length ? { parties } : {}),
-                      },
-                      updatedAt: reachedAt,
-                    }
-                  : sess,
-              ),
-              sceneReview: null,
-              endingToast: { name: endingName },
-              // 到達記録（E3）。突入時に追記＝完結ボタンの押し忘れで漏れないため。再到達も追記し表示側で distinct。
-              // 集計はセッション単位（ステータス）とカセット単位（棚の通算）の2軸（FB9-B）
-              endingRecords: s.worldId
-                ? [
-                    ...st.endingRecords,
-                    {
-                      worldId: s.worldId,
-                      endingDefId: ending.id,
-                      sessionId: s.id,
-                      ...(s.originCassetteId ? { cassetteId: s.originCassetteId } : {}),
-                      reachedAt,
-                      ...(parties.length ? { parties } : {}),
-                    },
-                  ]
-                : st.endingRecords,
-            }))
-            void recordCheckpoint(
-              s.id,
-              'scene',
-              `エピローグ：${endingName}`,
-              s,
-              'エピローグ',
-              undefined,
-              endingName,
-            )
-            // エピローグ導入を自動生成（締めの場面。選択肢も choiceMode に従う）
-            void get().beginScene()
-            return
-          }
-
           const sug = opts.suggestion
           const event = review.scheduledEventId
             ? get().worlds
@@ -3216,38 +3017,6 @@ export const useStore = create<AppState>()(
 
           // 新シーンの導入を自動生成（→ 続けて選択肢が提示される）
           void get().beginScene()
-        },
-
-        finalizeStory: () => {
-          const s = active()
-          if (!s || !s.ending) return
-          if (get().isStreaming || get().isReviewing) return
-          const sceneId = s.ending.epilogueSceneId
-          const scene = s.scenes.find((sc) => sc.id === sceneId)
-          if (!scene || scene.endedAt) return
-          const endedAt = Date.now()
-          set((st) => ({
-            sessions: st.sessions.map((sess) =>
-              sess.id === s.id
-                ? {
-                    ...sess,
-                    scenes: sess.scenes.map((sc) =>
-                      sc.id === sceneId ? { ...sc, endedAt } : sc,
-                    ),
-                    updatedAt: endedAt,
-                  }
-                : sess,
-            ),
-          }))
-          void recordCheckpoint(
-            s.id,
-            'scene',
-            `完結：${s.ending.name}`,
-            s,
-            'エピローグ',
-            undefined,
-            s.ending.name,
-          )
         },
 
         regenerateSuggestions: async () => {
@@ -3433,7 +3202,7 @@ export const useStore = create<AppState>()(
 
         send: async (text, speakerId, kind) => {
           const s = active()
-          if (!s || get().isStreaming || isSessionFinalized(s)) return
+          if (!s || get().isStreaming || false) return
           const trimmed = text.trim()
           if (!trimmed) return
           // 復元で線の途中に居る場合の上書きガード（FB6-C）
@@ -3456,7 +3225,7 @@ export const useStore = create<AppState>()(
 
         continueStory: async (speakerId) => {
           const s = active()
-          if (!s || get().isStreaming || isSessionFinalized(s)) return
+          if (!s || get().isStreaming || false) return
           if (!(await ensureLineTip(s.id, get().branchTrees[s.id]?.currentId))) return
           patchActive({
             messages: [
@@ -3475,7 +3244,7 @@ export const useStore = create<AppState>()(
 
         regenerate: async (speakerId) => {
           const s = active()
-          if (!s || get().isStreaming || isSessionFinalized(s)) return
+          if (!s || get().isStreaming || false) return
           const curId = s.currentSceneId
           const msgs = [...s.messages]
           // 現在シーン内の末尾アシスタント応答のみ取り消す
@@ -3624,7 +3393,7 @@ export const useStore = create<AppState>()(
 
         continueLast: async () => {
           const s = active()
-          if (!s || get().isStreaming || isSessionFinalized(s)) return
+          if (!s || get().isStreaming || false) return
           const last = [...s.messages].reverse().find((m) => m.role === 'assistant')
           if (!last) return
           if (!(await ensureLineTip(s.id, get().branchTrees[s.id]?.currentId))) return
@@ -3664,7 +3433,7 @@ export const useStore = create<AppState>()(
           const s = active()
           if (!s || get().isStreaming) return
           // 完結した分岐を作り直せるのは「分岐」経由だけ（FB9-A）。通常の「ここから」は拒否し続ける
-          if (isSessionFinalized(s) && !opts?.fromBranch) return
+          if (false && !opts?.fromBranch) return
           const idx = s.messages.findIndex((m) => m.id === messageId)
           if (idx < 0) return
           const target = s.messages[idx]
@@ -3681,9 +3450,7 @@ export const useStore = create<AppState>()(
           // シーン境界をまたいで巻き戻した場合、置き去りの後続シーン（stale な見出し・あらすじ）を
           // scenes/currentSceneId から落とす（バグ修正。跨がなければ変更なし）
           const rewound = rewindScenesFor(s, kept)
-          // エピローグより前まで戻ったら ending を、エピローグ内なら完結だけを解除する（FB9-A。
-          // rewindScenesFor の後に掛けること＝順序が逆だと scenes が上書きされて解除が消える）
-          patchActive({ messages: kept, ...rewound, ...rewindEndingFor(s, rewound.scenes) })
+          patchActive({ messages: kept, ...rewound })
           await runCompletion(speaker)
         },
 
@@ -3740,7 +3507,7 @@ export const useStore = create<AppState>()(
         },
 
         exportBundle: async (includeImages) => {
-          const { characters, worlds, personas, sessions, cassettes, endingRecords, sessionImageLogs } = get()
+          const { characters, worlds, personas, sessions, cassettes, sessionImageLogs } = get()
           // providers（API キー）は localStorage のみに保持し、エクスポートには含めない（共有時の漏洩防止）
           const bundle: ExportBundle = {
             type: 'ai-storytelling-studio',
@@ -3751,7 +3518,6 @@ export const useStore = create<AppState>()(
             personas,
             sessions,
             cassettes,
-            endingRecords,
             sessionImageLogs,
           }
           if (includeImages) {
@@ -3792,11 +3558,7 @@ export const useStore = create<AppState>()(
           const incomingWorlds = (bundle.worlds ?? []).map((w: any) => ({
             ...w,
             relationAspects: Array.isArray(w.relationAspects) ? w.relationAspects : [],
-            stats: Array.isArray(w.stats) ? w.stats : [],
-            counters: Array.isArray(w.counters) ? w.counters : [],
-            achievements: Array.isArray(w.achievements) ? w.achievements : [],
             roles: normalizeWorldRoles(w.roles),
-            endings: Array.isArray(w.endings) ? w.endings : [],
             ...(w.startPreset
               ? { startPreset: { ...w.startPreset, introTags: normalizeIntroTags(w.startPreset.introTags) } }
               : {}),
@@ -3840,8 +3602,6 @@ export const useStore = create<AppState>()(
                     : cassette.session,
                 })),
               ),
-              // エンディング到達記録は同値 dedupe でマージ（E3。id を持たないため組み合わせで判定）
-              endingRecords: mergeEndingRecords(st.endingRecords, bundle.endingRecords ?? []),
               // 画像の永続記録はセッション単位で record id の dedupe マージ（FB6-A）
               sessionImageLogs: mergeImageLogs(st.sessionImageLogs, bundle.sessionImageLogs ?? {}),
               // providers はユーザー固有の設定のためインポート対象外
@@ -4265,7 +4025,6 @@ export const useStore = create<AppState>()(
         personas: st.personas,
         sessions: st.sessions,
         cassettes: st.cassettes,
-        endingRecords: st.endingRecords,
         activeId: st.activeId,
         branchTrees: st.branchTrees,
         sessionImageLogs: st.sessionImageLogs,

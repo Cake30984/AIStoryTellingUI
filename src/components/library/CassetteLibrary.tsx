@@ -14,8 +14,6 @@ import { castingIssueLabel, validateCasting } from '../../lib/casting'
 /** カセット1枚のカード（表紙・紹介文・遊ぶ/編集/書き出し/削除）。FB2-E / FB3-D */
 function CassetteCard({
   cas,
-  endingSeen,
-  endingTotal,
   onPlay,
   onEdit,
   onExport,
@@ -23,9 +21,7 @@ function CassetteCard({
 }: {
   cas: Cassette
   /** このカセットで到達したエンディング数（全プレイの通算・distinct。E3 / FB9-B） */
-  endingSeen: number
   /** この世界のエンディング総数（E3） */
-  endingTotal: number
   onPlay: () => void
   onEdit: () => void
   onExport: () => void
@@ -46,11 +42,6 @@ function CassetteCard({
       <div className="cassette-body">
         <div className="entity-name">
           {cas.title || '無題のカセット'}
-          {endingTotal > 0 && (
-            <span className="badge" style={{ marginLeft: 6 }} title="到達エンディング（このカセットの通算）">
-              <Icon name="flag" size={11} /> {endingSeen}/{endingTotal}
-            </span>
-          )}
         </div>
         <div className="entity-desc">{cas.description || '紹介文なし'}</div>
         <div className="cassette-actions">
@@ -73,7 +64,7 @@ function CassetteCard({
 }
 
 export default function CassetteLibrary() {
-  const { cassettes, characters, worlds, personas, endingRecords, importCassette, playCassette, deleteCassette } =
+  const { cassettes, characters, worlds, personas, importCassette, playCassette, deleteCassette } =
     useStore()
   const [notice, setNotice] = useState('')
   // null=閉じている / {}=新規 / {cassette}=編集
@@ -162,20 +153,10 @@ export default function CassetteLibrary() {
       ) : (
         <div className="cassette-grid">
           {cassettes.map((cas) => {
-            const wid = cas.session.worldId
-            const casWorld = wid ? worlds.find((w) => w.id === wid) : undefined
-            const endingTotal = casWorld?.endings?.length ?? 0
-            // このカセットで到達したエンディング（全プレイの通算・distinct）。FB9-B で世界観単位から
-            // カセット単位へ＝同じ世界観から作った別のカセットの到達が混ざらない
-            const endingSeen = new Set(
-              endingRecords.filter((r) => r.cassetteId === cas.id).map((r) => r.endingDefId),
-            ).size
             return (
             <CassetteCard
               key={cas.id}
               cas={cas}
-              endingSeen={endingSeen}
-              endingTotal={endingTotal}
               onPlay={() => playCassette(cas.id)}
               onEdit={() => setEditing({ cassette: cas })}
               onExport={() => doExport(cas)}

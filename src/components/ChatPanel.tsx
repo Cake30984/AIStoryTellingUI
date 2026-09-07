@@ -23,8 +23,6 @@ import { ensureAudio, isAudioReady } from '../lib/ambientAudio'
 import ImageGenModal from './ImageGenModal'
 import AmbientPinModal from './AmbientPinModal'
 import AmbientPinLayer, { type AmbientDrag } from './AmbientPinLayer'
-import ModalShell from './ModalShell'
-import OpeningBriefing from './OpeningBriefing'
 import type { AmbientPin, DockTab, Message, Scene, SceneIllustration, Session } from '../types'
 import SessionEditor from './SessionEditor'
 import SceneEditor from './SceneEditor'
@@ -157,7 +155,6 @@ export default function ChatPanel({ session }: Props) {
     stopChoices,
     stopReview,
     prepareSceneReview,
-    finalizeStory,
     startStory,
     continueLast,
     regenChoices,
@@ -172,7 +169,6 @@ export default function ChatPanel({ session }: Props) {
     imageJobs,
     characters,
     personas,
-    worlds,
     ui,
     setUiPrefs,
     scrollTarget,
@@ -205,7 +201,6 @@ export default function ChatPanel({ session }: Props) {
   const [showCassetteEditor, setShowCassetteEditor] = useState(false)
   const [showExport, setShowExport] = useState(false)
   const [showMenu, setShowMenu] = useState(false)
-  const [showFinale, setShowFinale] = useState(false)
   const [speaker, setSpeaker] = useState<string | undefined>(undefined)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -226,13 +221,6 @@ export default function ChatPanel({ session }: Props) {
     setUiPrefs({ dockTab: ui.dockTab ? null : lastDockTabRef.current })
 
   const scene = currentScene(session)
-  // エピローグ滞在中か／物語が完結済みか（設計_エンディング.md。完結は別フラグを持たず ending＋endedAt から導出）
-  const isEpilogue = !!session.ending && scene?.id === session.ending.epilogueSceneId
-  const epilogueScene = session.ending
-    ? session.scenes.find((sc) => sc.id === session.ending!.epilogueSceneId)
-    : undefined
-  const isFinalized = !!session.ending && !!epilogueScene?.endedAt
-
   // ── 環境音ピン（AM1）─────────────────────────────────
   // 全シーンのピンを1つの索引にまとめ、レンダラが「このメッセージのこの行」で引けるようにする。
   // 実際に鳴るのは DOM にマーカーが描かれたものだけ（＝畳んだ過去シーンの音は鳴らない）。
@@ -270,7 +258,6 @@ export default function ChatPanel({ session }: Props) {
     return () => el.removeEventListener('wheel', onWheel)
   }, [ui.ambientEnabled, ambientPins.length])
 
-  const world = worlds.find((w) => w.id === session.worldId)
   // 顔ぶれは2種類ある。**混ぜてはいけない**（CG1 §1.4 の原則＝「AI に渡すもの」だけをゲートし、
   // 「アプリが同一性を判定するために持つもの」はゲートしない）。
   //
@@ -287,9 +274,6 @@ export default function ChatPanel({ session }: Props) {
     [session.characterIds, characters],
   )
   const participants = knownCast
-  const endingDef = session.ending
-    ? world?.endings?.find((e) => e.id === session.ending!.defId)
-    : undefined
   const persona = personas.find((p) => p.id === session.personaId)
   const novel = session.narrativeStyle === 'novel'
   // 発見キャラ（FB7-E）: 未解決話者の ？バッジ → キャラ化待ちへ積む。
@@ -307,8 +291,6 @@ export default function ChatPanel({ session }: Props) {
   const [wrapHintHiddenFor, setWrapHintHiddenFor] = useState<string | null>(null)
   const showWrapHint =
     tokLvl === 'high' &&
-    !isEpilogue &&
-    !isFinalized &&
     !isStreaming &&
     !isReviewing &&
     !!scene &&
@@ -435,9 +417,6 @@ export default function ChatPanel({ session }: Props) {
     participants.length > 0 || (session.mode === 'story' && !!session.story.premise)
 
   const lastMsg = session.messages[session.messages.length - 1]
-  // 完結後に「分岐」を出さない対象＝一番最後の生成文（FB9-A。ここからの分岐は「完結した線の続きを
-  // 同じ線で書く」ことと等価になり、廃止した branchToContinue の復活になるため）
-  const lastMessageId = lastMsg?.id
   // 「選択肢を生成」を出す対象＝末尾のアシスタント本文（FB3-A6）
   const lastAssistantId = useMemo(() => {
     for (let i = session.messages.length - 1; i >= 0; i--) {
@@ -537,17 +516,15 @@ export default function ChatPanel({ session }: Props) {
     if (directive) {
       return (
         <div className="msg-actions">
-          {!isFinalized && (
-            <>
-              <button onClick={() => startEdit(m)}>
-                <Icon name="pencil" size={13} /> 編集
-              </button>
-              <button onClick={() => regenerateFrom(m.id)} title="この指示以降を作り直す">
-                <Icon name="rotate-ccw" size={13} /> ここから
-              </button>
-            </>
-          )}
-          {(!isFinalized || m.id !== lastMessageId) && (
+          <>
+            <button onClick={() => startEdit(m)}>
+              <Icon name="pencil" size={13} /> 編集
+            </button>
+            <button onClick={() => regenerateFrom(m.id)} title="この指示以降を作り直す">
+              <Icon name="rotate-ccw" size={13} /> ここから
+            </button>
+          </>
+          {(
             <button
               onClick={() => branchFromMessage(m.id)}
               title="今の続きを分岐として残してから、ここから作り直す"
@@ -555,18 +532,15 @@ export default function ChatPanel({ session }: Props) {
               <Icon name="git-branch" size={13} /> 分岐
             </button>
           )}
-          {!isFinalized && (
-            <button onClick={() => deleteMessage(m.id)}>
-              <Icon name="trash-2" size={13} /> 削除
-            </button>
-          )}
+          <button onClick={() => deleteMessage(m.id)}>
+            <Icon name="trash-2" size={13} /> 削除
+          </button>
         </div>
       )
     }
     return (
       <div className="msg-actions">
-        {/* 完結した物語は書き換えない。続きを描く手段は「分岐」だけに絞る（FB9-A） */}
-        {!isFinalized && (
+        {(
           <>
             <button onClick={() => startEdit(m)}>
               <Icon name="pencil" size={13} /> 編集
@@ -578,23 +552,17 @@ export default function ChatPanel({ session }: Props) {
         )}
         {/* ⑂ 明示分岐（FB6-C）: 今の続きに名前を付けて残してから、ここから作り直す。
             完結後も出す（唯一の続きを描く導線）が、一番最後の生成文からは分岐させない（FB9-A） */}
-        {(!isFinalized || m.id !== lastMessageId) && (
+        {(
           <button
             onClick={() => branchFromMessage(m.id)}
-            title={
-              isFinalized
-                ? 'この地点から新しい世界線を作って続きを描く（完結した物語は分岐として残る）'
-                : '今の続きを分岐として残してから、ここから作り直す'
-            }
+            title="今の続きを分岐として残してから、ここから作り直す"
           >
             <Icon name="git-branch" size={13} /> 分岐
           </button>
         )}
-        {!isFinalized && (
-          <button onClick={() => deleteMessage(m.id)}>
-            <Icon name="trash-2" size={13} /> 削除
-          </button>
-        )}
+        <button onClick={() => deleteMessage(m.id)}>
+          <Icon name="trash-2" size={13} /> 削除
+        </button>
         {/* 任意のメッセージをアンカーに後付け生成（過去シーンも可。FB6-B） */}
         {showIllustButtons && (m.sceneId ?? session.currentSceneId) && (
           <button
@@ -620,7 +588,7 @@ export default function ChatPanel({ session }: Props) {
           </button>
         )}
         {/* 末尾のアシスタント本文にだけ「選択肢を生成」（FB3-A6）。完結分岐では出さない（FB8-B） */}
-        {!isFinalized && m.id === lastAssistantId && session.choiceMode !== 'off' && (
+        {m.id === lastAssistantId && session.choiceMode !== 'off' && (
           <button
             onClick={() => regenChoices()}
             disabled={isGeneratingChoices}
@@ -762,8 +730,6 @@ export default function ChatPanel({ session }: Props) {
 
   /** メッセージ＋挿絵をアンカー順に描画（アンカー消失分はシーン末尾に集約） */
   // 開始ブリーフィング（CG3）を差し込む位置＝**セッション最初の本文メッセージ（＝導入文）の直後**。
-  // 「導入文が表示された時点で目標を示す」が要件なので、シーン末尾ではなく導入の直後に置く。
-  const briefingAfterId = session.messages.find((m) => !isMarker(m))?.id
 
   const renderSceneContent = (sc: Scene, msgs: Message[]) => {
     const ills = sc.illustrations ?? []
@@ -806,7 +772,6 @@ export default function ChatPanel({ session }: Props) {
         <Fragment key={m.id}>
           {renderMessage(m)}
           {(byMessage.get(m.id) ?? []).map(illView)}
-          {m.id === briefingAfterId && <OpeningBriefing session={session} />}
         </Fragment>,
       )
       seenContent = true
@@ -844,17 +809,6 @@ export default function ChatPanel({ session }: Props) {
             <span className={'token-badge ' + tokLvl} title="現在シーンのおおよその文量（トークン換算）">
               文量 ~{sceneTokens.toLocaleString()}{tokLvl === 'high' ? ' ・締め時' : ''}
             </span>
-          </button>
-        )}
-
-        {isFinalized && session.ending && (
-          <button
-            className="badge accent"
-            style={{ cursor: 'pointer' }}
-            onClick={() => setShowFinale(true)}
-            title="この物語は完結しています（続きは分岐ツリーから復元できます）"
-          >
-            <Icon name="flag" size={12} /> 完結：{session.ending.name}
           </button>
         )}
 
@@ -1065,7 +1019,7 @@ export default function ChatPanel({ session }: Props) {
                   </button>
                 </div>
               )}
-              {!isFinalized && showChoices && (
+              {showChoices && (
                 <div className="choices">
                   {lastMsg.choices!.map((c, i) => (
                     <button
@@ -1100,8 +1054,7 @@ export default function ChatPanel({ session }: Props) {
               )}
               {/* コンポーザーの操作行（常時レンダリング。高さが跳ねないよう左右にツールをまとめる） */}
               <div className="composer-tools">
-                {!isFinalized &&
-                  session.mode === 'story' &&
+                {session.mode === 'story' &&
                   (storyStarted ? (
                     <button className="btn primary" onClick={() => continueStory(effectiveSpeaker)} disabled={isStreaming}>
                       <Icon name="fast-forward" size={14} /> 続ける
@@ -1111,7 +1064,7 @@ export default function ChatPanel({ session }: Props) {
                       <Icon name="play" size={14} /> 物語をはじめる
                     </button>
                   ))}
-                {!isFinalized && showRegen && (
+                {showRegen && (
                   <button
                     className="composer-tool-btn"
                     onClick={() => regenerate(effectiveSpeaker)}
@@ -1120,7 +1073,7 @@ export default function ChatPanel({ session }: Props) {
                     <Icon name="rotate-ccw" size={14} /> {groupMode ? '直前をやり直す' : 'やり直す'}
                   </button>
                 )}
-                {!isFinalized && !isStreaming && lastMsg?.role === 'assistant' && lastMsg.truncated && (
+                {!isStreaming && lastMsg?.role === 'assistant' && lastMsg.truncated && (
                   <button
                     className="composer-tool-btn"
                     onClick={() => continueLast()}
@@ -1130,8 +1083,7 @@ export default function ChatPanel({ session }: Props) {
                   </button>
                 )}
                 {/* 選択肢が出ない時の手動生成（モデル出力が想定外でも復旧できる） */}
-                {!isFinalized &&
-                  !isStreaming &&
+                {!isStreaming &&
                   !isGeneratingChoices &&
                   session.choiceMode !== 'off' &&
                   lastMsg?.role === 'assistant' &&
@@ -1157,25 +1109,10 @@ export default function ChatPanel({ session }: Props) {
                     <Icon name="palette" size={14} /> 挿絵
                   </button>
                 )}
-                {!isFinalized && (
-                  <button className="composer-tool-btn" onClick={() => setShowSceneEditor(true)}>
-                    <Icon name="pencil" size={14} /> シーン編集
-                  </button>
-                )}
-                {/* 完結後はシーンを進める操作自体を出さない（続きは本文の「分岐」だけ。FB9-A） */}
-                {isFinalized ? null : isEpilogue ? (
-                  <button
-                    className="scene-btn end"
-                    onClick={() => {
-                      finalizeStory()
-                      setShowFinale(true)
-                    }}
-                    disabled={isStreaming}
-                    title="エピローグを締めて物語を完結する"
-                  >
-                    <Icon name="flag" size={14} /> 物語を完結する
-                  </button>
-                ) : (
+                <button className="composer-tool-btn" onClick={() => setShowSceneEditor(true)}>
+                  <Icon name="pencil" size={14} /> シーン編集
+                </button>
+                {(
                   <button
                     className="scene-btn end"
                     onClick={() => (isReviewing ? stopReview() : prepareSceneReview())}
@@ -1195,11 +1132,7 @@ export default function ChatPanel({ session }: Props) {
                 )}
               </div>
 
-              {isFinalized ? (
-                <div className="finalized-lock">
-                  <Icon name="flag" size={13} /> この物語は完結しました。続きを描くには、分かれ目にしたい場面の「分岐」から新しい世界線を作ってください。
-                </div>
-              ) : (
+              {(
                 <>
                 {/* 入力の二分化（IN1）。送信前に「どちらとして送るか」が見えている状態を作る */}
                 <div className="input-mode-row">
@@ -1382,34 +1315,6 @@ export default function ChatPanel({ session }: Props) {
       {showExport && <StoryExportModal sessionId={session.id} onClose={() => setShowExport(false)} />}
 
       {/* 完結オーバーレイ（簡素な演出。将来ここにエンディング CG・スタッフロールを足せる） */}
-      {showFinale && session.ending && (
-        <ModalShell
-          title="物語の完結"
-          onClose={() => setShowFinale(false)}
-          footer={
-            <button className="btn primary" onClick={() => setShowFinale(false)}>
-              閉じる
-            </button>
-          }
-        >
-          <div className="field" style={{ textAlign: 'center', padding: '12px 0' }}>
-            <div style={{ marginBottom: 8, color: 'var(--accent)' }}>
-              <Icon name="flag" size={40} />
-            </div>
-            <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>
-              {session.ending.name}
-            </div>
-            {endingDef?.description && (
-              <p className="desc" style={{ maxWidth: 420, margin: '0 auto' }}>
-                {endingDef.description}
-              </p>
-            )}
-            <p className="desc" style={{ marginTop: 16 }}>
-              おつかれさまでした。読み返し・別の結末を狙う周回は、分岐ツリーからいつでも再開できます。
-            </p>
-          </div>
-        </ModalShell>
-      )}
     </div>
   )
 }

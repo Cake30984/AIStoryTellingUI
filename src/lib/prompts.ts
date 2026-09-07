@@ -1,4 +1,4 @@
-import type { Character, Message, Persona, PromptStyle, RoleParty, Scene, Session, World } from '../types'
+import type { Character, Message, Persona, PromptStyle, Scene, Session, World } from '../types'
 import type { ChatMessage } from './openrouter'
 import { roleMembers } from './casting'
 import { splitLoreEntries } from './lorebook'
@@ -42,10 +42,8 @@ export interface ResolvedRefs {
   timelineInfo: string
   /** 終盤が近いか（クライマックス促し） */
   nearEnd: boolean
-  /** 関係性 prose・気分・注入対象スタットの現在値（空なら無効） */
+  /** 関係性 prose・気分（空なら無効） */
   stateInfo: string
-  /** エピローグシーン滞在中のみ設定（到達した結末のトーン指示。docs/設計_エンディング.md） */
-  ending?: { name: string; guidance: string; subjects?: RoleParty[] }
 }
 
 /** キャラ1人の定義ブロックを作る */
@@ -138,25 +136,7 @@ export function buildSystemPrompt(session: Session, refs: ResolvedRefs): string 
     parts.push(t)
   }
 
-  // 1.8 エンディング（エピローグシーン滞在中のみ。nearEnd はこの間スキップ済み）
-  if (refs.ending) {
-    // 当事者つきエンディング（subject な group 節）は「誰との結末か」をロールごとに明示する
-    const subjects = (refs.ending.subjects ?? []).filter((p) => p.members.length > 0)
-    const subjectLines = subjects.map((p) => `${p.roleName}: ${p.members.map((m) => m.name).join('・')}`)
-    const allNames = subjects.flatMap((p) => p.members.map((m) => m.name))
-    const partnerLine = subjectLines.length
-      ? `\n相手: ${subjectLines.join(' / ')}。この結末は ${allNames.join('・')} との関係の帰結として描いてください。`
-      : ''
-    parts.push(
-      `【エンディング】\nこの物語は結末「${refs.ending.name}」のエピローグに入っています。` +
-        (refs.ending.guidance.trim() ? `（${refs.ending.guidance.trim()}）` : '') +
-        partnerLine +
-        `\n新しい事件・伏線を起こさず、これまでの感情と関係の帰着を描いてください。` +
-        `\n数ターンで余韻を残して物語を締めくくる方向で書きます。`,
-    )
-  }
-
-  // 1.9 状態（関係性 prose・気分・注入対象スタット）
+  // 1.9 状態（関係性 prose・気分）
   // ふるまいの決まり方を述べる1文は深さ3へ移した（PC-B。近接させた方が効く＝作者ノートと同じ理屈）。
   // ここに残すのは**文面の候補によらず常に要る**数値の非露出だけ＝毎ターン byte 一致する（N3）
   if (refs.stateInfo.trim()) {
@@ -348,8 +328,7 @@ function depthZeroContent(
   // シーンのペース制御（FB5-①）: 現在シーンが長くなってきたら収束へ向かわせる。
   // メッセージ履歴には積まず、毎回の組み立て時に推定トークンから判定する（状態を持たない）。
   // 「今すぐ畳め」という指示なので深さ0＝最も近い位置に置く。
-  // エピローグは【エンディング】に専用の締め指示があるため対象外。
-  if (!refs.ending) {
+  {
     const sceneTokens = sceneTokensOf(session)
     if (sceneTokens >= SCENE_WRAP_UP_TOKENS) {
       parts.push(

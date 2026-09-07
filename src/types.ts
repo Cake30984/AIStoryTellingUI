@@ -106,7 +106,7 @@ export interface RoleParty {
 
 /**
  * 永続化用の当事者組（名前を持たない参照のみ。リネーム追従のため表示時に `resolveParties` で名前解決する）。
- * `SessionState.achievements[].parties` / `Session.ending.parties` / `EndingRecord.parties` が持つ。
+ * リネーム追従のため表示時に `resolveParties` で名前解決する。
  */
 export interface PartyRef {
   roleId: string
@@ -121,34 +121,6 @@ export interface ExactGroupCandidate {
   roleName: string
   n: number
   candidates: Partner[]
-}
-
-/** 実績の定義（ワールド固定）。condition を満たすとコードが自動で達成記録する。 */
-export interface AchievementDef {
-  id: string
-  name: string
-  description: string
-  /** 未達成時に名前・内容を隠す */
-  hidden?: boolean
-}
-
-/**
- * エンディングの定義（ワールド固定。到達判定はコードが自動で行う。docs/設計_エンディング.md）。
- * 実績の親戚＝条件成立で到達する「終わりの構造」。配列順が優先度（上が優先）。
- */
-export interface EndingDef {
-  id: string
-  name: string
-  /** UI 表示用の説明（一覧・到達時に見せる。条件そのものは晒さない） */
-  description: string
-  /** エピローグ生成への指示（結末のトーン・締め方）。到達後にのみ注入＝プレイ中のリークなし */
-  epilogueGuidance: string
-  /** 条件成立で強制突入する（レビューでの「まだ続ける」を出さない。バッドエンド向け） */
-  auto?: boolean
-  /** 未到達時に名前・内容を ??? 表示（実績の hidden と同じ） */
-  hidden?: boolean
-  /** 期間満了時、条件成立エンディングが無い場合に採用するノーマル/バッドエンド */
-  fallback?: boolean
 }
 
 /**
@@ -247,14 +219,10 @@ export interface World {
   scheduledEvents: ScheduledEvent[]
   /** prose 関係性の次元（ワールド固定） */
   relationAspects: RelationAspectDef[]
-  /** 実績の定義（達成条件はコードが自動判定） */
-  achievements: AchievementDef[]
   /** 世界観が定義する配役。未設定の旧データは空配列として扱う */
   roles?: WorldRole[]
   /** セッション開始テンプレート（世界を選んだ時にセッションへコピーされる推奨初期設定。素材側は不変） */
   startPreset?: WorldStartPreset
-  /** エンディング定義（未設定は空配列扱い。配列順=優先度＝上が優先）。docs/設計_エンディング.md */
-  endings?: EndingDef[]
   createdAt: number
   updatedAt: number
 }
@@ -495,12 +463,6 @@ export interface SessionState {
   relations: Relation[]
   /** キャラ自身の一時的な気分（prose・毎レビューで上書き） */
   moods: { characterId: string; mood: string }[]
-  /**
-   * 達成済みの実績。subject な group 節を含む定義は当事者の組ごとに独立に解除する
-   * （docs/設計_ロールグループと定量条件.md B-4）。`parties`＝ロール別の当事者組。
-   * 同じ (defId, parties) は再解除しない。当事者を持たない定義は parties を持たず defId 単位で1回。
-   */
-  achievements: { defId: string; unlockedAt: number; parties?: PartyRef[] }[]
 }
 
 /**
@@ -577,20 +539,6 @@ export interface Session {
    * 参照で、プレイには影響しない。カセット下書きの種にする時は `freshSessionOf` が落とす。
    */
   originCassetteId?: string
-  /**
-   * 到達したエンディング（セッション固有・チェックポイント対象＝分岐で戻れば未到達に戻る。
-   * docs/設計_エンディング.md）。restoreCheckpoint の passthrough には入れない。
-   * 「完結済み」は ending があり、かつ epilogueSceneId のシーンに endedAt が立つことから導出する。
-   */
-  ending?: {
-    defId: string
-    name: string
-    reachedAt: number
-    /** エピローグシーンの id。このシーンが currentScene の間だけエンディング指示を注入する */
-    epilogueSceneId: string
-    /** この結末の当事者組（ロール別。docs/設計_ロールグループと定量条件.md）。エピローグ注入・`@ロール名`/`@相手` 置換に使う */
-    parties?: PartyRef[]
-  }
   messages: Message[]
   temperature: number
   maxTokens: number
@@ -942,27 +890,6 @@ export function normalizeUiPrefs(raw: unknown): UiPrefs {
 }
 
 /**
- * エンディング到達の記録（E3・AppState 直下）。エピローグ突入時に追記する。
- * セッションの外に置く＝セッション削除・複製・分岐巻き戻しでも「到達した」事実は残す。
- * 集計は2軸（FB9-B）＝ステータス表示は `sessionId`（このセッションの回収率）、カセット棚は
- * `cassetteId`（作品ごとの通算）。`worldId` は World 削除時の掃除にだけ使い、集計軸にはしない。
- */
-export interface EndingRecord {
-  worldId: string
-  endingDefId: string
-  sessionId: string
-  /**
-   * 出自カセット（FB9-B）。カセット棚のコレクション表示（通算の到達エンディング数）の集計キー。
-   * カセット由来でないセッション（ライブラリから直接組んだもの）の記録には無い。
-   */
-  cassetteId?: string
-  reachedAt: number
-  /** 当事者の組（ロール別。周回記録で「誰との結末か」を残す） */
-  parties?: PartyRef[]
-}
-
-/** エクスポート/インポート用のデータ束 */
-/**
  * 全データの書き出し／取り込み単位（JSON バックアップ）。
  * 読み込み（`io.ts` の `parseBundle`）は未知のトップレベルキーをそのまま持ち回るため、
  * 新しいバージョンで作られたバンドルは**ここに宣言されていない項目を実体として持ちうる**（R2）。
@@ -977,8 +904,6 @@ export interface ExportBundle {
   sessions: Session[]
   /** ゲームカセット棚（FB2-E） */
   cassettes?: Cassette[]
-  /** エンディング到達記録（E3。同値 dedupe でマージ＝キーは worldId|endingDefId|sessionId|reachedAt） */
-  endingRecords?: EndingRecord[]
   /** セッションごとの生成画像の永続記録（FB6-A。record id でセッション単位に dedupe マージ） */
   sessionImageLogs?: Record<string, SessionImageRecord[]>
   providers?: Provider[]

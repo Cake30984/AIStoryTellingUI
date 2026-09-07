@@ -33,7 +33,6 @@ export function parseBundle(text: string): ExportBundle {
     personas: Array.isArray(obj.personas) ? obj.personas : [],
     sessions: Array.isArray(obj.sessions) ? obj.sessions : [],
     cassettes: Array.isArray(obj.cassettes) ? obj.cassettes : undefined,
-    endingRecords: Array.isArray(obj.endingRecords) ? obj.endingRecords : undefined,
     // 旧実装のホワイトリストから漏れており、インポートで黙って消えていた（未知キー保存へ変えた副産物。R2）
     sessionImageLogs:
       obj.sessionImageLogs && typeof obj.sessionImageLogs === 'object' ? obj.sessionImageLogs : undefined,

@@ -3,7 +3,6 @@ import { useStore } from '../store'
 import type { Session, SessionState } from '../types'
 import EntityAvatar from './EntityAvatar'
 import ModalShell from './ModalShell'
-import { Icon } from './icons'
 
 interface Props {
   session: Session
@@ -26,7 +25,6 @@ export default function StatusPanel({ session, onClose }: Props) {
       aspects: r.aspects.map((a) => ({ ...a })),
     })),
     moods: session.state.moods.map((m) => ({ ...m })),
-    achievements: (session.state.achievements ?? []).map((a) => ({ ...a })),
   }))
   const [dirty, setDirty] = useState(false)
   const mutate = (updater: (prev: SessionState) => SessionState) => {
@@ -50,19 +48,7 @@ export default function StatusPanel({ session, onClose }: Props) {
       return { ...prev, relations }
     })
 
-  const isUnlocked = (defId: string) => st.achievements.some((a) => a.defId === defId)
-  const toggleAchievement = (defId: string) =>
-    mutate((prev) => {
-      const has = prev.achievements.some((a) => a.defId === defId)
-      const achievements = has
-        ? prev.achievements.filter((a) => a.defId !== defId)
-        : [...prev.achievements, { defId, unlockedAt: Date.now() }]
-      return { ...prev, achievements }
-    })
-
-
   const save = () => {
-    // clamp・実績の再評価はストア側（applyStatusEdit）で行う
     applyStatusEdit(st)
     onClose()
   }
@@ -127,65 +113,6 @@ export default function StatusPanel({ session, onClose }: Props) {
             )
           })}
 
-          {/* 実績 */}
-          {(world?.achievements ?? []).length > 0 && (
-            <div className="field">
-              <label>
-                <Icon name="trophy" size={13} className="label-icon" /> 実績
-              </label>
-              {world!.achievements.map((a) => {
-                const unlocked = isUnlocked(a.id)
-                const conceal = a.hidden && !unlocked
-                return (
-                  <label
-                    key={a.id}
-                    className="chk"
-                    style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={unlocked}
-                      onChange={() => toggleAchievement(a.id)}
-                    />
-                    <span>{conceal ? '？？？' : a.name || '無名'}</span>
-                    {!conceal && a.description && (
-                      <span className="desc" style={{ marginLeft: 4 }}>
-                        {a.description}
-                      </span>
-                    )}
-                  </label>
-                )
-              })}
-            </div>
-          )}
-
-          {/* エンディング（v1 は表示のみ。外したい場合は分岐復元で代替） */}
-          {(world?.endings ?? []).length > 0 && (
-            <div className="field">
-              <label>
-                <Icon name="flag" size={13} className="label-icon" /> エンディング
-              </label>
-              {world!.endings!.map((e) => {
-                const reached = session.ending?.defId === e.id
-                const conceal = e.hidden && !reached
-                return (
-                  <div
-                    key={e.id}
-                    className="desc"
-                    style={{ opacity: reached ? 1 : 0.7, marginBottom: 4, fontWeight: reached ? 600 : undefined }}
-                  >
-                    <Icon
-                      name={reached ? 'flag' : 'lock'}
-                      size={12}
-                      className={reached ? 'state-icon accent' : 'state-icon'}
-                    />{' '}
-                    {conceal ? '？？？' : e.name || '無名'}
-                    {!conceal && e.description && <span> — {e.description}</span>}
-                  </div>
-                )
-              })}
-            </div>
-          )}
     </ModalShell>
   )
 }

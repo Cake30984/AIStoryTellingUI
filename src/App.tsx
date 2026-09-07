@@ -66,8 +66,6 @@ export default function App() {
     sceneReview,
     reviewProgress,
     castingSessionId,
-    endingToast,
-    dismissEndingToast,
     imageJobToasts,
     dismissImageJobToasts,
     infoNotice,
@@ -309,16 +307,6 @@ export default function App() {
             text={infoNotice}
             onClose={() => setInfoNotice(null)}
             autoCloseMs={4000}
-          />
-        )}
-
-        {endingToast && (
-          <ToastItem
-            className="toast achievement"
-            icon="flag"
-            text={`エンディング「${endingToast.name}」へ`}
-            onClose={dismissEndingToast}
-            autoCloseMs={6000}
           />
         )}
 

@@ -1,15 +1,11 @@
 import { useRef, useState } from 'react'
 import {
-  newAchievementDef,
-  newEndingDef,
   newLoreEntry,
   newRelationAspect,
   uid,
   useStore,
 } from '../../store'
 import type {
-  AchievementDef,
-  EndingDef,
   LoreEntry,
   RelationAspectDef,
   ScheduledEvent,
@@ -34,8 +30,6 @@ type Section =
   | 'lore'
   | 'events'
   | 'aspects'
-  | 'achievements'
-  | 'endings'
 
 /** ナビのグループ見出し（FB8-E3。10セクションのフラット並びに意味のまとまりを付ける） */
 const SECTION_GROUPS: { heading: string; items: { id: Section; label: string }[] }[] = [
@@ -52,13 +46,6 @@ const SECTION_GROUPS: { heading: string; items: { id: Section; label: string }[]
     items: [
       { id: 'roles', label: '配役' },
       { id: 'aspects', label: '関係性の次元' },
-    ],
-  },
-  {
-    heading: 'ゴール',
-    items: [
-      { id: 'achievements', label: '実績' },
-      { id: 'endings', label: 'エンディング' },
     ],
   },
   {
@@ -166,26 +153,6 @@ export default function WorldEditor({ world, onClose }: Props) {
   const removeAspect = (id: string) =>
     patch({ relationAspects: aspects.filter((a) => a.id !== id) })
 
-  // 実績定義（達成条件はコードが自動判定）
-  const achievements = d.achievements ?? []
-  const updateAchievement = (id: string, p: Partial<AchievementDef>) =>
-    patch({ achievements: achievements.map((a) => (a.id === id ? { ...a, ...p } : a)) })
-  const addAchievement = () => patch({ achievements: [...achievements, newAchievementDef()] })
-  const removeAchievement = (id: string) =>
-    patch({ achievements: achievements.filter((a) => a.id !== id) })
-  // エンディング定義（E1。配列順=優先度＝上が優先。到達判定はコードが自動で行う）
-  const endings = d.endings ?? []
-  const updateEnding = (id: string, p: Partial<EndingDef>) =>
-    patch({ endings: endings.map((e) => (e.id === id ? { ...e, ...p } : e)) })
-  const addEnding = () => patch({ endings: [...endings, newEndingDef()] })
-  const removeEnding = (id: string) => patch({ endings: endings.filter((e) => e.id !== id) })
-  const moveEnding = (idx: number, dir: -1 | 1) => {
-    const to = idx + dir
-    if (to < 0 || to >= endings.length) return
-    const next = endings.slice()
-    ;[next[idx], next[to]] = [next[to], next[idx]]
-    patch({ endings: next })
-  }
   const save = () => {
     const problem = roleValidationError()
     if (problem) {
@@ -751,186 +718,6 @@ export default function WorldEditor({ world, onClose }: Props) {
             </>
           )}
 
-          {section === 'achievements' && (
-            <>
-          <div className="lore-head">
-            <label>実績</label>
-            <div className="desc">
-              物語の道中の出来事を残す記録です。
-            </div>
-            <HelpDetails>
-              <p>
-                自動解除の条件は廃止されました（状態パネルから手動で切り替えます）。
-              </p>
-              <p>
-                「グループ条件」を使うと、ロール（配役）のメンバーに対して「全員」「N人以上」の条件を課せます。
-                実績は自動解除で人を選べないため、「N人ぴったり」は「N人以上」と同じ扱い
-                （満たした全員が主要登場人物）になります。
-              </p>
-              <p>
-                「主要登場人物にする」を付けたロールのメンバー名は、実績名・内容の <code>@ロール名</code> /{' '}
-                <code>@相手</code> がその人の名前に置き換わります。主要登場人物の組ごとに独立して解除されます
-                （A で解除→後日 A・B の組でも同じ実績が解除）。判定にだけ使う条件のロールには
-                「主要登場人物にする」を付けないでください。
-              </p>
-            </HelpDetails>
-          </div>
-          {achievements.map((a) => {
-            return (
-              <div key={a.id} className="lore-entry">
-                <div className="lore-entry-top">
-                  <input
-                    className="lore-keys"
-                    value={a.name}
-                    placeholder="実績名（例: 初めてのデート）"
-                    onChange={(e) => updateAchievement(a.id, { name: e.target.value })}
-                  />
-                  <label className="chk" title="未達成時は名前・内容を隠す">
-                    <input
-                      type="checkbox"
-                      checked={!!a.hidden}
-                      onChange={(e) => updateAchievement(a.id, { hidden: e.target.checked })}
-                    />
-                    未達成時は隠す
-                  </label>
-                  <button className="icon-btn small" onClick={() => removeAchievement(a.id)} title="削除">
-                    <Icon name="x" size={14} />
-                  </button>
-                </div>
-                <textarea
-                  rows={2}
-                  className="lore-content"
-                  value={a.description}
-                  placeholder="内容（例: 主人公と2人きりで出かけた）"
-                  onChange={(e) => updateAchievement(a.id, { description: e.target.value })}
-                />
-              </div>
-            )
-          })}
-          <button className="btn" style={{ marginTop: 8 }} onClick={addAchievement}>
-            <Icon name="plus" size={13} />実績を追加
-          </button>
-            </>
-          )}
-
-          {section === 'endings' && (
-            <>
-          <div className="lore-head">
-            <label>エンディング</label>
-            <div className="desc">
-              期間満了時に「満了時の受け皿（fallback）」の結末へ到達し、エピローグシーンに入ります。
-            </div>
-            <HelpDetails>
-              <p>
-                到達判定は、シーン終了レビューを確定したときに条件から自動で行われます（本文の文章は読みません）。
-                複数のエンディングが同時に成立した場合は、一覧の上にあるものが選ばれます。
-              </p>
-              <p>
-                「期間満了の受け皿」は、最終日までどの条件も成立しなかったときに使われるエンディングに付けます
-                （条件は不要です）。
-              </p>
-              <p>
-                「グループ条件」を使うと、ロール（配役）のメンバーに対して「全員」「N人以上」「N人ぴったり」の条件を
-                課せます。「主要登場人物にする」を付けたロールは条件を満たした人が結末の主役になり、
-                エンディング名・エピローグ指針の <code>@ロール名</code> / <code>@相手</code> がその人の名前に
-                置き換わります。「N人ぴったり」で満たした人が多すぎる場合は、レビュー画面で誰にするかを選べます。
-              </p>
-              <p>
-                勝敗の判定にだけ使う条件（ラスボス撃破など）のロールには「主要登場人物にする」を付けないでください。
-              </p>
-            </HelpDetails>
-          </div>
-          {endings.map((e, idx) => {
-            return (
-              <div key={e.id} className="lore-entry">
-                <div className="lore-entry-top">
-                  <span className="sub-label" style={{ minWidth: 28, textAlign: 'center' }}>
-                    {idx + 1}
-                  </span>
-                  <input
-                    className="lore-keys"
-                    value={e.name}
-                    placeholder="エンディング名（例: 卒業の約束）"
-                    onChange={(ev) => updateEnding(e.id, { name: ev.target.value })}
-                  />
-                  <button
-                    className="icon-btn small"
-                    onClick={() => moveEnding(idx, -1)}
-                    disabled={idx === 0}
-                    title="優先度を上げる"
-                  >
-                    ↑
-                  </button>
-                  <button
-                    className="icon-btn small"
-                    onClick={() => moveEnding(idx, 1)}
-                    disabled={idx === endings.length - 1}
-                    title="優先度を下げる"
-                  >
-                    ↓
-                  </button>
-                  <button className="icon-btn small" onClick={() => removeEnding(e.id)} title="削除">
-                    <Icon name="x" size={14} />
-                  </button>
-                </div>
-                <textarea
-                  rows={2}
-                  className="lore-content"
-                  value={e.description}
-                  placeholder="説明（一覧・到達時に表示。条件そのものは書かない）"
-                  onChange={(ev) => updateEnding(e.id, { description: ev.target.value })}
-                />
-                <div className="sub-field" style={{ marginTop: 6 }}>
-                  <span className="sub-label">エピローグ指針</span>
-                  <textarea
-                    rows={3}
-                    className="lore-content"
-                    value={e.epilogueGuidance}
-                    placeholder="結末のトーン・締め方（到達後にのみ本編へ注入。プレイ中はリークしない）"
-                    onChange={(ev) => updateEnding(e.id, { epilogueGuidance: ev.target.value })}
-                  />
-                </div>
-                <div className="lore-entry-top" style={{ marginTop: 6, flexWrap: 'wrap' }}>
-                  <label className="chk" title="条件成立で強制突入する（「まだ続ける」を出さない。バッドエンド向け）">
-                    <input
-                      type="checkbox"
-                      checked={!!e.auto}
-                      disabled={!!e.fallback}
-                      onChange={(ev) => updateEnding(e.id, { auto: ev.target.checked })}
-                    />
-                    自動突入（auto）
-                  </label>
-                  <label className="chk" title="未到達時は名前・内容を隠す">
-                    <input
-                      type="checkbox"
-                      checked={!!e.hidden}
-                      onChange={(ev) => updateEnding(e.id, { hidden: ev.target.checked })}
-                    />
-                    未到達時は隠す
-                  </label>
-                  <label className="chk" title="期間満了時、条件成立エンディングが無い場合の受け皿（条件・自動突入は持たない）">
-                    <input
-                      type="checkbox"
-                      checked={!!e.fallback}
-                      onChange={(ev) =>
-                        updateEnding(e.id, {
-                          fallback: ev.target.checked,
-                          // fallback は条件・auto を持たない（判定側も無視する）
-                          ...(ev.target.checked ? { auto: false } : {}),
-                        })
-                      }
-                    />
-                    満了時の受け皿（fallback）
-                  </label>
-                </div>
-              </div>
-            )
-          })}
-          <button className="btn" style={{ marginTop: 8 }} onClick={addEnding}>
-            <Icon name="plus" size={13} />エンディングを追加
-          </button>
-            </>
-          )}
         </div>
       </div>
     </div>
