@@ -1,22 +1,18 @@
 import { useRef, useState } from 'react'
 import {
   newAchievementDef,
-  newCounterDef,
   newEndingDef,
   newLoreEntry,
   newRelationAspect,
-  newStatDef,
   uid,
   useStore,
 } from '../../store'
 import type {
   AchievementDef,
-  CounterDef,
   EndingDef,
   LoreEntry,
   RelationAspectDef,
   ScheduledEvent,
-  StatDef,
   World,
   WorldRole,
   WorldStartPreset,
@@ -38,8 +34,6 @@ type Section =
   | 'lore'
   | 'events'
   | 'aspects'
-  | 'stats'
-  | 'counters'
   | 'achievements'
   | 'endings'
 
@@ -58,13 +52,6 @@ const SECTION_GROUPS: { heading: string; items: { id: Section; label: string }[]
     items: [
       { id: 'roles', label: '配役' },
       { id: 'aspects', label: '関係性の次元' },
-    ],
-  },
-  {
-    heading: '数値と記録',
-    items: [
-      { id: 'stats', label: 'ステータス' },
-      { id: 'counters', label: 'カウンター' },
     ],
   },
   {
@@ -178,20 +165,6 @@ export default function WorldEditor({ world, onClose }: Props) {
   const addAspect = () => patch({ relationAspects: [...aspects, newRelationAspect()] })
   const removeAspect = (id: string) =>
     patch({ relationAspects: aspects.filter((a) => a.id !== id) })
-
-  // ステータス定義（事実の数）
-  const stats = d.stats ?? []
-  const updateStat = (id: string, p: Partial<StatDef>) =>
-    patch({ stats: stats.map((s) => (s.id === id ? { ...s, ...p } : s)) })
-  const addStat = () => patch({ stats: [...stats, newStatDef()] })
-  const removeStat = (id: string) => patch({ stats: stats.filter((s) => s.id !== id) })
-
-  // 行動カウンター定義
-  const counters = d.counters ?? []
-  const updateCounter = (id: string, p: Partial<CounterDef>) =>
-    patch({ counters: counters.map((c) => (c.id === id ? { ...c, ...p } : c)) })
-  const addCounter = () => patch({ counters: [...counters, newCounterDef()] })
-  const removeCounter = (id: string) => patch({ counters: counters.filter((c) => c.id !== id) })
 
   // 実績定義（達成条件はコードが自動判定）
   const achievements = d.achievements ?? []
@@ -778,234 +751,16 @@ export default function WorldEditor({ world, onClose }: Props) {
             </>
           )}
 
-          {section === 'stats' && (
-            <>
-          <div className="field">
-            <label>レビュー指針（毎レビュー注入・任意）</label>
-            <div className="desc">
-              シーン終了レビューにそのまま渡す状態変動の方針。条件つきの方針は、レビューが観測できる事実
-              （現在のステータス/カウンター値・日付・本文の描写）に紐づけて書くと機能します。
-            </div>
-            <textarea
-              rows={8}
-              value={d.reviewGuidance ?? ''}
-              placeholder="例: 体力は毎シーン必ず消耗させる。フラグ『呪い』が立っている間は10〜20、外れていれば1〜5。"
-              onChange={(e) => patch({ reviewGuidance: e.target.value })}
-            />
-          </div>
-          <div className="lore-head">
-            <label>ステータス定義</label>
-            <div className="desc">
-              好感度・レベル・所持金など「事実の数」。シーン終了レビューが実際に起きた出来事を評価して加減算し、条件にも使えます。
-            </div>
-          </div>
-          {stats.map((s) => (
-            <div key={s.id} className="lore-entry">
-              <div className="lore-entry-top">
-                <input
-                  className="lore-keys"
-                  value={s.name}
-                  placeholder="名称（例: 好感度 / レベル / 所持金）"
-                  onChange={(e) => updateStat(s.id, { name: e.target.value })}
-                />
-                <button className="icon-btn small" onClick={() => removeStat(s.id)} title="削除">
-                  <Icon name="x" size={14} />
-                </button>
-              </div>
-              <div className="row2" style={{ marginTop: 6 }}>
-                <label className="chk" title="対象">
-                  対象
-                  <select
-                    value={s.scope}
-                    style={{ background: 'var(--bg)' }}
-                    onChange={(e) => updateStat(s.id, { scope: e.target.value as StatDef['scope'] })}
-                  >
-                    <option value="character">キャラ別</option>
-                    <option value="global">主人公/全体</option>
-                  </select>
-                </label>
-                <label className="chk" title="本編プロンプトに現在値を渡す">
-                  <input
-                    type="checkbox"
-                    checked={s.inject}
-                    onChange={(e) => updateStat(s.id, { inject: e.target.checked })}
-                  />
-                  本編に注入
-                </label>
-              </div>
-              <div className="row2" style={{ marginTop: 6 }}>
-                <label className="chk">
-                  初期
-                  <NumberInput
-                    value={s.default}
-                    style={{ width: 72, background: 'var(--bg)' }}
-                    onChange={(v) => updateStat(s.id, { default: v })}
-                  />
-                </label>
-                <label className="chk">
-                  最小
-                  <input
-                    type="number"
-                    value={s.min ?? ''}
-                    style={{ width: 72, background: 'var(--bg)' }}
-                    onChange={(e) =>
-                      updateStat(s.id, {
-                        min: e.target.value === '' ? undefined : Number(e.target.value),
-                      })
-                    }
-                  />
-                </label>
-                <label className="chk">
-                  最大
-                  <input
-                    type="number"
-                    value={s.max ?? ''}
-                    style={{ width: 72, background: 'var(--bg)' }}
-                    onChange={(e) =>
-                      updateStat(s.id, {
-                        max: e.target.value === '' ? undefined : Number(e.target.value),
-                      })
-                    }
-                  />
-                </label>
-              </div>
-              <div className="row2" style={{ marginTop: 6 }} title="レビュー1回で動かす場合の絶対値の下限〜上限。プロンプトの目安＋受領時のクランプに使われます（空欄=拘束なし）">
-                <label className="chk">
-                  変動幅/回 ±
-                  <input
-                    type="number"
-                    min={0}
-                    value={s.deltaMin ?? ''}
-                    placeholder="最小"
-                    style={{ width: 72, background: 'var(--bg)' }}
-                    onChange={(e) =>
-                      updateStat(s.id, {
-                        deltaMin: e.target.value === '' ? undefined : Number(e.target.value),
-                      })
-                    }
-                  />
-                  〜
-                  <input
-                    type="number"
-                    min={0}
-                    value={s.deltaMax ?? ''}
-                    placeholder="最大"
-                    style={{ width: 72, background: 'var(--bg)' }}
-                    onChange={(e) =>
-                      updateStat(s.id, {
-                        deltaMax: e.target.value === '' ? undefined : Number(e.target.value),
-                      })
-                    }
-                  />
-                </label>
-              </div>
-            </div>
-          ))}
-          <button className="btn" style={{ marginTop: 8 }} onClick={addStat}>
-            <Icon name="plus" size={13} />ステータスを追加
-          </button>
-            </>
-          )}
-
-          {section === 'counters' && (
-            <>
-          <div className="lore-head">
-            <label>行動カウンター</label>
-            <div className="desc">
-              累計回数（例: デート回数 / 戦闘回数）。レビューで起きた行動を加算し、条件に使えます。
-              「告白した」のような一度きりの出来事も、1回以上の条件として書けます。
-            </div>
-          </div>
-          {counters.map((c) => (
-            <div key={c.id} className="lore-entry">
-              <div className="lore-entry-top">
-                <input
-                  className="lore-keys"
-                  value={c.name}
-                  placeholder="名称（例: デート回数）"
-                  onChange={(e) => updateCounter(c.id, { name: e.target.value })}
-                />
-                <label className="chk" title="対象">
-                  <select
-                    value={c.scope}
-                    style={{ background: 'var(--bg)' }}
-                    onChange={(e) => updateCounter(c.id, { scope: e.target.value as CounterDef['scope'] })}
-                  >
-                    <option value="character">キャラ別</option>
-                    <option value="global">全体</option>
-                  </select>
-                </label>
-                <label className="chk" title="本編プロンプトに現在値を渡す">
-                  <input
-                    type="checkbox"
-                    checked={c.inject}
-                    onChange={(e) => updateCounter(c.id, { inject: e.target.checked })}
-                  />
-                  注入
-                </label>
-                <button className="icon-btn small" onClick={() => removeCounter(c.id)} title="削除">
-                  <Icon name="x" size={14} />
-                </button>
-              </div>
-              {/* 計上条件（FB9-C）。名前だけでは AI が計上タイミングを判断できないため、
-                  ここに書いた文をレビュープロンプトへそのまま渡す＝狙って条件に使えるようにする */}
-              <textarea
-                rows={3}
-                className="lore-content"
-                style={{ marginTop: 6 }}
-                value={c.note ?? ''}
-                placeholder="どんな時に数えるか（例: デートに出かけて最後まで一緒に過ごしたとき）"
-                onChange={(e) => updateCounter(c.id, { note: e.target.value })}
-              />
-              <div className="row2" style={{ marginTop: 6 }} title="レビュー1回で加算する場合の下限〜上限（既定 1〜1000 の中でさらに絞る。空欄=拘束なし）">
-                <label className="chk">
-                  加算/回
-                  <input
-                    type="number"
-                    min={1}
-                    value={c.amountMin ?? ''}
-                    placeholder="最小"
-                    style={{ width: 72, background: 'var(--bg)' }}
-                    onChange={(e) =>
-                      updateCounter(c.id, {
-                        amountMin: e.target.value === '' ? undefined : Number(e.target.value),
-                      })
-                    }
-                  />
-                  〜
-                  <input
-                    type="number"
-                    min={1}
-                    value={c.amountMax ?? ''}
-                    placeholder="最大"
-                    style={{ width: 72, background: 'var(--bg)' }}
-                    onChange={(e) =>
-                      updateCounter(c.id, {
-                        amountMax: e.target.value === '' ? undefined : Number(e.target.value),
-                      })
-                    }
-                  />
-                </label>
-              </div>
-            </div>
-          ))}
-          <button className="btn" style={{ marginTop: 8 }} onClick={addCounter}>
-            <Icon name="plus" size={13} />カウンターを追加
-          </button>
-            </>
-          )}
-
           {section === 'achievements' && (
             <>
           <div className="lore-head">
             <label>実績</label>
             <div className="desc">
-              ステータスなどのしきい値を満たすと、自動で解除される記録です（承認は不要）。
+              物語の道中の出来事を残す記録です。
             </div>
             <HelpDetails>
               <p>
-                条件にはステータス・カウンター・他の実績を使えます。判定はシーン終了レビューを
-                確定したときに自動で行われます。
+                自動解除の条件は廃止されました（状態パネルから手動で切り替えます）。
               </p>
               <p>
                 「グループ条件」を使うと、ロール（配役）のメンバーに対して「全員」「N人以上」の条件を課せます。

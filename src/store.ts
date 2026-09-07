@@ -9,8 +9,6 @@ import type {
   Cassette,
   Character,
   Choice,
-  CounterDef,
-  CounterEvent,
   Development,
   EndingDef,
   EndingRecord,
@@ -33,14 +31,12 @@ import type {
   RoleParty,
   Scene,
   ScheduledEvent,
-  StatChange,
   SceneIllustration,
   SceneReview,
   Session,
   SessionImageRecord,
   SessionMode,
   SessionState,
-  StatDef,
   UiPrefs,
   UsageRecord,
   World,
@@ -157,47 +153,6 @@ function pickColor(): string {
   return COLORS[Math.floor(Math.random() * COLORS.length)]
 }
 
-/** スタット値を def の min..max に丸める（未指定は無制限） */
-function clampStat(v: number, def?: { min?: number; max?: number }): number {
-  let x = Math.round(v)
-  if (def?.min != null) x = Math.max(def.min, x)
-  if (def?.max != null) x = Math.min(def.max, x)
-  return x
-}
-
-/**
- * レビュー statChanges の delta を定義の変動幅 deltaMin..deltaMax にクランプする（FB7-C。符号維持）。
- * 0 は「変動なし＝項目を出さない」扱いで対象外（deltaMin は「動かすなら最低これだけ動く」の意味）。
- * 未設定側は従来の ±1,000,000 安全クランプのみ。
- */
-export function clampReviewDelta(
-  delta: number,
-  def?: { deltaMin?: number; deltaMax?: number },
-): number {
-  let x = Math.round(delta) || 0
-  if (x === 0) return 0
-  const sign = x < 0 ? -1 : 1
-  let abs = Math.abs(x)
-  if (def?.deltaMin != null) abs = Math.max(Math.abs(def.deltaMin), abs)
-  if (def?.deltaMax != null) abs = Math.min(Math.abs(def.deltaMax), abs)
-  abs = Math.min(1_000_000, abs)
-  return sign * abs
-}
-
-/**
- * レビュー counterEvents の amount を定義の加算幅 amountMin..amountMax にクランプする
- * （FB7-C。既定範囲 1..1000 の中でさらに絞る）。
- */
-export function clampCounterAmount(
-  amount: number,
-  def?: { amountMin?: number; amountMax?: number },
-): number {
-  let x = Math.max(1, Math.min(1000, Math.round(amount) || 1))
-  if (def?.amountMin != null) x = Math.max(Math.max(1, def.amountMin), x)
-  if (def?.amountMax != null) x = Math.min(Math.min(1000, def.amountMax), x)
-  return x
-}
-
 /** 割り当てキャラ id を Partner（名前つき）へ。名前が引けなければ id を仮名にする */
 export function partnersOf(ids: string[], characters: { id: string; name: string }[]): Partner[] {
   return ids.map((id) => ({
@@ -296,11 +251,8 @@ export function applyReviewToState(
   base: SessionState | undefined,
   sel: {
     relationUpdates: RelationUpdate[]
-    statChanges: StatChange[]
-    counterEvents: CounterEvent[]
     moodChanges: MoodChange[]
   },
-  world: World | undefined,
 ): SessionState {
   const prev = base ?? { relations: [], moods: [], stats: [], counters: [], achievements: [] }
   // 関係性（fromId,toId で upsert。stance は全文置換）
@@ -338,24 +290,7 @@ export function applyReviewToState(
     if (idx >= 0) moods[idx].mood = m.mood
     else moods.push({ characterId: m.characterId, mood: m.mood })
   }
-  // スタット（defId,characterId で clamp 加算。未存在は default を起点）
-  const stats = prev.stats.map((sv) => ({ ...sv }))
-  for (const c of sel.statChanges) {
-    const def = world?.stats.find((d) => d.id === c.defId)
-    const idx = stats.findIndex((sv) => sv.defId === c.defId && sv.characterId === c.characterId)
-    const curVal = idx >= 0 ? stats[idx].value : (def?.default ?? 0)
-    const val = clampStat(curVal + c.delta, def)
-    if (idx >= 0) stats[idx].value = val
-    else stats.push({ defId: c.defId, characterId: c.characterId, value: val })
-  }
-  // カウンター（defId,characterId で累計加算）
-  const counters = (prev.counters ?? []).map((cv) => ({ ...cv }))
-  for (const c of sel.counterEvents) {
-    const idx = counters.findIndex((cv) => cv.defId === c.defId && cv.characterId === c.characterId)
-    if (idx >= 0) counters[idx].value += c.amount
-    else counters.push({ defId: c.defId, characterId: c.characterId, value: c.amount })
-  }
-  return { relations, moods, stats, counters, achievements: prev.achievements ?? [] }
+  return { relations, moods, achievements: prev.achievements ?? [] }
 }
 
 /**
@@ -469,8 +404,6 @@ export function newWorld(): World {
     entries: [],
     scheduledEvents: [],
     relationAspects: [newRelationAspect('信頼')],
-    stats: [newStatDef('好感度')],
-    counters: [],
     achievements: [],
     roles: [],
     endings: [],
@@ -566,14 +499,6 @@ export function newRelationAspect(name = ''): RelationAspectDef {
   return { id: uid(), name, guidance: '' }
 }
 
-export function newStatDef(name = ''): StatDef {
-  return { id: uid(), name, scope: 'character', default: 0, min: 0, max: 100, inject: false }
-}
-
-export function newCounterDef(name = ''): CounterDef {
-  return { id: uid(), name, scope: 'character', inject: false }
-}
-
 export function newAchievementDef(name = ''): AchievementDef {
   return { id: uid(), name, description: '', hidden: false }
 }
@@ -625,7 +550,7 @@ function newSession(mode: SessionMode): Session {
     narrativeStyle: mode === 'story' ? 'novel' : 'chat',
     eventAutoFire: true,
     usedEventIds: [],
-    state: { relations: [], moods: [], stats: [], counters: [], achievements: [] },
+    state: { relations: [], moods: [], achievements: [] },
     overlay: { lore: [], characterDevelopments: [] },
     structuredOutput: true,
     messages: [],
@@ -986,8 +911,6 @@ interface AppState {
     characterGrowthIdx: number[]
     worldGrowthIdx: number[]
     relationUpdateIdx: number[]
-    statChangeIdx: number[]
-    counterEventIdx: number[]
     moodChangeIdx: number[]
     /** 到達エンディングへ進む場合の EndingDef.id（レビューで「エンディングへ進む」を選んだとき。E2） */
     endingDefId?: string
@@ -1368,8 +1291,6 @@ function buildStateInfo(
 ): string {
   const relations = session.state?.relations ?? []
   const moods = session.state?.moods ?? []
-  const stats = session.state?.stats ?? []
-  const counters = session.state?.counters ?? []
   const nameOf = (id: string) => characters.find((c) => c.id === id)?.name ?? 'キャラ'
   const aspectName = (id: string) => world?.relationAspects.find((a) => a.id === id)?.name ?? ''
   const moodOf = (id: string) => moods.find((m) => m.characterId === id)?.mood
@@ -1391,26 +1312,6 @@ function buildStateInfo(
     if (!relations.some((r) => r.fromId === m.characterId)) {
       lines.push(`- ${nameOf(m.characterId)}: 気分 ${m.mood}`)
     }
-  }
-  // 注入対象スタット
-  const injected = stats.filter((s) => world?.stats.find((d) => d.id === s.defId)?.inject)
-  if (injected.length > 0) {
-    const parts = injected.map((s) => {
-      const def = world!.stats.find((d) => d.id === s.defId)!
-      const who = s.characterId ? `${nameOf(s.characterId)} ` : ''
-      return `${who}${def.name} ${s.value}`
-    })
-    lines.push(`【ステータス】 ${parts.join(' / ')}`)
-  }
-  // 注入対象カウンター
-  const injCounters = counters.filter((c) => world?.counters.find((d) => d.id === c.defId)?.inject)
-  if (injCounters.length > 0) {
-    const parts = injCounters.map((c) => {
-      const def = world!.counters.find((d) => d.id === c.defId)!
-      const who = c.characterId ? `${nameOf(c.characterId)} ` : ''
-      return `${who}${def.name} ${c.value}`
-    })
-    lines.push(`【カウンター】 ${parts.join(' / ')}`)
   }
   return lines.join('\n')
 }
@@ -2261,8 +2162,6 @@ export const useStore = create<AppState>()(
                 ...s.state,
                 relations: s.state.relations.filter((r) => r.fromId !== id && r.toId !== id),
                 moods: s.state.moods.filter((m) => m.characterId !== id),
-                stats: s.state.stats.filter((v) => v.characterId !== id),
-                counters: s.state.counters.filter((v) => v.characterId !== id),
               },
               overlay: {
                 ...s.overlay,
@@ -2752,71 +2651,9 @@ export const useStore = create<AppState>()(
                 `【次のシーンの方向性】特別イベント「${evName}」が発生します。${evNote}\nsuggestions はこのイベントに沿った内容にしてください。`,
               )
             }
-            // ワールド固定の関係次元・ステータス定義（レビューを拘束。変動幅つき列挙＝FB7-C）
+            // ワールド固定の関係次元（レビューを拘束）
             const world = refs.world
             const aspectNames = (world?.relationAspects ?? []).map((a) => a.name).filter(Boolean)
-            const statSpecs = (world?.stats ?? [])
-              .filter((d) => d.name.trim())
-              .map((d) => ({ name: d.name, deltaMin: d.deltaMin, deltaMax: d.deltaMax }))
-            // note（どんな時に計上するか）も渡す＝作者が「一度きりの出来事」を狙って計上させる担保（FB9-C）
-            const counterSpecs = (world?.counters ?? [])
-              .filter((d) => d.name.trim())
-              .map((d) => ({
-                name: d.name,
-                note: d.note,
-                amountMin: d.amountMin,
-                amountMax: d.amountMax,
-              }))
-
-            // 現在のステータス/カウンター値（FB7-C。レビュー指針の条件参照
-            // 「所持金が尽きたら…」「デート回数が3以上なら…」を可能にするため毎回注入）
-            const stateLines: string[] = []
-            for (const def of world?.stats ?? []) {
-              if (!def.name.trim()) continue
-              if (def.scope === 'global') {
-                const v =
-                  s.state?.stats.find((x) => x.defId === def.id && !x.characterId)?.value ??
-                  def.default
-                stateLines.push(`- ${def.name}: ${v}`)
-              } else {
-                const vals = s.characterIds
-                  .filter((id) => visibleIds.has(id))
-                  .map((id) => {
-                    const c = get().characters.find((x) => x.id === id)
-                    if (!c) return ''
-                    const v =
-                      s.state?.stats.find((x) => x.defId === def.id && x.characterId === id)
-                        ?.value ?? def.default
-                    return `${c.name} ${v}`
-                  })
-                  .filter(Boolean)
-                if (vals.length) stateLines.push(`- ${def.name}: ${vals.join(' / ')}`)
-              }
-            }
-            for (const def of world?.counters ?? []) {
-              if (!def.name.trim()) continue
-              if (def.scope === 'global') {
-                const v =
-                  s.state?.counters.find((x) => x.defId === def.id && !x.characterId)?.value ?? 0
-                stateLines.push(`- ${def.name}: ${v}`)
-              } else {
-                const vals = s.characterIds
-                  .filter((id) => visibleIds.has(id))
-                  .map((id) => {
-                    const c = get().characters.find((x) => x.id === id)
-                    if (!c) return ''
-                    const v =
-                      s.state?.counters.find((x) => x.defId === def.id && x.characterId === id)
-                        ?.value ?? 0
-                    return `${c.name} ${v}`
-                  })
-                  .filter(Boolean)
-                if (vals.length) stateLines.push(`- ${def.name}: ${vals.join(' / ')}`)
-              }
-            }
-            if (stateLines.length) {
-              ctxParts.push(`【現在のステータス・カウンター】\n${stateLines.join('\n')}`)
-            }
             const context = ctxParts.join('\n')
 
             // 現在の関係性 prose（レビューが書き直すための起点）
@@ -2879,13 +2716,7 @@ export const useStore = create<AppState>()(
              * B には summary が無いので summary 検査は A / all のときだけ適用する。
              */
             const runReviewCall = async (part: ReviewPart): Promise<any | null> => {
-              const system = reviewSystem(
-                part,
-                aspectNames,
-                statSpecs,
-                counterSpecs,
-                world?.reviewGuidance,
-              )
+              const system = reviewSystem(part, aspectNames)
               const wantsSummary = part !== 'b'
               const tag = part === 'all' ? 'review' : `review:${part}`
               // 対応モデルなら JSON を強制する＝解釈失敗による再試行がそもそも起きなくなる
@@ -2935,18 +2766,6 @@ export const useStore = create<AppState>()(
                 )
                 pushProgress('streaming') // 最後の未反映ぶん
                 parsed = extractJson<any>(raw.text)
-                const deltaSigns = Array.isArray(parsed?.statChanges)
-                  ? (parsed.statChanges as any[]).reduce(
-                      (acc2: { plus: number; minus: number; zero: number }, x: any) => {
-                        const d = Number(x?.delta) || 0
-                        if (d > 0) acc2.plus++
-                        else if (d < 0) acc2.minus++
-                        else acc2.zero++
-                        return acc2
-                      },
-                      { plus: 0, minus: 0, zero: 0 },
-                    )
-                  : undefined
                 get().recordUsage({
                   kind: 'review',
                   modelRef: reviewModelOf(s),
@@ -2957,7 +2776,6 @@ export const useStore = create<AppState>()(
                   cost: raw.usage?.cost,
                   ms: performance.now() - t0,
                   sessionId: s.id,
-                  deltaSigns,
                 })
                 const truncated = raw.finishReason === 'length'
                 if (parsed && !truncated && (!wantsSummary || hasSummary(parsed))) break
@@ -3096,52 +2914,6 @@ export const useStore = create<AppState>()(
                     })
                     .filter((u: any) => u.fromId && (u.stance || u.aspects.length > 0))
                 : [],
-              statChanges: Array.isArray(parsed?.statChanges)
-                ? parsed.statChanges
-                    .map((x: any) => {
-                      const def = (world?.stats ?? []).find(
-                        (d) => d.name === String(x?.name ?? '').trim(),
-                      )
-                      if (!def) return null
-                      const charName = x?.character ? String(x.character) : undefined
-                      const characterId =
-                        def.scope === 'character' && charName ? findId(charName) : undefined
-                      if (def.scope === 'character' && !characterId) return null
-                      return {
-                        defId: def.id,
-                        name: def.name,
-                        characterId,
-                        charName: def.scope === 'character' ? charName : undefined,
-                        // 定義の変動幅 deltaMin..deltaMax にクランプ（FB7-C。0 は変動なしのまま除外）
-                        delta: clampReviewDelta(Number(x?.delta) || 0, def),
-                        reason: String(x?.reason ?? ''),
-                      }
-                    })
-                    .filter((c: any): c is NonNullable<typeof c> => !!c && c.delta !== 0)
-                : [],
-              counterEvents: Array.isArray(parsed?.counterEvents)
-                ? parsed.counterEvents
-                    .map((x: any) => {
-                      const def = (world?.counters ?? []).find(
-                        (d) => d.name === String(x?.name ?? '').trim(),
-                      )
-                      if (!def) return null
-                      const charName = x?.character ? String(x.character) : undefined
-                      const characterId =
-                        def.scope === 'character' && charName ? findId(charName) : undefined
-                      if (def.scope === 'character' && !characterId) return null
-                      return {
-                        defId: def.id,
-                        name: def.name,
-                        characterId,
-                        charName: def.scope === 'character' ? charName : undefined,
-                        // 定義の加算幅 amountMin..amountMax にクランプ（FB7-C。既定 1..1000 の内側）
-                        amount: clampCounterAmount(Number(x?.amount) || 1, def),
-                        reason: String(x?.reason ?? ''),
-                      }
-                    })
-                    .filter((c: any): c is NonNullable<typeof c> => !!c)
-                : [],
               moodChanges: Array.isArray(parsed?.moods)
                 ? parsed.moods
                     .map((x: any) => ({
@@ -3218,12 +2990,6 @@ export const useStore = create<AppState>()(
           const selectedRelUpdates = opts.relationUpdateIdx
             .map((i) => review.relationUpdates[i])
             .filter(Boolean)
-          const selectedStats = opts.statChangeIdx
-            .map((i) => review.statChanges[i])
-            .filter(Boolean)
-          const selectedCounters = opts.counterEventIdx
-            .map((i) => review.counterEvents[i])
-            .filter(Boolean)
           const selectedMoods = opts.moodChangeIdx
             .map((i) => review.moodChanges[i])
             .filter(Boolean)
@@ -3233,13 +2999,7 @@ export const useStore = create<AppState>()(
           // エンディング判定・シーン確定の両方でこの同一結果を使う＝プレビューと発火の不一致を防ぐ。
           const applied = applyReviewToState(
             s.state,
-            {
-              relationUpdates: selectedRelUpdates,
-              statChanges: selectedStats,
-              counterEvents: selectedCounters,
-              moodChanges: selectedMoods,
-            },
-            stateWorld,
+            { relationUpdates: selectedRelUpdates, moodChanges: selectedMoods },
           )
           const newState = applied
 
@@ -3590,13 +3350,7 @@ export const useStore = create<AppState>()(
         applyStatusEdit: (edited) => {
           const s = active()
           if (!s) return
-          const world = get().worlds.find((w) => w.id === s.worldId)
-          // 手動編集された絶対値も、レビュー適用と同じく def の min..max に丸める
-          const stats = edited.stats.map((sv) => ({
-            ...sv,
-            value: clampStat(sv.value, world?.stats.find((d) => d.id === sv.defId)),
-          }))
-          get().updateSession(s.id, { state: { ...edited, stats } })
+          get().updateSession(s.id, { state: edited })
         },
 
         // ── 発見キャラ（FB7-E）────────────────────────────────

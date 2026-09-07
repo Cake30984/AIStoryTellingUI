@@ -8,19 +8,16 @@ import {
 } from '../store'
 import { advanceTimeline, timeLabelOf } from '../lib/timeline'
 import type {
-  CounterEvent,
   DiscoveredCharacter,
   ExactGroupCandidate,
   RoleParty,
   NextSceneSuggestion,
   RelationUpdate,
   SceneReview,
-  StatChange,
   WorldGrowth,
 } from '../types'
 import ModalShell from './ModalShell'
 import CsvInput from './CsvInput'
-import NumberInput from './NumberInput'
 import { Icon } from './icons'
 
 /** 編集用 draft はストアの review から分離した深コピー（編集途中で元を汚さない。FB5-C） */
@@ -157,12 +154,6 @@ function ReviewBody() {
   const [relUpdSel, setRelUpdSel] = useState<Set<number>>(
     new Set(review.relationUpdates.map((_, i) => i)),
   )
-  const [statSel, setStatSel] = useState<Set<number>>(
-    new Set(review.statChanges.map((_, i) => i)),
-  )
-  const [counterSel, setCounterSel] = useState<Set<number>>(
-    new Set(review.counterEvents.map((_, i) => i)),
-  )
   const [moodSel, setMoodSel] = useState<Set<number>>(
     new Set(review.moodChanges.map((_, i) => i)),
   )
@@ -183,11 +174,9 @@ function ReviewBody() {
     if (endings.length === 0) return null
     const sel = {
       relationUpdates: [...relUpdSel].map((i) => draft.relationUpdates[i]).filter(Boolean),
-      statChanges: [...statSel].map((i) => draft.statChanges[i]).filter(Boolean),
-      counterEvents: [...counterSel].map((i) => draft.counterEvents[i]).filter(Boolean),
       moodChanges: [...moodSel].map((i) => draft.moodChanges[i]).filter(Boolean),
     }
-    applyReviewToState(session.state, sel, world)
+    applyReviewToState(session.state, sel)
     const tlNext = session.timeline.enabled ? advanceTimeline(session.timeline) : null
     const isExpiry = !!(
       tlNext &&
@@ -206,7 +195,7 @@ function ReviewBody() {
       subjects: [] as RoleParty[],
       exactCandidates: [] as ExactGroupCandidate[],
     }
-  }, [session, isPastScene, world, characters, draft, relUpdSel, statSel, counterSel, moodSel, exactPicks])
+  }, [session, isPastScene, world, characters, draft, relUpdSel, moodSel])
 
   // 候補が変わったら既定選択を更新（満了時は「進む」・通常は「まだ続ける」を既定にする）
   useEffect(() => {
@@ -241,8 +230,6 @@ function ReviewBody() {
     setCharSel(new Set(review.characterGrowth.map((_, i) => i)))
     setWorldSel(new Set(review.worldGrowth.map((_, i) => i)))
     setRelUpdSel(new Set(review.relationUpdates.map((_, i) => i)))
-    setStatSel(new Set(review.statChanges.map((_, i) => i)))
-    setCounterSel(new Set(review.counterEvents.map((_, i) => i)))
     setMoodSel(new Set(review.moodChanges.map((_, i) => i)))
     setNewCharSel(new Set())
     setExactPicks({})
@@ -278,10 +265,6 @@ function ReviewBody() {
         j === i ? { ...u, aspects: u.aspects.map((a, k) => (k === ai ? { ...a, note } : a)) } : u,
       ),
     }))
-  const updStat = (i: number, patch: Partial<StatChange>) =>
-    setDraft((d) => ({ ...d, statChanges: mapAt(d.statChanges, i, patch) }))
-  const updCounter = (i: number, patch: Partial<CounterEvent>) =>
-    setDraft((d) => ({ ...d, counterEvents: mapAt(d.counterEvents, i, patch) }))
   const updMood = (i: number, mood: string) =>
     setDraft((d) => ({ ...d, moodChanges: mapAt(d.moodChanges, i, { mood }) }))
   const updNewChar = (i: number, patch: Partial<DiscoveredCharacter>) =>
@@ -312,8 +295,6 @@ function ReviewBody() {
       characterGrowthIdx: [...charSel],
       worldGrowthIdx: [...worldSel],
       relationUpdateIdx: [...relUpdSel],
-      statChangeIdx: [...statSel],
-      counterEventIdx: [...counterSel],
       moodChangeIdx: [...moodSel],
       endingDefId: goEnding ? endingPreview!.candidate.id : undefined,
       endingExactSelections: goEnding ? exactPicks : undefined,
@@ -743,104 +724,6 @@ function ReviewBody() {
                                 <em>{a.name}</em> {a.note}
                               </span>
                             ))}
-                          </span>
-                        </label>
-                      ),
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* 事実の数の変化（現在シーン確定時のみ反映） */}
-              {!isPastScene && draft.statChanges.length > 0 && (
-                <div className="field">
-                  <label>
-                    📊 ステータスの変化{editMode ? '（数値を編集）' : '（チェックした項目を加算）'}
-                  </label>
-                  <div className="growth-list">
-                    {draft.statChanges.map((c, i) =>
-                      editMode ? (
-                        <div key={i} className="growth-item editing">
-                          <div className="growth-edit-row">
-                            <strong>
-                              {c.charName && `${c.charName} の `}
-                              {c.name}
-                            </strong>
-                            <NumberInput
-                              className="num"
-                              value={c.delta}
-                              onChange={(delta) => updStat(i, { delta })}
-                            />
-                          </div>
-                          <input
-                            value={c.reason}
-                            placeholder="変化の理由（任意）"
-                            onChange={(e) => updStat(i, { reason: e.target.value })}
-                          />
-                        </div>
-                      ) : (
-                        <label key={i} className="growth-item">
-                          <input
-                            type="checkbox"
-                            checked={statSel.has(i)}
-                            onChange={() => toggle(statSel, setStatSel, i)}
-                          />
-                          <span>
-                            {c.charName && <strong>{c.charName} の </strong>}
-                            <strong>{c.name}</strong>{' '}
-                            <span className={c.delta >= 0 ? 'delta-up' : 'delta-down'}>
-                              {c.delta >= 0 ? `+${c.delta}` : c.delta}
-                            </span>
-                            {c.reason && <span className="growth-keys">（{c.reason}）</span>}
-                          </span>
-                        </label>
-                      ),
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* 行動カウンター（現在シーン確定時のみ反映） */}
-              {!isPastScene && draft.counterEvents.length > 0 && (
-                <div className="field">
-                  <label>
-                    🔢 行動カウンター{editMode ? '（回数を編集）' : '（チェックした回数を累計）'}
-                  </label>
-                  <div className="growth-list">
-                    {draft.counterEvents.map((c, i) =>
-                      editMode ? (
-                        <div key={i} className="growth-item editing">
-                          <div className="growth-edit-row">
-                            <strong>
-                              {c.charName && `${c.charName} の `}
-                              {c.name}
-                            </strong>
-                            <NumberInput
-                              className="num"
-                              min={0}
-                              integer
-                              value={c.amount}
-                              onChange={(amount) => updCounter(i, { amount })}
-                            />
-                          </div>
-                          <input
-                            value={c.reason}
-                            placeholder="該当する行動（任意）"
-                            onChange={(e) => updCounter(i, { reason: e.target.value })}
-                          />
-                        </div>
-                      ) : (
-                        <label key={i} className="growth-item">
-                          <input
-                            type="checkbox"
-                            checked={counterSel.has(i)}
-                            onChange={() => toggle(counterSel, setCounterSel, i)}
-                          />
-                          <span>
-                            {c.charName && <strong>{c.charName} の </strong>}
-                            <strong>{c.name}</strong>{' '}
-                            <span className="delta-up">+{c.amount}</span>
-                            {c.reason && <span className="growth-keys">（{c.reason}）</span>}
                           </span>
                         </label>
                       ),

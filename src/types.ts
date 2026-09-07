@@ -89,48 +89,6 @@ export interface RelationAspectDef {
   guidance?: string
 }
 
-/** 事実の数のスコープ。character=キャラ別1値（対主人公の好感度メーター含む） / global=主人公・世界で1値 */
-export type StatScope = 'character' | 'global'
-
-/** 事実の数の定義（好感度メーター・レベル・所持金・名声 等。ワールド固定） */
-export interface StatDef {
-  id: string
-  name: string
-  scope: StatScope
-  default: number
-  /** 数値型の下限・上限（任意。好感度メーターは 0〜100 など） */
-  min?: number
-  max?: number
-  /**
-   * レビュー1回あたりの変動幅（絶対値の下限・上限。任意。FB7-C）。
-   * プロンプトの目安＋受領時クランプの両方に使う。deltaMin は「動かすなら最低これだけ動く」の意味で、
-   * 変動しない（delta 0＝項目を出さない）ことは常に許される。
-   */
-  deltaMin?: number
-  deltaMax?: number
-  /** 本編プロンプトに現在値を注入するか（好感度メーターは通常 false＝LLM は prose を読む） */
-  inject: boolean
-}
-
-/** 行動カウンターの定義（単調増加の累計回数。ワールド固定） */
-export interface CounterDef {
-  id: string
-  /** 名称（例: デート回数 / 戦闘回数 / 来店回数） */
-  name: string
-  /** character=キャラ別累計 / global=全体累計 */
-  scope: StatScope
-  /**
-   * どんな時に計上するかの説明（FB9-C）。レビュープロンプトに名前と併記してそのまま渡す。
-   * 「一度きりの出来事」を 1回以上の条件として使う場合、これが狙って当てるための唯一の担保。
-   */
-  note?: string
-  /** レビュー1回あたりの加算量の下限・上限（任意。既定 1..1000 の中でさらに絞る。FB7-C） */
-  amountMin?: number
-  amountMax?: number
-  /** 本編プロンプトに現在値を注入するか */
-  inject: boolean
-}
-
 /** 割り当てキャラ1人（id＋現在の実名）。`RoleParty.members` の要素、`bindRoleNames` の置換名にも使う。 */
 export interface Partner {
   characterId: string
@@ -289,19 +247,8 @@ export interface World {
   scheduledEvents: ScheduledEvent[]
   /** prose 関係性の次元（ワールド固定） */
   relationAspects: RelationAspectDef[]
-  /** 事実の数の定義 */
-  stats: StatDef[]
-  /** 行動カウンターの定義 */
-  counters: CounterDef[]
   /** 実績の定義（達成条件はコードが自動判定） */
   achievements: AchievementDef[]
-  /**
-   * レビュー指針（自由記述・任意。FB7-C）。シーン終了レビューの system に
-   * 【世界のレビュー指針】として毎回そのまま注入する世界固定の状態変動方針
-   * （例: 「体力は毎シーン必ず消耗させる。フラグ『呪い』が立っている間は10〜20、外れていれば1〜5」）。
-   * LLM 判断なので厳密保証はない（deltaMin/deltaMax のクランプで暴走は抑制）。
-   */
-  reviewGuidance?: string
   /** 世界観が定義する配役。未設定の旧データは空配列として扱う */
   roles?: WorldRole[]
   /** セッション開始テンプレート（世界を選んだ時にセッションへコピーされる推奨初期設定。素材側は不変） */
@@ -542,33 +489,12 @@ export interface SessionOverlay {
   characterDevelopments: { characterId: string; developments: Development[] }[]
 }
 
-/** 事実の数の現在値（好感度メーター・レベル・所持金 等）。characterId 無し = global */
-export interface StatValue {
-  defId: string
-  characterId?: string
-  value: number
-}
-
-/** 行動カウンターの現在値（累計回数）。characterId 無し = global */
-export interface CounterValue {
-  defId: string
-  characterId?: string
-  value: number
-}
-
-/**
- * セッション固有の状態。「事実は数、判断は言葉」。
- * relations/moods = prose（LLM が読む）、stats = 数（プレイヤーとコードが読む）。
- */
+/** セッション固有の状態（すべて prose）。 */
 export interface SessionState {
   /** prose 関係性（有向ペアごと） */
   relations: Relation[]
   /** キャラ自身の一時的な気分（prose・毎レビューで上書き） */
   moods: { characterId: string; mood: string }[]
-  /** 事実の数（好感度ポイント・各種スタット） */
-  stats: StatValue[]
-  /** 行動カウンターの累計 */
-  counters: CounterValue[]
   /**
    * 達成済みの実績。subject な group 節を含む定義は当事者の組ごとに独立に解除する
    * （docs/設計_ロールグループと定量条件.md B-4）。`parties`＝ロール別の当事者組。
@@ -739,8 +665,6 @@ export interface UsageRecord {
   /** 呼び出し開始から完了までのミリ秒 */
   ms: number
   sessionId?: string
-  /** レビューのみ: statChanges の符号内訳（設計_ゲーム性向上バックログ.md §2.3 の検証用） */
-  deltaSigns?: { plus: number; minus: number; zero: number }
 }
 
 /** 画像生成の接続先種別 */
@@ -835,29 +759,6 @@ export interface RelationUpdate {
   reason: string
 }
 
-/** 事実の数の変化案（コードが clamp 加算する相対値） */
-export interface StatChange {
-  defId: string
-  name: string
-  /** scope=character のとき対象キャラ。global は undefined */
-  characterId?: string
-  charName?: string
-  /** 相対変化量。コード側で min..max にクランプ加算 */
-  delta: number
-  reason: string
-}
-
-/** 行動カウンターの加算案（今シーンで起きた行動の回数。コードが加算） */
-export interface CounterEvent {
-  defId: string
-  name: string
-  characterId?: string
-  charName?: string
-  /** 加算する回数（通常 1 以上） */
-  amount: number
-  reason: string
-}
-
 /** 気分の更新案 */
 export interface MoodChange {
   characterId: string
@@ -886,10 +787,6 @@ export interface SceneReview {
   worldGrowth: WorldGrowth[]
   /** 関係性 prose の更新案（コードが全文書き直し） */
   relationUpdates: RelationUpdate[]
-  /** 事実の数の変化案（コードが clamp 加算） */
-  statChanges: StatChange[]
-  /** 行動カウンターの加算案（コードが加算） */
-  counterEvents: CounterEvent[]
   /** 各キャラの気分の更新案 */
   moodChanges: MoodChange[]
   /** 新しく登場した未定義の人物（発見キャラ・FB7-E。承認するとキャラ化モーダルへ流す） */

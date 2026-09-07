@@ -45,8 +45,6 @@ function obj(properties: Record<string, unknown>): Record<string, unknown> {
 }
 
 const str = { type: 'string' } as const
-/** 省略可の文字列（strict では required から外せないので null 許容にする） */
-const strOrNull = { type: ['string', 'null'] } as const
 const arrayOf = (items: unknown) => ({ type: 'array', items })
 
 /** レビュー A（何が起きたか）の項目 */
@@ -70,12 +68,6 @@ const REVIEW_B_PROPS = {
     }),
   ),
   moods: arrayOf(obj({ character: str, mood: str })),
-  statChanges: arrayOf(
-    obj({ name: str, character: strOrNull, delta: { type: 'integer' }, reason: str }),
-  ),
-  counterEvents: arrayOf(
-    obj({ name: str, character: strOrNull, amount: { type: 'integer' }, reason: str }),
-  ),
 }
 
 /** シーン終了レビューのスキーマ（`reviewSystem` の part と対になる） */

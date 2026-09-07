@@ -336,13 +336,7 @@ function normalizeWorldFromData(raw: any): World {
     entries: Array.isArray(raw.entries) ? raw.entries : [],
     scheduledEvents: Array.isArray(raw.scheduledEvents) ? raw.scheduledEvents : [],
     relationAspects: Array.isArray(raw.relationAspects) ? raw.relationAspects : [],
-    stats: Array.isArray(raw.stats) ? raw.stats : [],
-    counters: Array.isArray(raw.counters) ? raw.counters : [],
     achievements: Array.isArray(raw.achievements) ? raw.achievements : [],
-    // カード往復でレビュー指針が消えないよう明示的に引き継ぐ（FB7-C）
-    ...(typeof raw.reviewGuidance === 'string' && raw.reviewGuidance
-      ? { reviewGuidance: raw.reviewGuidance }
-      : {}),
     roles: normalizeWorldRoles(raw.roles),
     // カード往復でエンディング定義が消えないよう明示的に引き継ぐ（E1）
     endings: Array.isArray(raw.endings) ? raw.endings : [],
@@ -465,7 +459,7 @@ export function freshSessionOf(session: Session): Session {
     // 原文窓は種セッションのシーン id を指しているので落とす（PC3。残っても参照切れで
     // 無視されるだけだが、配布物に死んだ id を載せない）
     rawWindowFromSceneId: undefined,
-    state: { relations: [], moods: [], stats: [], counters: [], achievements: [] },
+    state: { relations: [], moods: [], achievements: [] },
     overlay: { lore: [], characterDevelopments: [] },
     usedEventIds: [],
     // 到達エンディングを初期化（忘れるとカセット出力→新規プレイで即「完結済み」表示になる。E1）

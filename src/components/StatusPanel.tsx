@@ -3,7 +3,6 @@ import { useStore } from '../store'
 import type { Session, SessionState } from '../types'
 import EntityAvatar from './EntityAvatar'
 import ModalShell from './ModalShell'
-import NumberInput from './NumberInput'
 import { Icon } from './icons'
 
 interface Props {
@@ -11,7 +10,7 @@ interface Props {
   onClose: () => void
 }
 
-/** セッションの状態（関係性 prose ＋ 事実の数）の閲覧・手動編集パネル */
+/** セッションの状態（関係性 prose）の閲覧・手動編集パネル */
 export default function StatusPanel({ session, onClose }: Props) {
   const { worlds, characters, personas, applyStatusEdit } = useStore()
   const world = worlds.find((w) => w.id === session.worldId)
@@ -27,8 +26,6 @@ export default function StatusPanel({ session, onClose }: Props) {
       aspects: r.aspects.map((a) => ({ ...a })),
     })),
     moods: session.state.moods.map((m) => ({ ...m })),
-    stats: session.state.stats.map((s) => ({ ...s })),
-    counters: (session.state.counters ?? []).map((c) => ({ ...c })),
     achievements: (session.state.achievements ?? []).map((a) => ({ ...a })),
   }))
   const [dirty, setDirty] = useState(false)
@@ -37,19 +34,6 @@ export default function StatusPanel({ session, onClose }: Props) {
     setDirty(true)
   }
 
-  const statValue = (defId: string, characterId?: string): number => {
-    const v = st.stats.find((s) => s.defId === defId && s.characterId === characterId)
-    if (v) return v.value
-    return world?.stats.find((d) => d.id === defId)?.default ?? 0
-  }
-  const setStat = (defId: string, characterId: string | undefined, value: number) =>
-    mutate((prev) => {
-      const stats = prev.stats.slice()
-      const idx = stats.findIndex((s) => s.defId === defId && s.characterId === characterId)
-      if (idx >= 0) stats[idx] = { ...stats[idx], value }
-      else stats.push({ defId, characterId, value })
-      return { ...prev, stats }
-    })
   const setStance = (i: number, stance: string) =>
     mutate((prev) => {
       const relations = prev.relations.slice()
@@ -66,17 +50,6 @@ export default function StatusPanel({ session, onClose }: Props) {
       return { ...prev, relations }
     })
 
-  const counterValue = (defId: string, characterId?: string): number =>
-    st.counters.find((c) => c.defId === defId && c.characterId === characterId)?.value ?? 0
-  const setCounter = (defId: string, characterId: string | undefined, value: number) =>
-    mutate((prev) => {
-      const counters = (prev.counters ?? []).slice()
-      const idx = counters.findIndex((c) => c.defId === defId && c.characterId === characterId)
-      if (idx >= 0) counters[idx] = { ...counters[idx], value }
-      else counters.push({ defId, characterId, value })
-      return { ...prev, counters }
-    })
-
   const isUnlocked = (defId: string) => st.achievements.some((a) => a.defId === defId)
   const toggleAchievement = (defId: string) =>
     mutate((prev) => {
@@ -87,10 +60,6 @@ export default function StatusPanel({ session, onClose }: Props) {
       return { ...prev, achievements }
     })
 
-  const globalStats = world?.stats.filter((d) => d.scope === 'global') ?? []
-  const charStats = world?.stats.filter((d) => d.scope === 'character') ?? []
-  const globalCounters = world?.counters.filter((d) => d.scope === 'global') ?? []
-  const charCounters = world?.counters.filter((d) => d.scope === 'character') ?? []
 
   const save = () => {
     // clamp・実績の再評価はストア側（applyStatusEdit）で行う
@@ -116,40 +85,11 @@ export default function StatusPanel({ session, onClose }: Props) {
     >
           {!world && (
             <p className="inline-empty">
-              ワールドを設定すると、関係性・ステータスを管理できます。
+              ワールドを設定すると、関係性を管理できます。
             </p>
           )}
 
-          {/* 主人公・世界の数値 */}
-          {(globalStats.length > 0 || globalCounters.length > 0) && (
-            <div className="field">
-              <label>主人公・世界の状態</label>
-              <div className="row2">
-                {globalStats.map((d) => (
-                  <label key={d.id} className="chk">
-                    {d.name}
-                    <NumberInput
-                      value={statValue(d.id)}
-                      style={{ width: 90, background: 'var(--bg)' }}
-                      onChange={(v) => setStat(d.id, undefined, v)}
-                    />
-                  </label>
-                ))}
-                {globalCounters.map((d) => (
-                  <label key={d.id} className="chk">
-                    {d.name}
-                    <NumberInput
-                      value={counterValue(d.id)}
-                      style={{ width: 90, background: 'var(--bg)' }}
-                      onChange={(v) => setCounter(d.id, undefined, v)}
-                    />
-                  </label>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* キャラ別の関係性＋数値 */}
+          {/* キャラ別の関係性 */}
           {cast.map((c) => {
             const relIdx = st.relations.findIndex((r) => r.fromId === c.id && r.toId === 'hero')
             const rel = relIdx >= 0 ? st.relations[relIdx] : null
@@ -160,30 +100,6 @@ export default function StatusPanel({ session, onClose }: Props) {
                   <EntityAvatar className="dot-avatar" avatar={c.avatar} name={c.name || '無名'} />{' '}
                   {c.name || '無名'} → {heroName}
                 </label>
-                {(charStats.length > 0 || charCounters.length > 0) && (
-                  <div className="row2" style={{ marginBottom: 6 }}>
-                    {charStats.map((d) => (
-                      <label key={d.id} className="chk">
-                        {d.name}
-                        <NumberInput
-                          value={statValue(d.id, c.id)}
-                          style={{ width: 80, background: 'var(--bg)' }}
-                          onChange={(v) => setStat(d.id, c.id, v)}
-                        />
-                      </label>
-                    ))}
-                    {charCounters.map((d) => (
-                      <label key={d.id} className="chk">
-                        {d.name}
-                        <NumberInput
-                          value={counterValue(d.id, c.id)}
-                          style={{ width: 80, background: 'var(--bg)' }}
-                          onChange={(v) => setCounter(d.id, c.id, v)}
-                        />
-                      </label>
-                    ))}
-                  </div>
-                )}
                 {rel ? (
                   <>
                     <textarea

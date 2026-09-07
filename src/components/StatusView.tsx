@@ -30,46 +30,16 @@ export default function StatusView({ session }: Props) {
       .filter(Boolean)
 
   const st = session.state
-  const statValue = (defId: string, characterId?: string): number => {
-    const v = st.stats.find((s) => s.defId === defId && s.characterId === characterId)
-    if (v) return v.value
-    return world?.stats.find((d) => d.id === defId)?.default ?? 0
-  }
-  const counterValue = (defId: string, characterId?: string): number =>
-    (st.counters ?? []).find((c) => c.defId === defId && c.characterId === characterId)?.value ?? 0
   // 実績の解除記録（キャラ系はキャラの組ごとに複数。FB7-D）
   const unlockedRecordsOf = (defId: string) => (st.achievements ?? []).filter((a) => a.defId === defId)
   const nameOf = (id: string) => characters.find((c) => c.id === id)?.name || id
 
   if (!world) {
-    return <p className="inline-empty">ワールドを設定すると、関係性・ステータスを管理できます。</p>
+    return <p className="inline-empty">ワールドを設定すると、関係性を管理できます。</p>
   }
-
-  const globalStats = world.stats.filter((d) => d.scope === 'global')
-  const charStats = world.stats.filter((d) => d.scope === 'character')
-  const globalCounters = world.counters.filter((d) => d.scope === 'global')
-  const charCounters = world.counters.filter((d) => d.scope === 'character')
 
   return (
     <>
-      {(globalStats.length > 0 || globalCounters.length > 0) && (
-        <div className="field">
-          <label>主人公・世界の状態</label>
-          <div className="dock-chip-row">
-            {globalStats.map((d) => (
-              <span key={d.id} className="badge">
-                {d.name}: {statValue(d.id)}
-              </span>
-            ))}
-            {globalCounters.map((d) => (
-              <span key={d.id} className="badge">
-                {d.name}: {counterValue(d.id)}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-
       {cast.map((c) => {
         const rel = st.relations.find((r) => r.fromId === c.id && r.toId === 'hero')
         const mood = st.moods.find((m) => m.characterId === c.id)?.mood
@@ -80,20 +50,6 @@ export default function StatusView({ session }: Props) {
               <EntityAvatar className="dot-avatar" avatar={c.avatar} name={c.name || '無名'} />{' '}
               {c.name || '無名'}{roleNames.length > 0 ? `（${roleNames.join('・')}）` : ''} → {heroName}
             </label>
-            {(charStats.length > 0 || charCounters.length > 0) && (
-              <div className="dock-chip-row" style={{ marginBottom: 6 }}>
-                {charStats.map((d) => (
-                  <span key={d.id} className="badge">
-                    {d.name}: {statValue(d.id, c.id)}
-                  </span>
-                ))}
-                {charCounters.map((d) => (
-                  <span key={d.id} className="badge">
-                    {d.name}: {counterValue(d.id, c.id)}
-                  </span>
-                ))}
-              </div>
-            )}
             {rel ? (
               <>
                 <p className="desc">{rel.stance}</p>
