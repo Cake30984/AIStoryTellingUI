@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { bindRoleNames, useStore } from './store'
+import { useStore } from './store'
 import Rail from './components/Rail'
 import Sidebar from './components/Sidebar'
 import ChatPanel from './components/ChatPanel'
@@ -66,8 +66,6 @@ export default function App() {
     sceneReview,
     reviewProgress,
     castingSessionId,
-    newlyUnlockedAchievements,
-    dismissNewAchievements,
     endingToast,
     dismissEndingToast,
     imageJobToasts,
@@ -311,18 +309,6 @@ export default function App() {
             text={infoNotice}
             onClose={() => setInfoNotice(null)}
             autoCloseMs={4000}
-          />
-        )}
-
-        {newlyUnlockedAchievements.length > 0 && (
-          <ToastItem
-            className="toast achievement"
-            icon="trophy"
-            text={`実績解除: ${newlyUnlockedAchievements
-              .map((a) => bindRoleNames(a.def.name, a.subjects) || '無名')
-              .join(' / ')}`}
-            onClose={dismissNewAchievements}
-            autoCloseMs={6000}
           />
         )}
 

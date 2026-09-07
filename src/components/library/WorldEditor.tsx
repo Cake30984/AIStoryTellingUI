@@ -1,7 +1,6 @@
 import { useRef, useState } from 'react'
 import {
   newAchievementDef,
-  newClause,
   newCounterDef,
   newEndingDef,
   newLoreEntry,
@@ -12,7 +11,6 @@ import {
 } from '../../store'
 import type {
   AchievementDef,
-  Clause,
   CounterDef,
   EndingDef,
   LoreEntry,
@@ -23,7 +21,6 @@ import type {
   WorldRole,
   WorldStartPreset,
 } from '../../types'
-import { ClauseRow, clausesOf, modeOf } from '../ConditionEditor'
 import CsvInput from '../CsvInput'
 import HelpDetails from '../HelpDetails'
 import IntroTagDefEditor from '../IntroTagDefEditor'
@@ -163,33 +160,6 @@ export default function WorldEditor({ world, onClose }: Props) {
 
   const removeEntry = (id: string) => patch({ entries: d.entries.filter((e) => e.id !== id) })
 
-  // ロアの解禁条件（G3。未指定＝条件なし＝常に通る。条件は alwaysOn より強い）
-  const addEntryClause = (e: LoreEntry) => {
-    const mode = e.condition ? modeOf(e.condition) : 'all'
-    const clauses = [...(e.condition ? clausesOf(e.condition) : []), newClause('stat', d)]
-    updateEntry(e.id, { condition: mode === 'all' ? { all: clauses } : { any: clauses } })
-  }
-  const updateEntryClause = (e: LoreEntry, idx: number, clause: Clause) => {
-    if (!e.condition) return
-    const mode = modeOf(e.condition)
-    const clauses = clausesOf(e.condition).map((c, i) => (i === idx ? clause : c))
-    updateEntry(e.id, { condition: mode === 'all' ? { all: clauses } : { any: clauses } })
-  }
-  const removeEntryClause = (e: LoreEntry, idx: number) => {
-    if (!e.condition) return
-    const mode = modeOf(e.condition)
-    const clauses = clausesOf(e.condition).filter((_, i) => i !== idx)
-    // 条件が空になったら条件そのものを外す（＝常に注入される状態へ戻す）
-    const condition = clauses.length ? (mode === 'all' ? { all: clauses } : { any: clauses }) : undefined
-    updateEntry(e.id, { condition })
-  }
-  const setEntryMode = (e: LoreEntry, mode: 'all' | 'any') => {
-    if (!e.condition) return
-    updateEntry(e.id, {
-      condition: mode === 'all' ? { all: clausesOf(e.condition) } : { any: clausesOf(e.condition) },
-    })
-  }
-
   const events = d.scheduledEvents ?? []
   const eventSlots = d.startPreset?.timeline?.slots.length
     ? d.startPreset.timeline.slots
@@ -200,31 +170,6 @@ export default function WorldEditor({ world, onClose }: Props) {
     patch({ scheduledEvents: [...events, { id: uid(), day: 1, name: '', note: '' }] })
   const removeEvent = (id: string) =>
     patch({ scheduledEvents: events.filter((e) => e.id !== id) })
-
-  // イベントの発火条件（未指定＝ day のみで判定）
-  const addEventClause = (e: ScheduledEvent) => {
-    const mode = e.condition ? modeOf(e.condition) : 'all'
-    const clauses = [...(e.condition ? clausesOf(e.condition) : []), newClause('stat', d)]
-    updateEvent(e.id, { condition: mode === 'all' ? { all: clauses } : { any: clauses } })
-  }
-  const updateEventClause = (e: ScheduledEvent, idx: number, clause: Clause) => {
-    if (!e.condition) return
-    const mode = modeOf(e.condition)
-    const clauses = clausesOf(e.condition).map((c, i) => (i === idx ? clause : c))
-    updateEvent(e.id, { condition: mode === 'all' ? { all: clauses } : { any: clauses } })
-  }
-  const removeEventClause = (e: ScheduledEvent, idx: number) => {
-    if (!e.condition) return
-    const mode = modeOf(e.condition)
-    const clauses = clausesOf(e.condition).filter((_, i) => i !== idx)
-    // 条件が空になったら条件そのものを外す（day のみの判定に戻る）
-    const condition = clauses.length ? (mode === 'all' ? { all: clauses } : { any: clauses }) : undefined
-    updateEvent(e.id, { condition })
-  }
-  const setEventMode = (e: ScheduledEvent, mode: 'all' | 'any') => {
-    if (!e.condition) return
-    updateEvent(e.id, { condition: mode === 'all' ? { all: clausesOf(e.condition) } : { any: clausesOf(e.condition) } })
-  }
 
   // 関係性の次元（aspect）
   const aspects = d.relationAspects ?? []
@@ -255,23 +200,6 @@ export default function WorldEditor({ world, onClose }: Props) {
   const addAchievement = () => patch({ achievements: [...achievements, newAchievementDef()] })
   const removeAchievement = (id: string) =>
     patch({ achievements: achievements.filter((a) => a.id !== id) })
-  const setCondition = (id: string, mode: 'all' | 'any', clauses: Clause[]) =>
-    updateAchievement(id, { condition: mode === 'all' ? { all: clauses } : { any: clauses } })
-  const addClause = (a: AchievementDef) =>
-    setCondition(a.id, modeOf(a.condition), [...clausesOf(a.condition), newClause('stat', d)])
-  const updateClause = (a: AchievementDef, idx: number, clause: Clause) =>
-    setCondition(
-      a.id,
-      modeOf(a.condition),
-      clausesOf(a.condition).map((c, i) => (i === idx ? clause : c)),
-    )
-  const removeClause = (a: AchievementDef, idx: number) =>
-    setCondition(
-      a.id,
-      modeOf(a.condition),
-      clausesOf(a.condition).filter((_, i) => i !== idx),
-    )
-
   // エンディング定義（E1。配列順=優先度＝上が優先。到達判定はコードが自動で行う）
   const endings = d.endings ?? []
   const updateEnding = (id: string, p: Partial<EndingDef>) =>
@@ -285,27 +213,6 @@ export default function WorldEditor({ world, onClose }: Props) {
     ;[next[idx], next[to]] = [next[to], next[idx]]
     patch({ endings: next })
   }
-  const setEndingCondition = (id: string, mode: 'all' | 'any', clauses: Clause[]) =>
-    updateEnding(id, { condition: mode === 'all' ? { all: clauses } : { any: clauses } })
-  const addEndingClause = (e: EndingDef) =>
-    setEndingCondition(
-      e.id,
-      modeOf(e.condition ?? { all: [] }),
-      [...clausesOf(e.condition ?? { all: [] }), newClause('stat', d)],
-    )
-  const updateEndingClause = (e: EndingDef, idx: number, clause: Clause) =>
-    setEndingCondition(
-      e.id,
-      modeOf(e.condition ?? { all: [] }),
-      clausesOf(e.condition ?? { all: [] }).map((c, i) => (i === idx ? clause : c)),
-    )
-  const removeEndingClause = (e: EndingDef, idx: number) =>
-    setEndingCondition(
-      e.id,
-      modeOf(e.condition ?? { all: [] }),
-      clausesOf(e.condition ?? { all: [] }).filter((_, i) => i !== idx),
-    )
-
   const save = () => {
     const problem = roleValidationError()
     if (problem) {
@@ -681,7 +588,6 @@ export default function WorldEditor({ world, onClose }: Props) {
             <label>ロア項目</label>
             <div className="desc">
               キーワードが会話に登場した時だけ注入されます（トークン節約）。「常時」をオンにすると常に注入。
-              各項目の「解禁条件」を設定すると、条件を満たすまで注入されません（「常時」より強い）。
             </div>
           </div>
 
@@ -735,46 +641,6 @@ export default function WorldEditor({ world, onClose }: Props) {
                 placeholder="この語が出たときに注入する設定内容"
                 onChange={(ev) => updateEntry(e.id, { content: ev.target.value })}
               />
-              {/* 解禁条件（G3）。既定は畳んでおき、設定済みなら見出しで分かるようにする */}
-              {(() => {
-                const cond = e.condition
-                const clauses = cond ? clausesOf(cond) : []
-                return (
-                  <details className="help-details" open={false}>
-                    <summary>解禁条件{clauses.length > 0 ? '（条件あり）' : ''}</summary>
-                    <div style={{ marginTop: 6 }}>
-                      <div className="desc">
-                        条件を満たすまで、この設定は AI に渡されません。「常時」にしていても渡されません。
-                      </div>
-                      {clauses.length > 0 && (
-                        <div className="row2" style={{ marginTop: 6, alignItems: 'center' }}>
-                          <span className="sub-label">解禁条件</span>
-                          <select
-                            value={modeOf(cond!)}
-                            style={{ background: 'var(--bg)' }}
-                            onChange={(ev) => setEntryMode(e, ev.target.value as 'all' | 'any')}
-                          >
-                            <option value="all">すべて満たす</option>
-                            <option value="any">いずれか満たす</option>
-                          </select>
-                        </div>
-                      )}
-                      {clauses.map((c, i) => (
-                        <ClauseRow
-                          key={i}
-                          clause={c}
-                          world={d}
-                          onChange={(nc) => updateEntryClause(e, i, nc)}
-                          onRemove={() => removeEntryClause(e, i)}
-                        />
-                      ))}
-                      <button className="btn" style={{ marginTop: 6 }} onClick={() => addEntryClause(e)}>
-                        <Icon name="plus" size={13} />解禁条件を追加
-                      </button>
-                    </div>
-                  </details>
-                )
-              })()}
             </div>
           ))}
 
@@ -793,8 +659,7 @@ export default function WorldEditor({ world, onClose }: Props) {
             </div>
             <HelpDetails>
               <p>
-                発火条件を付けると「指定日時に到来し、かつ条件を満たしたとき」だけ発生します（承認は不要）。
-                日付・時間帯とも空欄なら常に候補になります。
+                指定日時が到来したら発生します（承認は不要）。日付・時間帯とも空欄なら常に候補になります。
               </p>
               <p>
                 「グループ条件」で「主要登場人物にする」を付けたロールのメンバー名は、内容の{' '}
@@ -806,8 +671,6 @@ export default function WorldEditor({ world, onClose }: Props) {
           </div>
 
           {events.map((e) => {
-            const mode = e.condition ? modeOf(e.condition) : 'all'
-            const clauses = e.condition ? clausesOf(e.condition) : []
             return (
               <div key={e.id} className="lore-entry">
                 <div className="lore-entry-top">
@@ -859,38 +722,8 @@ export default function WorldEditor({ world, onClose }: Props) {
                   placeholder="状況・方向性（例: 全校で盛り上がる体育祭。応援や勝負を通じて関係が動く。）"
                   onChange={(ev) => updateEvent(e.id, { note: ev.target.value })}
                 />
-                {clauses.length > 0 && (
-                  <div className="row2" style={{ marginTop: 6, alignItems: 'center' }}>
-                    <span className="sub-label">発火条件</span>
-                    <select
-                      value={mode}
-                      style={{ background: 'var(--bg)' }}
-                      onChange={(ev) => setEventMode(e, ev.target.value as 'all' | 'any')}
-                    >
-                      <option value="all">すべて満たす</option>
-                      <option value="any">いずれか満たす</option>
-                    </select>
-                  </div>
-                )}
-                {clauses.map((c, i) => (
-                  <ClauseRow
-                    key={i}
-                    clause={c}
-                    world={d}
-                    eventId={e.id}
-                    onChange={(nc) => updateEventClause(e, i, nc)}
-                    onRemove={() => removeEventClause(e, i)}
-                  />
-                ))}
-                <button className="btn" style={{ marginTop: 6 }} onClick={() => addEventClause(e)}>
-                  <Icon name="plus" size={13} />発火条件を追加
-                </button>
                 <div className="desc" style={{ marginTop: 4 }}>
-                  {clauses.length > 0
-                    ? '条件を満たし、指定日時も到来していれば自動的に発生します。'
-                    : '指定日時で判定します（両方空欄なら常に候補）。'}
-                  {clauses.some((c) => c.kind === 'eventFired') &&
-                    ' イベントの連鎖は1シーンに1段ずつ進みます（発生したイベントを条件にした次のイベントは、さらに次のシーンで候補になります）。'}
+                  指定日時で判定します（両方空欄なら常に候補）。
                 </div>
               </div>
             )
@@ -1188,8 +1021,6 @@ export default function WorldEditor({ world, onClose }: Props) {
             </HelpDetails>
           </div>
           {achievements.map((a) => {
-            const mode = modeOf(a.condition)
-            const clauses = clausesOf(a.condition)
             return (
               <div key={a.id} className="lore-entry">
                 <div className="lore-entry-top">
@@ -1218,30 +1049,6 @@ export default function WorldEditor({ world, onClose }: Props) {
                   placeholder="内容（例: 主人公と2人きりで出かけた）"
                   onChange={(e) => updateAchievement(a.id, { description: e.target.value })}
                 />
-                <div className="row2" style={{ marginTop: 6, alignItems: 'center' }}>
-                  <span className="sub-label">達成条件</span>
-                  <select
-                    value={mode}
-                    style={{ background: 'var(--bg)' }}
-                    onChange={(e) => setCondition(a.id, e.target.value as 'all' | 'any', clauses)}
-                  >
-                    <option value="all">すべて満たす</option>
-                    <option value="any">いずれか満たす</option>
-                  </select>
-                </div>
-                {clauses.map((c, i) => (
-                  <ClauseRow
-                    key={i}
-                    clause={c}
-                    world={d}
-                    achievementId={a.id}
-                    onChange={(nc) => updateClause(a, i, nc)}
-                    onRemove={() => removeClause(a, i)}
-                  />
-                ))}
-                <button className="btn" style={{ marginTop: 6 }} onClick={() => addClause(a)}>
-                  <Icon name="plus" size={13} />条件を追加
-                </button>
               </div>
             )
           })}
@@ -1256,8 +1063,7 @@ export default function WorldEditor({ world, onClose }: Props) {
           <div className="lore-head">
             <label>エンディング</label>
             <div className="desc">
-              条件を満たすと物語がその結末へ到達し、エピローグシーンに入ります。<strong>上にあるほど優先</strong>
-              されます。
+              期間満了時に「満了時の受け皿（fallback）」の結末へ到達し、エピローグシーンに入ります。
             </div>
             <HelpDetails>
               <p>
@@ -1280,9 +1086,6 @@ export default function WorldEditor({ world, onClose }: Props) {
             </HelpDetails>
           </div>
           {endings.map((e, idx) => {
-            const cond = e.condition ?? { all: [] }
-            const mode = modeOf(cond)
-            const clauses = clausesOf(cond)
             return (
               <div key={e.id} className="lore-entry">
                 <div className="lore-entry-top">
@@ -1365,39 +1168,6 @@ export default function WorldEditor({ world, onClose }: Props) {
                     満了時の受け皿（fallback）
                   </label>
                 </div>
-                {!e.fallback && (
-                  <>
-                    <div className="row2" style={{ marginTop: 6, alignItems: 'center' }}>
-                      <span className="sub-label">到達条件</span>
-                      <select
-                        value={mode}
-                        style={{ background: 'var(--bg)' }}
-                        onChange={(ev) =>
-                          setEndingCondition(e.id, ev.target.value as 'all' | 'any', clauses)
-                        }
-                      >
-                        <option value="all">すべて満たす</option>
-                        <option value="any">いずれか満たす</option>
-                      </select>
-                    </div>
-                    {clauses.map((c, i) => (
-                      <ClauseRow
-                        key={i}
-                        clause={c}
-                        world={d}
-                        onChange={(nc) => updateEndingClause(e, i, nc)}
-                        onRemove={() => removeEndingClause(e, i)}
-                      />
-                    ))}
-                    <button
-                      className="btn"
-                      style={{ marginTop: 6 }}
-                      onClick={() => addEndingClause(e)}
-                    >
-                      <Icon name="plus" size={13} />条件を追加
-                    </button>
-                  </>
-                )}
               </div>
             )
           })}

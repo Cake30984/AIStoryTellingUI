@@ -2,8 +2,6 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   applyReviewToState,
   bindRoleNames,
-  checkEndings,
-  conditionContextOf,
   useStore,
   type ReviewCallProgress,
   type ReviewCallStatus,
@@ -12,6 +10,8 @@ import { advanceTimeline, timeLabelOf } from '../lib/timeline'
 import type {
   CounterEvent,
   DiscoveredCharacter,
+  ExactGroupCandidate,
+  RoleParty,
   NextSceneSuggestion,
   RelationUpdate,
   SceneReview,
@@ -187,13 +187,7 @@ function ReviewBody() {
       counterEvents: [...counterSel].map((i) => draft.counterEvents[i]).filter(Boolean),
       moodChanges: [...moodSel].map((i) => draft.moodChanges[i]).filter(Boolean),
     }
-    const applied = applyReviewToState(session.state, sel, conditionContextOf(session, world, characters))
-    // checkEndings は最上位成立エンディングの当事者組を返す（exactPicks の n 人選択を反映）。
-    // 文脈は確定側（confirmSceneReview）と同じ「確定後 state ＋ 確定前 usedEventIds」
-    const top = checkEndings(
-      endings,
-      conditionContextOf(session, world, characters, applied.state, exactPicks),
-    )
+    applyReviewToState(session.state, sel, world)
     const tlNext = session.timeline.enabled ? advanceTimeline(session.timeline) : null
     const isExpiry = !!(
       tlNext &&
@@ -201,16 +195,16 @@ function ReviewBody() {
       tlNext.currentDay > session.timeline.totalDays
     )
     const fallback = endings.find((e) => e.fallback)
-    // 候補は ①条件成立の最上位 → ②（満了時のみ）fallback
-    const candidate = top?.def ?? (isExpiry ? fallback : undefined)
+    // 条件による到達は廃止＝候補は満了時の fallback だけ
+    const candidate = isExpiry ? fallback : undefined
     if (!candidate) return null
     return {
       candidate,
       auto: !!candidate.auto && !candidate.fallback,
       isExpiry,
       isFallback: !!candidate.fallback,
-      subjects: top?.def.id === candidate.id ? top.subjects : [],
-      exactCandidates: top?.def.id === candidate.id ? top.exactCandidates : [],
+      subjects: [] as RoleParty[],
+      exactCandidates: [] as ExactGroupCandidate[],
     }
   }, [session, isPastScene, world, characters, draft, relUpdSel, statSel, counterSel, moodSel, exactPicks])
 

@@ -9,17 +9,13 @@ import type {
   Cassette,
   Character,
   Choice,
-  Clause,
-  Condition,
   CounterDef,
   CounterEvent,
   Development,
   EndingDef,
   EndingRecord,
-  ExactGroupCandidate,
   DiscoveredCharacter,
   ExportBundle,
-  GroupSubClause,
   ImageProvider,
   ImageQuality,
   LoreEntry,
@@ -27,7 +23,6 @@ import type {
   MessageKind,
   MoodChange,
   NextSceneSuggestion,
-  Op,
   Partner,
   PartyRef,
   OpenRouterModel,
@@ -35,7 +30,6 @@ import type {
   Provider,
   RelationAspectDef,
   RelationUpdate,
-  RoleAssignment,
   RoleParty,
   Scene,
   ScheduledEvent,
@@ -204,110 +198,6 @@ export function clampCounterAmount(
   return x
 }
 
-function compareOp(a: number, op: Op, b: number): boolean {
-  switch (op) {
-    case '>=':
-      return a >= b
-    case '>':
-      return a > b
-    case '<=':
-      return a <= b
-    case '<':
-      return a < b
-    case '==':
-      return a === b
-    case '!=':
-      return a !== b
-    default:
-      return false
-  }
-}
-
-/**
- * 条件エンジンの評価コンテキスト（G1）。`matchGroups` 系はこれ1つだけを受け取る。
- * 引数を足すたびに全呼び出し元の位置引数を書き換える事故を避けるためのオブジェクト化
- * （docs/詳細設計_ゲーム性向上.md §1.3）。
- */
-export interface ConditionContext {
-  state: SessionState
-  world: World | undefined
-  characterIds: string[]
-  roleAssignments: RoleAssignment[] | undefined
-  characters: { id: string; name: string }[]
-  /** Session 直下（SessionState ではない）。前方一致で判定する */
-  usedEventIds: string[]
-  exactSelections?: Record<string, string[]>
-}
-
-/**
- * セッションから評価コンテキストを組み立てる。`state` 未指定なら `session.state`
- * （レビュー確定後の state で判定したい呼び出し用に上書きできる）。
- */
-export function conditionContextOf(
-  session: Session,
-  world: World | undefined,
-  characters: { id: string; name: string }[] = [],
-  state?: SessionState,
-  exactSelections?: Record<string, string[]>,
-): ConditionContext {
-  return {
-    state: state ?? session.state,
-    world,
-    characterIds: session.characterIds,
-    roleAssignments: session.roleAssignments,
-    characters,
-    usedEventIds: session.usedEventIds ?? [],
-    exactSelections,
-  }
-}
-
-/**
- * その特別イベント定義がどれか1組で発火済みか（G1）。`usedEventIds` の要素は素の `eventId`
- * （global・当事者無し／旧データ）か `eventId@charId1[+charId2]`（当事者つき）なので前方一致で見る。
- */
-export function isEventFired(usedEventIds: string[], eventId: string): boolean {
-  if (!eventId) return false
-  return usedEventIds.some((k) => k === eventId || k.startsWith(`${eventId}@`))
-}
-
-/**
- * 条件節（Clause）を評価する。prose は読まない＝数・フラグ・実績のみ判定（再現性のため）。
- * World はセッション横断の再利用素材のため characterId/fromId 省略時は
- * 「セッション参加キャラのいずれかが満たせば真」で判定する。
- */
-function evalClause(clause: Clause, ctx: ConditionContext): boolean {
-  const { state, world, characterIds } = ctx
-  switch (clause.kind) {
-    case 'stat': {
-      const def = world?.stats.find((d) => d.id === clause.defId)
-      if (!def) return false
-      const valueOf = (cid?: string) =>
-        state.stats.find((s) => s.defId === clause.defId && s.characterId === cid)?.value ??
-        def.default
-      if (def.scope === 'global') return compareOp(valueOf(undefined), clause.op, clause.value)
-      if (clause.characterId) return compareOp(valueOf(clause.characterId), clause.op, clause.value)
-      return characterIds.some((cid) => compareOp(valueOf(cid), clause.op, clause.value))
-    }
-    case 'counter': {
-      const def = world?.counters.find((d) => d.id === clause.defId)
-      if (!def) return false
-      const valueOf = (cid?: string) =>
-        state.counters.find((c) => c.defId === clause.defId && c.characterId === cid)?.value ?? 0
-      if (def.scope === 'global') return compareOp(valueOf(undefined), clause.op, clause.value)
-      if (clause.characterId) return compareOp(valueOf(clause.characterId), clause.op, clause.value)
-      return characterIds.some((cid) => compareOp(valueOf(cid), clause.op, clause.value))
-    }
-    case 'achievement': {
-      const has = state.achievements.some((a) => a.defId === clause.defId)
-      return has === clause.have
-    }
-    case 'eventFired':
-      return isEventFired(ctx.usedEventIds, clause.eventId) === clause.have
-    default:
-      return false
-  }
-}
-
 /** 割り当てキャラ id を Partner（名前つき）へ。名前が引けなければ id を仮名にする */
 export function partnersOf(ids: string[], characters: { id: string; name: string }[]): Partner[] {
   return ids.map((id) => ({
@@ -336,128 +226,6 @@ export function resolveParties(
   }))
 }
 
-/** group 節の下位条件（GroupSubClause）を1キャラについて評価する */
-function evalGroupSubClause(
-  sub: GroupSubClause,
-  characterId: string,
-  state: SessionState,
-  world: World | undefined,
-): boolean {
-  switch (sub.kind) {
-    case 'stat': {
-      const def = world?.stats.find((d) => d.id === sub.defId)
-      if (!def) return false
-      const v =
-        state.stats.find((s) => s.defId === sub.defId && s.characterId === characterId)?.value ??
-        def.default
-      return compareOp(v, sub.op, sub.value)
-    }
-    case 'counter': {
-      const def = world?.counters.find((d) => d.id === sub.defId)
-      if (!def) return false
-      const v =
-        state.counters.find((c) => c.defId === sub.defId && c.characterId === characterId)?.value ?? 0
-      return compareOp(v, sub.op, sub.value)
-    }
-    default:
-      return false
-  }
-}
-
-/** ロール当事者組をロール単位でマージする（同一 roleId は members を id 重複無しで合併） */
-function mergeRoleParties(parties: RoleParty[]): RoleParty[] {
-  const byRole = new Map<string, RoleParty>()
-  for (const p of parties) {
-    const cur = byRole.get(p.roleId)
-    if (!cur) {
-      byRole.set(p.roleId, { ...p, members: [...p.members] })
-      continue
-    }
-    for (const m of p.members) {
-      if (!cur.members.some((x) => x.characterId === m.characterId)) cur.members.push(m)
-    }
-  }
-  return Array.from(byRole.values())
-}
-
-/**
- * group 節1つを評価する（docs/設計_ロールグループと定量条件.md B-2）。
- * members はロールへ配役された参加キャラ（参加キャラ順）。quantifier で成立を判定し、
- * subject なら当事者（exactly は候補から n 人に絞る。それ以外は satisfying 全員）を返す。
- * exactly な subject 節は満たした全員を `exactCandidates` としても返す（エンディングレビューの
- * n 人選択 UI 用。B-5）。`exactSelections[roleId]` に有効な選択（satisfying の部分集合・ちょうど n 人）
- * があればそれを当事者にし、無ければ参加キャラ順の先頭 n 人を既定にする。
- */
-function evalGroupClause(
-  clause: Extract<Clause, { kind: 'group' }>,
-  ctx: ConditionContext,
-): { ok: boolean; subjects: RoleParty[]; exactCandidates: ExactGroupCandidate[] } {
-  const { state, world, characterIds, roleAssignments, characters, exactSelections } = ctx
-  const role = world?.roles?.find((r) => r.id === clause.roleId)
-  const memberIds = new Set(
-    (roleAssignments ?? [])
-      .filter((ra) => ra.roleId === clause.roleId)
-      .map((ra) => ra.characterId),
-  )
-  const members = characterIds.filter((cid) => memberIds.has(cid))
-  const satisfying = members.filter((cid) =>
-    clause.clauses.every((sub) => evalGroupSubClause(sub, cid, state, world)),
-  )
-  const q = clause.quantifier
-  const ok =
-    q.kind === 'all'
-      ? members.length > 0 && satisfying.length === members.length
-      : satisfying.length >= q.n
-  if (!clause.subject || !ok) return { ok, subjects: [], exactCandidates: [] }
-  if (q.kind !== 'exactly') {
-    return {
-      ok,
-      subjects: [{ roleId: clause.roleId, roleName: role?.name ?? '', members: partnersOf(satisfying, characters) }],
-      exactCandidates: [],
-    }
-  }
-  const picked = exactSelections?.[clause.roleId]
-  const chosenIds =
-    picked && picked.length === q.n && picked.every((id) => satisfying.includes(id))
-      ? picked
-      : satisfying.slice(0, q.n)
-  return {
-    ok,
-    subjects: [{ roleId: clause.roleId, roleName: role?.name ?? '', members: partnersOf(chosenIds, characters) }],
-    exactCandidates: [
-      { roleId: clause.roleId, roleName: role?.name ?? '', n: q.n, candidates: partnersOf(satisfying, characters) },
-    ],
-  }
-}
-
-/**
- * 条件式を評価する純関数（docs/設計_ロールグループと定量条件.md B-2）。
- * 平の節（stat/counter/achievement）は「参加キャラの誰か1人が満たす（∃）」のゲートとして
- * evalClause で判定し、当事者にはならない。group 節は evalGroupClause でロールの当事者を求める。
- * all は全節が真、any はいずれかの節が真で成立。当事者は「成立に寄与した」subject な group 節の合併。
- */
-export function matchGroups(
-  cond: Condition | undefined,
-  ctx: ConditionContext,
-): { ok: boolean; subjects: RoleParty[]; exactCandidates: ExactGroupCandidate[] } {
-  if (!cond) return { ok: false, subjects: [], exactCandidates: [] }
-  const clauses = 'all' in cond ? cond.all : cond.any
-  if (clauses.length === 0) return { ok: false, subjects: [], exactCandidates: [] }
-  const isAll = 'all' in cond
-  const results = clauses.map((c) =>
-    c.kind === 'group'
-      ? evalGroupClause(c, ctx)
-      : { ok: evalClause(c, ctx), subjects: [] as RoleParty[], exactCandidates: [] as ExactGroupCandidate[] },
-  )
-  const ok = isAll ? results.every((r) => r.ok) : results.some((r) => r.ok)
-  const contributing = isAll ? results : results.filter((r) => r.ok)
-  return {
-    ok,
-    subjects: mergeRoleParties(contributing.flatMap((r) => r.subjects)),
-    exactCandidates: contributing.flatMap((r) => r.exactCandidates),
-  }
-}
-
 /**
  * `@ロール名` をその subject ロールの当事者メンバー名（複数は「・」連結）へ置換する。
  * `@相手` は全 subject 当事者名の連結（単一群の簡易記法）。当事者が居ないプレースホルダはそのまま残す。
@@ -476,208 +244,6 @@ export function bindRoleNames(text: string, subjects: RoleParty[] | undefined): 
   return out
 }
 
-/** 条件式を評価する（成立するか）。`matchGroups` の互換窓口。節が空なら不成立扱い。 */
-export function evalCondition(cond: Condition | undefined, ctx: ConditionContext): boolean {
-  return matchGroups(cond, ctx).ok
-}
-
-/**
- * 旧「関係フラグ」節（FB9-C で撤去）を World の条件式から取り除く純関数。persist の merge で通す。
- * 残したままだと union から消えた kind が evalClause の `default: return false` に落ち、実績・
- * エンディング・イベント・**ロアの解禁**が恒久的に発火しなくなる。節が空になった条件は `matchGroups` が不成立を
- * 返す（空の節リストは false）ので、「条件が空＝常に成立」の事故は起きない。
- * 旧節を持たない World は同一参照のまま返す（起動時の無駄なオブジェクト生成を避ける）。
- */
-export function stripLegacyFlagClauses(world: World): World {
-  const isLegacy = (c: unknown): boolean =>
-    (c as { kind?: string } | null | undefined)?.kind === 'relationFlag'
-  const hasLegacy = (cond: Condition | undefined): boolean => {
-    if (!cond) return false
-    const clauses = ('all' in cond ? cond.all : cond.any) ?? []
-    return clauses.some((c) => isLegacy(c) || (c.kind === 'group' && c.clauses.some(isLegacy)))
-  }
-  const cleanOne = (cond: Condition): Condition => {
-    if (!hasLegacy(cond)) return cond
-    const clauses = ('all' in cond ? cond.all : cond.any) ?? []
-    const kept = clauses
-      .filter((c) => !isLegacy(c))
-      .map((c) => (c.kind === 'group' ? { ...c, clauses: c.clauses.filter((s) => !isLegacy(s)) } : c))
-    return 'all' in cond ? { all: kept } : { any: kept }
-  }
-  // AchievementDef.condition は必須・EndingDef/ScheduledEvent は任意なので入口を分ける
-  const cleanOpt = (cond: Condition | undefined): Condition | undefined =>
-    cond ? cleanOne(cond) : cond
-
-  const achievements = world.achievements ?? []
-  const endings = world.endings ?? []
-  const events = world.scheduledEvents ?? []
-  // entries（ロアの解禁条件・G3）も対象。旧データにこの組み合わせは無いが、**取り込む JSON は
-  // 手書き・AI 生成でありうる**ので、外から来た旧節をここで落としておく（残すと evalClause の
-  // default:false に落ち、そのロアが永久に解禁されない）
-  const entries = world.entries ?? []
-  const touched =
-    achievements.some((a) => hasLegacy(a.condition)) ||
-    endings.some((e) => hasLegacy(e.condition)) ||
-    events.some((e) => hasLegacy(e.condition)) ||
-    entries.some((e) => hasLegacy(e.condition))
-  if (!touched) return world
-  return {
-    ...world,
-    achievements: achievements.map((a) => ({ ...a, condition: cleanOne(a.condition) })),
-    endings: endings.map((e) => ({ ...e, condition: cleanOpt(e.condition) })),
-    scheduledEvents: events.map((e) => ({ ...e, condition: cleanOpt(e.condition) })),
-    entries: entries.map((e) => ({ ...e, condition: cleanOpt(e.condition) })),
-  }
-}
-
-/**
- * 解禁条件（`LoreEntry.condition`）が未達のロアを World から取り除く純関数（G3）。
- * `resolveRefs` が実効 World を組んだ直後に1段挟む＝`lorebook.ts`/`prompts.ts` は無改修で、
- * 本編もレビューも「解禁済みだけ」を見る（循環依存を避けるための置き場所。詳細設計 §3.2）。
- * **`alwaysOn` でも条件が未達なら落とす**（条件のほうが強い）。
- * 1件も落とさない場合は同一参照のまま返す（毎ターン呼ばれるため。`stripLegacyFlagClauses` と同じ最適化）。
- */
-export function gateLoreByCondition(
-  world: World | undefined,
-  ctx: ConditionContext,
-): World | undefined {
-  if (!world) return world
-  const entries = world.entries ?? []
-  if (!entries.some((e) => e.condition)) return world
-  const kept = entries.filter((e) => !e.condition || matchGroups(e.condition, ctx).ok)
-  if (kept.length === entries.length) return world
-  return { ...world, entries: kept }
-}
-
-/** 1件も未解禁が無い場合に返す共有の空集合（毎ターン呼ばれるため無駄な生成を避ける） */
-const EMPTY_LOCKED: ReadonlySet<string> = new Set<string>()
-
-/**
- * 登場条件（`Session.characterGates`）が未達のキャラ id の集合（CG1）。
- * `gateLoreByCondition` のキャラ版だが、World ではなく id 集合を返す——キャラは
- * `resolveRefs` の配役解決だけでなく `buildStateInfo` でも落とす必要があり、
- * 両方から同じ判定を参照したいため（docs/設計_登場条件と目標提示.md §1.4）。
- * ゲートを持たないキャラは常に登場する＝未設定のセッションは従来どおり全員入り。
- */
-export function lockedCharacterIds(
-  session: Session,
-  ctx: ConditionContext,
-): ReadonlySet<string> {
-  const gates = session.characterGates ?? []
-  if (gates.length === 0) return EMPTY_LOCKED
-  const locked = new Set<string>()
-  for (const g of gates) {
-    if (!matchGroups(g.condition, ctx).ok) locked.add(g.characterId)
-  }
-  return locked.size ? locked : EMPTY_LOCKED
-}
-
-/**
- * 登場条件つきキャラのうち、この文脈で**新たに**解禁されたものの id（CG1。通知は1回だけ）。
- * 名前はトーストに出さない（ロアが中身を出さないのと同じ理由＝本編で自然に登場するべきもの）。
- */
-export function newlyRevealedCharacterIds(
-  session: Session,
-  ctx: ConditionContext,
-  alreadyRevealed: string[] | undefined,
-): string[] {
-  const known = new Set(alreadyRevealed ?? [])
-  return (session.characterGates ?? [])
-    .filter((g) => !known.has(g.characterId) && matchGroups(g.condition, ctx).ok)
-    .map((g) => g.characterId)
-}
-
-/**
- * 解禁条件つきロアのうち、この文脈で**新たに**解禁されたものの id（G3。通知は1回だけ）。
- * 中身はトーストに出さない（本編で自然に出るべきもの）ので id だけ返す。
- */
-export function newlyRevealedLoreIds(
-  world: World | undefined,
-  ctx: ConditionContext,
-  alreadyRevealed: string[] | undefined,
-): string[] {
-  const known = new Set(alreadyRevealed ?? [])
-  return (world?.entries ?? [])
-    .filter((e) => e.condition && !known.has(e.id) && matchGroups(e.condition, ctx).ok)
-    .map((e) => e.id)
-}
-
-/** 新規解除された実績1件（当事者つき。トースト・`@ロール名` 置換に使う） */
-export interface UnlockedAchievement {
-  def: AchievementDef
-  subjects: RoleParty[]
-}
-
-/**
- * 実績条件の group 節で `exactly n` を `atLeast n` に読み替える（実績は自動解除で n 人選択 UI が無いため。
- * docs/設計_ロールグループと定量条件.md B-5：exactly は atLeast と同視し当事者＝satisfying 全員とする）。
- */
-function degradeExactlyForAchievement(cond: Condition): Condition {
-  const map = (c: Clause): Clause =>
-    c.kind === 'group' && c.quantifier.kind === 'exactly'
-      ? { ...c, quantifier: { kind: 'atLeast', n: c.quantifier.n } }
-      : c
-  return 'all' in cond ? { all: cond.all.map(map) } : { any: cond.any.map(map) }
-}
-
-/**
- * World 定義の実績を state へ反復評価し、新規解除分を記録して返す（連鎖依存も1パスで解決）。
- * subject な group 節を含む定義は当事者の組ごとに独立に解除する＝解除記録は (defId, 当事者組) 単位。
- * シーン確定時・状態の手動編集時など、state が変わり得るあらゆる場所から共通で呼ぶ。
- */
-function unlockAchievements(
-  ctx: ConditionContext,
-): { state: SessionState; unlocked: UnlockedAchievement[] } {
-  const { state, world } = ctx
-  const achievements = state.achievements.map((a) => ({ ...a }))
-  const candidate: SessionState = { ...state, achievements }
-  const candidateCtx: ConditionContext = { ...ctx, state: candidate }
-  const unlocked: UnlockedAchievement[] = []
-  const keyOf = (defId: string, parties: PartyRef[]) =>
-    `${defId}@${parties
-      .map((p) => `${p.roleId}:${[...p.characterIds].sort().join('+')}`)
-      .sort()
-      .join('|')}`
-  const done = new Set(achievements.map((a) => keyOf(a.defId, a.parties ?? [])))
-  let progressed = true
-  while (progressed) {
-    progressed = false
-    for (const def of world?.achievements ?? []) {
-      const cond = degradeExactlyForAchievement(def.condition)
-      const result = matchGroups(cond, candidateCtx)
-      if (!result.ok) continue
-      const parties = partiesOf(result.subjects)
-      const key = keyOf(def.id, parties)
-      if (done.has(key)) continue
-      done.add(key)
-      achievements.push({
-        defId: def.id,
-        unlockedAt: Date.now(),
-        ...(parties.length ? { parties } : {}),
-      })
-      unlocked.push({ def, subjects: result.subjects })
-      progressed = true
-    }
-  }
-  return { state: candidate, unlocked }
-}
-
-/**
- * 条件成立エンディングを配列順（＝優先度）で1つ返す純関数（E2）。
- * fallback=true・condition 未設定の定義はスキップ（fallback は満了時の受け皿であり条件判定の対象外）。
- * 満了判定・session.ending の既set・過去シーン判定は呼び出し側（confirmSceneReview／モーダル）が行う。
- */
-export function checkEndings(
-  endings: EndingDef[] | undefined,
-  ctx: ConditionContext,
-): { def: EndingDef; subjects: RoleParty[]; exactCandidates: ExactGroupCandidate[] } | undefined {
-  for (const e of endings ?? []) {
-    if (e.fallback || !e.condition) continue
-    const result = matchGroups(e.condition, ctx)
-    if (result.ok) return { def: e, subjects: result.subjects, exactCandidates: result.exactCandidates }
-  }
-  return undefined
-}
 
 /** 画像記録をセッション単位で record id の dedupe 追記マージする（FB6-A。importBundle 用） */
 function mergeImageLogs(
@@ -723,8 +289,8 @@ function mergeEndingRecords(cur: EndingRecord[], inc: EndingRecord[]): EndingRec
  * レビュー確定で選ばれた変更を state へ適用する純関数（E2）。confirmSceneReview 内の applyState
  * クロージャをモジュールレベルへ抽出したもの。confirmSceneReview（確定）と SceneReviewModal
  * （到達プレビュー）の両方がこれを呼ぶことで、モーダルの予告と実際の発火が必ず一致する。
- * 関係性 prose は全文書き直し（aspect は aspectId 単位でマージ）、flags は和集合、スタットは
- * clamp 加算、カウンターは累計、実績は連鎖解決するまで反復評価する。
+ * 関係性 prose は全文書き直し（aspect は aspectId 単位でマージ）、スタットは clamp 加算、
+ * カウンターは累計。
  */
 export function applyReviewToState(
   base: SessionState | undefined,
@@ -734,9 +300,8 @@ export function applyReviewToState(
     counterEvents: CounterEvent[]
     moodChanges: MoodChange[]
   },
-  ctx: ConditionContext,
-): { state: SessionState; unlocked: UnlockedAchievement[] } {
-  const world = ctx.world
+  world: World | undefined,
+): SessionState {
   const prev = base ?? { relations: [], moods: [], stats: [], counters: [], achievements: [] }
   // 関係性（fromId,toId で upsert。stance は全文置換）
   const relations = prev.relations.map((r) => ({ ...r }))
@@ -790,11 +355,7 @@ export function applyReviewToState(
     if (idx >= 0) counters[idx].value += c.amount
     else counters.push({ defId: c.defId, characterId: c.characterId, value: c.amount })
   }
-  // 実績（数・フラグ・実績のしきい値をコードが自動判定。連鎖依存も解決するまで反復）
-  return unlockAchievements({
-    ...ctx,
-    state: { relations, moods, stats, counters, achievements: prev.achievements ?? [] },
-  })
+  return { relations, moods, stats, counters, achievements: prev.achievements ?? [] }
 }
 
 /**
@@ -1014,7 +575,7 @@ export function newCounterDef(name = ''): CounterDef {
 }
 
 export function newAchievementDef(name = ''): AchievementDef {
-  return { id: uid(), name, description: '', condition: { all: [] }, hidden: false }
+  return { id: uid(), name, description: '', hidden: false }
 }
 
 export function newEndingDef(name = ''): EndingDef {
@@ -1022,48 +583,10 @@ export function newEndingDef(name = ''): EndingDef {
     id: uid(),
     name,
     description: '',
-    condition: { all: [] },
     epilogueGuidance: '',
     auto: false,
     hidden: false,
     fallback: false,
-  }
-}
-
-/** 条件節の既定値（kind 選択時の初期形） */
-export function newClause(kind: Clause['kind'], world: World): Clause {
-  switch (kind) {
-    case 'stat':
-      return { kind: 'stat', defId: world.stats[0]?.id ?? '', op: '>=', value: 0 }
-    case 'counter':
-      return { kind: 'counter', defId: world.counters[0]?.id ?? '', op: '>=', value: 1 }
-    case 'achievement':
-      return { kind: 'achievement', defId: '', have: true }
-    case 'eventFired':
-      return { kind: 'eventFired', eventId: world.scheduledEvents?.[0]?.id ?? '', have: true }
-    case 'group':
-      return {
-        kind: 'group',
-        roleId: world.roles?.[0]?.id ?? '',
-        quantifier: { kind: 'all' },
-        subject: false,
-        clauses: [],
-      }
-  }
-}
-
-/** group 節の下位条件（GroupSubClause）の既定値（kind 選択時の初期形。キャラ別スタット/カウンターのみ対象） */
-export function newGroupSubClause(kind: GroupSubClause['kind'], world: World): GroupSubClause {
-  switch (kind) {
-    case 'stat':
-      return { kind: 'stat', defId: world.stats.find((d) => d.scope === 'character')?.id ?? '', op: '>=', value: 0 }
-    case 'counter':
-      return {
-        kind: 'counter',
-        defId: world.counters.find((d) => d.scope === 'character')?.id ?? '',
-        op: '>=',
-        value: 1,
-      }
   }
 }
 
@@ -1321,8 +844,6 @@ interface AppState {
   /** 開始時に未配役だったセッション。null なら配役モーダルを閉じる */
   castingSessionId: string | null
   error: string | null
-  /** 直近のシーン確定で新規解除された実績（通知用・非永続。当事者名つき＝FB7-D） */
-  newlyUnlockedAchievements: UnlockedAchievement[]
   /** 直近のエンディング到達（🏁 到達トースト用・非永続。エピローグ突入時にセット） */
   endingToast: { name: string } | null
   /** バックグラウンド画像生成ジョブ（Blob を含むため非永続。partialize から除外） */
@@ -1354,7 +875,6 @@ interface AppState {
   // 共通
   setView: (v: View) => void
   clearError: () => void
-  dismissNewAchievements: () => void
   /** エンディング到達トーストを閉じる（E2） */
   dismissEndingToast: () => void
   /** 右コンテキストドック等の UI 設定を部分更新する（UI-3）。没入 OFF→ON で案内を出す（F2） */
@@ -1845,16 +1365,11 @@ function buildStateInfo(
   session: Session,
   characters: Character[],
   world?: World,
-  /** 登場条件が未達のキャラ id（CG1）。関係性・気分・キャラ別の数を実名ごと落とす */
-  locked: ReadonlySet<string> = EMPTY_LOCKED,
 ): string {
-  // 未解禁キャラは「AI に渡すもの」から全部落ちる。ここを塞がないと inject:true の
-  // キャラ別 stat/counter が実名つきで【状態（現在）】に載る（設計 §1.4 の経路1）
-  const visible = (id?: string) => !id || !locked.has(id)
-  const relations = (session.state?.relations ?? []).filter((r) => visible(r.fromId) && visible(r.toId))
-  const moods = (session.state?.moods ?? []).filter((m) => visible(m.characterId))
-  const stats = (session.state?.stats ?? []).filter((s) => visible(s.characterId))
-  const counters = (session.state?.counters ?? []).filter((c) => visible(c.characterId))
+  const relations = session.state?.relations ?? []
+  const moods = session.state?.moods ?? []
+  const stats = session.state?.stats ?? []
+  const counters = session.state?.counters ?? []
   const nameOf = (id: string) => characters.find((c) => c.id === id)?.name ?? 'キャラ'
   const aspectName = (id: string) => world?.relationAspects.find((a) => a.id === id)?.name ?? ''
   const moodOf = (id: string) => moods.find((m) => m.characterId === id)?.mood
@@ -1910,22 +1425,16 @@ export function eventUsedKey(eventId: string, subjects: RoleParty[]): string {
 }
 
 /**
- * 消化キーの当事者 id 列を `@ロール名` 置換用の RoleParty へ戻す（`eventUsedKey` の逆・表示専用）。
- * キーはロールを保存しないので、条件の subject group 節がちょうど1つのときだけロールを復元する
- * （その場合は当事者全員がそのロールのメンバーだと確定する）。複数群なら分配が不明なので
- * ロール名なし＝名前だけ（`@相手` は置換できる）。
+ * 消化キーの当事者 id 列を `@相手` 置換用の RoleParty へ戻す（`eventUsedKey` の逆・表示専用）。
+ * ロール名は持たない（キーがロールを保存しないため）＝名前だけ置換できる。
  */
 function eventSubjectsOf(
-  event: ScheduledEvent,
   memberIds: string[],
   world: World | undefined,
   characters: { id: string; name: string }[],
 ): RoleParty[] {
   if (memberIds.length === 0) return []
-  const cond = event.condition
-  const clauses = cond ? ('all' in cond ? cond.all : cond.any) : []
-  const groups = clauses.filter((c) => c.kind === 'group' && c.subject === true)
-  const roleId = groups.length === 1 ? (groups[0] as Extract<Clause, { kind: 'group' }>).roleId : ''
+  const roleId = ''
   return [
     {
       roleId,
@@ -1953,7 +1462,7 @@ export function firedEventLog(
     if (!event) continue
     const ids =
       key === event.id ? [] : key.slice(event.id.length + 1).split('+').filter(Boolean)
-    out.push({ key, event, subjects: eventSubjectsOf(event, ids, world, characters) })
+    out.push({ key, event, subjects: eventSubjectsOf(ids, world, characters) })
   }
   return out
 }
@@ -1971,16 +1480,12 @@ function nextScheduledEvent(
   world: World | undefined,
   nextDay: number | null,
   nextSlot: number | null,
-  characters: { id: string; name: string }[] = [],
 ): { eventId?: string; eventName?: string; eventKey?: string; eventSubjects?: RoleParty[] } {
   if (!world || session.eventAutoFire === false) return {}
   const slotIndexOf = (slot: string | undefined) =>
     slot == null ? -1 : session.timeline.slots.indexOf(slot)
   type Cand = { event: ScheduledEvent; subjects: RoleParty[]; key: string }
   const cands: Cand[] = []
-  // 条件評価は全候補で同じ文脈（このレビュー確定前の state・usedEventIds）を使う。
-  // よって「A が発火 → 同じシーンで A 発火済みを条件にした B も発火」は起きない（1シーンに1段。§1.5a）
-  const ctx = conditionContextOf(session, world, characters)
   for (const e of world.scheduledEvents ?? []) {
     // 素の eventId が消化済み＝旧データ・global 発火済み。全割り当てを消化済み扱いにする（安全側）
     if (session.usedEventIds.includes(e.id)) continue
@@ -1993,15 +1498,7 @@ function nextScheduledEvent(
       eventSlot > nextSlot
     )
       continue
-    if (e.condition) {
-      const result = matchGroups(e.condition, ctx)
-      if (!result.ok) continue
-      const key = eventUsedKey(e.id, result.subjects)
-      if (session.usedEventIds.includes(key)) continue
-      cands.push({ event: e, subjects: result.subjects, key })
-    } else {
-      cands.push({ event: e, subjects: [], key: e.id })
-    }
+    cands.push({ event: e, subjects: [], key: e.id })
   }
   cands.sort((a, b) => {
     const dayDiff = (a.event.day ?? Infinity) - (b.event.day ?? Infinity)
@@ -2226,21 +1723,14 @@ export const useStore = create<AppState>()(
       function resolveRefs(session: Session): ResolvedRefs {
         const { characters, worlds, personas } = get()
         const scene = currentScene(session)
-        // 素材＋オーバーレイの実効ビューを組んでから、解禁条件が未達のロアを落とす（G3）。
-        // ここ1箇所で本編・レビュー・状況要約のすべてが「解禁済みだけ」を見る（詳細設計 §3.2）
-        const baseWorld = effectiveWorld(
+        // 素材＋オーバーレイの実効ビュー
+        const effWorld = effectiveWorld(
           worlds.find((w) => w.id === session.worldId),
           session.overlay,
         )
-        const ctx = conditionContextOf(session, baseWorld, characters)
-        const effWorld = gateLoreByCondition(baseWorld, ctx)
-        // 登場条件が未達のキャラを落とす（CG1）。条件の判定文脈（ctx）は**ゲート前の顔ぶれ**で
-        // 組む＝未解禁キャラの数も条件の材料になる（他のゲートの前提に使える）
-        const locked = lockedCharacterIds(session, ctx)
         // 登場キャラはセッションの顔ぶれで固定（CS1。シーン単位の絞り込みは廃止し、
         // 「その場に誰が居るか」は【現在の場面】＝ scene.note が伝える）
         const sessionCharacters = session.characterIds
-          .filter((id) => !locked.has(id))
           .map((id) => characters.find((c) => c.id === id))
           .filter((c): c is Character => !!c)
           .map((c) => effectiveCharacter(c, session.overlay))
@@ -2256,7 +1746,7 @@ export const useStore = create<AppState>()(
           timelineInfo: timelinePromptInfo(session.timeline),
           // ending が set の間は nearEnd を出さない（「クライマックスへ収束」とエピローグ指示が矛盾するため）
           nearEnd: session.ending ? false : isNearEnd(session.timeline),
-          stateInfo: buildStateInfo(session, characters, effWorld, locked),
+          stateInfo: buildStateInfo(session, characters, effWorld),
           // エピローグシーン滞在中だけエンディング指示を注入する（他シーンでは自由な文体へ戻る）
           ending:
             session.ending && scene?.id === session.ending.epilogueSceneId
@@ -2642,7 +2132,6 @@ export const useStore = create<AppState>()(
         reviewProgress: null,
         castingSessionId: null,
         error: null,
-        newlyUnlockedAchievements: [],
         endingToast: null,
         imageJobs: [],
         imageJobToasts: [],
@@ -2654,7 +2143,6 @@ export const useStore = create<AppState>()(
 
         setView: (view) => set({ view }),
         clearError: () => set({ error: null }),
-        dismissNewAchievements: () => set({ newlyUnlockedAchievements: [] }),
         dismissEndingToast: () => set({ endingToast: null }),
         setUiPrefs: (patch) =>
           set((s) => {
@@ -2769,10 +2257,6 @@ export const useStore = create<AppState>()(
               ...s,
               characterIds: s.characterIds.filter((cid) => cid !== id),
               roleAssignments: (s.roleAssignments ?? []).filter((assignment) => assignment.characterId !== id),
-              // 登場条件も一緒に掃除する（CG1。残しても害は無いが、消えたキャラのゲートは読めない）
-              ...(s.characterGates
-                ? { characterGates: s.characterGates.filter((g) => g.characterId !== id) }
-                : {}),
               state: {
                 ...s.state,
                 relations: s.state.relations.filter((r) => r.fromId !== id && r.toId !== id),
@@ -3256,7 +2740,7 @@ export const useStore = create<AppState>()(
             const nextSlot = !isPastScene && nextTimeline ? nextTimeline.currentSlot : null
             const pick = isPastScene
               ? {}
-              : nextScheduledEvent(s, refs.world, nextDay, nextSlot, get().characters)
+              : nextScheduledEvent(s, refs.world, nextDay, nextSlot)
             const event = pick.eventId
               ? refs.world?.scheduledEvents.find((e) => e.id === pick.eventId)
               : undefined
@@ -3747,7 +3231,6 @@ export const useStore = create<AppState>()(
 
           // レビュー適用後の新 state を1度だけ計算（純関数 applyReviewToState に一本化。E2）。
           // エンディング判定・シーン確定の両方でこの同一結果を使う＝プレビューと発火の不一致を防ぐ。
-          const characters = get().characters
           const applied = applyReviewToState(
             s.state,
             {
@@ -3756,47 +3239,9 @@ export const useStore = create<AppState>()(
               counterEvents: selectedCounters,
               moodChanges: selectedMoods,
             },
-            conditionContextOf(s, stateWorld, characters),
+            stateWorld,
           )
-          const newState = applied.state
-          // このレビュー適用で新規解除された実績（通知用・当事者つき）
-          const newlyUnlocked: UnlockedAchievement[] = [...applied.unlocked]
-
-          /**
-           * 新たに解禁されたロアの id（G3）。判定は「確定後 state ＋ 確定後 usedEventIds」＝
-           * 次のシーンで `resolveRefs` が実際に注入する条件と同じ文脈で見る（通知と注入をずらさない）。
-           * 状態が動くのはレビューだけ（ADR-1）なので、ここ以外では評価しない。
-           */
-          const revealedLoreOf = (usedIds: string[]) =>
-            newlyRevealedLoreIds(
-              stateWorld,
-              conditionContextOf({ ...s, usedEventIds: usedIds }, stateWorld, characters, newState),
-              s.revealedLoreIds,
-            )
-
-          /** 新たに解禁されたキャラの id（CG1）。ロアと同じ文脈・同じタイミングで見る */
-          const revealedCharsOf = (usedIds: string[]) =>
-            newlyRevealedCharacterIds(
-              s,
-              conditionContextOf({ ...s, usedEventIds: usedIds }, stateWorld, characters, newState),
-              s.revealedCharacterIds,
-            )
-
-          /**
-           * 解禁トーストの文面。**中身も名前も出さない**——ロアは本編で自然に明かされるべきもので
-           * （詳細設計 §3.3）、人物も同じ（登場そのものがネタバレになる。CG1 §1.5）。
-           */
-          const revealNotice = (lore: string[], chars: string[]): { infoNotice?: string } => {
-            const text =
-              lore.length && chars.length
-                ? '新しい設定と人物が明らかになりました'
-                : lore.length
-                  ? '新しい設定が明らかになりました'
-                  : chars.length
-                    ? '新しい人物が物語に加わりました'
-                    : ''
-            return text ? { infoNotice: text } : {}
-          }
+          const newState = applied
 
           // 発見ロア・キャラ成長はセッションのオーバーレイへ積む（元 Character/World は不変に保つ）
           const nextOverlay = (prev: Session['overlay'] | undefined): Session['overlay'] => {
@@ -3877,18 +3322,6 @@ export const useStore = create<AppState>()(
           // ── エンディング判定（E2）。session.ending が既 set なら判定・発火しない（到達済み）。
           // 判定は newState（このレビュー適用後の state）に対して行い、モーダルのプレビューと一致させる。
           const endings = stateWorld?.endings ?? []
-          // checkEndings は「最上位成立エンディング」の当事者組を返す
-          // エンディング判定の文脈は「確定後 state ＋ 確定前 usedEventIds」。今回発火するイベントは
-          // まだ usedEventIds に無いので、eventFired 節を使ったエンディングは次のシーンで成立する
-          // （プレビューと確定が同じ文脈を見る＝予告と発火が一致する。§1.5b）
-          const endingCtx = conditionContextOf(
-            s,
-            stateWorld,
-            characters,
-            newState,
-            opts.endingExactSelections,
-          )
-          const topMatch = s.ending ? undefined : checkEndings(endings, endingCtx)
           // 満了モード：確定後に進む先が totalDays を超えるか（enabled かつ totalDays 指定時のみ）
           const isExpiry =
             !s.ending &&
@@ -3896,26 +3329,12 @@ export const useStore = create<AppState>()(
             s.timeline.totalDays != null &&
             tl.currentDay > s.timeline.totalDays
           // 発火する結末を confirm 側で最終決定する（防御）：
-          //  1) 最上位成立が auto なら opts に依らず強制突入
-          //  2) それ以外は opts.endingDefId が渡され、確定後 state で実際に成立（または満了 fallback）する時のみ
+          //  満了時の fallback だけが発火する（条件による到達は廃止）
           let firing: EndingDef | undefined
-          let firingSubjects: RoleParty[] = []
-          if (!s.ending) {
-            if (topMatch?.def.auto) {
-              firing = topMatch.def
-              firingSubjects = topMatch.subjects
-            } else if (opts.endingDefId) {
-              const chosen = endings.find((e) => e.id === opts.endingDefId)
-              if (chosen?.fallback) {
-                if (isExpiry) firing = chosen
-              } else if (chosen) {
-                const result = matchGroups(chosen.condition, endingCtx)
-                if (result.ok) {
-                  firing = chosen
-                  firingSubjects = result.subjects
-                }
-              }
-            }
+          const firingSubjects: RoleParty[] = []
+          if (!s.ending && opts.endingDefId) {
+            const chosen = endings.find((e) => e.id === opts.endingDefId)
+            if (chosen?.fallback && isExpiry) firing = chosen
           }
 
           if (firing) {
@@ -3929,8 +3348,6 @@ export const useStore = create<AppState>()(
             epiScene.note = bindRoleNames(ending.epilogueGuidance, subjects)
             const reachedAt = Date.now()
             // usedEventIds はエンディングが勝つため据え置き＝確定前のまま判定する
-            const revealedLore = revealedLoreOf(s.usedEventIds)
-            const revealedChars = revealedCharsOf(s.usedEventIds)
             set((st) => ({
               sessions: st.sessions.map((sess) =>
                 sess.id === s.id
@@ -3947,12 +3364,6 @@ export const useStore = create<AppState>()(
                       // タイムライン・usedEventIds は据え置き（特別イベント同時発火はエンディングが勝つ＝未消化のまま残す）
                       state: newState,
                       overlay: nextOverlay(sess.overlay),
-                      ...(revealedLore.length
-                        ? { revealedLoreIds: [...(sess.revealedLoreIds ?? []), ...revealedLore] }
-                        : {}),
-                      ...(revealedChars.length
-                        ? { revealedCharacterIds: [...(sess.revealedCharacterIds ?? []), ...revealedChars] }
-                        : {}),
                       ending: {
                         defId: ending.id,
                         name: endingName,
@@ -3965,9 +3376,7 @@ export const useStore = create<AppState>()(
                   : sess,
               ),
               sceneReview: null,
-              newlyUnlockedAchievements: newlyUnlocked,
               endingToast: { name: endingName },
-              ...revealNotice(revealedLore, revealedChars),
               // 到達記録（E3）。突入時に追記＝完結ボタンの押し忘れで漏れないため。再到達も追記し表示側で distinct。
               // 集計はセッション単位（ステータス）とカセット単位（棚の通算）の2軸（FB9-B）
               endingRecords: s.worldId
@@ -4019,8 +3428,6 @@ export const useStore = create<AppState>()(
           const usedEventIds = event
             ? [...s.usedEventIds, review.scheduledEventKey ?? event.id]
             : s.usedEventIds
-          const revealedLore = revealedLoreOf(usedEventIds)
-          const revealedChars = revealedCharsOf(usedEventIds)
 
           set((st) => ({
             sessions: st.sessions.map((sess) =>
@@ -4039,19 +3446,11 @@ export const useStore = create<AppState>()(
                     usedEventIds,
                     state: newState,
                     overlay: nextOverlay(sess.overlay),
-                    ...(revealedLore.length
-                      ? { revealedLoreIds: [...(sess.revealedLoreIds ?? []), ...revealedLore] }
-                      : {}),
-                    ...(revealedChars.length
-                      ? { revealedCharacterIds: [...(sess.revealedCharacterIds ?? []), ...revealedChars] }
-                      : {}),
                     updatedAt: Date.now(),
                   }
                 : sess,
             ),
             sceneReview: null,
-            newlyUnlockedAchievements: newlyUnlocked,
-            ...revealNotice(revealedLore, revealedChars),
           }))
           void recordCheckpoint(s.id, 'scene', next.title, s, next.timeLabel)
 
@@ -4197,11 +3596,7 @@ export const useStore = create<AppState>()(
             ...sv,
             value: clampStat(sv.value, world?.stats.find((d) => d.id === sv.defId)),
           }))
-          const { state, unlocked } = unlockAchievements(
-            conditionContextOf(s, world, get().characters, { ...edited, stats }),
-          )
-          get().updateSession(s.id, { state })
-          if (unlocked.length) set({ newlyUnlockedAchievements: unlocked })
+          get().updateSession(s.id, { state: { ...edited, stats } })
         },
 
         // ── 発見キャラ（FB7-E）────────────────────────────────
@@ -4386,7 +3781,7 @@ export const useStore = create<AppState>()(
           // 開始時のシーン選出：世界イベント確認＋時間帯決定（FB3-C で演出タイプ抽選は廃止）
           const day = s.timeline.enabled ? s.timeline.currentDay : null
           const slot = s.timeline.enabled ? s.timeline.currentSlot : null
-          const pick = nextScheduledEvent(s, refs.world, day, slot, get().characters)
+          const pick = nextScheduledEvent(s, refs.world, day, slot)
           const event = pick.eventId
             ? refs.world?.scheduledEvents.find((e) => e.id === pick.eventId)
             : undefined
@@ -5141,7 +4536,7 @@ export const useStore = create<AppState>()(
         const p = rest
         // ui は normalizeUiPrefs で現行スキーマへ正規化（旧・段階式の文字列値を数値へ引き継ぐ。F2）
         const merged = { ...current, ...p, ui: normalizeUiPrefs({ ...current.ui, ...(p.ui ?? {}) }) }
-        merged.worlds = (merged.worlds ?? []).map((w) => stripLegacyFlagClauses(w)).map((world) => ({
+        merged.worlds = (merged.worlds ?? []).map((world) => ({
           ...world,
           roles: normalizeWorldRoles(world.roles),
           ...(world.startPreset

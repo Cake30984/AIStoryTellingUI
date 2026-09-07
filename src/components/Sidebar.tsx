@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { areaOf, conditionContextOf, lockedCharacterIds, useStore, type View } from '../store'
+import { areaOf, useStore, type View } from '../store'
 import { parseCardPng } from '../lib/cards'
 import { useCardDrop } from '../lib/useCardDrop'
 import { useMultiSelect } from '../lib/useMultiSelect'
@@ -27,7 +27,6 @@ export default function Sidebar() {
     updateSession,
     deleteSession,
     characters,
-    worlds,
     importCassette,
   } = useStore()
   const [notice, setNotice] = useState('')
@@ -153,14 +152,7 @@ export default function Sidebar() {
               </p>
             )}
             {visible.map((s) => {
-              // 登場条件（CG1）が未達のキャラは名前ごと出さない。一覧のプレビューでも
-              // 「まだ出ていない人物」の名前が見えたらネタバレになる
-              const locked = lockedCharacterIds(
-                s,
-                conditionContextOf(s, worlds.find((w) => w.id === s.worldId), characters),
-              )
               const cast = s.characterIds
-                .filter((id) => !locked.has(id))
                 .map((id) => characters.find((c) => c.id === id)?.name)
                 .filter(Boolean)
               return (

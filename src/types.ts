@@ -66,26 +66,18 @@ export interface LoreEntry {
   order: number
   /** 物語の展開中にレビューで追加された項目（元からの設定と区別） */
   addedInStory?: boolean
-  /**
-   * 解禁条件（G3）。未達なら AI に渡さない（`gateLoreByCondition` が実効 World から取り除く）。
-   * **`alwaysOn` より強い**（条件のほうが勝つ。docs/詳細設計_ゲーム性向上.md §3.1）。
-   * 未設定＝条件なし＝常に通す。
-   */
-  condition?: Condition
 }
 
 /** 特別イベント（世界設定で日付・時間帯・条件を指定。コードが自動判定して発火する） */
 export interface ScheduledEvent {
   id: string
-  /** タイムラインの何日目に発生するか（未指定＝日付条件なし。condition と併用可） */
+  /** タイムラインの何日目に発生するか（未指定＝日付条件なし） */
   day?: number
   /** 発生する時間帯のラベル（未指定・セッションの区切りに不一致＝時間帯条件なし） */
   slot?: string
   name: string
   /** シーンの状況・方向性 */
   note: string
-  /** 発火条件（数・フラグ・実績のしきい値。未指定なら day のみで判定） */
-  condition?: Condition
 }
 
 /** prose 関係性の次元（ワールド固定。レビューはこの次元名でのみ記述を返す） */
@@ -139,61 +131,6 @@ export interface CounterDef {
   inject: boolean
 }
 
-/** 条件式の比較演算子 */
-export type Op = '>=' | '>' | '<=' | '<' | '==' | '!='
-
-/**
- * 数量詞（ロールグループの何人が下位条件を満たすべきか。docs/設計_ロールグループと定量条件.md B-1）。
- * exactly は成立ゲートとしては atLeast と同じ（satisfying.length >= n）。当事者を n 人に絞る点だけが違う
- * （エンディングはレビューで n 人選択・実績は自動解除のため atLeast と同視。B-5）。
- */
-export type Quantifier = { kind: 'all' } | { kind: 'atLeast'; n: number } | { kind: 'exactly'; n: number }
-
-/** group 節の下位条件（ロールの各メンバーに課す。キャラ限定＝characterId/charVar は持たない） */
-export type GroupSubClause =
-  | { kind: 'stat'; defId: string; op: Op; value: number }
-  | { kind: 'counter'; defId: string; op: Op; value: number }
-
-/**
- * 条件の最小単位（節）。prose は読まない＝数・実績・グループのみで判定（再現性のため）。
- * 「一度きりの不可逆な出来事」はキャラ別カウンター 1回以上で書く（FB9-C。自由文字列の関係フラグは
- * 作者が狙って当てられないため撤去した）。
- * characterId/fromId 省略時は「参加キャラの誰か1人が満たす（∃）」の存在条件＝判定専用のゲートとして
- * 残る（当事者にはならない）。特定ロールのメンバーに対する定量条件・当事者指定は `group` 節で書く
- * （docs/設計_ロールグループと定量条件.md）。
- */
-export type Clause =
-  | { kind: 'stat'; defId: string; characterId?: string; op: Op; value: number }
-  | { kind: 'counter'; defId: string; characterId?: string; op: Op; value: number }
-  | { kind: 'achievement'; defId: string; have: boolean }
-  /**
-   * 特別イベントが発火済みか（G1）。v1 では当事者の組を問わない＝「その定義がどれか1組で発火済みか」。
-   * 判定は `usedEventIds` の前方一致（`eventUsedKey` が `eventId@charId1[+charId2]` を作るため）。
-   */
-  | { kind: 'eventFired'; eventId: string; have: boolean }
-  | { kind: 'group'; roleId: string; quantifier: Quantifier; subject?: boolean; clauses: GroupSubClause[] }
-
-/** 条件式（all=すべて満たす / any=いずれか満たす）。節が空なら不成立扱い。 */
-export type Condition = { all: Clause[] } | { any: Clause[] }
-
-/**
- * キャラクターの登場条件（CG1。docs/設計_登場条件と目標提示.md §1）。
- * 条件が未達のあいだ、そのキャラは **AI に渡すもの全部から落ちる**（【登場人物】【配役】【状態（現在）】・
- * 選択肢・レビュー・画像生成）＝ AI はその人物の存在を知らないので、勝手に登場させようがない。
- * `LoreEntry.condition` と同じ考え方だが、対象がロアではなく人物。
- *
- * **置き場所が Session なのは、世界と実キャラが出会う層がここだけだから**——条件は World の
- * `stats[].id` 等を参照し（＝世界依存）、`characterId` を持つ（＝キャスト依存）。World も Character も
- * 再利用する素材なので、どちらにも置けない（`roleAssignments`・`introBindings` と同じ理由）。
- *
- * 判定は毎回条件から導出する（状態として「解禁済み」を持たない）＝分岐で戻れば未解禁に戻る。
- */
-export interface CharacterGate {
-  characterId: string
-  /** 解禁条件。ゲートを持たないキャラは条件なし＝最初から登場する */
-  condition: Condition
-}
-
 /** 割り当てキャラ1人（id＋現在の実名）。`RoleParty.members` の要素、`bindRoleNames` の置換名にも使う。 */
 export interface Partner {
   characterId: string
@@ -201,8 +138,7 @@ export interface Partner {
 }
 
 /**
- * 条件成立時の「ロールの当事者組」（`matchGroups` が返す・名前つき）。
- * `subject: true` の group 節が成立したロールごとに1つ。`@ロール名` 置換・エピローグ注入に使う。
+ * ロールの当事者組（名前つき）。`@ロール名` 置換・エピローグ注入に使う。
  */
 export interface RoleParty {
   roleId: string
@@ -220,9 +156,7 @@ export interface PartyRef {
 }
 
 /**
- * `exactly n` な subject group 節の候補集合（`matchGroups` が返す）。
- * 満たしたメンバー全員（`candidates`）から n 人を選ぶ UI（エンディングレビューのプルダウン。B-5）に使う。
- * 実績は自動解除で選択 UI が無いため `exactly` を `atLeast` へ読み替え、候補は出ない。
+ * ロールのメンバー候補集合。n 人を選ぶ UI（エンディングレビューのプルダウン）に使う。
  */
 export interface ExactGroupCandidate {
   roleId: string
@@ -236,8 +170,6 @@ export interface AchievementDef {
   id: string
   name: string
   description: string
-  /** 達成条件（数・フラグ・実績のしきい値。コードが自動判定） */
-  condition: Condition
   /** 未達成時に名前・内容を隠す */
   hidden?: boolean
 }
@@ -251,8 +183,6 @@ export interface EndingDef {
   name: string
   /** UI 表示用の説明（一覧・到達時に見せる。条件そのものは晒さない） */
   description: string
-  /** 到達条件。fallback=true の定義は持たない（UI で条件エディタを隠し、判定でも無視） */
-  condition?: Condition
   /** エピローグ生成への指示（結末のトーン・締め方）。到達後にのみ注入＝プレイ中のリークなし */
   epilogueGuidance: string
   /** 条件成立で強制突入する（レビューでの「まだ続ける」を出さない。バッドエンド向け） */
@@ -667,11 +597,6 @@ export interface Session {
   choicesModel: string
   /** 参加キャラ（グループ会話のため複数） */
   characterIds: string[]
-  /**
-   * 登場条件つきキャラ（CG1）。ここに載っていないキャラは条件なし＝最初から登場する
-   * （未設定・空配列＝従来どおり全員が最初から居る）。
-   */
-  characterGates?: CharacterGate[]
   worldId: string | null
   personaId: string | null
   /** 世界観ロール（グループ）への配役。多対多。無効な参照は保存したまま開始時には無視する */
@@ -700,17 +625,6 @@ export interface Session {
   newCharacterPolicy?: NewCharacterPolicy
   /** 消化済みの特別イベント ID */
   usedEventIds: string[]
-  /**
-   * 解禁条件つきロア（`LoreEntry.condition`）のうち、既に解禁を通知したものの id（G3）。
-   * 重複通知の防止だけに使う＝注入の可否は毎回条件で判定するので、この配列は注入を左右しない。
-   */
-  revealedLoreIds?: string[]
-  /**
-   * 登場条件つきキャラ（`characterGates`）のうち、既に解禁を通知したものの id（CG1）。
-   * `revealedLoreIds` と同じく**重複通知の防止だけ**に使う＝登場の可否は毎回条件で判定するので、
-   * この配列は注入を左右しない。
-   */
-  revealedCharacterIds?: string[]
   /** 感情・関係値の状態（セッション固有） */
   state: SessionState
   /** 発見・深化した設定の上乗せ（セッション固有・素材は不変） */

@@ -1,9 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import {
-  conditionContextOf,
   currentScene,
-  lockedCharacterIds,
   reviewModelOf,
   useStore,
 } from '../store'
@@ -288,13 +286,7 @@ export default function ChatPanel({ session }: Props) {
         .filter((c): c is NonNullable<typeof c> => !!c),
     [session.characterIds, characters],
   )
-  const participants = useMemo(
-    () => {
-      const locked = lockedCharacterIds(session, conditionContextOf(session, world, characters))
-      return locked.size === 0 ? knownCast : knownCast.filter((c) => !locked.has(c.id))
-    },
-    [session, world, characters, knownCast],
-  )
+  const participants = knownCast
   const endingDef = session.ending
     ? world?.endings?.find((e) => e.id === session.ending!.defId)
     : undefined

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { conditionContextOf, lockedCharacterIds, useStore } from '../store'
+import { useStore } from '../store'
 import type { Session, SessionState } from '../types'
 import EntityAvatar from './EntityAvatar'
 import ModalShell from './ModalShell'
@@ -16,11 +16,7 @@ export default function StatusPanel({ session, onClose }: Props) {
   const { worlds, characters, personas, applyStatusEdit } = useStore()
   const world = worlds.find((w) => w.id === session.worldId)
   const heroName = personas.find((p) => p.id === session.personaId)?.name || '主人公'
-  // 登場条件（CG1）が未達のキャラは出さない（StatusView と同じ。プレイ中に開くパネルなので
-  // ここもプレイヤー側＝ネタバレを出さない側）
-  const locked = lockedCharacterIds(session, conditionContextOf(session, world, characters))
   const cast = session.characterIds
-    .filter((id) => !locked.has(id))
     .map((id) => characters.find((c) => c.id === id))
     .filter((c): c is NonNullable<typeof c> => !!c)
   const aspectName = (id: string) => world?.relationAspects.find((a) => a.id === id)?.name ?? ''

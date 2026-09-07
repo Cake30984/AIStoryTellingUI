@@ -1,8 +1,6 @@
 import {
   bindRoleNames,
-  conditionContextOf,
   firedEventLog,
-  lockedCharacterIds,
   resolveParties,
   useStore,
 } from '../store'
@@ -20,11 +18,7 @@ export default function StatusView({ session }: Props) {
   const { worlds, characters, personas, endingRecords } = useStore()
   const world = worlds.find((w) => w.id === session.worldId)
   const heroName = personas.find((p) => p.id === session.personaId)?.name || '主人公'
-  // 登場条件（CG1）が未達のキャラはプレイ画面に出さない——まだ物語に出ていない人物の
-  // 名前・関係性が並ぶこと自体がネタバレになる。編集用の一覧（セッション設定）では出す
-  const locked = lockedCharacterIds(session, conditionContextOf(session, world, characters))
   const cast = session.characterIds
-    .filter((id) => !locked.has(id))
     .map((id) => characters.find((c) => c.id === id))
     .filter((c): c is NonNullable<typeof c> => !!c)
   const aspectName = (id: string) => world?.relationAspects.find((a) => a.id === id)?.name ?? ''
