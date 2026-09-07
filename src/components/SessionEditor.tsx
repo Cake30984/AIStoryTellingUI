@@ -80,7 +80,6 @@ export default function SessionEditor({ session, onClose }: Props) {
       model: d.model,
       reviewModel: d.reviewModel,
       choicesModel: d.choicesModel,
-      eventAutoFire: d.eventAutoFire,
       newCharacterPolicy: d.newCharacterPolicy,
       temperature: d.temperature,
       maxTokens: d.maxTokens,
@@ -482,22 +481,6 @@ export default function SessionEditor({ session, onClose }: Props) {
                       {m === 'off' ? 'なし' : m === 'always' ? '毎回' : 'AIが適宜'}
                     </button>
                   ))}
-                </div>
-              </div>
-
-              {/* 世界観イベントの自動発生（FB3-C。演出ディレクターは廃止し、世界観に定義した特別イベントに一本化） */}
-              <div className="field">
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={d.eventAutoFire !== false}
-                    onChange={(e) => patch({ eventAutoFire: e.target.checked })}
-                    style={{ width: 'auto', marginRight: 8 }}
-                  />
-                  世界観の特別イベントを自動的に発生させる
-                </label>
-                <div className="desc" style={{ marginTop: 4 }}>
-                  世界観に定義した特別イベント（日付指定）を、シーンの切り替わり時にコードが自動判定して発生させます。オフにすると自動発生しません。
                 </div>
               </div>
 

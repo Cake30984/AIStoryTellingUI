@@ -18,15 +18,12 @@ import type {
   MessageKind,
   MoodChange,
   NextSceneSuggestion,
-  Partner,
   OpenRouterModel,
   Persona,
   Provider,
   RelationAspectDef,
   RelationUpdate,
-  RoleParty,
   Scene,
-  ScheduledEvent,
   SceneIllustration,
   SceneReview,
   Session,
@@ -147,31 +144,7 @@ function pickColor(): string {
   return COLORS[Math.floor(Math.random() * COLORS.length)]
 }
 
-/** 割り当てキャラ id を Partner（名前つき）へ。名前が引けなければ id を仮名にする */
-export function partnersOf(ids: string[], characters: { id: string; name: string }[]): Partner[] {
-  return ids.map((id) => ({
-    characterId: id,
-    name: characters.find((c) => c.id === id)?.name || id,
-  }))
-}
 
-/**
- * `@ロール名` をその subject ロールの当事者メンバー名（複数は「・」連結）へ置換する。
- * `@相手` は全 subject 当事者名の連結（単一群の簡易記法）。当事者が居ないプレースホルダはそのまま残す。
- */
-export function bindRoleNames(text: string, subjects: RoleParty[] | undefined): string {
-  if (!text || !subjects || subjects.length === 0) return text
-  let out = text
-  for (const party of subjects) {
-    if (!party.roleName) continue
-    const names = party.members.map((m) => m.name).join('・')
-    if (!names) continue
-    out = out.split(`@${party.roleName}`).join(names)
-  }
-  const allNames = subjects.flatMap((p) => p.members.map((m) => m.name))
-  if (allNames.length > 0) out = out.split('@相手').join(allNames.join('・'))
-  return out
-}
 
 
 /** 画像記録をセッション単位で record id の dedupe 追記マージする（FB6-A。importBundle 用） */
@@ -354,7 +327,6 @@ export function newWorld(): World {
     name: '',
     description: '',
     entries: [],
-    scheduledEvents: [],
     relationAspects: [newRelationAspect('信頼')],
     createdAt: now,
     updatedAt: now,
@@ -480,8 +452,6 @@ function newSession(mode: SessionMode): Session {
     timeline: defaultTimeline(),
     choiceMode: 'auto',
     narrativeStyle: mode === 'story' ? 'novel' : 'chat',
-    eventAutoFire: true,
-    usedEventIds: [],
     state: { relations: [], moods: [] },
     overlay: { lore: [], characterDevelopments: [] },
     structuredOutput: true,
@@ -1199,105 +1169,6 @@ function buildStateInfo(
     }
   }
   return lines.join('\n')
-}
-
-/**
- * 特別イベントの消化キー。global・当事者無し条件は素の eventId、当事者ありは
- * `eventId@charId1[+charId2]`。当事者の組ごとに独立発火させるためのキー。
- */
-export function eventUsedKey(eventId: string, subjects: RoleParty[]): string {
-  const ids = subjects.flatMap((p) => p.members.map((m) => m.characterId))
-  return ids.length ? `${eventId}@${ids.join('+')}` : eventId
-}
-
-/**
- * 消化キーの当事者 id 列を `@相手` 置換用の RoleParty へ戻す（`eventUsedKey` の逆・表示専用）。
- * ロール名は持たない（キーがロールを保存しないため）＝名前だけ置換できる。
- */
-function eventSubjectsOf(
-  memberIds: string[],
-  characters: { id: string; name: string }[],
-): RoleParty[] {
-  if (memberIds.length === 0) return []
-  return [{ roleId: '', roleName: '', members: partnersOf(memberIds, characters) }]
-}
-
-/**
- * 消化済みの特別イベントを発火順（`usedEventIds` の追記順＝時系列）に解決する（G2）。
- * 定義が削除されたキーは落とす。当事者名は保存せず表示直前に解決する＝リネームに追従する
- * （`resolveParties` と同じ規約）。未発火のイベントは返さない（ネタバレ防止・詳細設計 §2.2）。
- */
-export function firedEventLog(
-  usedEventIds: string[] | undefined,
-  world: World | undefined,
-  characters: { id: string; name: string }[],
-): { key: string; event: ScheduledEvent; subjects: RoleParty[] }[] {
-  const events = world?.scheduledEvents ?? []
-  const out: { key: string; event: ScheduledEvent; subjects: RoleParty[] }[] = []
-  for (const key of usedEventIds ?? []) {
-    // 素の eventId か `eventId@charId1[+charId2]`。id に '@' は入らないので前方一致で定義を引ける
-    const event = events.find((e) => !!e.id && (key === e.id || key.startsWith(`${e.id}@`)))
-    if (!event) continue
-    const ids =
-      key === event.id ? [] : key.slice(event.id.length + 1).split('+').filter(Boolean)
-    out.push({ key, event, subjects: eventSubjectsOf(ids, characters) })
-  }
-  return out
-}
-
-/**
- * 次シーンの特別イベントを決める（FB3-C。演出タイプ抽選は廃止し、世界観イベントに一本化）。
- * 未消化かつ day/slot 到来かつ条件成立のイベントを日時順・参加キャラ順で1つ返す（subject な group 節を
- * 含む条件は当事者の組ごとに独立発火＝当事者の組が変われば別キーとして再度候補になる）。
- * slot はラベル一致で解決し、不一致またはタイムライン無効時は時間帯条件を無視する（FB4-C）。
- * 人の承認なしでコードが自動判定して発火する（ADR-1）。`session.eventAutoFire === false` なら発火しない。
- * 旧データの素の eventId は「全組み消化済み」として扱う。
- */
-function nextScheduledEvent(
-  session: Session,
-  world: World | undefined,
-  nextDay: number | null,
-  nextSlot: number | null,
-): { eventId?: string; eventName?: string; eventKey?: string; eventSubjects?: RoleParty[] } {
-  if (!world || session.eventAutoFire === false) return {}
-  const slotIndexOf = (slot: string | undefined) =>
-    slot == null ? -1 : session.timeline.slots.indexOf(slot)
-  type Cand = { event: ScheduledEvent; subjects: RoleParty[]; key: string }
-  const cands: Cand[] = []
-  for (const e of world.scheduledEvents ?? []) {
-    // 素の eventId が消化済み＝旧データ・global 発火済み。全割り当てを消化済み扱いにする（安全側）
-    if (session.usedEventIds.includes(e.id)) continue
-    if (e.day != null && (nextDay == null || e.day > nextDay)) continue
-    const eventSlot = slotIndexOf(e.slot)
-    if (
-      eventSlot >= 0 &&
-      nextSlot != null &&
-      (e.day == null || e.day === nextDay) &&
-      eventSlot > nextSlot
-    )
-      continue
-    cands.push({ event: e, subjects: [], key: e.id })
-  }
-  cands.sort((a, b) => {
-    const dayDiff = (a.event.day ?? Infinity) - (b.event.day ?? Infinity)
-    if (dayDiff !== 0) return dayDiff
-    const slotDiff = slotIndexOf(a.event.slot) - slotIndexOf(b.event.slot)
-    if (slotDiff !== 0) return slotDiff
-    // 同日時は参加キャラ順で安定化（当事者の先頭キャラの参加インデックス）
-    const idx = (c: Cand) => {
-      const firstId = c.subjects[0]?.members[0]?.characterId
-      return firstId ? session.characterIds.indexOf(firstId) : -1
-    }
-    return idx(a) - idx(b)
-  })
-  const pick = cands[0]
-  if (!pick) return {}
-  return {
-    eventId: pick.event.id,
-    eventName: pick.event.name,
-    eventKey: pick.key,
-    eventSubjects: pick.subjects,
-  }
 }
 
 export const useStore = create<AppState>()(
@@ -2486,24 +2357,6 @@ export const useStore = create<AppState>()(
               )
             }
 
-            // 次シーンの特別イベント判定（FB3-C。演出タイプ抽選は廃止）。
-            // 過去シーンの再レビューではライブの現在日での日付/条件付き判定を行わない。
-            const nextDay = !isPastScene && nextTimeline ? nextTimeline.currentDay : null
-            const nextSlot = !isPastScene && nextTimeline ? nextTimeline.currentSlot : null
-            const pick = isPastScene
-              ? {}
-              : nextScheduledEvent(s, refs.world, nextDay, nextSlot)
-            const event = pick.eventId
-              ? refs.world?.scheduledEvents.find((e) => e.id === pick.eventId)
-              : undefined
-            if (event) {
-              // note の @ロール名/@相手 を当事者名へ置換して文脈に載せる
-              const evNote = bindRoleNames(event.note, pick.eventSubjects)
-              const evName = bindRoleNames(event.name, pick.eventSubjects)
-              ctxParts.push(
-                `【次のシーンの方向性】特別イベント「${evName}」が発生します。${evNote}\nsuggestions はこのイベントに沿った内容にしてください。`,
-              )
-            }
             // ワールド固定の関係次元（レビューを拘束）
             const world = refs.world
             const aspectNames = (world?.relationAspects ?? []).map((a) => a.name).filter(Boolean)
@@ -2797,10 +2650,6 @@ export const useStore = create<AppState>()(
                       .slice(0, 5)
                   })()
                 : [],
-              scheduledEventId: event?.id,
-              scheduledEventName: event?.name,
-              scheduledEventKey: pick.eventKey,
-              scheduledEventSubjects: pick.eventSubjects,
             }
             set({ sceneReview: review })
           } catch (e) {
@@ -2889,14 +2738,6 @@ export const useStore = create<AppState>()(
             // 過去シーンの再レビュー：要約を更新し、次シーンの方向のみ差し替える
             const sug = opts.suggestion
             const nextScene = s.scenes[sceneIdx + 1]
-            const event = review.scheduledEventId
-              ? get().worlds
-                  .find((w) => w.id === s.worldId)
-                  ?.scheduledEvents.find((e) => e.id === review.scheduledEventId)
-              : undefined
-            const evSubjects = review.scheduledEventSubjects
-            const evName = event ? bindRoleNames(event.name, evSubjects) : ''
-            const evNote = event ? bindRoleNames(event.note, evSubjects) : ''
             set((st) => ({
               sessions: st.sessions.map((sess) =>
                 sess.id === s.id
@@ -2905,13 +2746,12 @@ export const useStore = create<AppState>()(
                       scenes: sess.scenes.map((sc) => {
                         if (sc.id === scene.id)
                           return { ...sc, summary: opts.summary.trim() }
-                        if (nextScene && sc.id === nextScene.id && (sug || event)) {
-                          // ユーザーが編集/記入したタイトルをイベント名より優先する（FB5-C。note と同じ優先順）
-                          const base = sug?.title || evName || sc.title
+                        if (nextScene && sc.id === nextScene.id && sug) {
+                          const base = sug?.title || sc.title
                           return {
                             ...sc,
                             title: base || sc.title,
-                            note: sug?.note || evNote || sc.note,
+                            note: sug?.note || sc.note,
                           }
                         }
                         return sc
@@ -2932,26 +2772,12 @@ export const useStore = create<AppState>()(
           const nextLabel = s.timeline.enabled ? timeLabelOf(tl) : undefined
 
           const sug = opts.suggestion
-          const event = review.scheduledEventId
-            ? get().worlds
-                .find((w) => w.id === s.worldId)
-                ?.scheduledEvents.find((e) => e.id === review.scheduledEventId)
-            : undefined
-          // イベントの当事者名で @ロール名/@相手 を置換（タイトル・note）
-          const evSubjects = review.scheduledEventSubjects
-          const evName = event ? bindRoleNames(event.name, evSubjects) : ''
-          const evNote = event ? bindRoleNames(event.note, evSubjects) : ''
-          // ユーザーが編集/記入したタイトルをイベント名より優先する（FB5-C。note と同じ優先順）
-          const base = sug?.title || evName || ''
+          const base = sug?.title || ''
           const title =
             [nextLabel, base].filter(Boolean).join('：') ||
             `シーン ${s.scenes.length + 1}`
           const next = newScene(title, nextLabel)
-          next.note = sug?.note || evNote || ''
-          // キャラの組ごとの独立発火（FB7-D）: 消化キーは eventKey（`eventId@charId…`）を積む
-          const usedEventIds = event
-            ? [...s.usedEventIds, review.scheduledEventKey ?? event.id]
-            : s.usedEventIds
+          next.note = sug?.note || ''
 
           set((st) => ({
             sessions: st.sessions.map((sess) =>
@@ -2967,7 +2793,6 @@ export const useStore = create<AppState>()(
                       .concat(next),
                     currentSceneId: next.id,
                     timeline: tl,
-                    usedEventIds,
                     state: newState,
                     overlay: nextOverlay(sess.overlay),
                     updatedAt: Date.now(),
@@ -2998,10 +2823,7 @@ export const useStore = create<AppState>()(
           set({ isRegenSuggestions: true, error: null })
           try {
             const refs = resolveRefs(s)
-            // 方向性テキスト（イベント有無のみ。FB3-C で演出タイプは廃止）
-            const dirText = review.scheduledEventName
-              ? `特別イベント「${review.scheduledEventName}」が発生します。`
-              : '特に指定なし（自由に提案）。'
+            const dirText = '特に指定なし（自由に提案）。'
             const sceneIdxForCtx = s.scenes.findIndex((sc) => sc.id === scene.id)
             const existingNextScene = isPastScene ? s.scenes[sceneIdxForCtx + 1] : undefined
             const nextTimeline = !isPastScene && s.timeline.enabled ? advanceTimeline(s.timeline) : null
@@ -3264,18 +3086,8 @@ export const useStore = create<AppState>()(
           // 復元後の開始やり直し（開始時点へ戻った場合等）の上書きガード（FB6-C）
           if (!(await ensureLineTip(s.id, get().branchTrees[s.id]?.currentId))) return
 
-          // 開始時のシーン選出：世界イベント確認＋時間帯決定（FB3-C で演出タイプ抽選は廃止）
-          const day = s.timeline.enabled ? s.timeline.currentDay : null
-          const slot = s.timeline.enabled ? s.timeline.currentSlot : null
-          const pick = nextScheduledEvent(s, refs.world, day, slot)
-          const event = pick.eventId
-            ? refs.world?.scheduledEvents.find((e) => e.id === pick.eventId)
-            : undefined
-          const evName = event ? bindRoleNames(event.name, pick.eventSubjects) : ''
-          const evNote = event ? bindRoleNames(event.note, pick.eventSubjects) : ''
           const label = s.timeline.enabled ? timeLabelOf(s.timeline) : undefined
-          const baseName = evName || ''
-          const drafted = [label, baseName].filter(Boolean).join('：') || scene.title
+          const drafted = label || scene.title
           // 導入（そのまま掲載）モードでは見出しを openingTitle 優先に（FB2-B）
           const openingTitle = s.mode === 'story' ? s.story.openingTitle.trim() : ''
           const title = opening && openingTitle ? openingTitle : drafted
@@ -3287,11 +3099,10 @@ export const useStore = create<AppState>()(
                     ...sc,
                     title,
                     timeLabel: label ?? sc.timeLabel,
-                    note: sc.note || evNote || '',
+                    note: sc.note,
                   }
                 : sc,
             ),
-            usedEventIds: event ? [...s.usedEventIds, pick.eventKey ?? event.id] : s.usedEventIds,
           })
 
           // 導入文があれば AI 生成せず、そのまま最初の本文（assistant メッセージ）として掲載する（FB2-B）

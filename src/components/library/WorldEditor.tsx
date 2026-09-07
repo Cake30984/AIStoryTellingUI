@@ -2,18 +2,15 @@ import { useRef, useState } from 'react'
 import {
   newLoreEntry,
   newRelationAspect,
-  uid,
   useStore,
 } from '../../store'
 import type {
   LoreEntry,
   RelationAspectDef,
-  ScheduledEvent,
   World,
   WorldStartPreset,
 } from '../../types'
 import CsvInput from '../CsvInput'
-import HelpDetails from '../HelpDetails'
 import IntroTagDefEditor from '../IntroTagDefEditor'
 import NumberInput from '../NumberInput'
 import { exportWorldCard } from '../../lib/cards'
@@ -25,7 +22,6 @@ type Section =
   | 'basic'
   | 'start'
   | 'lore'
-  | 'events'
   | 'aspects'
 
 /** ナビのグループ見出し（FB8-E3。10セクションのフラット並びに意味のまとまりを付ける） */
@@ -35,7 +31,6 @@ const SECTION_GROUPS: { heading: string; items: { id: Section; label: string }[]
     items: [
       { id: 'basic', label: '基本' },
       { id: 'lore', label: 'ロア' },
-      { id: 'events', label: '特別イベント' },
     ],
   },
   {
@@ -98,17 +93,6 @@ export default function WorldEditor({ world, onClose }: Props) {
   const addEntry = () => patch({ entries: [...d.entries, newLoreEntry(d.entries.length)] })
 
   const removeEntry = (id: string) => patch({ entries: d.entries.filter((e) => e.id !== id) })
-
-  const events = d.scheduledEvents ?? []
-  const eventSlots = d.startPreset?.timeline?.slots.length
-    ? d.startPreset.timeline.slots
-    : ['朝', '昼', '夜']
-  const updateEvent = (id: string, p: Partial<ScheduledEvent>) =>
-    patch({ scheduledEvents: events.map((e) => (e.id === id ? { ...e, ...p } : e)) })
-  const addEvent = () =>
-    patch({ scheduledEvents: [...events, { id: uid(), day: 1, name: '', note: '' }] })
-  const removeEvent = (id: string) =>
-    patch({ scheduledEvents: events.filter((e) => e.id !== id) })
 
   // 関係性の次元（aspect）
   const aspects = d.relationAspects ?? []
@@ -495,91 +479,6 @@ export default function WorldEditor({ world, onClose }: Props) {
 
           <button className="btn" style={{ marginTop: 8 }} onClick={addEntry}>
             <Icon name="plus" size={13} />ロア項目を追加
-          </button>
-            </>
-          )}
-
-          {section === 'events' && (
-            <>
-          <div className="lore-head">
-            <label>特別イベント（日付・時間帯指定）</label>
-            <div className="desc">
-              タイムラインの指定日時に到来すると、次のシーンで最優先に発生します（体育祭・クリスマスなど）。
-            </div>
-            <HelpDetails>
-              <p>
-                指定日時が到来したら発生します（承認は不要）。日付・時間帯とも空欄なら常に候補になります。
-              </p>
-              <p>
-                「グループ条件」で「主要登場人物にする」を付けたロールのメンバー名は、内容の{' '}
-                <code>@ロール名</code> / <code>@相手</code> がその人の名前に置き換わります。イベントは自動発火のため
-                選択画面は無く、「N人ぴったり」は満たした先頭 n 人が主要登場人物になります。判定にだけ使う条件の
-                ロールには「主要登場人物にする」を付けないでください。
-              </p>
-            </HelpDetails>
-          </div>
-
-          {events.map((e) => {
-            return (
-              <div key={e.id} className="lore-entry">
-                <div className="lore-entry-top">
-                  <label className="chk" title="発生する日（空欄＝日付条件なし）">
-                    Day
-                    <input
-                      type="number"
-                      min={1}
-                      value={e.day ?? ''}
-                      placeholder="任意"
-                      style={{ width: 64, background: 'var(--bg)' }}
-                      onChange={(ev) =>
-                        updateEvent(e.id, {
-                          day: ev.target.value === '' ? undefined : Math.max(1, Number(ev.target.value)),
-                        })
-                      }
-                    />
-                  </label>
-                  <label className="chk" title="発生する時間帯（空欄＝時間帯条件なし）">
-                    時間帯
-                    <select
-                      value={e.slot ?? ''}
-                      style={{ background: 'var(--bg)' }}
-                      onChange={(ev) => updateEvent(e.id, { slot: ev.target.value || undefined })}
-                    >
-                      <option value="">指定なし</option>
-                      {e.slot && !eventSlots.includes(e.slot) && (
-                        <option value={e.slot}>{e.slot}（区切りに無し）</option>
-                      )}
-                      {eventSlots.map((slot) => (
-                        <option key={slot} value={slot}>{slot}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <input
-                    className="lore-keys"
-                    value={e.name}
-                    placeholder="イベント名（例: 体育祭）"
-                    onChange={(ev) => updateEvent(e.id, { name: ev.target.value })}
-                  />
-                  <button className="icon-btn small" onClick={() => removeEvent(e.id)} title="削除">
-                    <Icon name="x" size={14} />
-                  </button>
-                </div>
-                <textarea
-                  rows={2}
-                  className="lore-content"
-                  value={e.note}
-                  placeholder="状況・方向性（例: 全校で盛り上がる体育祭。応援や勝負を通じて関係が動く。）"
-                  onChange={(ev) => updateEvent(e.id, { note: ev.target.value })}
-                />
-                <div className="desc" style={{ marginTop: 4 }}>
-                  指定日時で判定します（両方空欄なら常に候補）。
-                </div>
-              </div>
-            )
-          })}
-
-          <button className="btn" style={{ marginTop: 8 }} onClick={addEvent}>
-            <Icon name="plus" size={13} />特別イベントを追加
           </button>
             </>
           )}

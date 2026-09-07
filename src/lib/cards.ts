@@ -334,7 +334,6 @@ function normalizeWorldFromData(raw: any): World {
     name: typeof raw.name === 'string' ? raw.name : '',
     description: typeof raw.description === 'string' ? raw.description : '',
     entries: Array.isArray(raw.entries) ? raw.entries : [],
-    scheduledEvents: Array.isArray(raw.scheduledEvents) ? raw.scheduledEvents : [],
     relationAspects: Array.isArray(raw.relationAspects) ? raw.relationAspects : [],
     ...(startPreset ? { startPreset } : {}),
     createdAt: typeof raw.createdAt === 'number' ? raw.createdAt : now,
@@ -457,7 +456,6 @@ export function freshSessionOf(session: Session): Session {
     rawWindowFromSceneId: undefined,
     state: { relations: [], moods: [] },
     overlay: { lore: [], characterDevelopments: [] },
-    usedEventIds: [],
     // 出自カセットは引き継がない（FB9-B。playCassette が改めて刻む）
     originCassetteId: undefined,
     // 開始時点（startDay/startSlot）へ巻き戻す。指定が無ければ従来どおり1日目・先頭スロット（FB2-B）。

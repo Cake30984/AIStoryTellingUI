@@ -292,16 +292,6 @@ function ReviewBody() {
                 )}
               </div>
 
-              {/* 特別イベントの発生（FB3-C。世界観イベントに一本化・自動発生の告知のみ） */}
-              {review.scheduledEventName && (
-                <div className="field">
-                  <label>🎬 次シーンの方向</label>
-                  <div className="director-row">
-                    <span className="event-badge">特別イベント: {review.scheduledEventName}</span>
-                  </div>
-                </div>
-              )}
-
               {/* 次シーン提案 */}
               <div className="field">
                 <label>➡ 次のシーン</label>

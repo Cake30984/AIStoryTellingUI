@@ -68,18 +68,6 @@ export interface LoreEntry {
   addedInStory?: boolean
 }
 
-/** 特別イベント（世界設定で日付・時間帯・条件を指定。コードが自動判定して発火する） */
-export interface ScheduledEvent {
-  id: string
-  /** タイムラインの何日目に発生するか（未指定＝日付条件なし） */
-  day?: number
-  /** 発生する時間帯のラベル（未指定・セッションの区切りに不一致＝時間帯条件なし） */
-  slot?: string
-  name: string
-  /** シーンの状況・方向性 */
-  note: string
-}
-
 /** prose 関係性の次元（ワールド固定。レビューはこの次元名でのみ記述を返す） */
 export interface RelationAspectDef {
   id: string
@@ -87,21 +75,6 @@ export interface RelationAspectDef {
   name: string
   /** レビューへの指示（例: 相手の言動の何を信じ何を疑うか） */
   guidance?: string
-}
-
-/** 当事者1人（id＋現在の実名）。`RoleParty.members` の要素、`bindRoleNames` の置換名に使う。 */
-export interface Partner {
-  characterId: string
-  name: string
-}
-
-/**
- * 当事者組（名前つき）。特別イベントの `@相手` 置換に使う（F1-e で全廃予定）。
- */
-export interface RoleParty {
-  roleId: string
-  roleName: string
-  members: Partner[]
 }
 
 /**
@@ -181,8 +154,6 @@ export interface World {
   /** 常時注入される世界観の概要 */
   description: string
   entries: LoreEntry[]
-  /** 日付指定の特別イベント */
-  scheduledEvents: ScheduledEvent[]
   /** prose 関係性の次元（ワールド固定） */
   relationAspects: RelationAspectDef[]
   /** セッション開始テンプレート（世界を選んだ時にセッションへコピーされる推奨初期設定。素材側は不変） */
@@ -457,15 +428,11 @@ export interface Session {
   choiceMode: ChoiceMode
   /** 文体スタイル */
   narrativeStyle: NarrativeStyle
-  /** 世界観の特別イベントを自動発火させるか（FB3-C。undefined=有効） */
-  eventAutoFire?: boolean
   /**
    * 未定義の新キャラを登場させてよいか（発見キャラ・FB7-E。undefined=allow＝従来どおり）。
    * `buildSystemPrompt` が【新しい登場人物】として注入するだけで、検出・キャラ化とは独立している。
    */
   newCharacterPolicy?: NewCharacterPolicy
-  /** 消化済みの特別イベント ID */
-  usedEventIds: string[]
   /** 感情・関係値の状態（セッション固有） */
   state: SessionState
   /** 発見・深化した設定の上乗せ（セッション固有・素材は不変） */
@@ -692,13 +659,6 @@ export interface SceneReview {
   moodChanges: MoodChange[]
   /** 新しく登場した未定義の人物（発見キャラ・FB7-E。承認するとキャラ化モーダルへ流す） */
   newCharacters: DiscoveredCharacter[]
-  /** 発火する特別イベント */
-  scheduledEventId?: string
-  scheduledEventName?: string
-  /** 消化キー（`eventId` or `eventId@charId1[+charId2]`。確定時の消化記録に使う） */
-  scheduledEventKey?: string
-  /** 特別イベントの当事者組（ロール別。note/name の `@ロール名`/`@相手` 置換に使う） */
-  scheduledEventSubjects?: RoleParty[]
 }
 
 /** 分岐ツリーの1ノード（C1）。チェックポイント実体は CheckpointStore に nodeId で保存する */

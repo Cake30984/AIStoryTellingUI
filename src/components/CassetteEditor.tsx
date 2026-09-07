@@ -399,17 +399,6 @@ export default function CassetteEditor({ cassette, seedSession, onClose }: Props
                   構造化出力（@名前「セリフ」の行形式で書かせる）
                 </label>
               </div>
-              <div className="field">
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={s.eventAutoFire !== false}
-                    onChange={(e) => patchSession({ eventAutoFire: e.target.checked })}
-                    style={{ width: 'auto', marginRight: 8 }}
-                  />
-                  世界観の特別イベントを自動的に発生させる
-                </label>
-              </div>
               {/* 新しい登場人物の登場ポリシー（発見キャラ・FB7-E） */}
               <div className="field">
                 <label>新しい登場人物</label>
