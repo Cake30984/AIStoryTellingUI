@@ -18,14 +18,71 @@ export default function StatusView({ session }: Props) {
     .filter((c): c is NonNullable<typeof c> => !!c)
   const aspectName = (id: string) => world?.relationAspects.find((a) => a.id === id)?.name ?? ''
 
-  const st = session.state
+  // 取り込んだ古いカセット等で欠けていても落とさない（移行の取りこぼしへの保険）
+  const st = {
+    relations: session.state?.relations ?? [],
+    moods: session.state?.moods ?? [],
+    now: session.state?.now ?? '',
+    place: session.state?.place ?? '',
+    presentIds: session.state?.presentIds ?? [],
+    situation: session.state?.situation ?? '',
+    pending: session.state?.pending ?? [],
+    recentDone: session.state?.recentDone ?? [],
+  }
+  const nameOf = (id: string) => characters.find((c) => c.id === id)?.name || '？'
+
+  // 時間と予定（§2.3）。世界観が未設定でも出す＝これはセッションの状態であって世界の定義ではない
+  const tracker = (
+    <>
+      {(st.now.trim() || st.place.trim() || st.situation.trim() || st.presentIds.length > 0) && (
+        <div className="field">
+          <label>いま</label>
+          {st.now.trim() && <p className="desc">{st.now}</p>}
+          {st.place.trim() && <p className="desc">{st.place}</p>}
+          {st.presentIds.length > 0 && (
+            <p className="desc">この場に: {st.presentIds.map(nameOf).join('・')}</p>
+          )}
+          {st.situation.trim() && <p className="desc">{st.situation}</p>}
+        </div>
+      )}
+
+      {st.pending.length > 0 && (
+        <div className="field">
+          <label>これから起きること</label>
+          {st.pending.map((x) => (
+            <div key={x.id} className="desc" style={{ marginBottom: 4 }}>
+              {x.when.trim() ? `${x.when}: ` : ''}
+              {x.what}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {st.recentDone.length > 0 && (
+        <div className="field">
+          <label>消化した予定</label>
+          {st.recentDone.map((x, i) => (
+            <div key={i} className="desc" style={{ marginBottom: 4, opacity: 0.7 }}>
+              {x.what}
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  )
 
   if (!world) {
-    return <p className="inline-empty">ワールドを設定すると、関係性を管理できます。</p>
+    return (
+      <>
+        {tracker}
+        <p className="inline-empty">ワールドを設定すると、関係性を管理できます。</p>
+      </>
+    )
   }
 
   return (
     <>
+      {tracker}
       {cast.map((c) => {
         const rel = st.relations.find((r) => r.fromId === c.id && r.toId === 'hero')
         const mood = st.moods.find((m) => m.characterId === c.id)?.mood

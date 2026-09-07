@@ -70,14 +70,27 @@ const REVIEW_B_PROPS = {
   moods: arrayOf(obj({ character: str, mood: str })),
 }
 
-/** シーン終了レビューのスキーマ（`reviewSystem` の part と対になる） */
+/** 時間と予定（第3の呼び出し・`trackerSystem` と対になる）の項目 */
+const TRACKER_PROPS = {
+  now: str,
+  place: str,
+  present: arrayOf(str),
+  situation: str,
+  foreground: str,
+  pendingAdd: arrayOf(obj({ when: str, what: str })),
+  pendingDone: arrayOf(str),
+}
+
+/** シーン終了レビューのスキーマ（`reviewSystem`/`trackerSystem` の part と対になる） */
 export function reviewSchema(part: ReviewPart): JsonSchemaSpec {
   const props =
-    part === 'a'
-      ? REVIEW_A_PROPS
-      : part === 'b'
-        ? REVIEW_B_PROPS
-        : { ...REVIEW_A_PROPS, ...REVIEW_B_PROPS }
+    part === 't'
+      ? TRACKER_PROPS
+      : part === 'a'
+        ? REVIEW_A_PROPS
+        : part === 'b'
+          ? REVIEW_B_PROPS
+          : { ...REVIEW_A_PROPS, ...REVIEW_B_PROPS }
   return { name: `scene_review_${part}`, schema: obj(props) }
 }
 

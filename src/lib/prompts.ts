@@ -37,10 +37,13 @@ export interface ResolvedRefs {
   sceneNote: string
   /** 現在シーンの ID（履歴の絞り込みに使用） */
   currentSceneId: string | null
-  /** タイムラインの説明文（空なら無効） */
+  /** 現在時刻（`SessionState.now`。空なら【時間】を出さない） */
   timelineInfo: string
-  /** 終盤が近いか（クライマックス促し） */
-  nearEnd: boolean
+  /**
+   * 突き合わせ済みの一文（`SessionState` ではなく直近レビューの `tracker.foreground`）。
+   * 空なら深さ0へ何も入れない（§2.4.1）
+   */
+  foreground: string
   /** 関係性 prose・気分（空なら無効） */
   stateInfo: string
 }
@@ -99,21 +102,14 @@ export function buildSystemPrompt(session: Session, refs: ResolvedRefs): string 
     parts.push(`【現在の場面】\n${refs.sceneNote.trim()}`)
   }
 
-  // 1.7 時間・期間
+  // 1.7 時間（§2.4.1）。`now` はシーン境界でしか変わらないので system 側に置く＝キャッシュを壊さない。
+  // 突き合わせ済みの一文（foreground）は毎ターン側（深さ0）が持つ。
   if (refs.timelineInfo) {
-    let t = `【時間】\n${refs.timelineInfo}`
-    // 時間帯の区切りがある場合、シーン内での時間帯ドリフト（昼のシーンが進行中に夜へ進む等）を防ぐ。
-    // 時間帯を進めるのはシーンの切り替わり（レビュー確定）の役割。
-    const tl = session.timeline
-    const slotName = tl.slots[tl.currentSlot] ?? ''
-    if (tl.enabled && tl.slots.length > 1 && slotName && slotName !== '1日') {
-      t +=
-        `\nこのシーンは「${slotName}」の時間帯の中の出来事です。シーン内で時間帯を先へ進めないでください` +
-        `（例: 昼の場面が途中で夕方や夜になってはいけない）。大きな時間経過はシーンの切り替わりが担います。` +
-        `場面の状況で別の時間経過が明示されている場合のみ、そちらを優先してください。`
-    }
-    if (refs.nearEnd) t += `\n物語は終盤です。クライマックスに向けて収束させてください。`
-    parts.push(t)
+    parts.push(
+      `【時間】\n現在は「${refs.timelineInfo}」です。` +
+        `\nこのシーンの中で時間を大きく先へ進めないでください（例: 昼の場面が途中で夜になってはいけない）。` +
+        `大きな時間経過はシーンの切り替わりが担います。`,
+    )
   }
 
   // 1.9 状態（関係性 prose・気分）
@@ -289,6 +285,11 @@ function depthZeroContent(
 ): string {
   const parts: string[] = []
   const novel = session.narrativeStyle === 'novel'
+
+  // 前景（§2.4）。現在時刻と予定を突き合わせた一文だけを渡す。
+  // **予定リストそのものは渡さない**——実測でリストを入れると 28/30 で無関係な先の予定を
+  // 列挙した（計測_時間と予定.md §4.1）。突き合わせは第3の呼び出しが済ませている。
+  if (refs.foreground) parts.push(`【いまの状況】\n${refs.foreground}`)
 
   // グループ会話: 今回の話者を指定（会話劇のみ）
   if (!novel && session.mode === 'roleplay' && refs.characters.length > 1) {
@@ -662,10 +663,52 @@ export function choicesMessages(
 }
 
 /**
- * レビューの分割単位（PC-A A-2）。`a`＝何が起きたか／`b`＝状態がどう動いたか／`all`＝従来の一本。
+ * レビューの分割単位（PC-A A-2）。`a`＝何が起きたか／`b`＝状態がどう動いたか／`all`＝A+B の一本／
+ * `t`＝時間と予定（第3の呼び出し。入力が本文＋現在＋予定だけで済むので常に独立して投げる。
+ * docs/設計_物語の簡素化.md §2.4.2）。
  * docs/詳細設計_プロンプト構造とキャッシュ.md §3.2
  */
-export type ReviewPart = 'all' | 'a' | 'b'
+export type ReviewPart = 'all' | 'a' | 'b' | 't'
+
+/**
+ * 時間と予定の呼び出し（第3の呼び出し・§2.4）の system プロンプト。
+ *
+ * **本編プロンプトへ渡るのはここで作る `foreground` の一文だけ**＝予定リストそのものは渡さない
+ * （実測: リストを本編へ入れると 28/30 で無関係な先の予定を列挙した。計測_時間と予定.md §4.1）。
+ * 消化した予定は **id ではなく本文の引用**で返させる（id の書き写しは 450回中50回落ちた。同 §4.3）。
+ *
+ * @param calendarFormat 世界の暦の書式見本（`World.calendarFormat`）。体裁を揃えるためだけで粒度は縛らない。
+ */
+export function trackerSystem(calendarFormat?: string): string {
+  const fmt = calendarFormat?.trim()
+  return (
+    `あなたは進行中の物語の記録係です。直前のシーンの本文を読み、次の JSON のみを出力してください（前後に文章・コードフェンスを付けない）。` + `\n` +
+    `{` + `\n` +
+    `  "now": "このシーンが終わった時点の日時（自由な書き方でよい）",` + `\n` +
+    `  "place": "いま居る場所",` + `\n` +
+    `  "present": ["その場に居合わせている人物の名前"],` + `\n` +
+    `  "situation": "天候・季節・その場の空気を1〜2文で",` + `\n` +
+    `  "foreground": "現在の日時と『これから起きること』を突き合わせた一文（該当が無ければ空文字）",` + `\n` +
+    `  "pendingAdd": [ {"when":"いつ","what":"なに"} ],` + `\n` +
+    `  "pendingDone": ["消化された項目の『なに』をそのまま引用"]` + `\n` +
+    `}` + `\n` +
+    `指針:` + `\n` +
+    `- now は本文の描写から素直に決める。時間が動いていなければ与えられた現在をそのまま返す。` +
+    `**粒度は場面に合わせてよい**（「8月31日 朝」でも「6月半ば」でも「翌年の春」でもよい）。` +
+    (fmt ? `この世界の日時はこう書く: ${fmt}` : '') + `\n` +
+    `- present はその場に実際に居る人物だけ。与えられた登場人物の名前をそのまま使い、居ない人は挙げない。` + `\n` +
+    `- **foreground**: 現在の日時が『これから起きること』のどれかに当たる、または直前に迫っているなら、` +
+    `突き合わせた結果を一文で書く（例:「今日は8月31日、夏休みの最終日。今日中に東京へ帰らなければならない。」）。` +
+    `条件つきの項目は、その条件が本文で実際に満たされたときだけ。該当が無ければ空文字にする。` +
+    `**該当しない項目を無理に持ち出さない。**` + `\n` +
+    `- pendingAdd は本文で新しく生まれた約束・締切・予兆だけ。` +
+    `**「来週水曜」「三日後」のような相対表現は使わず、現在の日時から換算した書き方にする**` +
+    `（換算できないなら条件で書く。例:「雨がやんだとき」）。無ければ空配列。` + `\n` +
+    `- pendingDone は、本文でその出来事が実際に起きた項目の「なに」を**そのまま引用**する。` +
+    `起きていない項目は挙げない。無ければ空配列。` + `\n` +
+    `- 推測の捏造はせず、本文に根拠があるものだけ。`
+  )
+}
 
 /**
  * シーン終了レビュー（要約＋次シーン提案＋成長＋関係性 prose）生成用の system プロンプト。

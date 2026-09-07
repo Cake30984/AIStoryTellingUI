@@ -20,11 +20,15 @@ export default function StatusPanel({ session, onClose }: Props) {
   const aspectName = (id: string) => world?.relationAspects.find((a) => a.id === id)?.name ?? ''
 
   const [st, setSt] = useState<SessionState>(() => ({
+    ...session.state,
     relations: session.state.relations.map((r) => ({
       ...r,
       aspects: r.aspects.map((a) => ({ ...a })),
     })),
     moods: session.state.moods.map((m) => ({ ...m })),
+    presentIds: [...session.state.presentIds],
+    pending: session.state.pending.map((x) => ({ ...x })),
+    recentDone: session.state.recentDone.map((x) => ({ ...x })),
   }))
   const [dirty, setDirty] = useState(false)
   const mutate = (updater: (prev: SessionState) => SessionState) => {

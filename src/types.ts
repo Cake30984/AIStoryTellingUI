@@ -88,8 +88,6 @@ export type NewCharacterPolicy = 'allow' | 'avoid'
  * セッション開始テンプレート（World に付属する推奨初期設定。W1）。
  * セッション設定で世界を選んだ時に「コピー」で流し込む（参照ではない）。
  * 以後の編集はセッション側の値だけを変えるため、素材（World）側は不変に保たれる。
- * timeline は定義＋開始時点（startDay/startSlot）のみ（currentDay/currentSlot は持たない。
- * 反映時に開始時点を currentDay/currentSlot へ書き込む。FB2-B / クランプは FB4-A）。
  */
 export interface WorldStartPreset {
   /** ジャンル・トーン（→ session.story.genre） */
@@ -117,17 +115,13 @@ export interface WorldStartPreset {
    * コピーされ、以後はセッション側で自由に追加・削除できる（素材＝再利用資源のため実名は焼き込まない）。
    */
   introTags?: IntroTag[]
+  /** 開始時点の現在時刻（→ session.state.now。例: 「4月7日 朝」）。空なら物語側で決めさせる */
+  startNow?: string
   /**
-   * タイムライン定義（→ session.timeline。反映時は enabled=true）。
-   * startDay/startSlot があれば開始時点も指定できる（省略時は1日目・先頭スロット）。
+   * 最初から積んでおく予定スリップ（→ session.state.pending。§2.6）。
+   * 廃止した特別イベントの受け皿。条件も id 参照も持たない。
    */
-  timeline?: {
-    slots: string[]
-    totalDays: number | null
-    spanLabel: string
-    startDay?: number
-    startSlot?: number
-  }
+  initialPending?: { when: string; what: string }[]
 }
 
 /**
@@ -156,6 +150,12 @@ export interface World {
   entries: LoreEntry[]
   /** prose 関係性の次元（ワールド固定） */
   relationAspects: RelationAspectDef[]
+  /**
+   * 暦の書式見本（§2.1）。レビューが `now` を書くときの体裁を揃えるためだけの1行で、
+   * **粒度は縛らない**（「◯月◯日」の見本でも「6月半ば」と書いてよい）。
+   * 例: 「◯月◯日／朝・昼・夕・夜」「第三紀・◯の月・◯日」
+   */
+  calendarFormat?: string
   /** セッション開始テンプレート（世界を選んだ時にセッションへコピーされる推奨初期設定。素材側は不変） */
   startPreset?: WorldStartPreset
   createdAt: number
@@ -291,8 +291,13 @@ export interface Scene {
   note: string
   /** 終了時に生成される引き継ぎ要約 */
   summary: string
-  /** タイムライン上の時刻ラベル（例: 3日目 夜） */
+  /** そのシーンの時点ラベル（例: 8月31日 朝）。レビューが記録した `now` の写し */
   timeLabel?: string
+  /**
+   * このシーンの開始時点で、現在時刻と予定を突き合わせた一文（§2.4）。
+   * 深さ0へそのまま入る唯一の予定情報。前のシーンのレビュー（第3の呼び出し）が書く。
+   */
+  foreground?: string
   /** 挿絵（手動生成のみ。任意＝旧データには無い） */
   illustrations?: SceneIllustration[]
   /** 環境音ピン（AM1。任意＝旧データには無い。読む側は `ambientPins ?? []`） */
@@ -300,28 +305,6 @@ export interface Scene {
   /** 終了済みなら時刻 */
   endedAt?: number
   createdAt: number
-}
-
-/** 物語全体の時間設定（期間・区切り単位・現在位置） */
-export interface Timeline {
-  enabled: boolean
-  /** 1日内の区切り（例: ['朝','昼','夜'] または ['1日']） */
-  slots: string[]
-  /** 総日数（null は期間無制限） */
-  totalDays: number | null
-  /** 期間の呼称（例: 1学年（入学〜卒業）） */
-  spanLabel: string
-  /** 現在の日（1始まり） */
-  currentDay: number
-  /** 現在のスロット番号（slots のインデックス） */
-  currentSlot: number
-  /**
-   * 開始時点の日（1始まり・省略時は1。FB2-B）。物語を「前日の夜から」等、任意の時点から
-   * 始められるようにするための初期値。カセット初期化（freshSessionOf）はここへ戻す。
-   */
-  startDay?: number
-  /** 開始時点のスロット番号（省略時は0＝先頭スロット。FB2-B） */
-  startSlot?: number
 }
 
 /** 物語モードの選択肢進行の方式 */
@@ -393,11 +376,44 @@ export interface SessionOverlay {
 }
 
 /** セッション固有の状態（すべて prose）。 */
+/**
+ * これから起きること1件（§2.2）。約束・締切・予兆・懸念まで含むので内部名は `pending`。
+ * **日時と条件を型で分けない**——分けた瞬間に条件エンジンの再来になる。
+ */
+export interface PendingSlip {
+  id: string
+  /**
+   * 「8月31日」「6月後半」「降り続いた雨がやんだとき」。
+   * **相対表現（「来週水曜」「三日後」）は書かない**——基準日が無いと解釈できず、実測でも
+   * 30回中2回しか発火せずその2回とも誤りだった（計測_時間と予定.md §2.4）。
+   */
+  when: string
+  what: string
+  /** 作られたシーン番号。棚卸しの表示にのみ使い、判定には使わない */
+  bornAt: number
+}
+
+/**
+ * セッション固有の状態。**すべて prose**（F1-b で数を撤去）。
+ * 時間と予定（`now`/`place`/`presentIds`/`situation`/`pending`）は第3の呼び出しが毎シーン更新する。
+ */
 export interface SessionState {
   /** prose 関係性（有向ペアごと） */
   relations: Relation[]
   /** キャラ自身の一時的な気分（prose・毎レビューで上書き） */
   moods: { characterId: string; mood: string }[]
+  /** 現在時刻（自由文字列。コードは一切解釈しない。§2.1） */
+  now: string
+  /** 現在の場所 */
+  place: string
+  /** いま居合わせている人（characterId） */
+  presentIds: string[]
+  /** 天候・季節・空気（1〜2行） */
+  situation: string
+  /** これから起きること（§2.2。上限は設けない＝実測で件数は精度にほぼ効かなかった） */
+  pending: PendingSlip[]
+  /** 直近で消化した予定（表示専用。数シーンだけ残して自然に流す） */
+  recentDone: { what: string; at: number }[]
 }
 
 export interface Session {
@@ -423,7 +439,6 @@ export interface Session {
   /** 現在進行中のシーン */
   currentSceneId: string | null
   /** タイムライン設定 */
-  timeline: Timeline
   /** 選択肢進行の方式 */
   choiceMode: ChoiceMode
   /** 文体スタイル */
@@ -659,6 +674,37 @@ export interface SceneReview {
   moodChanges: MoodChange[]
   /** 新しく登場した未定義の人物（発見キャラ・FB7-E。承認するとキャラ化モーダルへ流す） */
   newCharacters: DiscoveredCharacter[]
+  /**
+   * 時間と予定（第3の呼び出しの結果。§2.4.2）。並列で走るので**取れないことがある**＝
+   * undefined ならこのシーンでは時間と予定を更新しない（レビュー本体は独立して確定できる）。
+   */
+  tracker?: TrackerResult
+}
+
+/**
+ * 時間と予定の呼び出しの結果（§2.4）。レビュー A/B とは別に投げる。
+ * 入力が本文＋`now`＋`pending` だけで済む＝キャラ定義もロアも要らないので、安いモデルに固定できる。
+ */
+export interface TrackerResult {
+  /** 次のシーン開始時点の現在時刻（自由文字列） */
+  now: string
+  place: string
+  /** いま居合わせている人（characterId。解決できなかった名前は落とす） */
+  presentIds: string[]
+  situation: string
+  /**
+   * 現在時刻と `pending` を突き合わせた一文。**空なら深さ0へ何も入れない**。
+   * これだけが本編プロンプトへ渡る（`pending` 自体は渡さない＝計測_時間と予定.md §4.1）。
+   */
+  foreground: string
+  /** 新しく生まれた予定 */
+  pendingAdd: { when: string; what: string }[]
+  /**
+   * 消化した予定。**id ではなく `what` の引用**（§2.4.3）＝id の書き写しは実測で
+   * 450回中50回落ちたが、モデルは行をそのまま引用するのは得意だった。
+   * コードが部分一致で照合し、曖昧なら消さずに残す（誤爆より取りこぼしの方が害が小さい）。
+   */
+  pendingDone: string[]
 }
 
 /** 分岐ツリーの1ノード（C1）。チェックポイント実体は CheckpointStore に nodeId で保存する */

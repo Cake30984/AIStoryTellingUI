@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import {
   newLoreEntry,
   newRelationAspect,
@@ -12,10 +12,8 @@ import type {
 } from '../../types'
 import CsvInput from '../CsvInput'
 import IntroTagDefEditor from '../IntroTagDefEditor'
-import NumberInput from '../NumberInput'
 import { exportWorldCard } from '../../lib/cards'
 import { appConfirm } from '../../lib/dialogs'
-import { advanceTimeline, timeLabelOf } from '../../lib/timeline'
 import { Icon } from '../icons'
 
 type Section =
@@ -76,16 +74,6 @@ export default function WorldEditor({ world, onClose }: Props) {
   // 開始テンプレート（W1）。セッション設定で世界を選んだ時にコピーされる推奨初期設定
   const sp = d.startPreset ?? {}
   const patchPreset = (p: Partial<WorldStartPreset>) => patch({ startPreset: { ...sp, ...p } })
-  const timelineDraftRef = useRef<NonNullable<WorldStartPreset['timeline']>>(
-    sp.timeline ?? { slots: ['朝', '昼', '夜'], totalDays: null, spanLabel: '' },
-  )
-  if (sp.timeline) timelineDraftRef.current = sp.timeline
-  const timelineDraft = sp.timeline ?? timelineDraftRef.current
-  const patchTimeline = (p: Partial<NonNullable<WorldStartPreset['timeline']>>) => {
-    const timeline = { ...timelineDraft, ...p }
-    timelineDraftRef.current = timeline
-    patchPreset({ timeline })
-  }
 
   const updateEntry = (id: string, p: Partial<LoreEntry>) =>
     patch({ entries: d.entries.map((e) => (e.id === id ? { ...e, ...p } : e)) })
@@ -180,6 +168,19 @@ export default function WorldEditor({ world, onClose }: Props) {
                   value={d.description}
                   placeholder="例: 魔法が衰退した中世風世界。3つの大国が均衡を保っている。"
                   onChange={(e) => patch({ description: e.target.value })}
+                />
+              </div>
+              <div className="field">
+                <label>暦の書き方（任意）</label>
+                <div className="desc">
+                  この世界で日時をどう書くかの見本です。シーンが終わるたびに AI が現在時刻を記録するとき、
+                  体裁を揃えるためだけに使います（<strong>粒度は縛りません</strong>——見本が「◯月◯日」でも
+                  「6月半ば」や「翌年の春」と書いてかまいません）。
+                </div>
+                <input
+                  value={d.calendarFormat ?? ''}
+                  placeholder="例: ◯月◯日／朝・昼・夕・夜　第三紀・◯の月・◯日"
+                  onChange={(e) => patch({ calendarFormat: e.target.value })}
                 />
               </div>
             </>
@@ -311,106 +312,63 @@ export default function WorldEditor({ world, onClose }: Props) {
                 />
               </div>
               <div className="field">
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={!!sp.timeline}
-                    onChange={(e) => {
-                      if (!e.target.checked) timelineDraftRef.current = timelineDraft
-                      patchPreset({ timeline: e.target.checked ? timelineDraftRef.current : undefined })
-                    }}
-                    style={{ width: 'auto', marginRight: 8 }}
-                  />
-                  タイムライン定義を含める（期間・区切り・開始時点）
-                </label>
-                <fieldset className="timeline-box" disabled={!sp.timeline}>
-                    <div className="sub-field">
-                      <span className="sub-label">期間の呼称</span>
-                      <input
-                        value={timelineDraft.spanLabel}
-                        placeholder="例: 1学年（入学〜卒業）"
-                        onChange={(e) =>
-                          patchTimeline({ spanLabel: e.target.value })
-                        }
-                      />
-                    </div>
-                    <div className="sub-field">
-                      <span className="sub-label">総日数（任意）</span>
-                      <input
-                        type="number"
-                        min={0}
-                        value={timelineDraft.totalDays ?? ''}
-                        placeholder="例: 90"
-                        onChange={(e) =>
-                          patchTimeline({ totalDays: e.target.value ? Number(e.target.value) : null })
-                        }
-                      />
-                    </div>
-                    <div className="sub-field">
-                      <span className="sub-label">区切り単位（カンマ区切り）</span>
-                      <CsvInput
-                        value={timelineDraft.slots}
-                        placeholder="例: 朝, 昼, 夜"
-                        onChange={(slots) =>
-                          patchTimeline({
-                            slots,
-                            startSlot: Math.min(
-                              timelineDraft.startSlot ?? 0,
-                              Math.max(0, slots.length - 1),
-                            ),
-                          })
-                        }
-                      />
-                    </div>
-                    <div className="row2">
-                      <div className="sub-field">
-                        <span className="sub-label">開始する日</span>
-                        <NumberInput
-                          min={1}
-                          integer
-                          value={timelineDraft.startDay ?? 1}
-                          onChange={(startDay) => patchTimeline({ startDay })}
-                        />
-                      </div>
-                      {timelineDraft.slots.length > 1 && (
-                        <div className="sub-field">
-                          <span className="sub-label">開始する時間帯</span>
-                          <select
-                            value={timelineDraft.startSlot ?? 0}
-                            onChange={(e) =>
-                              patchTimeline({ startSlot: Number(e.target.value) })
-                            }
-                          >
-                            {timelineDraft.slots.map((slot, i) => (
-                              <option key={i} value={i}>
-                                {slot}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      )}
-                    </div>
-                    {timelineDraft.slots.length > 0 && (() => {
-                      const startTimeline = {
-                        enabled: true,
-                        slots: timelineDraft.slots,
-                        totalDays: timelineDraft.totalDays,
-                        spanLabel: timelineDraft.spanLabel,
-                        currentDay: Math.max(1, timelineDraft.startDay ?? 1),
-                        currentSlot: Math.min(
-                          Math.max(0, timelineDraft.startSlot ?? 0),
-                          timelineDraft.slots.length - 1,
-                        ),
+                <label>開始時点の日時（任意）</label>
+                <div className="desc">
+                  物語がいつから始まるか。空欄なら AI が本文から決めます。書き方は自由です（例:「4月7日 朝」「第三紀・霜の月・三日」）。
+                </div>
+                <input
+                  value={sp.startNow ?? ''}
+                  placeholder="例: 4月7日 朝"
+                  onChange={(e) => patchPreset({ startNow: e.target.value })}
+                />
+              </div>
+              <div className="field">
+                <label>最初から控えている予定（任意）</label>
+                <div className="desc">
+                  物語の開始時点で決まっている予定。「いつ」は日時でも条件でも書けます（例:「3日目の夜」「雨がやんだとき」）。
+                  <strong>「来週水曜」のような相対表現は避けてください</strong>（基準日が無く解釈できません）。
+                </div>
+                {(sp.initialPending ?? []).map((x, idx) => (
+                  <div key={idx} className="row2" style={{ marginBottom: 6 }}>
+                    <input
+                      value={x.when}
+                      placeholder="いつ（例: 3日目の夜）"
+                      onChange={(e) => {
+                        const next = [...(sp.initialPending ?? [])]
+                        next[idx] = { ...next[idx], when: e.target.value }
+                        patchPreset({ initialPending: next })
+                      }}
+                    />
+                    <input
+                      value={x.what}
+                      placeholder="なに（例: 町で祭りがある）"
+                      onChange={(e) => {
+                        const next = [...(sp.initialPending ?? [])]
+                        next[idx] = { ...next[idx], what: e.target.value }
+                        patchPreset({ initialPending: next })
+                      }}
+                    />
+                    <button
+                      className="icon-btn small"
+                      title="削除"
+                      onClick={() =>
+                        patchPreset({
+                          initialPending: (sp.initialPending ?? []).filter((_, k) => k !== idx),
+                        })
                       }
-                      return (
-                        <div className="desc timeline-preview">
-                          開始: {timeLabelOf(startTimeline)}
-                          {' → 次のシーンで: '}
-                          {timeLabelOf(advanceTimeline(startTimeline))}
-                        </div>
-                      )
-                    })()}
-                </fieldset>
+                    >
+                      <Icon name="x" size={14} />
+                    </button>
+                  </div>
+                ))}
+                <button
+                  className="btn"
+                  onClick={() =>
+                    patchPreset({ initialPending: [...(sp.initialPending ?? []), { when: '', what: '' }] })
+                  }
+                >
+                  <Icon name="plus" size={13} />予定を追加
+                </button>
               </div>
             </>
           )}

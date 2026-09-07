@@ -25,10 +25,10 @@ export const APP_STATE_VERSION = 1
  * 1本書く（＝**もう「あとから足せない」状態ではない**。migrate が入ったのでスキーマの
  * 判断を先送りしても復旧可能になった）。
  */
-export const SAVE_DATA_VERSION = 1
+export const SAVE_DATA_VERSION = 2
 
 /** カセット定義（cassettes）の版番 */
-export const CASSETTE_DATA_VERSION = 1
+export const CASSETTE_DATA_VERSION = 2
 
 /** 永続ペイロードに同梱する版番。app 側は zustand が別に持つのでここには入れない */
 export interface SchemaVersions {
@@ -68,9 +68,61 @@ const appStateMigrations: Record<number, Migration> = {
   0: (s) => s,
 }
 
-const saveDataMigrations: Record<number, Migration> = {}
+const saveDataMigrations: Record<number, Migration> = {
+  /**
+   * v1 → v2（F2・時間と予定）。`Timeline` を廃止して `SessionState` に
+   * `now`/`place`/`presentIds`/`situation`/`pending`/`recentDone` を足した。
+   * 旧セッションは「時刻はまだ決まっていない」状態から始め直す＝
+   * 旧 `timeline` の日付は自由文字列へ機械的に写せない（暦が違う世界がありうる）ので、
+   * `timeLabel` の写しだけ拾って残りは空にする。
+   */
+  1: (s) => ({
+    ...s,
+    sessions: (s?.sessions ?? []).map((sess: any) => {
+      const cur = (sess?.scenes ?? []).find((sc: any) => sc?.id === sess?.currentSceneId)
+      const { timeline: _timeline, ...rest } = sess ?? {}
+      return {
+        ...rest,
+        state: {
+          relations: sess?.state?.relations ?? [],
+          moods: sess?.state?.moods ?? [],
+          now: typeof cur?.timeLabel === 'string' ? cur.timeLabel : '',
+          place: '',
+          presentIds: [],
+          situation: '',
+          pending: [],
+          recentDone: [],
+        },
+      }
+    }),
+  }),
+}
 
-const cassetteMigrations: Record<number, Migration> = {}
+const cassetteMigrations: Record<number, Migration> = {
+  /** v1 → v2（F2）。カセットが内包する開始状態のセッションにも同じ変換を掛ける */
+  1: (s) => ({
+    ...s,
+    cassettes: (s?.cassettes ?? []).map((cas: any) => {
+      const { timeline: _timeline, ...rest } = cas?.session ?? {}
+      return {
+        ...cas,
+        session: {
+          ...rest,
+          state: {
+            relations: cas?.session?.state?.relations ?? [],
+            moods: cas?.session?.state?.moods ?? [],
+            now: '',
+            place: '',
+            presentIds: [],
+            situation: '',
+            pending: [],
+            recentDone: [],
+          },
+        },
+      }
+    }),
+  }),
+}
 
 export type MigrateResult = { ok: true; state: any } | { ok: false; error: SchemaError }
 

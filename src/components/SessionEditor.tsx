@@ -1,16 +1,13 @@
 import { useState } from 'react'
 import { currentScene, hasStartPreset, startPresetPatch, useStore } from '../store'
-import { advanceTimeline, timeLabelOf } from '../lib/timeline'
 import { modelRefLabel } from '../lib/providers'
 import { appConfirm } from '../lib/dialogs'
 import type { Session } from '../types'
-import CsvInput from './CsvInput'
 import ModelPicker from './ModelPicker'
 import EntityAvatar from './EntityAvatar'
 import CassetteEditor from './CassetteEditor'
 import ModalShell from './ModalShell'
 import { Icon, type IconName } from './icons'
-import NumberInput from './NumberInput'
 import IntroTagDefEditor from './IntroTagDefEditor'
 import IntroTagFields from './IntroTagFields'
 
@@ -51,17 +48,11 @@ export default function SessionEditor({ session, onClose }: Props) {
     const liveScenes = live?.scenes ?? d.scenes
     // 現在シーンの時刻ラベルだけ追従させる（顔ぶれはセッション側で持つ＝CS1）
     const cur = live ? currentScene(live) : currentScene(d)
-    const label = d.timeline.enabled ? timeLabelOf(d.timeline) : undefined
+    const label = d.state.now.trim() || undefined
     const scenes =
       cur && label
         ? liveScenes.map((sc) => (sc.id === cur.id ? { ...sc, timeLabel: label } : sc))
         : liveScenes
-    // 未開始（メッセージ0件）なら、現在位置を「開始時点」として記録する。
-    // カセット初期化（freshSessionOf）やチェックポイントのルートがここへ戻れるようにするため（FB2-B）
-    const notStarted = (live?.messages.length ?? d.messages.length) === 0
-    const timeline = notStarted
-      ? { ...d.timeline, startDay: d.timeline.currentDay, startSlot: d.timeline.currentSlot }
-      : d.timeline
     updateSession(session.id, {
       title: d.title,
       characterIds: d.characterIds,
@@ -71,7 +62,7 @@ export default function SessionEditor({ session, onClose }: Props) {
       authorNote: d.authorNote,
       story: d.story,
       scenes,
-      timeline,
+      state: d.state,
       choiceMode: d.choiceMode,
       narrativeStyle: d.narrativeStyle,
       structuredOutput: d.structuredOutput,
@@ -350,119 +341,18 @@ export default function SessionEditor({ session, onClose }: Props) {
 
           {tab === 'progress' && (
             <>
-              {/* タイムライン */}
+              {/* 現在時刻（§2.1。自由文字列＝コードは解釈しない） */}
               <div className="field">
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={d.timeline.enabled}
-                    onChange={(e) => patch({ timeline: { ...d.timeline, enabled: e.target.checked } })}
-                    style={{ width: 'auto', marginRight: 8 }}
-                  />
-                  タイムライン（期間・区切りの自動進行）
-                </label>
-                <fieldset className="timeline-box" disabled={!d.timeline.enabled}>
-                    <div className="sub-field">
-                      <span className="sub-label">期間の呼称</span>
-                      <input
-                        value={d.timeline.spanLabel}
-                        placeholder="例: 1学年（入学〜卒業）"
-                        onChange={(e) =>
-                          patch({ timeline: { ...d.timeline, spanLabel: e.target.value } })
-                        }
-                      />
-                    </div>
-                    <div className="row2">
-                      <div className="sub-field">
-                        <span className="sub-label">総日数（任意）</span>
-                        <input
-                          type="number"
-                          min={0}
-                          value={d.timeline.totalDays ?? ''}
-                          placeholder="例: 90"
-                          onChange={(e) =>
-                            patch({
-                              timeline: {
-                                ...d.timeline,
-                                totalDays: e.target.value ? Number(e.target.value) : null,
-                              },
-                            })
-                          }
-                        />
-                      </div>
-                      <div className="sub-field">
-                        <span className="sub-label">{d.messages.length === 0 ? '開始する日' : '現在の日'}</span>
-                        <NumberInput
-                          min={1}
-                          integer
-                          value={d.timeline.currentDay}
-                          onChange={(currentDay) => patch({ timeline: { ...d.timeline, currentDay } })}
-                        />
-                      </div>
-                    </div>
-                    {d.timeline.slots.length > 1 && (
-                      <div className="sub-field">
-                        <span className="sub-label">
-                          {d.messages.length === 0 ? '開始する時間帯' : '現在の時間帯'}
-                        </span>
-                        <select
-                          value={d.timeline.currentSlot}
-                          onChange={(e) =>
-                            patch({ timeline: { ...d.timeline, currentSlot: Number(e.target.value) } })
-                          }
-                        >
-                          {d.timeline.slots.map((slot, i) => (
-                            <option key={i} value={i}>
-                              {slot}
-                            </option>
-                          ))}
-                        </select>
-                        {d.messages.length === 0 && (
-                          <div className="desc" style={{ marginTop: 4 }}>
-                            物語をこの時間帯から始められます（例: 前日の夜から）。
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    <div className="sub-field">
-                      <span className="sub-label">区切り単位</span>
-                      <div className="pick-grid">
-                        {[
-                          { label: '朝・昼・夜', slots: ['朝', '昼', '夜'] },
-                          { label: '朝・放課後・夜', slots: ['朝', '放課後', '夜'] },
-                          { label: '1日ずつ', slots: ['1日'] },
-                        ].map((preset) => (
-                          <button
-                            key={preset.label}
-                            className={
-                              'pick-chip' +
-                              (d.timeline.slots.join(',') === preset.slots.join(',') ? ' on' : '')
-                            }
-                            onClick={() =>
-                              patch({
-                                timeline: { ...d.timeline, slots: preset.slots, currentSlot: 0 },
-                              })
-                            }
-                          >
-                            {preset.label}
-                          </button>
-                        ))}
-                      </div>
-                      <CsvInput
-                        style={{ marginTop: 8 }}
-                        value={d.timeline.slots}
-                        placeholder="カスタム（カンマ区切り）"
-                        onChange={(slots) =>
-                          patch({ timeline: { ...d.timeline, slots, currentSlot: 0 } })
-                        }
-                      />
-                    </div>
-                    <div className="desc timeline-preview">
-                      {d.messages.length === 0 ? '開始' : '現在'}: {timeLabelOf(d.timeline)}
-                      {' → 次のシーンで: '}
-                      {timeLabelOf(advanceTimeline(d.timeline))}
-                    </div>
-                </fieldset>
+                <label>現在の時点</label>
+                <div className="desc">
+                  物語のいまがいつか。書き方は自由です（「8月31日 朝」「6月半ば」「翌年の春」）。
+                  以後はシーンが終わるたびに AI が本文から読み取って更新します。
+                </div>
+                <input
+                  value={d.state.now}
+                  placeholder="例: 4月7日 朝"
+                  onChange={(e) => patch({ state: { ...d.state, now: e.target.value } })}
+                />
               </div>
 
               {/* 選択肢進行 */}

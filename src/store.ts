@@ -26,10 +26,12 @@ import type {
   Scene,
   SceneIllustration,
   SceneReview,
+  PendingSlip,
   Session,
   SessionImageRecord,
   SessionMode,
   SessionState,
+  TrackerResult,
   UiPrefs,
   UsageRecord,
   World,
@@ -87,19 +89,13 @@ import {
   isDirective,
   nextSceneSystem,
   reviewSystem,
+  trackerSystem,
   SCENE_START_PROMPT,
   selectRawScenes,
   type ResolvedRefs,
   type ReviewPart,
 } from './lib/prompts'
 import { RAW_WINDOW_TOKENS } from './lib/tokens'
-import {
-  advanceTimeline,
-  defaultTimeline,
-  isNearEnd,
-  timeLabelOf,
-  timelinePromptInfo,
-} from './lib/timeline'
 import { extractJson, partialString } from './lib/json'
 import {
   CHOICES_SCHEMA,
@@ -179,7 +175,7 @@ export function applyReviewToState(
     moodChanges: MoodChange[]
   },
 ): SessionState {
-  const prev = base ?? { relations: [], moods: [] }
+  const prev = base ?? emptySessionState()
   // 関係性（fromId,toId で upsert。stance は全文置換）
   const relations = prev.relations.map((r) => ({ ...r }))
   for (const u of sel.relationUpdates) {
@@ -215,7 +211,7 @@ export function applyReviewToState(
     if (idx >= 0) moods[idx].mood = m.mood
     else moods.push({ characterId: m.characterId, mood: m.mood })
   }
-  return { relations, moods }
+  return { ...prev, relations, moods }
 }
 
 /**
@@ -347,7 +343,8 @@ export function hasStartPreset(world: World | undefined | null): boolean {
     p.openingSceneNote?.trim() ||
     !!p.newCharacterPolicy ||
     (p.introTags?.length ?? 0) > 0 ||
-    (p.timeline && p.timeline.slots.length > 0)
+    !!p.startNow?.trim() ||
+    (p.initialPending?.length ?? 0) > 0
   )
 }
 
@@ -358,8 +355,6 @@ export function hasStartPreset(world: World | undefined | null): boolean {
  * コピー方式＝以後の編集はセッション側だけを変え、World 素材は不変
  * （設計は docs/設計_開始テンプレートとゲームカセット.md）。
  * story 系は mode==='story' のみ反映（roleplay では注入も UI も無いため不可視データを作らない）。
- * timeline の「空欄」= enabled が false（一度も有効化していない）。startDay/startSlot があれば
- * その時点から開始（範囲外の値は防御的にクランプ。FB4-A）。
  */
 export function startPresetPatch(d: Session, world: World, overwrite: boolean): Partial<Session> {
   const p = world.startPreset
@@ -399,21 +394,106 @@ export function startPresetPatch(d: Session, world: World, overwrite: boolean): 
   if (p.newCharacterPolicy && (overwrite || !d.newCharacterPolicy)) {
     patch.newCharacterPolicy = p.newCharacterPolicy
   }
-  if (p.timeline && p.timeline.slots.length > 0 && (overwrite || !d.timeline.enabled)) {
-    const startDay = Math.max(1, p.timeline.startDay ?? 1)
-    const startSlot = Math.min(Math.max(0, p.timeline.startSlot ?? 0), p.timeline.slots.length - 1)
-    patch.timeline = {
-      enabled: true,
-      slots: p.timeline.slots,
-      totalDays: p.timeline.totalDays,
-      spanLabel: p.timeline.spanLabel,
-      currentDay: startDay,
-      currentSlot: startSlot,
-      startDay,
-      startSlot,
+  // 開始時点の現在時刻と初期の予定スリップ（§2.1／§2.6）
+  if (p.startNow?.trim() && (overwrite || !d.state.now.trim())) {
+    patch.state = { ...d.state, now: p.startNow.trim() }
+  }
+  if ((p.initialPending?.length ?? 0) > 0 && (overwrite || d.state.pending.length === 0)) {
+    patch.state = {
+      ...(patch.state ?? d.state),
+      pending: (p.initialPending ?? []).map((x) => ({
+        id: uid(),
+        when: x.when,
+        what: x.what,
+        bornAt: 0,
+      })),
     }
   }
   return patch
+}
+
+/**
+ * 照合用の正規化（空白・記号のゆれを吸収する）。`pendingDone` の引用照合だけに使う。
+ */
+function normForMatch(t: string): string {
+  return t.replace(/[\s　。、．，「」『』（）()]/g, '').toLowerCase()
+}
+
+/**
+ * レビューが返した「消化した予定」の引用を、実際の `pending` へ照合する（§2.4.3）。
+ * **id ではなく引用で受ける**＝id の書き写しは実測で 450回中50回落ちたが、行の引用は得意だった。
+ * 判定は正規化した `what` の双方向の部分一致。**候補がちょうど1件の時だけ消す**——
+ * 0件（見つからない）でも2件以上（曖昧）でも残す方を選ぶ＝誤って消すより残す方が害が小さい。
+ */
+export function matchPendingDone(pending: PendingSlip[], quotes: string[] | undefined): Set<string> {
+  const done = new Set<string>()
+  for (const raw of quotes ?? []) {
+    const q = normForMatch(String(raw ?? ''))
+    if (!q) continue
+    const hits = pending.filter((slip) => {
+      if (done.has(slip.id)) return false
+      const w = normForMatch(slip.what)
+      return !!w && (q.includes(w) || w.includes(q))
+    })
+    if (hits.length === 1) done.add(hits[0].id)
+  }
+  return done
+}
+
+/** 直近の消化済み表示を何シーンぶん残すか（§2.2。黙って消さずに自然に流す） */
+const RECENT_DONE_KEEP = 6
+
+/**
+ * 第3の呼び出し（時間と予定）の結果を state へ適用する純関数（§2.4）。
+ * `now`/`place`/`presentIds`/`situation` は上書き、`pending` は add と done の2操作だけ。
+ */
+export function applyTrackerToState(
+  base: SessionState,
+  tracker: TrackerResult | undefined,
+  sceneIndex: number,
+): SessionState {
+  if (!tracker) return base
+  const done = matchPendingDone(base.pending, tracker.pendingDone)
+  const kept = base.pending.filter((slip) => !done.has(slip.id))
+  const added = (tracker.pendingAdd ?? [])
+    .filter((x) => x && String(x.what ?? '').trim())
+    .map((x) => ({
+      id: uid(),
+      when: String(x.when ?? '').trim(),
+      what: String(x.what ?? '').trim(),
+      bornAt: sceneIndex,
+    }))
+  const doneNow = base.pending
+    .filter((slip) => done.has(slip.id))
+    .map((slip) => ({ what: slip.what, at: Date.now() }))
+  return {
+    ...base,
+    now: tracker.now.trim() || base.now,
+    place: tracker.place.trim() || base.place,
+    presentIds: tracker.presentIds,
+    situation: tracker.situation.trim() || base.situation,
+    pending: [...kept, ...added],
+    recentDone: [...doneNow, ...base.recentDone].slice(0, RECENT_DONE_KEEP),
+  }
+}
+
+/** 本編プロンプトの【時間】に載せる1行（§2.4.1。now はシーン境界でしか変わらないので system 側） */
+export function timelineInfoOf(state: SessionState | undefined): string {
+  return state?.now?.trim() ?? ''
+}
+
+/** 空のセッション状態（新規セッション・カセット初期化の共通の起点） */
+export function emptySessionState(): SessionState {
+  return {
+    relations: [],
+    moods: [],
+    now: '',
+    place: '',
+    presentIds: [],
+    situation: '',
+    pending: [],
+    recentDone: [],
+  }
 }
 
 export function newRelationAspect(name = ''): RelationAspectDef {
@@ -449,10 +529,9 @@ function newSession(mode: SessionMode): Session {
     story: { premise: '', genre: '', opening: '', openingTitle: '', initialDirective: '' },
     scenes: [scene],
     currentSceneId: scene.id,
-    timeline: defaultTimeline(),
     choiceMode: 'auto',
     narrativeStyle: mode === 'story' ? 'novel' : 'chat',
-    state: { relations: [], moods: [] },
+    state: emptySessionState(),
     overlay: { lore: [], characterDevelopments: [] },
     structuredOutput: true,
     messages: [],
@@ -611,7 +690,8 @@ export interface ReviewCallProgress {
 /** レビュー呼び出しの表示名（進行表示に出す。何を作っている最中かが分かる粒度にする） */
 const REVIEW_CALL_LABEL: Record<ReviewPart, string> = {
   a: 'あらすじ・次シーンの候補',
-  b: '関係性・気分・数値の変化',
+  b: '関係性・気分の変化',
+  t: '時間と予定',
   all: 'シーンの整理（一括）',
 }
 
@@ -1392,8 +1472,8 @@ export const useStore = create<AppState>()(
             .map((sc) => ({ title: sc.title, summary: sc.summary.trim() })),
           sceneNote: scene?.note ?? '',
           currentSceneId: scene?.id ?? null,
-          timelineInfo: timelinePromptInfo(session.timeline),
-          nearEnd: isNearEnd(session.timeline),
+          timelineInfo: timelineInfoOf(session.state),
+          foreground: scene?.foreground ?? '',
           stateInfo: buildStateInfo(session, characters, effWorld),
         }
       }
@@ -2288,7 +2368,8 @@ export const useStore = create<AppState>()(
           const isPastScene = scene.id !== s.currentSceneId
           // 2本に分けて並列実行するか（PC-A A-2。既定 ON＝undefined は true 扱い）
           const split = s.reviewSplit !== false
-          const parts: ReviewPart[] = split ? ['a', 'b'] : ['all']
+          // 時間と予定（t）は入力が小さく独立して投げられるので、常に別の1本として並べる（§2.4.2）
+          const parts: ReviewPart[] = [...(split ? (['a', 'b'] as ReviewPart[]) : (['all'] as ReviewPart[])), 't']
           set({
             isReviewing: true,
             error: null,
@@ -2340,22 +2421,7 @@ export const useStore = create<AppState>()(
             if (refs.world) ctxParts.push(`【世界観】${refs.world.name}: ${refs.world.description}`)
             if (refs.timelineInfo) ctxParts.push(`【時間】${refs.timelineInfo}`)
 
-            // 次シーンの時刻を明示。過去シーンの再レビューでは、ライブの現在タイムラインを
-            // 進めるのではなく、既に存在する次シーンの時刻ラベルをそのまま使う
-            // （ライブの現在日はそのシーンの時点よりずっと先に進んでいる可能性があるため）。
-            const sceneIdxForCtx = s.scenes.findIndex((sc) => sc.id === scene.id)
-            const existingNextScene = isPastScene ? s.scenes[sceneIdxForCtx + 1] : undefined
-            const nextTimeline = !isPastScene && s.timeline.enabled ? advanceTimeline(s.timeline) : null
-            const nextTimeLabel = isPastScene
-              ? existingNextScene?.timeLabel
-              : nextTimeline
-                ? timeLabelOf(nextTimeline)
-                : undefined
-            if (nextTimeLabel) {
-              ctxParts.push(
-                `【次シーンの時間】このシーンが終わると時間帯が一区切り進み、次シーンは「${nextTimeLabel}」になります。suggestions は時間が経過した後の場面として、その時刻にふさわしい状況で書いてください（直前の場面の続きをそのまま続けない）。`,
-              )
-            }
+            // 次シーンの時刻は第3の呼び出し（tracker）が決めるので、ここでは指示しない
 
             // ワールド固定の関係次元（レビューを拘束）
             const world = refs.world
@@ -2378,6 +2444,19 @@ export const useStore = create<AppState>()(
               })
               .join('\n')
             const relBlock = relNow ? `\n\n【現在の関係性】\n${relNow}` : ''
+
+            // 時間と予定の呼び出し用の文脈（§2.4.2）。小さく保つのが要点
+            const pendingLines = (s.state?.pending ?? [])
+              .map((x) => `- いつ: ${x.when} / なに: ${x.what}`)
+              .join('\n')
+            const trackerUserContent =
+              `【現在】${s.state?.now?.trim() || '（未設定）'}` +
+              `\n【場所】${s.state?.place?.trim() || '（未設定）'}` +
+              `\n【登場しうる人物】${refs.characters.map((c) => c.name).join('・') || '（なし）'}` +
+              (pendingLines
+                ? `\n\n【これから起きること】\n${pendingLines}`
+                : `\n\n【これから起きること】（なし）`) +
+              `\n\n【シーン「${scene.title}」の会話】\n${transcript}`
 
             const userContent = `${context}${relBlock}\n\n【シーン「${scene.title}」の会話】\n${transcript}`
             // max_tokens は打ち切り上限であり、モデルは書き終われば自然に停止するため
@@ -2422,8 +2501,10 @@ export const useStore = create<AppState>()(
              * B には summary が無いので summary 検査は A / all のときだけ適用する。
              */
             const runReviewCall = async (part: ReviewPart): Promise<any | null> => {
-              const system = reviewSystem(part, aspectNames)
-              const wantsSummary = part !== 'b'
+              const system = part === 't' ? trackerSystem(world?.calendarFormat) : reviewSystem(part, aspectNames)
+              // t は本文＋現在＋予定＋名前だけ＝キャラ定義もロアも関係性も渡さない（§2.4.2）
+              const body = part === 't' ? trackerUserContent : userContent
+              const wantsSummary = part !== 'b' && part !== 't'
               const tag = part === 'all' ? 'review' : `review:${part}`
               // 対応モデルなら JSON を強制する＝解釈失敗による再試行がそもそも起きなくなる
               const jsonMode = jsonModeFor(model, get().modelsByProvider[provider.id])
@@ -2452,7 +2533,7 @@ export const useStore = create<AppState>()(
                     model,
                     messages: [
                       { role: 'system', content: system },
-                      { role: 'user', content: userContent },
+                      { role: 'user', content: body },
                       ...(retryHint ? [{ role: 'user' as const, content: retryHint }] : []),
                     ],
                     temperature: 0.4,
@@ -2506,24 +2587,29 @@ export const useStore = create<AppState>()(
               return parsed
             }
 
-            // 2本に分けて並列実行（PC-A A-2）。
-            // 片方だけ失敗しても続行する＝そのぶんの項目が空になるだけで、レビュー全体は成立する。
+            // 並列実行（PC-A A-2 ＋ §2.4.2 の第3の呼び出し）。
+            // 1本だけ失敗しても続行する＝そのぶんの項目が空になるだけで、レビュー全体は成立する。
+            let callError: Error | null = null
+            const runSafe = async (part: ReviewPart) => {
+              try {
+                return await runReviewCall(part)
+              } catch (e) {
+                // 中断は全部を止める＝そのまま外へ投げる。それ以外は1本の失敗として飲み込む
+                if ((e as Error).name === 'AbortError') throw e
+                callError ??= e as Error
+                bumpProgress(part, { status: 'failed' })
+                console.warn(`[review:${part}] 呼び出しに失敗しました:`, e)
+                return null
+              }
+            }
+            const results = await Promise.all(parts.map((part) => runSafe(part)))
+            const byPart = new Map(parts.map((part, i) => [part, results[i]]))
+            const rt = byPart.get('t')
+            if (!rt) console.warn('[review] 時間と予定が取れなかったため、このシーンでは時刻・予定を更新しません。')
             let parsed: any = null
             if (split) {
-              let callError: Error | null = null
-              const runSafe = async (part: ReviewPart) => {
-                try {
-                  return await runReviewCall(part)
-                } catch (e) {
-                  // 中断は両方を止める＝そのまま外へ投げる。それ以外は片方の失敗として飲み込む
-                  if ((e as Error).name === 'AbortError') throw e
-                  callError ??= e as Error
-                  bumpProgress(part, { status: 'failed' })
-                  console.warn(`[review:${part}] 呼び出しに失敗しました:`, e)
-                  return null
-                }
-              }
-              const [ra, rb] = await Promise.all([runSafe('a'), runSafe('b')])
+              const ra = byPart.get('a')
+              const rb = byPart.get('b')
               if (!ra && !rb) {
                 set({
                   error:
@@ -2533,11 +2619,11 @@ export const useStore = create<AppState>()(
                 return
               }
               if (!ra) console.warn('[review] A（あらすじ・次シーン候補）が取れなかったため、該当項目は空になります。')
-              if (!rb) console.warn('[review] B（関係性・数値）が取れなかったため、該当項目は空になります。')
+              if (!rb) console.warn('[review] B（関係性・気分）が取れなかったため、該当項目は空になります。')
               // A の項目を優先（B が余計なキーを返しても A の結果で上書きされる）
               parsed = { ...(rb ?? {}), ...(ra ?? {}) }
             } else {
-              parsed = await runReviewCall('all')
+              parsed = byPart.get('all')
               if (!parsed) {
                 set({ error: 'シーンの整理に失敗しました（モデル出力の解釈に失敗）。もう一度お試しください。' })
                 return
@@ -2650,6 +2736,28 @@ export const useStore = create<AppState>()(
                       .slice(0, 5)
                   })()
                 : [],
+              // 時間と予定（第3の呼び出し）。取れなければ undefined＝このシーンでは更新しない
+              tracker: rt
+                ? {
+                    now: String(rt.now ?? '').trim(),
+                    place: String(rt.place ?? '').trim(),
+                    presentIds: Array.isArray(rt.present)
+                      ? (rt.present as unknown[])
+                          .map((n) => findId(String(n ?? '')))
+                          .filter((id): id is string => !!id)
+                      : [],
+                    situation: String(rt.situation ?? '').trim(),
+                    foreground: String(rt.foreground ?? '').trim(),
+                    pendingAdd: Array.isArray(rt.pendingAdd)
+                      ? (rt.pendingAdd as any[])
+                          .map((x) => ({ when: String(x?.when ?? '').trim(), what: String(x?.what ?? '').trim() }))
+                          .filter((x) => x.what)
+                      : [],
+                    pendingDone: Array.isArray(rt.pendingDone)
+                      ? (rt.pendingDone as unknown[]).map((x) => String(x ?? ""))
+                      : [],
+                  }
+                : undefined,
             }
             set({ sceneReview: review })
           } catch (e) {
@@ -2767,9 +2875,10 @@ export const useStore = create<AppState>()(
             return
           }
 
-          // 現在シーンの通常フロー
-          const tl = s.timeline.enabled ? advanceTimeline(s.timeline) : s.timeline
-          const nextLabel = s.timeline.enabled ? timeLabelOf(tl) : undefined
+          // 現在シーンの通常フロー。時刻は第3の呼び出し（tracker）が決める
+          const sceneIndex = s.scenes.length
+          const trackedState = applyTrackerToState(newState, review.tracker, sceneIndex)
+          const nextLabel = trackedState.now.trim() || undefined
 
           const sug = opts.suggestion
           const base = sug?.title || ''
@@ -2778,6 +2887,8 @@ export const useStore = create<AppState>()(
             `シーン ${s.scenes.length + 1}`
           const next = newScene(title, nextLabel)
           next.note = sug?.note || ''
+          // 次のシーンが持つ前景（§2.4）。空なら深さ0へ何も入らない
+          if (review.tracker?.foreground.trim()) next.foreground = review.tracker.foreground.trim()
 
           set((st) => ({
             sessions: st.sessions.map((sess) =>
@@ -2792,8 +2903,7 @@ export const useStore = create<AppState>()(
                       )
                       .concat(next),
                     currentSceneId: next.id,
-                    timeline: tl,
-                    state: newState,
+                    state: trackedState,
                     overlay: nextOverlay(sess.overlay),
                     updatedAt: Date.now(),
                   }
@@ -2826,12 +2936,7 @@ export const useStore = create<AppState>()(
             const dirText = '特に指定なし（自由に提案）。'
             const sceneIdxForCtx = s.scenes.findIndex((sc) => sc.id === scene.id)
             const existingNextScene = isPastScene ? s.scenes[sceneIdxForCtx + 1] : undefined
-            const nextTimeline = !isPastScene && s.timeline.enabled ? advanceTimeline(s.timeline) : null
-            const nextTimeLabel = isPastScene
-              ? existingNextScene?.timeLabel
-              : nextTimeline
-                ? timeLabelOf(nextTimeline)
-                : undefined
+            const nextTimeLabel = isPastScene ? existingNextScene?.timeLabel : undefined
             const ctxParts = [`【これまでのあらすじ】\n${review.summary}`]
             if (refs.world) ctxParts.push(`【世界観】${refs.world.name}: ${refs.world.description}`)
             ctxParts.push(`【次シーンの方向性】${dirText}`)
@@ -3086,7 +3191,7 @@ export const useStore = create<AppState>()(
           // 復元後の開始やり直し（開始時点へ戻った場合等）の上書きガード（FB6-C）
           if (!(await ensureLineTip(s.id, get().branchTrees[s.id]?.currentId))) return
 
-          const label = s.timeline.enabled ? timeLabelOf(s.timeline) : undefined
+          const label = s.state.now.trim() || undefined
           const drafted = label || scene.title
           // 導入（そのまま掲載）モードでは見出しを openingTitle 優先に（FB2-B）
           const openingTitle = s.mode === 'story' ? s.story.openingTitle.trim() : ''

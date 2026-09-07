@@ -295,7 +295,7 @@ export async function exportWorldCard(world: World): Promise<void> {
   downloadBlob(outBlob, `card_${world.name || 'world'}.png`)
 }
 
-/** 開始テンプレート（W1）の正規化。文字列項目と timeline 定義のみ受け付け、空なら undefined */
+/** 開始テンプレート（W1）の正規化。文字列項目と開始時点・初期予定のみ受け付け、空なら undefined */
 function normalizeStartPreset(raw: any): WorldStartPreset | undefined {
   if (!raw || typeof raw !== 'object') return undefined
   const p: WorldStartPreset = {}
@@ -314,14 +314,12 @@ function normalizeStartPreset(raw: any): WorldStartPreset | undefined {
   }
   const introTags = normalizeIntroTags(raw.introTags)
   if (introTags.length > 0) p.introTags = introTags
-  if (raw.timeline && Array.isArray(raw.timeline.slots)) {
-    p.timeline = {
-      slots: raw.timeline.slots.filter((s: any) => typeof s === 'string'),
-      totalDays: typeof raw.timeline.totalDays === 'number' ? raw.timeline.totalDays : null,
-      spanLabel: typeof raw.timeline.spanLabel === 'string' ? raw.timeline.spanLabel : '',
-      ...(typeof raw.timeline.startDay === 'number' ? { startDay: raw.timeline.startDay } : {}),
-      ...(typeof raw.timeline.startSlot === 'number' ? { startSlot: raw.timeline.startSlot } : {}),
-    }
+  if (typeof raw.startNow === 'string' && raw.startNow.trim()) p.startNow = raw.startNow.trim()
+  if (Array.isArray(raw.initialPending)) {
+    const pending = raw.initialPending
+      .filter((x: any) => x && typeof x.what === 'string' && x.what.trim())
+      .map((x: any) => ({ when: String(x.when ?? '').trim(), what: String(x.what).trim() }))
+    if (pending.length > 0) p.initialPending = pending
   }
   return Object.keys(p).length > 0 ? p : undefined
 }
@@ -335,6 +333,10 @@ function normalizeWorldFromData(raw: any): World {
     description: typeof raw.description === 'string' ? raw.description : '',
     entries: Array.isArray(raw.entries) ? raw.entries : [],
     relationAspects: Array.isArray(raw.relationAspects) ? raw.relationAspects : [],
+    // カード往復で暦の書式見本が消えないよう明示的に引き継ぐ（§2.1）
+    ...(typeof raw.calendarFormat === 'string' && raw.calendarFormat.trim()
+      ? { calendarFormat: raw.calendarFormat.trim() }
+      : {}),
     ...(startPreset ? { startPreset } : {}),
     createdAt: typeof raw.createdAt === 'number' ? raw.createdAt : now,
     updatedAt: typeof raw.updatedAt === 'number' ? raw.updatedAt : now,
@@ -454,20 +456,19 @@ export function freshSessionOf(session: Session): Session {
     // 原文窓は種セッションのシーン id を指しているので落とす（PC3。残っても参照切れで
     // 無視されるだけだが、配布物に死んだ id を載せない）
     rawWindowFromSceneId: undefined,
-    state: { relations: [], moods: [] },
+    state: {
+      relations: [],
+      moods: [],
+      now: '',
+      place: '',
+      presentIds: [],
+      situation: '',
+      pending: [],
+      recentDone: [],
+    },
     overlay: { lore: [], characterDevelopments: [] },
     // 出自カセットは引き継がない（FB9-B。playCassette が改めて刻む）
     originCassetteId: undefined,
-    // 開始時点（startDay/startSlot）へ巻き戻す。指定が無ければ従来どおり1日目・先頭スロット（FB2-B）。
-    // 区切り編集後に範囲外となった開始時点は防御的にクランプ（FB4-A）
-    timeline: {
-      ...session.timeline,
-      currentDay: Math.max(1, session.timeline.startDay ?? 1),
-      currentSlot: Math.min(
-        Math.max(0, session.timeline.startSlot ?? 0),
-        Math.max(0, session.timeline.slots.length - 1),
-      ),
-    },
     archived: false,
     updatedAt: now,
   }

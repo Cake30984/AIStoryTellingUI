@@ -4,7 +4,6 @@ import {
   type ReviewCallProgress,
   type ReviewCallStatus,
 } from '../store'
-import { advanceTimeline, timeLabelOf } from '../lib/timeline'
 import type {
   DiscoveredCharacter,
   NextSceneSuggestion,
@@ -124,11 +123,8 @@ function ReviewBody() {
   const session = sessions.find((s) => s.id === activeId)
   const isPastScene = !!session && review.sceneId !== session.currentSceneId
 
-  // 次シーンで進む時間帯（現在シーン確定時のみ。タイムライン有効時）
-  const nextTimeLabel =
-    session && session.timeline.enabled && !isPastScene
-      ? timeLabelOf(advanceTimeline(session.timeline))
-      : null
+  // 次シーンの時点（第3の呼び出しが読み取った now。取れていなければ出さない）
+  const nextTimeLabel = !isPastScene ? (review.tracker?.now?.trim() || null) : null
 
   // 表示・編集・プレビューはすべて draft を読む（FB5-C）。ストアの review は候補再生成まで不変
   const [draft, setDraft] = useState<SceneReview>(() => cloneReview(review))
