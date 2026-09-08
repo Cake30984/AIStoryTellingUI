@@ -19,7 +19,6 @@ import type {
   MoodChange,
   NextSceneSuggestion,
   OpenRouterModel,
-  Persona,
   Provider,
   RelationAspectDef,
   RelationUpdate,
@@ -119,7 +118,7 @@ import {
 
 export const DEFAULT_MODEL = 'openrouter/auto'
 
-export type View = 'sessions' | 'characters' | 'worlds' | 'personas' | 'cassettes' | 'system'
+export type View = 'sessions' | 'characters' | 'worlds' | 'cassettes' | 'system'
 
 /** View が属する領域（レール切替・グリッド制御用。UI-5） */
 export function areaOf(view: View): 'play' | 'library' | 'system' {
@@ -261,18 +260,6 @@ export function newCharacter(): Character {
     developments: [],
     avatar: { color: pickColor() },
     tags: [],
-    createdAt: now,
-    updatedAt: now,
-  }
-}
-
-export function newPersona(): Persona {
-  const now = Date.now()
-  return {
-    id: uid(),
-    name: '',
-    description: '',
-    avatar: { color: '#5b8def' },
     createdAt: now,
     updatedAt: now,
   }
@@ -523,7 +510,7 @@ function newSession(mode: SessionMode): Session {
     choicesModel: '',
     characterIds: [],
     worldId: null,
-    personaId: null,
+    focusCharacterId: '',
     introBindings: [],
     authorNote: '',
     story: { premise: '', genre: '', opening: '', openingTitle: '', initialDirective: '' },
@@ -551,21 +538,16 @@ export function currentScene(s: Session): Scene | undefined {
 
 /**
  * 「もう知っている話者」の一覧（発見キャラの判定用。FB7-E）。
- * **現在シーンの顔ぶれではなくセッションの参加キャラ全員**＋ペルソナを返す
+ * **現在シーンの顔ぶれではなくセッションの参加キャラ全員**を返す
  * （今のシーンに出ていないだけの参加キャラを「新キャラ」と誤検出しないため）。
+ * 中心人物も `characterIds` の一員なので特別扱いは要らない（F3 でペルソナを統合した）。
  * 名前の照合は必ず `matchCharacterByName`（`structured.ts`）へ通す＝別名・前方一致の規則を1本に保つ。
  */
-export function knownSpeakersOf(
-  session: Session,
-  characters: Character[],
-  personas: Persona[],
-): { id: string; name: string }[] {
-  const cast = session.characterIds
+export function knownSpeakersOf(session: Session, characters: Character[]): { id: string; name: string }[] {
+  return session.characterIds
     .map((id) => characters.find((c) => c.id === id))
     .filter((c): c is Character => !!c)
     .map((c) => ({ id: c.id, name: c.name }))
-  const persona = personas.find((p) => p.id === session.personaId)
-  return persona?.name.trim() ? [...cast, { id: persona.id, name: persona.name }] : cast
 }
 
 /**
@@ -645,7 +627,6 @@ function pickThumbFromSnapshot(session: Session): string | undefined {
  */
 export function collectUsedImageIds(
   characters: Character[],
-  personas: Persona[],
   sessions: Session[],
   cassettes: Cassette[] = [],
   imageLogs: Record<string, SessionImageRecord[]> = {},
@@ -654,7 +635,6 @@ export function collectUsedImageIds(
   for (const c of characters) {
     if (c.avatar.imageId) used.add(c.avatar.imageId)
   }
-  for (const p of personas) if (p.avatar.imageId) used.add(p.avatar.imageId)
   for (const s of sessions) for (const id of sessionImageIds(s)) used.add(id)
   // カセット棚（FB2-E）: 表紙＋同梱セッションが参照する画像も使用中扱い
   for (const cas of cassettes) {
@@ -709,7 +689,6 @@ interface AppState {
   favoriteModels: string[]
   characters: Character[]
   worlds: World[]
-  personas: Persona[]
   sessions: Session[]
   /** ゲームカセット棚（配布物の素材化。FB2-E） */
   cassettes: Cassette[]
@@ -816,10 +795,6 @@ interface AppState {
   /** カードからのインポート専用。id が既存と衝突する場合は振り直して常に新規追加する */
   importWorldCard: (w: World) => void
   deleteWorld: (id: string) => void
-  upsertPersona: (p: Persona) => void
-  /** カードからのインポート専用。id が既存と衝突する場合は振り直して常に新規追加する */
-  importPersonaCard: (p: Persona) => void
-  deletePersona: (id: string) => void
   /**
    * 素材の複製（G4-a。取り込んだカセットの世界観を編集して原本を壊すのを防ぐ導線）。
    * 新 id を返す（見つからなければ undefined）。名前は「〜のコピー」（同名があれば連番）。
@@ -829,7 +804,6 @@ interface AppState {
    */
   duplicateWorld: (id: string) => string | undefined
   duplicateCharacter: (id: string) => string | undefined
-  duplicatePersona: (id: string) => string | undefined
 
   // セッション
   createSession: (mode: SessionMode) => string
@@ -900,7 +874,7 @@ interface AppState {
 
   // 発見キャラ（FB7-E）
   /**
-   * キャラ化待ちに積む。既にセッションの参加キャラ・ペルソナ名で解決できる名前と、
+   * キャラ化待ちに積む。既にセッションの参加キャラ名で解決できる名前と、
    * 同名で待機中の分は積まない（？バッジ連打・レビューとの二重承認で重複させない）。
    */
   queueCharacterDrafts: (sessionId: string, items: DiscoveredCharacter[]) => void
@@ -981,7 +955,7 @@ interface AppState {
   cancelImageJob: (jobId: string) => void
   dismissImageJob: (jobId: string) => void
   dismissImageJobToasts: () => void
-  /** 候補から採用。保存先は target で分岐（挿絵/キャラアバター/ペルソナアバター）し、完了後ジョブを自動 dismiss */
+  /** 候補から採用。保存先は target で分岐（挿絵/キャラアバター）し、完了後ジョブを自動 dismiss */
   applyImageJobResult: (jobId: string, index: number) => Promise<void>
 
   // データ入出力
@@ -989,7 +963,7 @@ interface AppState {
   exportBundle: (includeImages?: boolean) => Promise<ExportBundle>
   importBundle: (bundle: ExportBundle) => Promise<{ added: number }>
   /**
-   * PNG カード（キャラ/世界観/ペルソナ/カセット）と JSON バンドルを種別自動判別で取り込む。
+   * PNG カード（キャラ/世界観/カセット）と JSON バンドルを種別自動判別で取り込む。
    * System と Library（作る）のインポート導線で共用。成功時は結果メッセージを返し、失敗は throw。
    */
   importAnyFile: (file: File) => Promise<string>
@@ -1225,16 +1199,19 @@ function buildStateInfo(
   world?: World,
 ): string {
   const relations = session.state?.relations ?? []
+  // 関係性 prose の宛先＝中心人物（F3。'hero' という特別値は無くなった）
+  const heroLabel =
+    characters.find((c) => c.id === session.focusCharacterId)?.name.trim() || '主人公'
   const moods = session.state?.moods ?? []
   const nameOf = (id: string) => characters.find((c) => c.id === id)?.name ?? 'キャラ'
   const aspectName = (id: string) => world?.relationAspects.find((a) => a.id === id)?.name ?? ''
   const moodOf = (id: string) => moods.find((m) => m.characterId === id)?.mood
 
   const lines: string[] = []
-  // 関係性 prose（キャラ→主人公）
+  // 関係性 prose（キャラ→中心人物）
   for (const r of relations) {
     if (!r.stance.trim() && r.aspects.every((a) => !a.note.trim())) continue
-    lines.push(`- ${nameOf(r.fromId)} → 主人公: ${r.stance.trim()}`)
+    lines.push(`- ${nameOf(r.fromId)} → ${heroLabel}: ${r.stance.trim()}`)
     for (const a of r.aspects) {
       const an = aspectName(a.aspectId)
       if (an && a.note.trim()) lines.push(`    ${an}: ${a.note.trim()}`)
@@ -1450,7 +1427,7 @@ export const useStore = create<AppState>()(
       }
 
       function resolveRefs(session: Session): ResolvedRefs {
-        const { characters, worlds, personas } = get()
+        const { characters, worlds } = get()
         const scene = currentScene(session)
         // 素材＋オーバーレイの実効ビュー
         const effWorld = effectiveWorld(
@@ -1466,7 +1443,7 @@ export const useStore = create<AppState>()(
         return {
           characters: sessionCharacters,
           world: effWorld,
-          persona: personas.find((p) => p.id === session.personaId) ?? undefined,
+          focus: sessionCharacters.find((c) => c.id === session.focusCharacterId),
           priorSummaries: session.scenes
             .filter((sc) => sc.id !== scene?.id && sc.summary.trim().length > 0)
             .map((sc) => ({ title: sc.title, summary: sc.summary.trim() })),
@@ -1824,7 +1801,6 @@ export const useStore = create<AppState>()(
         favoriteModels: [],
         characters: [],
         worlds: [],
-        personas: [],
         sessions: [],
         cassettes: [],
         activeId: null,
@@ -2005,33 +1981,6 @@ export const useStore = create<AppState>()(
             ),
           })),
 
-        upsertPersona: (p) =>
-          set((st) => {
-            const exists = st.personas.some((x) => x.id === p.id)
-            const updated = { ...p, updatedAt: Date.now() }
-            return {
-              personas: exists
-                ? st.personas.map((x) => (x.id === p.id ? updated : x))
-                : [updated, ...st.personas],
-            }
-          }),
-
-        importPersonaCard: (p) =>
-          set((st) => {
-            const idTaken = st.personas.some((x) => x.id === p.id)
-            const now = Date.now()
-            const fresh = idTaken ? { ...p, id: uid(), createdAt: now, updatedAt: now } : p
-            return { personas: [fresh, ...st.personas] }
-          }),
-
-        deletePersona: (id) =>
-          set((st) => ({
-            personas: st.personas.filter((p) => p.id !== id),
-            sessions: st.sessions.map((s) =>
-              s.personaId === id ? { ...s, personaId: null } : s,
-            ),
-          })),
-
         duplicateWorld: (id) => {
           const src = get().worlds.find((w) => w.id === id)
           if (!src) return undefined
@@ -2061,21 +2010,6 @@ export const useStore = create<AppState>()(
             updatedAt: now,
           }
           set((st) => ({ characters: [copy, ...st.characters] }))
-          return copy.id
-        },
-
-        duplicatePersona: (id) => {
-          const src = get().personas.find((p) => p.id === id)
-          if (!src) return undefined
-          const now = Date.now()
-          const copy: Persona = {
-            ...src,
-            id: uid(),
-            name: copyNameOf(src.name, get().personas.map((p) => p.name)),
-            createdAt: now,
-            updatedAt: now,
-          }
-          set((st) => ({ personas: [copy, ...st.personas] }))
           return copy.id
         },
 
@@ -2397,7 +2331,7 @@ export const useStore = create<AppState>()(
             const transcript = sceneMsgs
               .map((m) =>
                 m.role === 'user'
-                  ? `${refs.persona?.name || 'ユーザー'}: ${m.content}`
+                  ? `${refs.focus?.name || 'ユーザー'}: ${m.content}`
                   : `${nameOf(m.characterId)}: ${plainTextOf(m.content)}`,
               )
               .join('\n')
@@ -2416,6 +2350,8 @@ export const useStore = create<AppState>()(
             // **発見キャラの重複判定（newCharacters / ？バッジ）はゲート前の `s.characterIds` を
             // 見続ける**＝未解禁キャラの名前が本文に出ても新キャラとして二重に起案されない（設計 §1.4）
             const visibleIds = new Set(refs.characters.map((c) => c.id))
+            // 中心人物は自分自身への関係を持たない（F3）
+            visibleIds.delete(s.focusCharacterId)
             const ctxParts: string[] = []
             if (castDefs) ctxParts.push(`【登場人物の現行設定】\n${castDefs}`)
             if (refs.world) ctxParts.push(`【世界観】${refs.world.name}: ${refs.world.description}`)
@@ -2426,6 +2362,9 @@ export const useStore = create<AppState>()(
             // ワールド固定の関係次元（レビューを拘束）
             const world = refs.world
             const aspectNames = (world?.relationAspects ?? []).map((a) => a.name).filter(Boolean)
+            // 関係性 prose の宛先＝中心人物（F3。ペルソナ廃止で 'hero' という特別値は無くなった）
+            const focusName = refs.focus?.name.trim() ?? ''
+            const heroLabel = focusName || '主人公'
             const context = ctxParts.join('\n')
 
             // 現在の関係性 prose（レビューが書き直すための起点）
@@ -2440,7 +2379,7 @@ export const useStore = create<AppState>()(
                   })
                   .filter(Boolean)
                   .join(' / ')
-                return `- ${who}→主人公: ${r.stance}${asp ? `（${asp}）` : ''}`
+                return `- ${who}→${heroLabel}: ${r.stance}${asp ? `（${asp}）` : ''}`
               })
               .join('\n')
             const relBlock = relNow ? `\n\n【現在の関係性】\n${relNow}` : ''
@@ -2501,7 +2440,8 @@ export const useStore = create<AppState>()(
              * B には summary が無いので summary 検査は A / all のときだけ適用する。
              */
             const runReviewCall = async (part: ReviewPart): Promise<any | null> => {
-              const system = part === 't' ? trackerSystem(world?.calendarFormat) : reviewSystem(part, aspectNames)
+              const system =
+                part === 't' ? trackerSystem(world?.calendarFormat) : reviewSystem(part, aspectNames, focusName)
               // t は本文＋現在＋予定＋名前だけ＝キャラ定義もロアも関係性も渡さない（§2.4.2）
               const body = part === 't' ? trackerUserContent : userContent
               const wantsSummary = part !== 'b' && part !== 't'
@@ -2697,8 +2637,8 @@ export const useStore = create<AppState>()(
                       return {
                         fromId: findId(fromName) ?? '',
                         fromName,
-                        toId: 'hero',
-                        toName: refs.persona?.name?.trim() || '主人公',
+                        toId: s.focusCharacterId,
+                        toName: heroLabel,
                         stance: String(x?.stance ?? '').trim(),
                         aspects,
                         reason: String(x?.reason ?? ''),
@@ -2719,7 +2659,7 @@ export const useStore = create<AppState>()(
               // ＝レビューが参加キャラを「新登場」と誤って挙げても提案には出さない
               newCharacters: Array.isArray(parsed?.newCharacters)
                 ? (() => {
-                    const known = knownSpeakersOf(s, sessionChars, get().personas)
+                    const known = knownSpeakersOf(s, sessionChars)
                     const seen = new Set<string>()
                     return parsed.newCharacters
                       .map((x: any) => ({
@@ -3016,7 +2956,7 @@ export const useStore = create<AppState>()(
         queueCharacterDrafts: (sessionId, items) => {
           const s = get().sessions.find((x) => x.id === sessionId)
           if (!s) return
-          const known = knownSpeakersOf(s, get().characters, get().personas)
+          const known = knownSpeakersOf(s, get().characters)
           // **ライブラリに同名がいる場合も「新キャラ」ではない。** 参加していないだけの既存キャラを
           // ここで作ると同名が二重にできる（レビューの newCharacters 承認経路もここを通る）
           const library = get().characters.map((c) => ({ id: c.id, name: c.name }))
@@ -3026,7 +2966,7 @@ export const useStore = create<AppState>()(
             for (const item of items) {
               const name = item.name.trim()
               if (!name || NARRATION_NAMES.has(name.toLowerCase())) continue
-              // 既存の参加キャラ・ペルソナ・ライブラリに解決できる名前は「新キャラ」ではない
+              // 既存の参加キャラ・ライブラリに解決できる名前は「新キャラ」ではない
               if (matchCharacterByName(name, known)) continue
               if (matchCharacterByName(name, library)) continue
               const dup = (x: { sessionId: string; name: string }) =>
@@ -3163,12 +3103,16 @@ export const useStore = create<AppState>()(
           // 導入文は開始前にだけ置換タグを実名へ解決する。未解決のまま履歴・チェックポイント・イベント消化を
           // 作らないことで、@タグが few-shot としてモデルへ流れるのを防ぐ（A-1）。
           const openingTemplate = s.mode === 'story' ? s.story.opening.trim() : ''
-          const refs = resolveRefs(s)
           let opening = openingTemplate
+          // 中心人物は必須（F3。物語モードでは視点、ロールプレイでは演じる人物）
+          if (!s.characterIds.includes(s.focusCharacterId)) {
+            set({ error: '中心人物が未選択です。セッション設定の「基本」で登場キャラから1人選んでください。' })
+            return
+          }
           // roleplay では導入文を掲載しないため、残存する導入文中の @タグ で開始をブロックしない
           const validationSession =
             s.mode === 'story' ? s : { ...s, story: { ...s.story, opening: '' } }
-          const issues = validateCasting(validationSession, get().characters, get().personas)
+          const issues = validateCasting(validationSession, get().characters)
           if (issues.length > 0) {
             // 配役モーダルは F1-d で撤去したので、置換タグの不足はエラー文言で伝える
             set({ error: issues.map(castingIssueLabel).join(' ') })
@@ -3179,7 +3123,6 @@ export const useStore = create<AppState>()(
               tags: s.story.introTags,
               bindings: s.introBindings,
               characters: get().characters.filter((c) => s.characterIds.includes(c.id)),
-              persona: refs.persona,
             })
             if (resolved.issues.length > 0) {
               set({ error: `開始できません。${resolved.issues.map(castingIssueLabel).join(' ')}` })
@@ -3386,7 +3329,7 @@ export const useStore = create<AppState>()(
         },
 
         exportBundle: async (includeImages) => {
-          const { characters, worlds, personas, sessions, cassettes, sessionImageLogs } = get()
+          const { characters, worlds, sessions, cassettes, sessionImageLogs } = get()
           // providers（API キー）は localStorage のみに保持し、エクスポートには含めない（共有時の漏洩防止）
           const bundle: ExportBundle = {
             type: 'ai-storytelling-studio',
@@ -3394,13 +3337,12 @@ export const useStore = create<AppState>()(
             exportedAt: Date.now(),
             characters,
             worlds,
-            personas,
             sessions,
             cassettes,
             sessionImageLogs,
           }
           if (includeImages) {
-            const ids = collectUsedImageIds(characters, personas, sessions, cassettes, sessionImageLogs)
+            const ids = collectUsedImageIds(characters, sessions, cassettes, sessionImageLogs)
             const images: { id: string; mime: string; dataBase64: string }[] = []
             for (const id of ids) {
               const blob = await getImage(id)
@@ -3430,10 +3372,6 @@ export const useStore = create<AppState>()(
             ...c,
             avatar: normalizeAvatar(c.avatar),
           }))
-          const incomingPersonas = (bundle.personas ?? []).map((p: any) => ({
-            ...p,
-            avatar: normalizeAvatar(p.avatar),
-          }))
           const incomingWorlds = (bundle.worlds ?? []).map((w: any) => ({
             ...w,
             relationAspects: Array.isArray(w.relationAspects) ? w.relationAspects : [],
@@ -3460,7 +3398,6 @@ export const useStore = create<AppState>()(
             return {
               characters: mergeById(st.characters, incomingCharacters),
               worlds: mergeById(st.worlds, incomingWorlds),
-              personas: mergeById(st.personas, incomingPersonas),
               sessions: mergeById(st.sessions, incomingSessions),
               cassettes: mergeById(
                 st.cassettes,
@@ -3498,11 +3435,6 @@ export const useStore = create<AppState>()(
               get().importCharacterCard(withImage)
               return `カードから「${withImage.name || '無名'}」を追加しました。`
             }
-            if (parsed.kind === 'persona') {
-              const withImage = await attachCardImage(parsed.persona, bytes)
-              get().importPersonaCard(withImage)
-              return `カードから「${withImage.name || '無名'}」を追加しました。`
-            }
             if (parsed.kind === 'cassette') {
               await get().importCassette(parsed.bundle, new Blob([bytes as BlobPart], { type: 'image/png' }))
               return `ゲームカセット「${parsed.bundle.session.title || '無題'}」を棚に登録しました（「作る > カセット」から遊べます）。`
@@ -3517,7 +3449,7 @@ export const useStore = create<AppState>()(
           return `インポート完了：${added} 件を追加しました（既存は保持）。${imgNote}`
         },
 
-        // ゲームカセットは「棚に登録」する（FB2-E）。素材（キャラ/世界/ペルソナ）はライブラリへ
+        // ゲームカセットは「棚に登録」する（FB2-E）。素材（キャラ/世界）はライブラリへ
         // マージ・同梱画像は remap するが、セッションは作らず Cassette として cassettes に積む。
         // 実際に遊ぶのは playCassette（複製してセッション化）。
         importCassette: async (bundle, cover) => {
@@ -3543,8 +3475,6 @@ export const useStore = create<AppState>()(
               .map(remapAvatar)
             const worldExists = bundle.world && st.worlds.some((w) => w.id === bundle.world!.id)
             const freshWorlds = bundle.world && !worldExists ? [bundle.world] : []
-            const personaExists = bundle.persona && st.personas.some((p) => p.id === bundle.persona!.id)
-            const freshPersonas = bundle.persona && !personaExists ? [remapAvatar(bundle.persona)] : []
 
             // カセットの同梱セッションは開始状態（freshSessionOf 済み）。挿絵の remap のみ行う
             const session: Session = {
@@ -3568,7 +3498,6 @@ export const useStore = create<AppState>()(
             return {
               characters: [...freshChars, ...st.characters],
               worlds: [...freshWorlds, ...st.worlds],
-              personas: [...freshPersonas, ...st.personas],
               cassettes: [cassette, ...st.cassettes],
             }
           })
@@ -3785,24 +3714,13 @@ export const useStore = create<AppState>()(
                 c.id === target.characterId ? { ...c, avatar: { ...c.avatar, imageId }, updatedAt: Date.now() } : c,
               ),
             }))
-          } else if (target.type === 'persona-avatar') {
-            if (!get().personas.some((p) => p.id === target.personaId)) {
-              throw new Error('対象のペルソナが見つかりません（削除された可能性があります）。')
-            }
-            const normalized = await normalizeImage(blob, 512)
-            const imageId = await putImage(normalized)
-            set((st) => ({
-              personas: st.personas.map((p) =>
-                p.id === target.personaId ? { ...p, avatar: { ...p.avatar, imageId }, updatedAt: Date.now() } : p,
-              ),
-            }))
           }
           get().dismissImageJob(jobId)
         },
 
         gcUnusedImages: async () => {
-          const { characters, personas, sessions, cassettes, branchTrees, sessionImageLogs } = get()
-          const used = collectUsedImageIds(characters, personas, sessions, cassettes, sessionImageLogs)
+          const { characters, sessions, cassettes, branchTrees, sessionImageLogs } = get()
+          const used = collectUsedImageIds(characters, sessions, cassettes, sessionImageLogs)
           // チェックポイント（分岐ツリー）が参照する画像も使用中扱い（GC 一本化。C1）
           for (const tree of Object.values(branchTrees)) {
             for (const node of tree.nodes) {
@@ -3898,7 +3816,6 @@ export const useStore = create<AppState>()(
         favoriteModels: st.favoriteModels,
         characters: st.characters,
         worlds: st.worlds,
-        personas: st.personas,
         sessions: st.sessions,
         cassettes: st.cassettes,
         activeId: st.activeId,

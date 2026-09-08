@@ -1,4 +1,4 @@
-import type { Character, Message, Persona, PromptStyle, Scene, Session, World } from '../types'
+import type { Character, Message, PromptStyle, Scene, Session, World } from '../types'
 import type { ChatMessage } from './openrouter'
 import { splitLoreEntries } from './lorebook'
 import { plainTextOf } from './structured'
@@ -30,7 +30,11 @@ export interface ResolvedRefs {
   /** セッションの参加キャラ全員（CS1 以降、シーン単位の絞り込みは無い） */
   characters: Character[]
   world?: World
-  persona?: Persona
+  /**
+   * 中心人物（`Session.focusCharacterId` の実体。`characters` にも含まれる）。
+   * 物語モードでは視点人物、ロールプレイではユーザーが演じる人物（→ 設計_物語の簡素化.md §2.5）。
+   */
+  focus?: Character
   /** 過去シーンの引き継ぎ要約（これまでのあらすじ） */
   priorSummaries: { title: string; summary: string }[]
   /** 現在シーンの状況メモ */
@@ -123,29 +127,45 @@ export function buildSystemPrompt(session: Session, refs: ResolvedRefs): string 
   }
 
   const novel = session.narrativeStyle === 'novel'
+  // 中心人物（F3）。ペルソナを廃したので、中心人物も他と同じ Character として定義に含める。
+  // ロールプレイでは AI が演じるのは中心人物**以外**（中心人物はユーザーの分身）。
+  const focusName = refs.focus?.name.trim() ?? ''
+  const aiCharacters =
+    session.mode === 'roleplay' && refs.focus
+      ? refs.characters.filter((c) => c.id !== refs.focus!.id)
+      : refs.characters
 
   // 2. キャラクター定義
   if (novel) {
     if (refs.characters.length) {
-      const blocks = refs.characters.map((c) => characterBlock(c, '登場人物')).join('\n\n')
+      const blocks = refs.characters
+        .map((c) => characterBlock(c, c.id === refs.focus?.id ? '中心人物' : '登場人物'))
+        .join('\n\n')
       parts.push(`【登場人物】\n${blocks}`)
     }
   } else if (session.mode === 'roleplay') {
-    if (refs.characters.length === 1) {
-      const c = refs.characters[0]
+    if (aiCharacters.length === 1) {
+      const c = aiCharacters[0]
       parts.push(
         `あなたは次のキャラクターになりきってロールプレイを行います。一人称・口調・性格を一貫して保ってください。\n\n${characterBlock(c)}`,
       )
-    } else if (refs.characters.length > 1) {
-      const blocks = refs.characters.map((c) => characterBlock(c)).join('\n\n')
+    } else if (aiCharacters.length > 1) {
+      const blocks = aiCharacters.map((c) => characterBlock(c)).join('\n\n')
       parts.push(
         `あなたは以下の複数キャラクターが登場する群像劇を演じます。それぞれの人格・口調を厳密に演じ分けてください。\n\n${blocks}`,
+      )
+    }
+    if (refs.focus) {
+      parts.push(
+        `【ユーザーが演じる人物】\n${characterBlock(refs.focus)}\n\nこの人物はユーザーが演じます。セリフ・行動を代わりに書かないでください。`,
       )
     }
   } else {
     // 物語モード: 登場人物として扱う
     if (refs.characters.length) {
-      const blocks = refs.characters.map((c) => characterBlock(c, '登場人物')).join('\n\n')
+      const blocks = refs.characters
+        .map((c) => characterBlock(c, c.id === refs.focus?.id ? '中心人物' : '登場人物'))
+        .join('\n\n')
       parts.push(`【主要登場人物】\n${blocks}`)
     }
   }
@@ -161,12 +181,12 @@ export function buildSystemPrompt(session: Session, refs: ResolvedRefs): string 
           `その場合は名前・立場が読者に伝わるように描写し、以後は同じ名前で一貫して扱ってください。`,
   )
 
-  // 3. ユーザーペルソナ
-  if (refs.persona && (refs.persona.name.trim() || refs.persona.description.trim())) {
+  // 3. 中心人物が何を意味するか（人物の定義そのものは 2 に含まれている。
+  // ロールプレイでは 2 の【ユーザーが演じる人物】が同じ役目を果たすのでここでは出さない）
+  if (focusName && session.mode !== 'roleplay') {
     parts.push(
-      `【ユーザーが演じる人物】\n${refs.persona.name.trim()}${
-        refs.persona.description.trim() ? `: ${refs.persona.description.trim()}` : ''
-      }`,
+      `【中心人物】\n物語は「${focusName}」を中心に描かれます。` +
+        `情景と心情は${focusName}が見聞きし感じ取れる範囲で書いてください。`,
     )
   }
 
@@ -193,7 +213,7 @@ export function buildSystemPrompt(session: Session, refs: ResolvedRefs): string 
 
   // 6. 文体・ルール
   if (novel) {
-    const heroName = refs.persona?.name?.trim() || '主人公'
+    const heroName = focusName || '主人公'
     parts.push(
       `あなたは熟練の小説家です。情景・心情・行動を描く「地の文」と、登場人物のセリフ「…」を自然に織り交ぜた小説形式で執筆します。\n` +
         `【執筆ルール】\n` +
@@ -718,8 +738,10 @@ export function trackerSystem(calendarFormat?: string): string {
  * 状態変動の拘束（関係次元）は B のみに入れる＝A の suggestions が歪まないようにするため。
  * @param part 出力させる項目の範囲（`a`/`b`/`all`）
  * @param aspectNames ワールド固定の関係次元名。空でなければその次元のみ使うよう拘束。
+ * @param focusName 中心人物の名前（F3。関係性 prose の宛先。空なら「主人公」と呼ぶ）
  */
-export function reviewSystem(part: ReviewPart, aspectNames: string[]): string {
+export function reviewSystem(part: ReviewPart, aspectNames: string[], focusName = ''): string {
+  const hero = focusName.trim() || '主人公'
   const aspectLine = aspectNames.length
     ? `relationUpdates.aspects の name は既存の【${aspectNames.join('・')}】のみを使う（新しい次元を作らない）。該当する変化が無い次元は省略してよい。`
     : `次元未定義のため relationUpdates.aspects は空配列にし、stance のみ更新する。`
@@ -734,9 +756,9 @@ export function reviewSystem(part: ReviewPart, aspectNames: string[]): string {
     a && `  "characterGrowth": [ {"name":"キャラ名","addition":"今回の展開で新たに判明/深化した性格・背景を一文で"} ],`,
     a && `  "worldGrowth": [ {"keys":["トリガー語"],"content":"新たに判明した世界設定"} ],`,
     a &&
-      `  "newCharacters": [ {"name":"新しく登場した人物の名前","note":"その人物について本文から分かること（立場・見た目・口調・主人公との関わりを2〜3文）"} ],`,
+      `  "newCharacters": [ {"name":"新しく登場した人物の名前","note":"その人物について本文から分かること（立場・見た目・口調・${hero}との関わりを2〜3文）"} ],`,
     b &&
-      `  "relationUpdates": [ {"character":"キャラ名","stance":"そのキャラの主人公への関係の現在地を1〜2文で","aspects":[{"name":"次元名","note":"その次元の現在の機微（肯定・否定の両面を具体的に）"}],"reason":"変化の根拠（一文）"} ],`,
+      `  "relationUpdates": [ {"character":"キャラ名","stance":"そのキャラの${hero}への関係の現在地を1〜2文で","aspects":[{"name":"次元名","note":"その次元の現在の機微（肯定・否定の両面を具体的に）"}],"reason":"変化の根拠（一文）"} ],`,
     b && `  "moods": [ {"character":"キャラ名","mood":"終了時点の気分（一語〜短句）"} ],`,
   ].filter((x): x is string => !!x)
   // 分割時に末尾の行だけ余分なカンマが残らないようにする
@@ -750,9 +772,9 @@ export function reviewSystem(part: ReviewPart, aspectNames: string[]): string {
       `- 各案の note には、その場面に居合わせる人物を明記する。登場人物として定義されていても、その場に居ないことはある（全員が同席する必然性が無ければ一部でよい）。`,
     a && `- characterGrowth / worldGrowth は、既存設定に無い"新しく分かったこと"のみ。無ければ空配列。`,
     a &&
-      `- **newCharacters**：このシーンで初めて登場した人物のうち、【登場人物の現行設定】にも【ユーザーが演じる人物】にも載っていない**名前を持つ人物**だけを挙げる（名前の無い通行人・店員などのモブは挙げない）。既に挙がっている人物・既存キャラの別名は挙げない。無ければ空配列。`,
+      `- **newCharacters**：このシーンで初めて登場した人物のうち、【登場人物の現行設定】にも載っていない**名前を持つ人物**だけを挙げる（名前の無い通行人・店員などのモブは挙げない）。既に挙がっている人物・既存キャラの別名は挙げない。無ければ空配列。`,
     b &&
-      `- **relationUpdates**：各キャラが主人公（ユーザー）に抱く関係を、与えられた【現在の関係性】を踏まえて**書き直す**（差分でなく現時点の全文）。今シーンで変化していない機微（好悪・約束）は失わず維持して書く。変化が無いキャラは省略可。${aspectLine}`,
+      `- **relationUpdates**：各キャラが${hero}に抱く関係を、与えられた【現在の関係性】を踏まえて**書き直す**（差分でなく現時点の全文）。今シーンで変化していない機微（好悪・約束）は失わず維持して書く。変化が無いキャラは省略可。${aspectLine}`,
     b && `- moods は各キャラの終了時点の気分。変化が無いキャラは省略可。`,
     `- 推測の捏造はせず、会話に根拠があるものだけ。`,
   ].filter((x): x is string => !!x)
@@ -800,7 +822,7 @@ export function characterDraftSystem(): string {
     `本文の描写と矛盾しない範囲で自然に補って書く。\n` +
     // 単体で持ち出せる素材にする（他の素材へ依存させない）
     `- **この人物単体で完結させる。** persona・speechStyle・appearance に、` +
-    `**他の登場人物名・主人公・ペルソナ名・特定の作品名や固有の地名を書かない**` +
+    `**他の登場人物名・中心人物名・特定の作品名や固有の地名を書かない**` +
     `（「〜との関係」ではなく「初対面の相手にどう接するか」のように、人物単体の性質として書く）。` +
     `このキャラクターは別の物語へ持ち出して再利用されるため、他の素材に依存すると意味が通らなくなる。\n` +
     `- persona は価値観・生い立ち・動機・行動原理を4〜6文で。speechStyle は一人称・二人称・語尾・敬語の有無・` +

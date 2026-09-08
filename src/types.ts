@@ -41,18 +41,6 @@ export interface Character {
   updatedAt: number
 }
 
-/** ユーザーが演じる人物（再利用素材） */
-export interface Persona {
-  id: string
-  name: string
-  description: string
-  avatar: Avatar
-  /** 画像生成用の固定英語タグ（画風・髪色等） */
-  imagePrompt?: string
-  createdAt: number
-  updatedAt: number
-}
-
 /** ロアブックの1項目（キーワード一致時に注入される設定） */
 export interface LoreEntry {
   id: string
@@ -126,7 +114,7 @@ export interface WorldStartPreset {
 
 /**
  * 導入文専用の置換タグ（A-1）。世界の開始テンプレートで定義する自由な @文字列
- * （実名を含まない・世界選択時にセッションへコピーされる）。実キャラ/ペルソナへの対応付けは
+ * （実名を含まない・世界選択時にセッションへコピーされる）。実キャラへの対応付けは
  * セッション/カセット側の `Session.introBindings` が持つ（参照のみ・実名を焼き込まない）。
  */
 export interface IntroTag {
@@ -136,10 +124,11 @@ export interface IntroTag {
   note?: string
 }
 
-/** 置換タグ（`IntroTag.tag`）→ 実キャラ/ペルソナ の対応付け（セッション/カセット固有。A-1） */
-export type IntroTagBinding =
-  | { tag: string; kind: 'persona' }
-  | { tag: string; kind: 'character'; characterId: string }
+/** 置換タグ（`IntroTag.tag`）→ 実キャラ の対応付け（セッション/カセット固有。A-1） */
+export interface IntroTagBinding {
+  tag: string
+  characterId: string
+}
 
 /** 世界観（ロアブック＋ゲームシステム定義） */
 export interface World {
@@ -347,7 +336,7 @@ export interface StorySetup {
 export interface Relation {
   /** 誰が */
   fromId: string
-  /** 誰に対して（'hero' = 主人公、または characterId） */
+  /** 誰に対して（現状は必ず中心人物の characterId。→ `Session.focusCharacterId`） */
   toId: string
   /** 関係の現在地を1〜2文で。本編注入と表示の中心 */
   stance: string
@@ -428,8 +417,13 @@ export interface Session {
   /** 参加キャラ（グループ会話のため複数） */
   characterIds: string[]
   worldId: string | null
-  personaId: string | null
-  /** 置換タグ（`story.introTags`）→ 実キャラ/ペルソナ の対応付け（A-1） */
+  /**
+   * 中心人物（`characterIds` のいずれか）。物語モードでは視点、ロールプレイではユーザーが演じる人物。
+   * 関係性 prose の宛先（`Relation.toId`）も兼ねる（→ 設計_物語の簡素化.md §2.5）。
+   * **「中心なし」は許さない**が、作りかけのセッションでは空文字＝未選択（開始時に検証で弾く）。
+   */
+  focusCharacterId: string
+  /** 置換タグ（`story.introTags`）→ 実キャラ の対応付け（A-1） */
   introBindings?: IntroTagBinding[]
   /** 常に記憶させたい固定メモ（作者ノート） */
   authorNote: string
@@ -438,7 +432,6 @@ export interface Session {
   scenes: Scene[]
   /** 現在進行中のシーン */
   currentSceneId: string | null
-  /** タイムライン設定 */
   /** 選択肢進行の方式 */
   choiceMode: ChoiceMode
   /** 文体スタイル */
@@ -632,7 +625,7 @@ export interface WorldGrowth {
 export interface RelationUpdate {
   fromId: string
   fromName: string
-  /** 'hero' = 主人公 */
+  /** 中心人物の characterId */
   toId: string
   toName: string
   /** 関係の現在地（全文置換） */
@@ -859,7 +852,6 @@ export interface ExportBundle {
   exportedAt: number
   characters: Character[]
   worlds: World[]
-  personas: Persona[]
   sessions: Session[]
   /** ゲームカセット棚（FB2-E） */
   cassettes?: Cassette[]

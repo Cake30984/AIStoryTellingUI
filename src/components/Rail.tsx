@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { areaOf, useStore, type View } from '../store'
 import { Icon } from './icons'
 
-const LIBRARY_VIEWS: View[] = ['characters', 'worlds', 'personas', 'cassettes']
+const LIBRARY_VIEWS: View[] = ['characters', 'worlds', 'cassettes']
 
 /** 左端48pxの領域スイッチ（Play/Library/System。UI-5） */
 export default function Rail() {
@@ -27,7 +27,7 @@ export default function Rail() {
       </button>
       <button
         className={'rail-btn' + (area === 'library' ? ' on' : '')}
-        title="ライブラリ（キャラクター・世界観・ペルソナ・カセット）"
+        title="ライブラリ（キャラクター・世界観・カセット）"
         onClick={() => setView(lastLibrary)}
       >
         <Icon name="library-big" size={18} />

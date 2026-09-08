@@ -37,7 +37,7 @@ const fieldStyle = {
 
 /** R10: 物語の書き出し（テキスト・挿絵つき Markdown・X 向け画像カード） */
 export default function StoryExportModal({ sessionId, nodeId, onClose }: Props) {
-  const { sessions, characters, personas, cassettes } = useStore()
+  const { sessions, characters, cassettes } = useStore()
   const liveSession = sessions.find((s) => s.id === sessionId)
 
   // フックはすべて早期 return より前に置く（Rules of Hooks）
@@ -92,8 +92,8 @@ export default function StoryExportModal({ sessionId, nodeId, onClose }: Props) 
     )
   }
 
-  const persona = personas.find((p) => p.id === session.personaId)
-  const personaName = persona?.name || 'あなた'
+  const focus = characters.find((c) => c.id === session.focusCharacterId)
+  const focusName = focus?.name || 'あなた'
   const cassetteTitle = session.originCassetteId
     ? cassettes.find((c) => c.id === session.originCassetteId)?.title
     : undefined
@@ -106,8 +106,8 @@ export default function StoryExportModal({ sessionId, nodeId, onClose }: Props) 
     try {
       const body =
         format === 'markdown' && includeIllustrations
-          ? await sessionToIllustratedMarkdown(session, characters, personaName, exportUnit)
-          : sessionToText(session, characters, personaName, format, exportUnit)
+          ? await sessionToIllustratedMarkdown(session, characters, focusName, exportUnit)
+          : sessionToText(session, characters, focusName, format, exportUnit)
       setText(body ? body + attributionFooter(workTitle, format) : '（この範囲には書き出せる本文がありません）')
     } finally {
       setBusy(false)

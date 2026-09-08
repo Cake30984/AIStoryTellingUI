@@ -64,7 +64,7 @@ function CassetteCard({
 }
 
 export default function CassetteLibrary() {
-  const { cassettes, characters, worlds, personas, importCassette, playCassette, deleteCassette } =
+  const { cassettes, characters, worlds, importCassette, playCassette, deleteCassette } =
     useStore()
   const [notice, setNotice] = useState('')
   // null=閉じている / {}=新規 / {cassette}=編集
@@ -89,7 +89,7 @@ export default function CassetteLibrary() {
   const doExport = async (cas: Cassette) => {
     try {
       const world = worlds.find((w) => w.id === cas.session.worldId)
-      const castingIssues = validateCasting(cas.session, characters, personas)
+      const castingIssues = validateCasting(cas.session, characters)
       if (castingIssues.length > 0) {
         setNotice(`書き出せません。${castingIssues.map(castingIssueLabel).join(' ')}`)
         return
@@ -99,7 +99,6 @@ export default function CassetteLibrary() {
           .map((id) => characters.find((c) => c.id === id))
           .filter((c): c is NonNullable<typeof c> => !!c),
         world,
-        persona: personas.find((p) => p.id === cas.session.personaId),
       }
       const cover =
         (cas.coverImageId ? await getImage(cas.coverImageId) : null) ??
@@ -136,7 +135,7 @@ export default function CassetteLibrary() {
       <div className="desc">1枚で最初から遊べる配布カード（PNG）の棚です。</div>
       <HelpDetails>
         <p>
-          「カセットを作る」で世界観・キャラクター・ペルソナ・開始設定を1つにまとめて作れます。PNG
+          「カセットを作る」で世界観・キャラクター・中心人物・開始設定を1つにまとめて作れます。PNG
           をここへドラッグ＆ドロップして取り込むこともできます。
         </p>
         <p>

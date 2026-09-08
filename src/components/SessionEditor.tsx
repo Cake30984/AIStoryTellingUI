@@ -21,7 +21,7 @@ interface Props {
 }
 
 export default function SessionEditor({ session, onClose }: Props) {
-  const { updateSession, characters, worlds, personas, providers, setView } = useStore()
+  const { updateSession, characters, worlds, providers, setView } = useStore()
   const [d, setD] = useState<Session>(session)
   const [tab, setTab] = useState<Tab>('basic')
   const [pickerTarget, setPickerTarget] = useState<PickerTarget | null>(null)
@@ -32,12 +32,18 @@ export default function SessionEditor({ session, onClose }: Props) {
     setDirty(true)
   }
 
-  const toggleCharacter = (id: string) =>
+  const toggleCharacter = (id: string) => {
+    const on = d.characterIds.includes(id)
     patch({
-      characterIds: d.characterIds.includes(id)
-        ? d.characterIds.filter((c) => c !== id)
-        : [...d.characterIds, id],
+      characterIds: on ? d.characterIds.filter((c) => c !== id) : [...d.characterIds, id],
+      // 中心人物は参加キャラの1人（F3）。外したら中心も外れる／最初の1人は自動で中心にする
+      focusCharacterId: on
+        ? d.focusCharacterId === id
+          ? ''
+          : d.focusCharacterId
+        : d.focusCharacterId || id,
     })
+  }
 
 
   const save = () => {
@@ -57,7 +63,7 @@ export default function SessionEditor({ session, onClose }: Props) {
       title: d.title,
       characterIds: d.characterIds,
       worldId: d.worldId,
-      personaId: d.personaId,
+      focusCharacterId: d.focusCharacterId,
       introBindings: d.introBindings,
       authorNote: d.authorNote,
       story: d.story,
@@ -211,20 +217,33 @@ export default function SessionEditor({ session, onClose }: Props) {
                 })()}
               </div>
 
-              {/* ペルソナ */}
+              {/* 中心人物（F3。物語モードでは視点、ロールプレイでは演じる人物） */}
               <div className="field">
-                <label>あなたのペルソナ</label>
+                <label>中心人物</label>
+                <div className="desc">
+                  {d.mode === 'roleplay'
+                    ? 'あなたが演じる人物です。AI はこの人物のセリフ・行動を書きません。'
+                    : '物語がこの人物を中心に描かれます。関係性もこの人物への向きで記録されます。'}
+                </div>
                 <select
-                  value={d.personaId ?? ''}
-                  onChange={(e) => patch({ personaId: e.target.value || null })}
+                  value={d.focusCharacterId}
+                  onChange={(e) => patch({ focusCharacterId: e.target.value })}
                 >
-                  <option value="">なし</option>
-                  {personas.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name || '無名'}
-                    </option>
-                  ))}
+                  <option value="">未選択</option>
+                  {d.characterIds.map((id) => {
+                    const c = characters.find((x) => x.id === id)
+                    return (
+                      <option key={id} value={id}>
+                        {c?.name || '無名'}
+                      </option>
+                    )
+                  })}
                 </select>
+                {!d.focusCharacterId && (
+                  <div className="desc warn">
+                    中心人物を選ぶまで物語を開始できません。登場キャラクターから1人選んでください。
+                  </div>
+                )}
               </div>
 
               {/* 固定メモ（ロールプレイでは基本タブに置く。物語モードは「物語」タブ側） */}
@@ -316,7 +335,6 @@ export default function SessionEditor({ session, onClose }: Props) {
                   <IntroTagFields
                     session={d}
                     characters={characters}
-                    personas={personas}
                     onChange={(introBindings) => patch({ introBindings })}
                   />
 

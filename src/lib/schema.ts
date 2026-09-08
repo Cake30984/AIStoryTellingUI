@@ -13,8 +13,8 @@
 // 移行に失敗したとき（＝未来の版番のデータを読まされたとき）は黙って落とさない。既定値で上書きすると
 // ユーザーのセーブが復旧不能になるため、書き込みを封印して起動時に案内を出す（App.tsx）。
 
-/** 永続化の入れ物の版番（zustand persist の `version`）。v1 が初版 */
-export const APP_STATE_VERSION = 1
+/** 永続化の入れ物の版番（zustand persist の `version`）。v1 が初版・v2 でペルソナ素材を撤去（F3） */
+export const APP_STATE_VERSION = 2
 
 /**
  * セーブデータ（sessions / branchTrees / チェックポイント）の版番。
@@ -25,10 +25,10 @@ export const APP_STATE_VERSION = 1
  * 1本書く（＝**もう「あとから足せない」状態ではない**。migrate が入ったのでスキーマの
  * 判断を先送りしても復旧可能になった）。
  */
-export const SAVE_DATA_VERSION = 2
+export const SAVE_DATA_VERSION = 3
 
 /** カセット定義（cassettes）の版番 */
-export const CASSETTE_DATA_VERSION = 2
+export const CASSETTE_DATA_VERSION = 3
 
 /** 永続ペイロードに同梱する版番。app 側は zustand が別に持つのでここには入れない */
 export interface SchemaVersions {
@@ -66,6 +66,11 @@ type Migration = (state: any) => any
 const appStateMigrations: Record<number, Migration> = {
   // 版番を持たない時代（zustand の既定値 0）のデータ。クリーンブレイク直後なので変換不要
   0: (s) => s,
+  /** v1 → v2（F3・ペルソナ統合）。素材ライブラリから `personas` を落とす（型ごと廃止した） */
+  1: (s) => {
+    const { personas: _personas, ...rest } = s ?? {}
+    return rest
+  },
 }
 
 const saveDataMigrations: Record<number, Migration> = {
@@ -96,6 +101,30 @@ const saveDataMigrations: Record<number, Migration> = {
       }
     }),
   }),
+  /**
+   * v2 → v3（F3・ペルソナ統合）。`personaId` を落として `focusCharacterId` を足す。
+   * **中心人物は機械的に決められない**（ペルソナは `Character` ではなかったので写す先が無い）ので
+   * 未選択にし、開始時の検証でユーザーへ選ばせる。宛先を失った関係性 prose（旧 `toId: 'hero'`）は
+   * 指す相手が居なくなるため捨てる（残しても表示されず、レビューが新しい宛先で書き直す）。
+   */
+  2: (s) => ({
+    ...s,
+    sessions: (s?.sessions ?? []).map((sess: any) => {
+      const { personaId: _personaId, ...rest } = sess ?? {}
+      return {
+        ...rest,
+        focusCharacterId: typeof sess?.focusCharacterId === 'string' ? sess.focusCharacterId : '',
+        // 束縛は `kind` を落として `{ tag, characterId }` だけにする（ペルソナ束縛はここで消える）
+        introBindings: (sess?.introBindings ?? [])
+          .filter((b: any) => typeof b?.tag === 'string' && typeof b?.characterId === 'string')
+          .map((b: any) => ({ tag: b.tag, characterId: b.characterId })),
+        state: {
+          ...(sess?.state ?? {}),
+          relations: (sess?.state?.relations ?? []).filter((r: any) => r?.toId !== 'hero'),
+        },
+      }
+    }),
+  }),
 }
 
 const cassetteMigrations: Record<number, Migration> = {
@@ -117,6 +146,28 @@ const cassetteMigrations: Record<number, Migration> = {
             situation: '',
             pending: [],
             recentDone: [],
+          },
+        },
+      }
+    }),
+  }),
+  /** v2 → v3（F3）。カセットが内包するセッションにも同じ変換を掛ける */
+  2: (s) => ({
+    ...s,
+    cassettes: (s?.cassettes ?? []).map((cas: any) => {
+      const { personaId: _personaId, ...rest } = cas?.session ?? {}
+      return {
+        ...cas,
+        session: {
+          ...rest,
+          focusCharacterId:
+            typeof cas?.session?.focusCharacterId === 'string' ? cas.session.focusCharacterId : '',
+          introBindings: (cas?.session?.introBindings ?? [])
+            .filter((b: any) => typeof b?.tag === 'string' && typeof b?.characterId === 'string')
+            .map((b: any) => ({ tag: b.tag, characterId: b.characterId })),
+          state: {
+            ...(cas?.session?.state ?? {}),
+            relations: (cas?.session?.state?.relations ?? []).filter((r: any) => r?.toId !== 'hero'),
           },
         },
       }

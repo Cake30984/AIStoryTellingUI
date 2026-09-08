@@ -30,7 +30,6 @@ export function parseBundle(text: string): ExportBundle {
     exportedAt: obj.exportedAt ?? Date.now(),
     characters: Array.isArray(obj.characters) ? obj.characters : [],
     worlds: Array.isArray(obj.worlds) ? obj.worlds : [],
-    personas: Array.isArray(obj.personas) ? obj.personas : [],
     sessions: Array.isArray(obj.sessions) ? obj.sessions : [],
     cassettes: Array.isArray(obj.cassettes) ? obj.cassettes : undefined,
     // 旧実装のホワイトリストから漏れており、インポートで黙って消えていた（未知キー保存へ変えた副産物。R2）

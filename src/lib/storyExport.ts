@@ -43,12 +43,12 @@ function assistantSpeakerOf(m: Message, session: Session, characters: Character[
 
 /**
  * 本文をテキストへ書き出す（要件①⑤）。scope で対象シーンを絞る。
- * user 発言は「プレイヤーが選んだこと」として `personaName` を話者名に立てる。
+ * user 発言は「プレイヤーが選んだこと」として中心人物名（`focusName`）を話者名に立てる。
  */
 export function sessionToText(
   session: Session,
   characters: Character[],
-  personaName: string,
+  focusName: string,
   format: ExportFormat,
   unit: ExportUnit,
 ): string {
@@ -85,7 +85,7 @@ export function sessionToText(
     if (!text) continue
 
     if (m.role === 'user') {
-      lines.push(chosenLine(personaName, text))
+      lines.push(chosenLine(focusName, text))
     } else {
       const speaker = assistantSpeakerOf(m, session, characters)
       if (speaker) lines.push(speakerLine(speaker))
@@ -104,7 +104,7 @@ export function sessionToText(
 export async function sessionToIllustratedMarkdown(
   session: Session,
   characters: Character[],
-  personaName: string,
+  focusName: string,
   unit: ExportUnit,
 ): Promise<string> {
   const scenesInScope =
@@ -144,7 +144,7 @@ export async function sessionToIllustratedMarkdown(
     const text = plainTextOf(m.content).trim()
     if (text) {
       if (m.role === 'user') {
-        lines.push(`> **${personaName}：** ${text}`)
+        lines.push(`> **${focusName}：** ${text}`)
       } else {
         const speaker = assistantSpeakerOf(m, session, characters)
         if (speaker) lines.push(`**${speaker}**`)

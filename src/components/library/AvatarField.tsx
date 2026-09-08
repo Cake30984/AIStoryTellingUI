@@ -12,12 +12,12 @@ import { Icon } from '../icons'
 
 const COLORS = ['#7c5cff', '#ef6f6c', '#4cc9a4', '#f0a76b', '#5b8def', '#d77ad8', '#e0b341', '#8b95a7']
 
-type AvatarTarget = Extract<ImageJobTarget, { type: 'character-avatar' | 'persona-avatar' }>
+type AvatarTarget = Extract<ImageJobTarget, { type: 'character-avatar' }>
 
 interface Props {
   avatar: Avatar
   name: string
-  /** 「✨ 生成」の文脈（Character/Persona エディタが渡す。未指定なら生成ボタン非表示） */
+  /** 「✨ 生成」の文脈（Character エディタが渡す。未指定なら生成ボタン非表示） */
   genContext?: { name: string; appearance?: string; imagePrompt?: string }
   /** バックグラウンド生成ジョブの保存先。未保存の新規素材では未指定にして生成ボタンを無効化する呼び出し元もある */
   target?: AvatarTarget
@@ -27,24 +27,15 @@ interface Props {
 export default function AvatarField({ avatar, name, genContext, target, onChange }: Props) {
   const imageProviders = useStore((s) => s.imageProviders)
   const characters = useStore((s) => s.characters)
-  const personas = useStore((s) => s.personas)
   const fileRef = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState(false)
   const [showGen, setShowGen] = useState(false)
 
   // 既存素材かどうか（新規未保存の素材には生成できない。store には avatar 変更を書き戻す先が無いため）
-  const savedExists = !target
-    ? true
-    : target.type === 'character-avatar'
-      ? characters.some((c) => c.id === target.characterId)
-      : personas.some((p) => p.id === target.personaId)
+  const savedExists = !target ? true : characters.some((c) => c.id === target.characterId)
 
   // バックグラウンド生成ジョブがこのエディタの外（ジョブパネル）で採用された場合に draft の avatar へ取り込む
-  const liveImageId = !target
-    ? undefined
-    : target.type === 'character-avatar'
-      ? characters.find((c) => c.id === target.characterId)?.avatar.imageId
-      : personas.find((p) => p.id === target.personaId)?.avatar.imageId
+  const liveImageId = !target ? undefined : characters.find((c) => c.id === target.characterId)?.avatar.imageId
 
   useEffect(() => {
     if (savedExists && liveImageId !== undefined && liveImageId !== avatar.imageId) {

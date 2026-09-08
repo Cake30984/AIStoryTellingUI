@@ -5,7 +5,6 @@ import type { ImageQuality } from '../types'
 export type ImageJobTarget =
   | { type: 'scene-illustration'; sessionId: string; sceneId: string; messageId?: string }
   | { type: 'character-avatar'; characterId: string }
-  | { type: 'persona-avatar'; personaId: string }
 
 export interface ImageJob {
   id: string

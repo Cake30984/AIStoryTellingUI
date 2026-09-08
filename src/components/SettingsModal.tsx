@@ -351,9 +351,9 @@ export function SettingsBody() {
           <div className="field">
             <label>データのバックアップ</label>
             <div className="desc">
-              キャラクター・世界観・ペルソナ・セッションをまとめて JSON で保存／復元します。
+              キャラクター・世界観・セッションをまとめて JSON で保存／復元します。
               localStorage はブラウザ消去で失われるため、定期的なエクスポートを推奨します。
-              キャラクター・世界観・ペルソナは単体を PNG カード（画像1枚に情報を埋め込み）でも入出力できます
+              キャラクター・世界観は単体を PNG カード（画像1枚に情報を埋め込み）でも入出力できます
               （キャラクターは SillyTavern 互換）。インポートはセッションカード・ゲームカセットの PNG も受け付けます。
             </div>
             <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, fontSize: 13 }}>

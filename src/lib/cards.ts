@@ -1,4 +1,4 @@
-import type { Character, Persona, Scene, Session, World, WorldStartPreset } from '../types'
+import type { Character, Scene, Session, World, WorldStartPreset } from '../types'
 import { readTextChunks, writeTextChunk } from './png'
 import { getImage, putImage } from './imageStore'
 import { generateDefaultAvatar, normalizeImage } from './avatarGen'
@@ -49,14 +49,13 @@ export interface SessionCardBundle {
   session: Session
   characters: Character[]
   world?: World
-  persona?: Persona
   /** 参照アバター＋挿絵。id は書き出し元環境の imageId（インポート側で putImage し直して remap する） */
   images: { id: string; b64: string }[]
 }
 
 /**
  * ゲームカセット（W2）の中身。セッションカードと同構造だが、session は開始状態に初期化済み
- * （プレイ記録なし）＋カセット固有の紹介文を持つ。1枚で世界観・キャラ・ペルソナ・画像が揃い、
+ * （プレイ記録なし）＋カセット固有の紹介文を持つ。1枚で世界観・キャラ・画像が揃い、
  * 読み込めばすぐ最初から遊べる（設計は docs/設計_開始テンプレートとゲームカセット.md）。
  */
 export interface CassetteBundle extends SessionCardBundle {
@@ -70,7 +69,7 @@ export interface CassetteBundle extends SessionCardBundle {
 // 拒否するのは「本体が古くて正しく読めない（minRuntimeVersion）」「種別・形式が違う」だけ。
 
 /** カードを載せる PNG テキストチャンクのキーワード＝カードの種別 */
-export type CardChunkKeyword = 'aist_cassette' | 'aist_world' | 'aist_persona' | 'chara'
+export type CardChunkKeyword = 'aist_cassette' | 'aist_world' | 'chara'
 
 /**
  * 書き出すカードに刻む「必要な本体バージョン」。
@@ -94,7 +93,6 @@ interface CardRule {
 const CARD_RULES: Record<CardChunkKeyword, CardRule> = {
   aist_cassette: { label: 'ゲームカセット', specs: ['aist_cassette'], specVersion: '1.0' },
   aist_world: { label: '世界観カード', specs: ['aist_world'], specVersion: '1.0' },
-  aist_persona: { label: 'ペルソナカード', specs: ['aist_persona'], specVersion: '1.0' },
   chara: { label: 'キャラカード', specs: ['chara_card_v1', 'chara_card_v2', 'chara_card_v3'] },
 }
 
@@ -149,7 +147,6 @@ function decodeCardChunk(text: string, chunk: CardChunkKeyword): any {
 export type ParsedCard =
   | { kind: 'character'; character: Character }
   | { kind: 'world'; world: World }
-  | { kind: 'persona'; persona: Persona }
   | { kind: 'cassette'; bundle: CassetteBundle }
 
 /** キャラクターの extensions に格納する独自拡張（model・avatar.imageId は環境固有のため除外） */
@@ -343,69 +340,21 @@ function normalizeWorldFromData(raw: any): World {
   }
 }
 
-// ---------- ペルソナカード（独自形式。aist_persona チャンク） ----------
-
-interface PersonaCard {
-  spec: 'aist_persona'
-  spec_version: '1.0'
-  minRuntimeVersion: string
-  data: Omit<Persona, 'avatar'> & { avatar: { color: string } }
-}
-
-function buildPersonaCard(persona: Persona): PersonaCard {
-  return {
-    spec: 'aist_persona',
-    spec_version: '1.0',
-    minRuntimeVersion: CARD_MIN_RUNTIME_VERSION,
-    data: { ...persona, avatar: { color: persona.avatar.color } },
-  }
-}
-
-/** ペルソナを PNG カード（独自形式）として書き出しダウンロードさせる */
-export async function exportPersonaCard(persona: Persona): Promise<void> {
-  const sourceBlob = persona.avatar.imageId
-    ? (await getImage(persona.avatar.imageId)) ?? (await generateDefaultAvatar(persona.name || '?', persona.avatar.color))
-    : await generateDefaultAvatar(persona.name || '?', persona.avatar.color)
-
-  const normalized = await normalizeImage(sourceBlob, 1024)
-  const pngBytes = new Uint8Array(await normalized.arrayBuffer())
-
-  const card = buildPersonaCard(persona)
-  const withChunk = writeTextChunk(pngBytes, 'aist_persona', b64encode(JSON.stringify(card)))
-  const outBlob = new Blob([withChunk as BlobPart], { type: 'image/png' })
-
-  downloadBlob(outBlob, `card_${persona.name || 'persona'}.png`)
-}
-
-function normalizePersonaFromData(raw: any): Persona {
-  const now = Date.now()
-  return {
-    id: typeof raw.id === 'string' ? raw.id : uid(),
-    name: typeof raw.name === 'string' ? raw.name : '',
-    description: typeof raw.description === 'string' ? raw.description : '',
-    avatar: { color: typeof raw.avatar?.color === 'string' ? raw.avatar.color : '#5b8def' },
-    imagePrompt: typeof raw.imagePrompt === 'string' ? raw.imagePrompt : undefined,
-    createdAt: typeof raw.createdAt === 'number' ? raw.createdAt : now,
-    updatedAt: typeof raw.updatedAt === 'number' ? raw.updatedAt : now,
-  }
-}
-
 // ---------- セッションカード（独自形式。aist_session チャンク。G4） ----------
 
 /**
  * セッション/カセットが参照する画像を収集し base64 同梱用に変換する（セッションカード・ゲームカセット共通）。
- * 対象＝キャラのアバター、ペルソナのアバター、各シーンの挿絵。
+ * 対象＝キャラのアバター、各シーンの挿絵。
  * 消失画像はスキップ（インポート側でフォールバック表示）。合計バイト数も返す（サイズ警告用）。
  */
 async function collectCardImages(
   session: Session,
-  refs: { characters: Character[]; persona?: Persona },
+  refs: { characters: Character[] },
 ): Promise<{ images: { id: string; b64: string }[]; totalBytes: number }> {
   const imageIds = new Set<string>()
   for (const c of refs.characters) {
     if (c.avatar.imageId) imageIds.add(c.avatar.imageId)
   }
-  if (refs.persona?.avatar.imageId) imageIds.add(refs.persona.avatar.imageId)
   for (const sc of session.scenes) {
     for (const ill of sc.illustrations ?? []) imageIds.add(ill.imageId)
   }
@@ -433,8 +382,8 @@ async function confirmImageSize(totalBytes: number): Promise<boolean> {
 /**
  * セッションを「開始状態」に初期化する（ゲームカセット書き出し・カセット下書き用。W2 / FB3-D）。
  * プレイ記録（会話・シーン・状態・オーバーレイ・消化イベント・表情）を全て空にし、
- * タイムラインは1日目へ戻す。モデル参照は環境固有のため空へ（受け手側でフォールバック）。
- * 残すのは設定（title/story/authorNote/顔ぶれ/世界/ペルソナ/進行設定/文体/timeline 定義 等）。
+ * モデル参照は環境固有のため空へ（受け手側でフォールバック）。
+ * 残すのは設定（title/story/authorNote/顔ぶれ/世界/中心人物/進行設定/文体 等）。
  */
 export function freshSessionOf(session: Session): Session {
   const now = Date.now()
@@ -475,13 +424,13 @@ export function freshSessionOf(session: Session): Session {
 }
 
 /**
- * ゲームカセット（W2）を PNG カードとして書き出す。世界観・登場キャラ・ペルソナ・設定・
+ * ゲームカセット（W2）を PNG カードとして書き出す。世界観・登場キャラ・設定・
  * アバター画像を1枚に同梱し、読み込めば最初から遊べる状態を配布できる。
  * セッションカードとの違いは「開始状態に初期化して同梱する」点（挿絵は初期化で自然に対象外）。
  */
 export async function exportCassetteCard(
   session: Session,
-  refs: { characters: Character[]; world?: World; persona?: Persona },
+  refs: { characters: Character[]; world?: World },
   cardImageBlob: Blob,
   description: string,
 ): Promise<void> {
@@ -493,7 +442,6 @@ export async function exportCassetteCard(
     session: fresh,
     characters: refs.characters,
     world: refs.world,
-    persona: refs.persona,
     images,
     ...(description.trim() ? { description: description.trim() } : {}),
   }
@@ -533,7 +481,6 @@ function normalizeSessionBundle(raw: any): SessionCardBundle | null {
       ? raw.characters.map((c: any) => keepImageId(normalizeCharacterFromExtension(c), c))
       : [],
     world: raw.world ? normalizeWorldFromData(raw.world) : undefined,
-    persona: raw.persona ? keepImageId(normalizePersonaFromData(raw.persona), raw.persona) : undefined,
     images: Array.isArray(raw.images)
       ? raw.images.filter((i: any) => typeof i?.id === 'string' && typeof i?.b64 === 'string')
       : [],
@@ -566,11 +513,6 @@ export function parseCardPng(bytes: Uint8Array): ParsedCard | null {
     return { kind: 'world', world: normalizeWorldFromData(json.data ?? json) }
   }
 
-  const personaChunk = chunks.find((c) => c.keyword === 'aist_persona')
-  if (personaChunk) {
-    const json = decodeCardChunk(personaChunk.text, 'aist_persona')
-    return { kind: 'persona', persona: normalizePersonaFromData(json.data ?? json) }
-  }
 
   const charaChunk = chunks.find((c) => c.keyword === 'chara')
   if (charaChunk) {
@@ -587,7 +529,7 @@ export function parseCardPng(bytes: Uint8Array): ParsedCard | null {
   return null
 }
 
-/** カード PNG 自体を正規化してアバター画像として登録し、キャラクター/ペルソナに設定する */
+/** カード PNG 自体を正規化してアバター画像として登録し、キャラクターに設定する */
 export async function attachCardImage<T extends { avatar: { color: string; imageId?: string } }>(
   entity: T,
   pngBytes: Uint8Array,

@@ -1,6 +1,6 @@
 import { Fragment, useMemo, type ReactNode } from 'react'
 import { matchCharacterByName, parseStructured, type StructuredLine } from '../lib/structured'
-import type { AmbientPin, Character, Persona } from '../types'
+import type { AmbientPin, Character } from '../types'
 import EntityAvatar from './EntityAvatar'
 import { Icon } from './icons'
 
@@ -25,8 +25,6 @@ function rawTextOf(line: StructuredLine): string {
 interface BodyProps {
   content: string
   participants: Character[]
-  /** ユーザーが演じる人物。@ペルソナ名 行のアイコン解決に含める */
-  persona?: Persona
   /** ストリーミング中（末尾の未改行行を未確定として扱う） */
   pending: boolean
   /**
@@ -39,7 +37,7 @@ interface BodyProps {
   dropTarget?: boolean
   renderPins?: (pins: AmbientPin[], lineAnchor?: number) => ReactNode
   /**
-   * 未解決の話者（参加キャラ・ペルソナのどれにも解決できない名前）をキャラクター化する導線（発見キャラ・FB7-E）。
+   * 未解決の話者（参加キャラのどれにも解決できない名前）をキャラクター化する導線（発見キャラ・FB7-E）。
    * 渡すとその話者チップの隣にバッジが出て、クリックで呼ばれる。未指定ならバッジを描かない。
    */
   onDefineSpeaker?: (name: string) => void
@@ -68,14 +66,11 @@ function UnknownSpeakerBadge({ name, onClick }: { name: string; onClick: () => v
 }
 
 /**
- * 名前解決・アイコン表示に使う話者リスト（参加キャラ＋ペルソナ）。
- * ペルソナは末尾に置きキャラを優先させる（前方一致の衝突時）。id/name/avatar のみ参照。
+ * 名前解決・アイコン表示に使う話者リスト（参加キャラ。中心人物もこの中に居る＝F3）。
+ * id/name/avatar のみ参照。
  */
-function useSpeakers(participants: Character[], persona?: Persona) {
-  return useMemo(
-    () => (persona ? [...participants, persona] : participants),
-    [participants, persona],
-  )
+function useSpeakers(participants: Character[]) {
+  return useMemo(() => participants, [participants])
 }
 
 /**
@@ -95,7 +90,6 @@ function useCanDefine(libraryCharacters?: { id: string; name: string }[]) {
 export function StructuredNovelBody({
   content,
   participants,
-  persona,
   pending,
   pinsByLine,
   dropTarget,
@@ -103,7 +97,7 @@ export function StructuredNovelBody({
   onDefineSpeaker,
   libraryCharacters,
 }: BodyProps) {
-  const speakers = useSpeakers(participants, persona)
+  const speakers = useSpeakers(participants)
   const canDefine = useCanDefine(libraryCharacters)
   const lines = useMemo(() => parseStructured(content, speakers), [content, speakers])
   const endsWithNewline = content.endsWith('\n')
@@ -178,12 +172,11 @@ function groupChatLines(lines: StructuredLine[]): ChatGroup[] {
 export function StructuredChatBody({
   content,
   participants,
-  persona,
   pending,
   onDefineSpeaker,
   libraryCharacters,
 }: BodyProps) {
-  const speakers = useSpeakers(participants, persona)
+  const speakers = useSpeakers(participants)
   const canDefine = useCanDefine(libraryCharacters)
   const lines = useMemo(() => parseStructured(content, speakers), [content, speakers])
   const endsWithNewline = content.endsWith('\n')

@@ -12,7 +12,6 @@ import CassetteEditor from './CassetteEditor'
 const LIBRARY_NAV: { key: View; label: string; icon: IconName }[] = [
   { key: 'characters', label: 'キャラクター', icon: 'users' },
   { key: 'worlds', label: '世界観', icon: 'globe' },
-  { key: 'personas', label: 'ペルソナ', icon: 'smile' },
   { key: 'cassettes', label: 'カセット', icon: 'library-big' },
 ]
 

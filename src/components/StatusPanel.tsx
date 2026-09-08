@@ -11,10 +11,11 @@ interface Props {
 
 /** セッションの状態（関係性 prose）の閲覧・手動編集パネル */
 export default function StatusPanel({ session, onClose }: Props) {
-  const { worlds, characters, personas, applyStatusEdit } = useStore()
+  const { worlds, characters, applyStatusEdit } = useStore()
   const world = worlds.find((w) => w.id === session.worldId)
-  const heroName = personas.find((p) => p.id === session.personaId)?.name || '主人公'
+  const heroName = characters.find((c) => c.id === session.focusCharacterId)?.name || '主人公'
   const cast = session.characterIds
+    .filter((id) => id !== session.focusCharacterId)
     .map((id) => characters.find((c) => c.id === id))
     .filter((c): c is NonNullable<typeof c> => !!c)
   const aspectName = (id: string) => world?.relationAspects.find((a) => a.id === id)?.name ?? ''
@@ -81,7 +82,10 @@ export default function StatusPanel({ session, onClose }: Props) {
 
           {/* キャラ別の関係性 */}
           {cast.map((c) => {
-            const relIdx = st.relations.findIndex((r) => r.fromId === c.id && r.toId === 'hero')
+            // 関係性の宛先＝中心人物（F3。'hero' という特別値は廃止）
+            const relIdx = st.relations.findIndex(
+              (r) => r.fromId === c.id && r.toId === session.focusCharacterId,
+            )
             const rel = relIdx >= 0 ? st.relations[relIdx] : null
             const mood = st.moods.find((m) => m.characterId === c.id)?.mood
             return (

@@ -1,10 +1,4 @@
-import type {
-  Character,
-  IntroTag,
-  IntroTagBinding,
-  Persona,
-  Session,
-} from '../types'
+import type { Character, IntroTag, IntroTagBinding, Session } from '../types'
 
 export type CastingIssueKind = 'unbound-tag' | 'unresolved-tag-binding'
 
@@ -33,9 +27,8 @@ export function normalizeIntroBindings(raw: unknown): IntroTagBinding[] {
     if (!binding || typeof binding !== 'object') continue
     const b = binding as Record<string, unknown>
     if (typeof b.tag !== 'string' || !b.tag) continue
-    if (b.kind === 'persona') result.push({ tag: b.tag, kind: 'persona' })
-    else if (b.kind === 'character' && typeof b.characterId === 'string') {
-      result.push({ tag: b.tag, kind: 'character', characterId: b.characterId })
+    if (typeof b.characterId === 'string' && b.characterId) {
+      result.push({ tag: b.tag, characterId: b.characterId })
     }
   }
   return result
@@ -69,14 +62,12 @@ export function findIntroTagRefs(text: string, tags: IntroTag[] | undefined): st
   return [...found]
 }
 
-/** 置換タグの束縛先を解決する（persona/character の実名。未解決なら undefined） */
+/** 置換タグの束縛先を解決する（参加キャラの実名。未解決なら undefined） */
 function resolveTagName(
   binding: IntroTagBinding | undefined,
   characters: Character[],
-  persona: Persona | undefined,
 ): string | undefined {
   if (!binding) return undefined
-  if (binding.kind === 'persona') return persona?.name.trim() || undefined
   const character = characters.find((c) => c.id === binding.characterId)
   return character?.name.trim() || undefined
 }
@@ -85,15 +76,10 @@ function resolveTagName(
  * 置換タグ束縛の検証。必要な項目だけを開始ブロッカーとして扱い、古い無効参照は
  * 保存したまま無視する（A-1）。
  */
-export function validateCasting(
-  session: Session,
-  characters: Character[],
-  personas: Persona[],
-): CastingIssue[] {
+export function validateCasting(session: Session, characters: Character[]): CastingIssue[] {
   const issues: CastingIssue[] = []
   const participantIds = new Set(session.characterIds)
   const participants = characters.filter((c) => participantIds.has(c.id))
-  const persona = session.personaId ? personas.find((p) => p.id === session.personaId) : undefined
 
   const tags = usableTags(session.story.introTags)
   const usedTags = findIntroTagRefs(session.story.opening, tags)
@@ -104,7 +90,7 @@ export function validateCasting(
       issues.push({ kind: 'unbound-tag', tag: tagName })
       continue
     }
-    if (!resolveTagName(binding, participants, persona)) {
+    if (!resolveTagName(binding, participants)) {
       issues.push({ kind: 'unresolved-tag-binding', tag: tagName })
     }
   }
@@ -114,7 +100,7 @@ export function validateCasting(
 
 export function castingIssueLabel(issue: CastingIssue): string {
   if (issue.kind === 'unbound-tag') return `置換タグ「@${issue.tag}」の対応付けが未設定です。`
-  return `置換タグ「@${issue.tag}」の対応先（ペルソナ/参加キャラ）が未解決です。`
+  return `置換タグ「@${issue.tag}」の対応先（参加キャラ）が未解決です。`
 }
 
 /** 導入文の置換タグを実名へ解決する。置換済みの名前を再処理しない単一パス方式（A-1） */
@@ -124,7 +110,6 @@ export function resolveIntroText(
     tags: IntroTag[] | undefined
     bindings: IntroTagBinding[] | undefined
     characters: Character[]
-    persona?: Persona
   },
 ): { content: string; issues: CastingIssue[] } {
   const tags = usableTags(args.tags)
@@ -137,7 +122,7 @@ export function resolveIntroText(
       issues.push({ kind: 'unbound-tag', tag: tagName })
       continue
     }
-    if (!resolveTagName(binding, args.characters, args.persona)) {
+    if (!resolveTagName(binding, args.characters)) {
       issues.push({ kind: 'unresolved-tag-binding', tag: tagName })
     }
   }
@@ -146,7 +131,7 @@ export function resolveIntroText(
   const pattern = tagPattern(tags)
   if (!pattern) return { content: text, issues: [] }
   const content = text.replace(pattern, (source, name: string) => {
-    const resolved = resolveTagName(bindingByTag.get(name), args.characters, args.persona)
+    const resolved = resolveTagName(bindingByTag.get(name), args.characters)
     return resolved ? `@${resolved}` : source
   })
   return { content, issues: [] }

@@ -23,7 +23,6 @@ export default function CommandPalette({ onClose }: Props) {
     activeId,
     characters,
     worlds,
-    personas,
     ui,
     isStreaming,
     isReviewing,
@@ -73,10 +72,6 @@ export default function CommandPalette({ onClose }: Props) {
     for (const w of worlds) {
       if (!w.name) continue
       list.push({ id: `world:${w.id}`, label: w.name, group: '世界観', icon: 'globe', run: goto('worlds') })
-    }
-    for (const p of personas) {
-      if (!p.name) continue
-      list.push({ id: `persona:${p.id}`, label: p.name, group: 'ペルソナ', icon: 'smile', run: goto('personas') })
     }
 
     if (activeSession) {
@@ -129,7 +124,7 @@ export default function CommandPalette({ onClose }: Props) {
 
     return list
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessions, characters, worlds, personas, activeSession, scene, isStreaming, isReviewing, ui.immersive])
+  }, [sessions, characters, worlds, activeSession, scene, isStreaming, isReviewing, ui.immersive])
 
   const q = query.trim().toLowerCase()
   const results = (

@@ -10,7 +10,7 @@ import { Icon } from './icons'
 import IntroTagDefEditor from './IntroTagDefEditor'
 import IntroTagFields from './IntroTagFields'
 
-type Tab = 'basic' | 'world' | 'cast' | 'persona' | 'start'
+type Tab = 'basic' | 'world' | 'cast' | 'start'
 
 interface Props {
   /** 既存カセットの編集。未指定なら新規 */
@@ -20,9 +20,9 @@ interface Props {
   onClose: () => void
 }
 
-/** カセット専用エディタ（FB3-D）。世界観・キャラ・ペルソナ・開始設定を1つにまとめてカセットを作る */
+/** カセット専用エディタ（FB3-D）。世界観・キャラ・中心人物・開始設定を1つにまとめてカセットを作る */
 export default function CassetteEditor({ cassette, seedSession, onClose }: Props) {
-  const { characters, worlds, personas, upsertCassette, setView } = useStore()
+  const { characters, worlds, upsertCassette, setView } = useStore()
   const [d, setD] = useState<Cassette>(() => cassette ?? newCassette(seedSession))
   const [tab, setTab] = useState<Tab>('basic')
   const [dirty, setDirty] = useState(false)
@@ -39,12 +39,18 @@ export default function CassetteEditor({ cassette, seedSession, onClose }: Props
     setDirty(true)
   }
 
-  const toggleCharacter = (id: string) =>
+  const toggleCharacter = (id: string) => {
+    const on = s.characterIds.includes(id)
     patchSession({
-      characterIds: s.characterIds.includes(id)
-        ? s.characterIds.filter((c) => c !== id)
-        : [...s.characterIds, id],
+      characterIds: on ? s.characterIds.filter((c) => c !== id) : [...s.characterIds, id],
+      // 中心人物は参加キャラの1人（F3）
+      focusCharacterId: on
+        ? s.focusCharacterId === id
+          ? ''
+          : s.focusCharacterId
+        : s.focusCharacterId || id,
     })
+  }
 
   // 表紙: coverImageId があればそれ、無ければタイトルからの自動プレビュー
   const coverUrl = useImageUrl(d.coverImageId)
@@ -118,7 +124,6 @@ export default function CassetteEditor({ cassette, seedSession, onClose }: Props
               ['basic', '基本', 'settings'],
               ['world', '世界観', 'globe'],
               ['cast', '登場キャラ', 'users'],
-              ['persona', 'ペルソナ', 'smile'],
               ['start', '開始・進行', 'hourglass'],
             ] as const
           ).map(([t, label, icon]) => (
@@ -241,6 +246,7 @@ export default function CassetteEditor({ cassette, seedSession, onClose }: Props
           )}
 
           {tab === 'cast' && (
+            <>
             <div className="field">
               <label>登場キャラ</label>
               {characters.length === 0 ? (
@@ -265,24 +271,33 @@ export default function CassetteEditor({ cassette, seedSession, onClose }: Props
                 </div>
               )}
             </div>
+            {/* 中心人物（F3。カセットは配布物なので中心が決まっていないと開始できない） */}
+            <div className="field">
+              <label>中心人物</label>
+              <div className="desc">
+                物語がこの人物を中心に描かれます（ロールプレイではプレイヤーが演じる人物）。関係性もこの人物への向きで記録されます。
+              </div>
+              <select
+                value={s.focusCharacterId}
+                onChange={(e) => patchSession({ focusCharacterId: e.target.value })}
+              >
+                <option value="">未選択</option>
+                {s.characterIds.map((id) => {
+                  const c = characters.find((x) => x.id === id)
+                  return (
+                    <option key={id} value={id}>
+                      {c?.name || '無名'}
+                    </option>
+                  )
+                })}
+              </select>
+              {!s.focusCharacterId && (
+                <div className="desc warn">中心人物を選ぶまで、このカセットは開始できません。</div>
+              )}
+            </div>
+            </>
           )}
 
-          {tab === 'persona' && (
-            <div className="field">
-              <label>あなたのペルソナ</label>
-              <select
-                value={s.personaId ?? ''}
-                onChange={(e) => patchSession({ personaId: e.target.value || null })}
-              >
-                <option value="">なし</option>
-                {personas.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name || '無名'}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
 
           {tab === 'start' && (
             <>
@@ -342,7 +357,6 @@ export default function CassetteEditor({ cassette, seedSession, onClose }: Props
               <IntroTagFields
                 session={s}
                 characters={characters}
-                personas={personas}
                 onChange={(introBindings) => patchSession({ introBindings })}
               />
               <div className="field">

@@ -33,7 +33,7 @@ interface Props {
  * 裏方モデルはレビュー用（`reviewModelOf`）を流用する。
  */
 export default function CharacterDraftModal({ session, name, note, onClose }: Props) {
-  const { characters, personas, worlds, providers, modelsByProvider, recordUsage, addDiscoveredCharacter } =
+  const { characters, worlds, providers, modelsByProvider, recordUsage, addDiscoveredCharacter } =
     useStore()
   const [draft, setDraft] = useState<Character | null>(null)
   const [error, setError] = useState('')
@@ -89,7 +89,7 @@ export default function CharacterDraftModal({ session, name, note, onClose }: Pr
                   worldName: world?.name,
                   worldDescription: world?.description,
                   sceneTitle: scene?.title,
-                  knownNames: knownSpeakersOf(session, characters, personas).map((c) => c.name),
+                  knownNames: knownSpeakersOf(session, characters).map((c) => c.name),
                   recentMessages: recent,
                 }),
               },

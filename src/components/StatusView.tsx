@@ -10,10 +10,12 @@ interface Props {
 
 /** 状態（関係性 prose ＋ 事実の数）の読み取り専用ビュー（ドック用。編集は StatusPanel モーダルで行う） */
 export default function StatusView({ session }: Props) {
-  const { worlds, characters, personas } = useStore()
+  const { worlds, characters } = useStore()
   const world = worlds.find((w) => w.id === session.worldId)
-  const heroName = personas.find((p) => p.id === session.personaId)?.name || '主人公'
+  const heroName = characters.find((c) => c.id === session.focusCharacterId)?.name || '主人公'
+  // 中心人物は自分自身への関係を持たない（F3）
   const cast = session.characterIds
+    .filter((id) => id !== session.focusCharacterId)
     .map((id) => characters.find((c) => c.id === id))
     .filter((c): c is NonNullable<typeof c> => !!c)
   const aspectName = (id: string) => world?.relationAspects.find((a) => a.id === id)?.name ?? ''
@@ -84,7 +86,7 @@ export default function StatusView({ session }: Props) {
     <>
       {tracker}
       {cast.map((c) => {
-        const rel = st.relations.find((r) => r.fromId === c.id && r.toId === 'hero')
+        const rel = st.relations.find((r) => r.fromId === c.id && r.toId === session.focusCharacterId)
         const mood = st.moods.find((m) => m.characterId === c.id)?.mood
         return (
           <div key={c.id} className="field">

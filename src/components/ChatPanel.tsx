@@ -168,7 +168,6 @@ export default function ChatPanel({ session }: Props) {
     removeIllustration,
     imageJobs,
     characters,
-    personas,
     ui,
     setUiPrefs,
     scrollTarget,
@@ -274,7 +273,8 @@ export default function ChatPanel({ session }: Props) {
     [session.characterIds, characters],
   )
   const participants = knownCast
-  const persona = personas.find((p) => p.id === session.personaId)
+  // 中心人物＝ユーザーの立ち位置（F3。ペルソナ廃止で参加キャラの1人になった）
+  const focus = knownCast.find((c) => c.id === session.focusCharacterId)
   const novel = session.narrativeStyle === 'novel'
   // 発見キャラ（FB7-E）: 未解決話者の ？バッジ → キャラ化待ちへ積む。
   // 先頭1件だけモーダルを開く（複数承認された時は保存/中止のたびに次が出る）
@@ -636,7 +636,6 @@ export default function ChatPanel({ session }: Props) {
             <StructuredNovelBody
               content={m.content}
               participants={knownCast}
-              persona={persona}
               pending={!!m.pending && isStreaming}
               pinsByLine={byLine}
               dropTarget={dropTarget}
@@ -691,7 +690,6 @@ export default function ChatPanel({ session }: Props) {
           <StructuredChatBody
             content={m.content}
             participants={knownCast}
-            persona={persona}
             pending={!!m.pending && isStreaming}
             onDefineSpeaker={defineSpeaker}
             libraryCharacters={characters}
@@ -701,13 +699,13 @@ export default function ChatPanel({ session }: Props) {
       )
     }
     const av = m.role === 'assistant' ? avatarFor(m.characterId) : null
-    const name = m.role === 'assistant' ? (av?.name ?? 'AI') : persona?.name || 'あなた'
+    const name = m.role === 'assistant' ? (av?.name ?? 'AI') : focus?.name || 'あなた'
     return (
       <div className="msg" data-msg-id={m.id} key={m.id}>
         {m.role === 'assistant' ? (
           <EntityAvatar className="avatar" avatar={av!.avatar} name={av!.name} />
         ) : (
-          <EntityAvatar className="avatar" avatar={persona?.avatar} name={persona?.name || 'あなた'} />
+          <EntityAvatar className="avatar" avatar={focus?.avatar} name={focus?.name || 'あなた'} />
         )}
         <div className="bubble">
           <div className="name">{name}</div>
