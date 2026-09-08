@@ -20,6 +20,7 @@ const USAGE_KIND_ORDER: LlmRequestKind[] = [
   'nextScene',
   'imageDraft',
   'characterDraft',
+  'endingProposal',
 ]
 const USAGE_KIND_LABELS: Record<LlmRequestKind, string> = {
   main: '本編',
@@ -28,6 +29,7 @@ const USAGE_KIND_LABELS: Record<LlmRequestKind, string> = {
   nextScene: '次シーン候補',
   imageDraft: '画像起案',
   characterDraft: 'キャラ起案',
+  endingProposal: '結末の提案',
 }
 
 /** System ページ（設定・データ管理）の中身。UI-5でモーダルからページ化するため抽出。ロジックは無変更 */

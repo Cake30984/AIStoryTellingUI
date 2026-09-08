@@ -372,20 +372,6 @@ export default function CassetteEditor({ cassette, seedSession, onClose }: Props
                 />
               </div>
               <div className="field">
-                <label>選択肢で進行</label>
-                <div className="seg">
-                  {(['off', 'always', 'auto'] as const).map((m) => (
-                    <button
-                      key={m}
-                      className={s.choiceMode === m ? 'on' : ''}
-                      onClick={() => patchSession({ choiceMode: m })}
-                    >
-                      {m === 'off' ? 'なし' : m === 'always' ? '毎回' : 'AIが適宜'}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="field">
                 <label>文体</label>
                 <div className="seg">
                   <button

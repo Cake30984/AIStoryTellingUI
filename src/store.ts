@@ -9,6 +9,7 @@ import type {
   Character,
   Choice,
   Development,
+  EndingProposal,
   DiscoveredCharacter,
   ExportBundle,
   ImageProvider,
@@ -84,7 +85,12 @@ import {
   choicesMessages,
   choicesSystem,
   CONTINUATION_NUDGE,
-  CONTINUE_PROMPT,
+  endingProposalNudge,
+  endingProposalSystem,
+  epiloguePrompt,
+  isMarkerContent,
+  PACE_PROMPTS,
+  type StoryPace,
   isDirective,
   nextSceneSystem,
   reviewSystem,
@@ -98,6 +104,7 @@ import { RAW_WINDOW_TOKENS } from './lib/tokens'
 import { extractJson, partialString } from './lib/json'
 import {
   CHOICES_SCHEMA,
+  ENDING_PROPOSALS_SCHEMA,
   jsonModeFor,
   NEXT_SCENE_SCHEMA,
   reviewSchema,
@@ -219,6 +226,32 @@ export function applyReviewToState(
  * `[{"text":"a"}]` のオブジェクト配列にも対応する（モデル差吸収）。
  * 旧形式の effects（P5・選択肢連動加点）は FB7-C で廃止＝出てきても読み捨てる。
  */
+/**
+ * 終わり方の提案を読み取る（F4）。`{"endings":[...]}` のラップと素の配列の両方に対応し、
+ * title/outline の片方しか無い応答も拾う（モデル差吸収。`coerceChoices` と同じ方針）。
+ */
+export function coerceEndingProposals(parsed: unknown): EndingProposal[] {
+  const arr: unknown[] = Array.isArray(parsed)
+    ? parsed
+    : parsed && typeof parsed === 'object'
+      ? ((Object.values(parsed as Record<string, unknown>).find((v) => Array.isArray(v)) as
+          | unknown[]
+          | undefined) ?? [])
+      : []
+  return arr
+    .map((x): EndingProposal | null => {
+      if (!x || typeof x !== 'object') return null
+      const o = x as Record<string, unknown>
+      const title = typeof o.title === 'string' ? o.title.trim() : ''
+      const outline = typeof o.outline === 'string' ? o.outline.trim() : ''
+      if (!title && !outline) return null
+      // 題だけ・筋書きだけでも捨てない（片方から埋める＝ユーザーは読んで選べる）
+      return { title: title || outline.slice(0, 15), outline: outline || title }
+    })
+    .filter((x): x is EndingProposal => !!x)
+    .slice(0, 5)
+}
+
 function coerceChoices(parsed: unknown): Choice[] {
   const arr: unknown[] = Array.isArray(parsed)
     ? parsed
@@ -516,7 +549,6 @@ function newSession(mode: SessionMode): Session {
     story: { premise: '', genre: '', opening: '', openingTitle: '', initialDirective: '' },
     scenes: [scene],
     currentSceneId: scene.id,
-    choiceMode: 'auto',
     narrativeStyle: mode === 'story' ? 'novel' : 'chat',
     state: emptySessionState(),
     overlay: { lore: [], characterDevelopments: [] },
@@ -711,6 +743,12 @@ interface AppState {
   isReviewing: boolean
   /** 次シーン候補（suggestions）だけを再生成中 */
   isRegenSuggestions: boolean
+  /**
+   * 終わり方の提案（F4・設計 §2.7）。**非永続**＝モーダルを閉じれば消える一時的な相談結果で、
+   * ユーザーが選んだものだけが `Session.endingGoal` / `Session.ending` として残る。
+   */
+  endingProposals: EndingProposal[] | null
+  isProposingEndings: boolean
   sceneReview: SceneReview | null
   /**
    * レビュー生成中の途中経過（PC-A A-1。非永続・partialize から除外）。
@@ -868,7 +906,25 @@ interface AppState {
   regenerateSuggestions: () => Promise<void>
   cancelReview: () => void
   /** 直近のアシスタント応答に対して選択肢を手動で生成し直す */
-  regenChoices: () => Promise<void>
+  /**
+   * 〈展開を選ぶ〉（F4・設計 §3.4）。直近のアシスタント本文に対する展開候補を**その場で**生成する。
+   * `ChoiceMode` を廃止したので自動生成の経路は無く、押された時だけ呼ばれる。
+   */
+  pickDirection: () => Promise<void>
+  /**
+   * 終わり方を AI に提案させる（F4・設計 §2.7）。世界側に定義が無いので**いつでも呼べる**。
+   * 結果は `endingProposals` に載るだけで、状態は何も動かさない。
+   */
+  proposeEndings: () => Promise<void>
+  /** 提案の破棄（＝「何も選ばない」） */
+  clearEndingProposals: () => void
+  /** 提案の1件を「目指す結末」として保持する（null で解除）。以後 system へゆるく注入される */
+  setEndingGoal: (goal: EndingProposal | null) => void
+  /**
+   * その場で確定して終わる（F4）。エピローグ用のシーンを起こして本文を書かせ、`Session.ending` を刻む。
+   * チェックポイント対象なので**分岐で戻れば未確定に戻る**。
+   */
+  concludeStory: (ending: EndingProposal) => Promise<void>
   /** 状態パネルの手動編集を保存する */
   applyStatusEdit: (state: SessionState) => void
 
@@ -895,7 +951,11 @@ interface AppState {
    * どちらも送信でそのまま生成が走る（指示は「方向づけ付きの続ける」に相当）。
    */
   send: (text: string, speakerId?: string, kind?: MessageKind) => Promise<void>
-  continueStory: (speakerId?: string) => Promise<void>
+  /**
+   * 「続ける」（主操作）。`pace` を渡すと尺の指示になる（F4・設計 §3.2）＝
+   * `detail`＝この場面をじっくり／`skip`＝手早くまとめて先へ。どれも進行マーカーなので本文には出ない。
+   */
+  continueStory: (speakerId?: string, pace?: StoryPace) => Promise<void>
   regenerate: (speakerId?: string) => Promise<void>
   startStory: () => Promise<void>
   beginScene: () => Promise<void>
@@ -1182,8 +1242,7 @@ function actionCheckpointLabel(session: Session): string {
         m.role === 'user' &&
         m.content.trim() &&
         !isDirective(m) && // 「もっと暗くして」等の指示がツリーの行ラベルになると中身が分からない（IN1）
-        m.content !== SCENE_START_PROMPT &&
-        m.content !== CONTINUE_PROMPT,
+        !isMarkerContent(m.content),
     )
   if (lastUser) return headOf(plainTextOf(lastUser.content), 16)
   return '（無題）'
@@ -1607,12 +1666,8 @@ export const useStore = create<AppState>()(
         mainController = null
         set({ isStreaming: false })
 
-        // 選択肢の生成（off 以外、かつ応答が生成された場合）
-        const after = target()
-        const finalMsg = after?.messages.find((m) => m.id === assistantId)
-        if (after && finalMsg && finalMsg.content.trim() && after.choiceMode !== 'off') {
-          await genChoices(after, assistantId)
-        }
+        // 選択肢は F4 でオンデマンド化した（設計 §3.4）＝ここでは生成しない。
+        // ユーザーが〈展開を選ぶ〉を押した時だけ `pickDirection` が走る
         // チェックポイント記録（C1）。中断（Abort）・エラー終了時は finishReason が null のままなので積まない
         if (finishReason !== null) {
           const finalSession = target()
@@ -1629,23 +1684,22 @@ export const useStore = create<AppState>()(
           )
           return
         }
-        const mode = session.choiceMode === 'auto' ? 'auto' : 'always'
         set({ isGeneratingChoices: true })
         try {
           const refs = resolveRefs(session)
           // 本編の system・履歴全文は使わず、選択肢に効く要素だけへ圧縮した専用文脈を使う（PC2'）
-          const base = choicesMessages(session, refs, mode)
+          const base = choicesMessages(session, refs)
           // 対応モデルなら JSON を強制する（スキーマが通る相手は system の書式指示も包んだ形へ揃える）
           const jsonMode = jsonModeFor(model, get().modelsByProvider[provider.id])
           const jsonSchema = jsonMode === 'none' ? undefined : CHOICES_SCHEMA
           const msgs = [
-            { role: 'system' as const, content: choicesSystem(mode, jsonMode === 'schema') },
+            { role: 'system' as const, content: choicesSystem(jsonMode === 'schema') },
             ...base.slice(1),
           ]
-          // always はモデルが本編を続けてしまうことがあるため最大2回試行（auto の空配列は正当なので1回）
+          // モデルが選択肢ではなく本編を続けてしまうことがあるため最大2回試行する。
           // truncated（途中切れ）の場合も抽出漏れの原因になるため再試行対象に含める。
           // ただし再試行で結果が悪化しても、それまでの最良の結果（最も多く抽出できたもの）を採用する。
-          const maxAttempts = mode === 'always' ? 2 : 1
+          const maxAttempts = 2
           let choices: Choice[] = []
           let bestChoices: Choice[] = []
           choicesController = new AbortController()
@@ -1682,12 +1736,10 @@ export const useStore = create<AppState>()(
               choices = parsedChoices
               break
             }
-            if (mode === 'always' || truncated) {
-              console.warn(
-                `[choices] ${truncated ? '出力が途中で切れました' : '選択肢を抽出できませんでした'}（試行${attempt}/${maxAttempts}）。モデル出力:`,
-                raw.text || '<empty>',
-              )
-            }
+            console.warn(
+              `[choices] ${truncated ? '出力が途中で切れました' : '選択肢を抽出できませんでした'}（試行${attempt}/${maxAttempts}）。モデル出力:`,
+              raw.text || '<empty>',
+            )
           }
           if (choices.length === 0) choices = bestChoices
           if (choices.length > 0) {
@@ -1815,6 +1867,8 @@ export const useStore = create<AppState>()(
         isGeneratingChoices: false,
         isReviewing: false,
         isRegenSuggestions: false,
+        endingProposals: null,
+        isProposingEndings: false,
         sceneReview: null,
         reviewProgress: null,
         error: null,
@@ -2936,14 +2990,118 @@ export const useStore = create<AppState>()(
         // 生成中に閉じた場合も進行表示を残さない（生成自体の中断は stopReview の担当）
         cancelReview: () => set({ sceneReview: null, reviewProgress: null }),
 
-        regenChoices: async () => {
+        pickDirection: async () => {
           const s = active()
-          if (!s || get().isStreaming || get().isGeneratingChoices || s.choiceMode === 'off') return
+          if (!s || get().isStreaming || get().isGeneratingChoices) return
           const last = [...s.messages]
             .reverse()
             .find((m) => m.role === 'assistant' && m.content.trim().length > 0)
           if (!last) return
           await genChoices(s, last.id)
+        },
+
+        proposeEndings: async () => {
+          const s = active()
+          if (!s || get().isStreaming || get().isProposingEndings) return
+          const { provider, model } = parseModelRef(reviewModelOf(s), get().providers)
+          if (!isProviderUsable(provider)) {
+            set({ error: providerUnusableMessage(provider) })
+            return
+          }
+          set({ isProposingEndings: true, error: null })
+          try {
+            const refs = resolveRefs(s)
+            // 本編の system・履歴全文は使わず、選択肢と同じ圧縮文脈を使う（PC2'）＝
+            // 結末の相談に効くのは「誰が居て・関係がどうで・何があったか」だけ
+            const base = choicesMessages(s, refs)
+            const jsonMode = jsonModeFor(model, get().modelsByProvider[provider.id])
+            const t0 = performance.now()
+            reviewController = new AbortController()
+            const raw = await streamChat(
+              {
+                provider,
+                model,
+                messages: [
+                  { role: 'system', content: endingProposalSystem(jsonMode === 'schema') },
+                  base[1],
+                  { role: 'user', content: endingProposalNudge() },
+                ],
+                temperature: 0.9,
+                maxTokens: 1200,
+                signal: reviewController.signal,
+                jsonSchema: jsonMode === 'none' ? undefined : ENDING_PROPOSALS_SCHEMA,
+                jsonMode,
+              },
+              () => {},
+            )
+            get().recordUsage({
+              kind: 'endingProposal',
+              modelRef: reviewModelOf(s),
+              upstream: raw.usage?.upstream,
+              promptTokens: raw.usage?.promptTokens ?? 0,
+              cachedTokens: raw.usage?.cachedTokens ?? 0,
+              completionTokens: raw.usage?.completionTokens ?? 0,
+              cost: raw.usage?.cost,
+              ms: performance.now() - t0,
+              sessionId: s.id,
+            })
+            const proposals = coerceEndingProposals(extractJson<unknown>(raw.text))
+            if (proposals.length === 0) {
+              set({ error: '終わり方の候補を受け取れませんでした。もう一度お試しください。' })
+              return
+            }
+            set({ endingProposals: proposals })
+          } catch (e) {
+            if ((e as Error).name !== 'AbortError') set({ error: (e as Error).message })
+          } finally {
+            reviewController = null
+            set({ isProposingEndings: false })
+          }
+        },
+
+        clearEndingProposals: () => set({ endingProposals: null }),
+
+        setEndingGoal: (goal) => {
+          const s = active()
+          if (!s) return
+          get().updateSession(s.id, { endingGoal: goal ?? undefined })
+        },
+
+        concludeStory: async (ending) => {
+          const s = active()
+          if (!s || get().isStreaming || s.ending) return
+          if (!(await ensureLineTip(s.id, get().branchTrees[s.id]?.currentId))) return
+          // エピローグは独立したシーンに書く＝本編の窓・レビューの単位を汚さない
+          const scene = newScene(ending.title.trim() || 'エピローグ', s.state.now.trim() || undefined)
+          const cur = currentScene(s)
+          get().updateSession(s.id, {
+            scenes: [
+              ...s.scenes.map((sc) => (sc.id === cur?.id ? { ...sc, endedAt: sc.endedAt ?? Date.now() } : sc)),
+              scene,
+            ],
+            currentSceneId: scene.id,
+            // 目標は役目を終える（【目指す結末】を残すとエピローグ後の再生成で二重に効く）
+            endingGoal: undefined,
+            ending: { ...ending, decidedAt: Date.now(), epilogueSceneId: scene.id },
+          })
+          set({ endingProposals: null })
+          const withScene = get().sessions.find((x) => x.id === s.id)
+          if (!withScene) return
+          get().updateSession(s.id, {
+            messages: [
+              ...withScene.messages,
+              {
+                id: uid(),
+                role: 'user',
+                sceneId: scene.id,
+                content: epiloguePrompt(ending),
+                createdAt: Date.now(),
+              },
+            ],
+          })
+          await runCompletion()
+          const done = get().sessions.find((x) => x.id === s.id)
+          if (done) void recordCheckpoint(s.id, 'scene', `完結: ${ending.title}`, done, undefined, scene.title)
         },
 
         applyStatusEdit: (edited) => {
@@ -3053,7 +3211,7 @@ export const useStore = create<AppState>()(
           await runCompletion(speakerId)
         },
 
-        continueStory: async (speakerId) => {
+        continueStory: async (speakerId, pace) => {
           const s = active()
           if (!s || get().isStreaming || false) return
           if (!(await ensureLineTip(s.id, get().branchTrees[s.id]?.currentId))) return
@@ -3064,7 +3222,7 @@ export const useStore = create<AppState>()(
                 id: uid(),
                 role: 'user',
                 sceneId: s.currentSceneId ?? undefined,
-                content: CONTINUE_PROMPT,
+                content: PACE_PROMPTS[pace ?? 'normal'],
                 createdAt: Date.now(),
               },
             ],
@@ -3169,11 +3327,6 @@ export const useStore = create<AppState>()(
                 },
               ],
             })
-            // 選択肢（off 以外）を導入文に対して生成
-            const after = get().sessions.find((x) => x.id === s.id)
-            if (after && after.choiceMode !== 'off') {
-              await genChoices(after, assistantId)
-            }
             // チェックポイント（導入時点）。導入は決め打ちの本文なので「空の開始時点＋導入」の2ノードに割らず、
             // 導入後の状態を「シーンのタイトル」を持つルート1つとして記録する（beforeSession=導入後 で子はdedupe）
             const afterOpening = get().sessions.find((x) => x.id === s.id)

@@ -25,10 +25,10 @@ export const APP_STATE_VERSION = 2
  * 1本書く（＝**もう「あとから足せない」状態ではない**。migrate が入ったのでスキーマの
  * 判断を先送りしても復旧可能になった）。
  */
-export const SAVE_DATA_VERSION = 3
+export const SAVE_DATA_VERSION = 4
 
 /** カセット定義（cassettes）の版番 */
-export const CASSETTE_DATA_VERSION = 3
+export const CASSETTE_DATA_VERSION = 4
 
 /** 永続ペイロードに同梱する版番。app 側は zustand が別に持つのでここには入れない */
 export interface SchemaVersions {
@@ -125,6 +125,18 @@ const saveDataMigrations: Record<number, Migration> = {
       }
     }),
   }),
+  /**
+   * v3 → v4（F4・読者モデル）。`choiceMode` を落とす（`ChoiceMode` を型ごと廃止し、
+   * 選択肢は〈展開を選ぶ〉のオンデマンド生成だけになった）。
+   * `endingGoal`/`ending` は任意フィールドなので足す必要はない（未設定＝目標なし・未完結）。
+   */
+  3: (s) => ({
+    ...s,
+    sessions: (s?.sessions ?? []).map((sess: any) => {
+      const { choiceMode: _choiceMode, ...rest } = sess ?? {}
+      return rest
+    }),
+  }),
 }
 
 const cassetteMigrations: Record<number, Migration> = {
@@ -171,6 +183,14 @@ const cassetteMigrations: Record<number, Migration> = {
           },
         },
       }
+    }),
+  }),
+  /** v3 → v4（F4）。カセットが内包するセッションからも `choiceMode` を落とす */
+  3: (s) => ({
+    ...s,
+    cassettes: (s?.cassettes ?? []).map((cas: any) => {
+      const { choiceMode: _choiceMode, ...rest } = cas?.session ?? {}
+      return { ...cas, session: rest }
     }),
   }),
 }

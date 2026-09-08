@@ -1561,3 +1561,21 @@
   border-top: 1px solid var(--border);
   border-bottom: none;
 }
+
+/* 終わり方の提案（F4・設計_物語の簡素化.md §2.7） */
+.ending-proposal,
+.ending-goal {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elev2);
+}
+.ending-goal strong {
+  display: block;
+  margin-bottom: 4px;
+}
+.ending-proposal .row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}

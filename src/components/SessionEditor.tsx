@@ -69,7 +69,6 @@ export default function SessionEditor({ session, onClose }: Props) {
       story: d.story,
       scenes,
       state: d.state,
-      choiceMode: d.choiceMode,
       narrativeStyle: d.narrativeStyle,
       structuredOutput: d.structuredOutput,
       reviewSplit: d.reviewSplit,
@@ -371,25 +370,6 @@ export default function SessionEditor({ session, onClose }: Props) {
                   placeholder="例: 4月7日 朝"
                   onChange={(e) => patch({ state: { ...d.state, now: e.target.value } })}
                 />
-              </div>
-
-              {/* 選択肢進行 */}
-              <div className="field">
-                <label>選択肢で進行</label>
-                <div className="desc">
-                  AIの応答後に行動の選択肢を提示します。クリックで物語が分岐します。
-                </div>
-                <div className="seg">
-                  {(['off', 'always', 'auto'] as const).map((m) => (
-                    <button
-                      key={m}
-                      className={d.choiceMode === m ? 'on' : ''}
-                      onClick={() => patch({ choiceMode: m })}
-                    >
-                      {m === 'off' ? 'なし' : m === 'always' ? '毎回' : 'AIが適宜'}
-                    </button>
-                  ))}
-                </div>
               </div>
 
               {/* 新しい登場人物の登場ポリシー（発見キャラ・FB7-E） */}

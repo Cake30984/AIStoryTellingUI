@@ -6,7 +6,7 @@ import {
   useStore,
 } from '../store'
 import {
-  CONTINUE_PROMPT,
+  isMarkerContent,
   SCENE_START_PROMPT,
   illustrationContextUser,
   isDirective,
@@ -24,6 +24,7 @@ import ImageGenModal from './ImageGenModal'
 import AmbientPinModal from './AmbientPinModal'
 import AmbientPinLayer, { type AmbientDrag } from './AmbientPinLayer'
 import type { AmbientPin, DockTab, Message, Scene, SceneIllustration, Session } from '../types'
+import EndingModal from './EndingModal'
 import SessionEditor from './SessionEditor'
 import SceneEditor from './SceneEditor'
 import StoryLogModal from './StoryLogModal'
@@ -157,7 +158,7 @@ export default function ChatPanel({ session }: Props) {
     prepareSceneReview,
     startStory,
     continueLast,
-    regenChoices,
+    pickDirection,
     editMessage,
     deleteMessage,
     regenerateFrom,
@@ -181,8 +182,14 @@ export default function ChatPanel({ session }: Props) {
    * 入力の種類（IN1）。`speech`＝主人公のセリフ・行動／`directive`＝書き手 AI への指示。
    * セッションを切り替えたら `speech` に戻す（前の物語の気分を引きずらせない）。
    */
-  const [inputMode, setInputMode] = useState<'speech' | 'directive'>('speech')
+  /**
+   * ロールプレイだけが持つ入力の二分化（IN1）。**物語モードでは廃止した**（F4・読者モデル）＝
+   * すべての入力は書き手への指示で、ユーザーはその世界の住人としてロールプレイしない（設計 §3）。
+   */
+  const [rpInputMode, setRpInputMode] = useState<'speech' | 'directive'>('speech')
   const [showEditor, setShowEditor] = useState(false)
+  /** 終わり方の提案モーダル（F4・設計 §2.7） */
+  const [showEnding, setShowEnding] = useState(false)
   const [showSceneEditor, setShowSceneEditor] = useState(false)
   const [showLog, setShowLog] = useState(false)
   const [showStatus, setShowStatus] = useState(false)
@@ -281,6 +288,11 @@ export default function ChatPanel({ session }: Props) {
   const defineSpeaker = (name: string) => queueCharacterDrafts(session.id, [{ name, note: '' }])
   const pendingDraft = characterDraftQueue.find((q) => q.sessionId === session.id)
   const groupMode = session.mode === 'roleplay' && participants.length > 1 && !novel
+  /**
+   * この入力を「書き手への指示」として送るか。**物語モードは常に true**（読者モデル・F4）。
+   * ロールプレイだけがチップで切り替える。
+   */
+  const asDirective = session.mode === 'story' || rpInputMode === 'directive'
   const effectiveSpeaker = groupMode ? speaker : participants[0]?.id
 
   // 現在シーンのおおよそのトークン量（締め時の目安。prompts.ts のペース制御ナッジと共通判定）
@@ -375,7 +387,7 @@ export default function ChatPanel({ session }: Props) {
   useEffect(() => {
     startSession()
     setSpeaker(undefined)
-    setInputMode('speech')
+    setRpInputMode('speech')
     setExpanded(new Set())
     // セッションを開いた直後は最新地点を表示（自分でセッションを開く操作の直後の1回）
     lastScrolledRef.current = null
@@ -396,7 +408,7 @@ export default function ChatPanel({ session }: Props) {
     setText('')
     requestAnimationFrame(autoGrow)
     // 指示も送信でそのまま生成が走る（＝方向づけ付きの「続ける」。IN1）
-    await send(t, effectiveSpeaker, inputMode === 'directive' ? 'directive' : undefined)
+    await send(t, effectiveSpeaker, asDirective ? 'directive' : undefined)
   }
 
   const onKey = (e: React.KeyboardEvent) => {
@@ -483,8 +495,7 @@ export default function ChatPanel({ session }: Props) {
     </div>
   )
 
-  const isMarker = (m: Message) =>
-    m.role === 'user' && (m.content === CONTINUE_PROMPT || m.content === SCENE_START_PROMPT)
+  const isMarker = (m: Message) => m.role === 'user' && isMarkerContent(m.content)
 
   /**
    * 対象シーンの本文メッセージ（マーカー・空を除く）をアンカーまで返す（FB6-B）。
@@ -587,14 +598,15 @@ export default function ChatPanel({ session }: Props) {
             <Icon name="volume-2" size={13} /> 環境音
           </button>
         )}
-        {/* 末尾のアシスタント本文にだけ「選択肢を生成」（FB3-A6）。完結分岐では出さない（FB8-B） */}
-        {m.id === lastAssistantId && session.choiceMode !== 'off' && (
+        {/* 末尾のアシスタント本文にだけ〈展開を選ぶ〉（F4。オンデマンド生成＝設計 §3.4）。
+            完結後は続きが無いので出さない */}
+        {m.id === lastAssistantId && !session.ending && (
           <button
-            onClick={() => regenChoices()}
+            onClick={() => pickDirection()}
             disabled={isGeneratingChoices}
-            title="この応答の選択肢を生成する"
+            title="この続きの展開の候補を出す"
           >
-            <Icon name="refresh-cw" size={13} /> 選択肢を生成
+            <Icon name="git-branch" size={13} /> 展開を選ぶ
           </button>
         )}
       </div>
@@ -841,6 +853,17 @@ export default function ChatPanel({ session }: Props) {
               >
                 <Icon name="scroll-text" size={15} /> あらすじ
               </button>
+              {session.mode === 'story' && !session.ending && (
+                <button
+                  className="menu-item"
+                  onClick={() => {
+                    setShowMenu(false)
+                    setShowEnding(true)
+                  }}
+                >
+                  <Icon name="flag" size={15} /> 終わり方を考える…
+                </button>
+              )}
               <button
                 className="menu-item"
                 onClick={() => {
@@ -923,7 +946,7 @@ export default function ChatPanel({ session }: Props) {
                   // シーンに本文（マーカー以外）か要約があれば見出しを表示（FB3-A1）。
                   // 「複数シーンあれば無条件で見出し」は、本文を全削除した空シーンでもタイトルだけ残る
                   // 原因だったので外した（FB8-A #4）。健全なシーンは本文か要約を必ず持つのでこれで十分。
-                  const hasRealContent = msgs.some((m) => m.content.trim() && m.content !== CONTINUE_PROMPT && m.content !== SCENE_START_PROMPT)
+                  const hasRealContent = msgs.some((m) => m.content.trim() && !isMarkerContent(m.content))
                   const showDivider = hasRealContent || !!sc.summary
                   return (
                     <Fragment key={sc.id}>
@@ -1050,13 +1073,61 @@ export default function ChatPanel({ session }: Props) {
                   </button>
                 </div>
               )}
+              {/* 完結（F4）。分岐で戻せるので「終わり」ではなく「この線の終わり」として出す */}
+              {session.ending && (
+                <div className="ending-banner">
+                  <Icon name="flag" size={14} />
+                  <span>
+                    完結: <strong>{session.ending.title}</strong>
+                  </span>
+                  <span className="desc">
+                    分岐ツリーから前の地点へ戻れば、ここから別の結末を書き直せます。
+                  </span>
+                </div>
+              )}
+              {/* 目指す結末（F4）。書き手へゆるく渡っていることをユーザーにも見せる */}
+              {!session.ending && session.endingGoal && (
+                <div className="ending-banner goal">
+                  <Icon name="flag" size={14} />
+                  <span>
+                    目指す結末: <strong>{session.endingGoal.title}</strong>
+                  </span>
+                  <button className="link" onClick={() => setShowEnding(true)}>
+                    変更・解除
+                  </button>
+                </div>
+              )}
               {/* コンポーザーの操作行（常時レンダリング。高さが跳ねないよう左右にツールをまとめる） */}
               <div className="composer-tools">
                 {session.mode === 'story' &&
+                  !session.ending &&
                   (storyStarted ? (
-                    <button className="btn primary" onClick={() => continueStory(effectiveSpeaker)} disabled={isStreaming}>
-                      <Icon name="fast-forward" size={14} /> 続ける
-                    </button>
+                    <>
+                      <button
+                        className="btn primary"
+                        onClick={() => continueStory(effectiveSpeaker)}
+                        disabled={isStreaming}
+                      >
+                        <Icon name="fast-forward" size={14} /> 続ける
+                      </button>
+                      {/* 尺の指示（F4・設計 §3.2）。読者モデルではペース配分が一級市民になる */}
+                      <button
+                        className="composer-tool-btn"
+                        onClick={() => continueStory(effectiveSpeaker, 'detail')}
+                        disabled={isStreaming}
+                        title="時間を進めず、この場面をじっくり描かせる"
+                      >
+                        <Icon name="zoom-in" size={14} /> もっと詳しく
+                      </button>
+                      <button
+                        className="composer-tool-btn"
+                        onClick={() => continueStory(effectiveSpeaker, 'skip')}
+                        disabled={isStreaming}
+                        title="この場面は手早くまとめ、次の出来事まで進めさせる"
+                      >
+                        <Icon name="skip-forward" size={14} /> 先へ飛ばす
+                      </button>
+                    </>
                   ) : (
                     <button className="btn primary" onClick={() => startStory()} disabled={isStreaming}>
                       <Icon name="play" size={14} /> 物語をはじめる
@@ -1080,21 +1151,19 @@ export default function ChatPanel({ session }: Props) {
                     <Icon name="corner-down-right" size={14} /> 続きを生成
                   </button>
                 )}
-                {/* 選択肢が出ない時の手動生成（モデル出力が想定外でも復旧できる） */}
-                {!isStreaming &&
-                  !isGeneratingChoices &&
-                  session.choiceMode !== 'off' &&
-                  lastMsg?.role === 'assistant' &&
-                  !!lastMsg.content.trim() &&
-                  (!lastMsg.choices || lastMsg.choices.length === 0) && (
-                    <button
-                      className="composer-tool-btn"
-                      onClick={() => regenChoices()}
-                      title="この応答の選択肢を生成し直す"
-                    >
-                      <Icon name="refresh-cw" size={14} /> 選択肢を生成
-                    </button>
-                  )}
+                {/* 〈展開を選ぶ〉（F4・設計 §3.4）。`ChoiceMode` を廃止しオンデマンド生成だけにした＝
+                    「毎回」で捨てられる選択肢のコストも、「AIが適宜」の外れ判定も無くなる */}
+                {!isStreaming && !session.ending && lastMsg?.role === 'assistant' && !!lastMsg.content.trim() && (
+                  <button
+                    className="composer-tool-btn"
+                    onClick={() => pickDirection()}
+                    disabled={isGeneratingChoices}
+                    title="この続きの展開の候補を出す（押した時だけ生成します）"
+                  >
+                    <Icon name="git-branch" size={14} />{' '}
+                    {isGeneratingChoices ? '候補を考え中…' : '展開を選ぶ'}
+                  </button>
+                )}
                 <div style={{ flex: 1 }} />
                 {/* 挿絵生成は「進行しながら使う」操作なので入力欄付近にも置く（⋯メニューとも両導線。F3/R9） */}
                 {showIllustButtons && (
@@ -1110,7 +1179,7 @@ export default function ChatPanel({ session }: Props) {
                 <button className="composer-tool-btn" onClick={() => setShowSceneEditor(true)}>
                   <Icon name="pencil" size={14} /> シーン編集
                 </button>
-                {(
+                {!session.ending && (
                   <button
                     className="scene-btn end"
                     onClick={() => (isReviewing ? stopReview() : prepareSceneReview())}
@@ -1132,35 +1201,36 @@ export default function ChatPanel({ session }: Props) {
 
               {(
                 <>
-                {/* 入力の二分化（IN1）。送信前に「どちらとして送るか」が見えている状態を作る */}
-                <div className="input-mode-row">
-                  <button
-                    className={'input-mode-chip' + (inputMode === 'speech' ? ' on' : '')}
-                    onClick={() => setInputMode('speech')}
-                    title="書いた内容を主人公の発言・行動として物語に入れます"
-                  >
-                    <Icon name="message-circle" size={13} /> 主人公として書く
-                  </button>
-                  <button
-                    className={'input-mode-chip' + (inputMode === 'directive' ? ' on' : '')}
-                    onClick={() => setInputMode('directive')}
-                    title="書いた内容を書き手 AI への指示として渡します（主人公は何も言いません）"
-                  >
-                    <Icon name="clapperboard" size={13} /> 書き手に指示
-                  </button>
-                </div>
+                {/* 入力の二分化（IN1）はロールプレイだけに残る。物語モードでは読者モデルにより
+                    入力の意味が1つ（＝書き手への指示）に定まったので、選ばせるものが無い（F4・設計 §3） */}
+                {session.mode === 'roleplay' && (
+                  <div className="input-mode-row">
+                    <button
+                      className={'input-mode-chip' + (rpInputMode === 'speech' ? ' on' : '')}
+                      onClick={() => setRpInputMode('speech')}
+                      title="書いた内容をあなたが演じる人物の発言・行動として渡します"
+                    >
+                      <Icon name="message-circle" size={13} /> 演じて書く
+                    </button>
+                    <button
+                      className={'input-mode-chip' + (rpInputMode === 'directive' ? ' on' : '')}
+                      onClick={() => setRpInputMode('directive')}
+                      title="書いた内容を書き手 AI への指示として渡します（あなたの人物は何も言いません）"
+                    >
+                      <Icon name="clapperboard" size={13} /> 書き手に指示
+                    </button>
+                  </div>
+                )}
                 <div className="input-row">
                   <textarea
                     ref={taRef}
                     rows={1}
                     value={text}
-                    className={inputMode === 'directive' ? 'directive' : undefined}
+                    className={asDirective ? 'directive' : undefined}
                     placeholder={
-                      inputMode === 'directive'
+                      asDirective
                         ? '書き手への指示を入力（例: そろそろ雨を降らせて緊張感を出して）'
-                        : session.mode === 'roleplay'
-                          ? 'メッセージや行動を入力（Enter で送信 / Shift+Enter で改行）'
-                          : '主人公のセリフ・行動を入力（任意）'
+                        : 'メッセージや行動を入力（Enter で送信 / Shift+Enter で改行）'
                     }
                     onChange={(e) => {
                       setText(e.target.value)
@@ -1177,7 +1247,7 @@ export default function ChatPanel({ session }: Props) {
                       className="send-btn"
                       onClick={submit}
                       disabled={!text.trim()}
-                      title={inputMode === 'directive' ? '指示を送って続きを書かせる' : '送信'}
+                      title={asDirective ? '指示を送って続きを書かせる' : '送信'}
                     >
                       <Icon name="arrow-up" size={16} />
                     </button>
@@ -1191,7 +1261,7 @@ export default function ChatPanel({ session }: Props) {
                   {groupMode
                     ? '「次に話す」で発言者を選べます。'
                     : session.mode === 'story'
-                      ? '入力欄の上で「主人公として書く」と「書き手に指示」を切り替えられます。空のまま「続ける」で自動進行します。'
+                      ? 'あなたは読者です。書いたことはすべて「書き手への指示」として渡ります。空のまま「続ける」で先へ進み、〈もっと詳しく〉〈先へ飛ばす〉で尺を、〈展開を選ぶ〉で方向を指示できます。'
                       : 'キャラクターになりきって応答します。「書き手に指示」に切り替えると、物語の方向づけだけを渡せます。'}
                 </div>
               )}
@@ -1208,6 +1278,7 @@ export default function ChatPanel({ session }: Props) {
         />
       </div>
 
+      {showEnding && <EndingModal onClose={() => setShowEnding(false)} />}
       {showEditor && <SessionEditor session={session} onClose={() => setShowEditor(false)} />}
       {ambientPinFor &&
         (() => {

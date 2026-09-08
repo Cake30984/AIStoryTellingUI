@@ -190,6 +190,17 @@ export function buildSystemPrompt(session: Session, refs: ResolvedRefs): string 
     )
   }
 
+  // 3.5 目指す結末（F4・設計 §2.7）。**ゆるい方向付けであって到達判定ではない**
+  // ＝コードは何も判定せず、ユーザーが「これで終える」を押すまで物語は続く。
+  // セッション設定なのでシーン境界でも動かない＝system に置いてよい（PC1+PC4）。
+  const goal = session.endingGoal
+  if (goal && !session.ending && (goal.title.trim() || goal.outline.trim())) {
+    parts.push(
+      `【目指す結末】\n${goal.title.trim()}: ${goal.outline.trim()}\n` +
+        `この結末へ**急がずに**近づけてください。まだ終わらせず、今の場面でできることだけを書きます。`,
+    )
+  }
+
   // 4. 物語モードの前提
   if (session.mode === 'story') {
     const s = session.story
@@ -564,6 +575,47 @@ export const CONTINUE_PROMPT = '（続けて。物語をさらに展開させて
 export const SCENE_START_PROMPT = '（新しい場面が始まります。情景の導入から自然に書き始めてください。）'
 
 /**
+ * 尺の指示（F4・設計_物語の簡素化.md §3.2）。
+ *
+ * 読者モデルではすべての入力が書き手への指示なので、**ペース配分の指示が一級市民になる**
+ * （ロールプレイ入力ではメタ発言＝世界観を壊す異物だった）。F2 で捨てたスロット単位の
+ * ペース配分——「ここはじっくり／ここはざっくり」——をここで取り戻す（§1.6）。
+ *
+ * 本文ではない進行マーカーなので `MARKER_PROMPTS` に載せ、表示・書き出し・ツリーのラベルから外す。
+ */
+export const PACE_DETAIL_PROMPT =
+  '（続けて。ただし急がず、この場面をじっくり描いてください。時間を大きく進めず、情景・所作・間・心情を細やかに書きます。）'
+export const PACE_SKIP_PROMPT =
+  '（続けて。ただしこの場面は手早くまとめ、次の出来事まで話を進めてください。細部は省いて構いません。）'
+
+/** 「続ける」のペース指定（F4・設計 §3.2）。`normal` が従来の「続ける」 */
+export type StoryPace = 'normal' | 'detail' | 'skip'
+
+/** ペース指定 → 実際に積む擬似ユーザー入力 */
+export const PACE_PROMPTS: Record<StoryPace, string> = {
+  normal: CONTINUE_PROMPT,
+  detail: PACE_DETAIL_PROMPT,
+  skip: PACE_SKIP_PROMPT,
+}
+
+/**
+ * 本文ではない進行マーカーの本文一覧。**表示（ChatPanel）・書き出し（storyExport）・
+ * 分岐ツリーのラベル（store）はこの1つの集合を見る**＝マーカーを増やしたときに
+ * 片方だけ更新される事故を防ぐ。
+ */
+export const MARKER_PROMPTS: ReadonlySet<string> = new Set([
+  CONTINUE_PROMPT,
+  SCENE_START_PROMPT,
+  PACE_DETAIL_PROMPT,
+  PACE_SKIP_PROMPT,
+])
+
+/** その本文が進行マーカーか（判定はここに一本化する） */
+export function isMarkerContent(content: string): boolean {
+  return MARKER_PROMPTS.has(content.trim())
+}
+
+/**
  * 「⤵ 続きを生成」（上限到達で途中で切れた出力の続き）専用の念押し。
  * 履歴には積まず、API 送信時だけ末尾に付加する（appendToId で同一メッセージへ追記するため、
  * 何も指示しないとモデルが書き出しからやり直したり同じ内容を繰り返したりすることがある）。
@@ -575,22 +627,18 @@ export const CONTINUATION_NUDGE =
 /**
  * 選択肢生成用の system プロンプト。
  * 選択肢は行動の提示のみ＝加点（旧 P5 の effects）は持たない（FB7-C。評価はシーン終了レビューが行う）。
+ *
+ * **F4 で `ChoiceMode` を廃止した**（設計 §3.4）。生成はユーザーが〈展開を選ぶ〉を押した時だけなので、
+ * 旧 `auto`（挟むのが不自然なら空配列）の分岐は要らない——**押された時点で「今ほしい」が確定している**。
  */
-export function choicesSystem(mode: 'always' | 'auto', jsonSchema = false): string {
-  const base = `あなたは物語の選択肢デザイナーです。直前の場面を踏まえ、主人公（ユーザー）が次に取りうる行動・展開の選択肢を考えます。\n`
+export function choicesSystem(jsonSchema = false): string {
+  const base = `あなたは物語の書き手を助ける相談役です。直前の場面を踏まえ、**次にどう展開させるか**の候補を読者へ示します。\n`
   // JSON スキーマで固定する場合は root がオブジェクトである必要があるため、包んだ形を指示する
   // （`jsonSchemas.ts` の CHOICES_SCHEMA と対。指示とスキーマが食い違わないようにする）
   const format = jsonSchema
     ? `出力は {"choices": [...]} の JSON のみ（前後に文章を付けない）。各要素は10〜30字程度の短い行動・選択の文字列。例: {"choices":["剣を抜いて立ち向かう","そっと後ずさる","話しかけてみる"]}\n`
     : `出力は JSON 配列のみ（前後に文章を付けない）。各要素は10〜30字程度の短い行動・選択の文字列。例: ["剣を抜いて立ち向かう","そっと後ずさる","話しかけてみる"]\n`
-  if (mode === 'auto') {
-    return (
-      base +
-      format +
-      `ただし、選択を挟むのが不自然な場面（描写の途中など）では${jsonSchema ? '空の配列（choices: []）' : '空配列 []'}を返してください。挟むべき局面でのみ2〜4個。`
-    )
-  }
-  return base + format + `2〜4個の選択肢を返してください。`
+  return base + format + `互いに異なる方向の候補を3〜4個返してください。`
 }
 
 /**
@@ -598,13 +646,12 @@ export function choicesSystem(mode: 'always' | 'auto', jsonSchema = false): stri
  * モデルは直近の user 指示に強く従うため、本編の続き（地の文）ではなく
  * JSON 配列を確実に出力させるための念押し。
  */
-export function choicesUserNudge(mode: 'always' | 'auto'): string {
-  const head =
-    `↑の直前の場面を踏まえ、主人公（ユーザー）が次に取る行動の選択肢を、` +
-    `指示どおりの JSON 配列だけで出力してください。物語の続き・地の文・説明は書かないこと。`
-  return mode === 'auto'
-    ? `${head}（選択を挟むのが不自然なら [] を返す）`
-    : `${head} 上で指定した形式・個数を厳守すること。`
+export function choicesUserNudge(): string {
+  return (
+    `↑の直前の場面を踏まえ、この続きの展開の候補を、` +
+    `指示どおりの JSON 配列だけで出力してください。物語の続き・地の文・説明は書かないこと。` +
+    ` 上で指定した形式・個数を厳守すること。`
+  )
 }
 
 function headOf(text: string, max: number): string {
@@ -657,11 +704,7 @@ const CHOICES_RECENT_MESSAGES = 4
  * `choicesSystem` はここでは jsonSchema なしの版を積む。JSON スキーマ対応モデル向けの差し替えは
  * 呼び出し側（`genChoices`）が返り値の先頭（system）を上書きして行う。
  */
-export function choicesMessages(
-  session: Session,
-  refs: ResolvedRefs,
-  mode: 'always' | 'auto',
-): ChatMessage[] {
+export function choicesMessages(session: Session, refs: ResolvedRefs): ChatMessage[] {
   const parts: string[] = []
   if (refs.characters.length) {
     parts.push(`【登場人物】\n${refs.characters.map(choicesCharacterLine).join('\n')}`)
@@ -676,9 +719,9 @@ export function choicesMessages(
   const recent = recentPlainLines(session, refs, CHOICES_RECENT_MESSAGES)
   if (recent.length) parts.push(`【直近の本文】\n${recent.join('\n')}`)
   return [
-    { role: 'system', content: choicesSystem(mode) },
+    { role: 'system', content: choicesSystem() },
     { role: 'user', content: parts.join('\n\n') },
-    { role: 'user', content: choicesUserNudge(mode) },
+    { role: 'user', content: choicesUserNudge() },
   ]
 }
 
@@ -789,6 +832,51 @@ export function reviewSystem(part: ReviewPart, aspectNames: string[], focusName 
   )
 }
 
+/**
+ * 「終わり方の提案」の system プロンプト（F4・設計 §2.7）。
+ *
+ * **世界側にエンディング定義を持たない**のがこの設計の要点で、条件も id も無い＝
+ * いつでも「今の状況から、どう終わりうるか」を AI に考えさせる。**提案の主体は AI、
+ * 選ぶ主体はプレイヤー**なので、ここでは選ばせず候補を並べるだけにする。
+ */
+export function endingProposalSystem(jsonSchema = false): string {
+  const format = jsonSchema
+    ? `出力は {"endings": [...]} の JSON のみ（前後に文章・コードフェンスを付けない）。`
+    : `出力は JSON 配列のみ（前後に文章・コードフェンスを付けない）。`
+  return (
+    `あなたは物語の書き手を助ける相談役です。ここまでの物語を読み、**この先どのような終わり方があり得るか**を考えます。\n\n` +
+    format +
+    `\n各要素は {"title": "短い題（15字以内）", "outline": "どう終わるかを2〜3文で"} の形にしてください。\n\n` +
+    `指針:\n` +
+    `- **3〜5個**。互いにはっきり違う結末にする（同じ結末の言い換えを並べない）。\n` +
+    `- ここまでに積み上がった関係性・未解決の事柄を踏まえる。今から新しい設定を持ち出さない。\n` +
+    `- 幸福な結末だけに寄せない。取り返しのつかない結末・静かな結末も含めてよい。\n` +
+    `- outline には「誰がどうなるか」を具体的に書く。抽象的な余韻だけで終わらせない。\n` +
+    `- **まだ結末を書かない。** ここで書くのはあらすじであって本文ではない。`
+  )
+}
+
+/** 提案の直前に積む user メッセージ（JSON 以外を書かせないための念押し） */
+export function endingProposalNudge(): string {
+  return (
+    `↑のここまでの物語を踏まえ、あり得る終わり方の候補を、指示どおりの JSON だけで出力してください。` +
+    `物語の続き・地の文・説明は書かないこと。`
+  )
+}
+
+/**
+ * エピローグ（結末の本文）を書かせる擬似ユーザー入力（F4）。
+ * 進行マーカーではない＝**ユーザーが選んだ結末そのもの**なので履歴に残し、書き出しにも出す。
+ */
+export function epiloguePrompt(ending: { title: string; outline: string }): string {
+  return (
+    `（この物語をここで完結させます。次の結末へ向けて、エピローグを書いてください。\n` +
+    `結末: ${ending.title}\n` +
+    `筋書き: ${ending.outline}\n` +
+    `筋書きをそのまま書き写さず、これまでの描写と地続きの本文として書き切ってください。` +
+    `途中で切らず、読み終えた感触が残る形で締めます。）`
+  )
+}
 /**
  * 次シーン候補（suggestions）だけを作り直すための system プロンプト。
  * イベント/シーン種類を引き直した際に、新しい方向性で候補を再生成する。

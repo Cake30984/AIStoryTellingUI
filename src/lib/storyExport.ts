@@ -9,7 +9,7 @@
 
 import type { Character, Message, Scene, SceneIllustration, Session } from '../types'
 import { plainTextOf } from './structured'
-import { CONTINUE_PROMPT, isDirective, SCENE_START_PROMPT } from './prompts'
+import { isDirective, isMarkerContent } from './prompts'
 import { blobToBase64, getImage } from './imageStore'
 import { checkpointStore } from './platform'
 import { gunzipText } from './checkpoint'
@@ -17,16 +17,13 @@ import { gunzipText } from './checkpoint'
 export type ExportFormat = 'plain' | 'markdown'
 export type ExportUnit = { kind: 'session' } | { kind: 'scene'; sceneId: string }
 
-/** 進行用の内部マーカー本文（「物語をはじめる」「続けて」等）。書き出しには不要 */
-const MARKER_CONTENTS = new Set([CONTINUE_PROMPT, SCENE_START_PROMPT])
-
 /**
  * 書き出しに載せない舞台裏のメッセージか。
  * system・進行マーカーに加え、**書き手への指示**（IN1）も落とす＝要件は「貼りたくなる出力」であって
  * 制作過程の記録ではない。
  */
 function isBackstage(m: Message): boolean {
-  return m.role === 'system' || MARKER_CONTENTS.has(m.content.trim()) || isDirective(m)
+  return m.role === 'system' || isMarkerContent(m.content) || isDirective(m)
 }
 
 /** そのメッセージが属するシーン id（未確定＝進行中シーンのぶんは currentSceneId を補う） */

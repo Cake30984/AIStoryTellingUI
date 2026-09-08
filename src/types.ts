@@ -296,9 +296,6 @@ export interface Scene {
   createdAt: number
 }
 
-/** 物語モードの選択肢進行の方式 */
-export type ChoiceMode = 'off' | 'always' | 'auto'
-
 /** 文体スタイル: novel=小説形式（地の文＋セリフ混在） / chat=会話劇（キャラ別） */
 export type NarrativeStyle = 'novel' | 'chat'
 
@@ -326,6 +323,23 @@ export interface StorySetup {
    * タグのみを対象に解決する。
    */
   introTags?: IntroTag[]
+}
+
+/**
+ * AI が提案する「終わり方」の候補（F4・設計 §2.7）。
+ * 世界観は結末を定義しない＝**いつでも今の状況から提案させる**ので、条件も id も持たない。
+ */
+export interface EndingProposal {
+  /** 短い題（例: 「写真部の最後の一枚」） */
+  title: string
+  /** どう終わるかを2〜3文で */
+  outline: string
+}
+
+/** 確定した結末（F4）。`epilogueSceneId` はエピローグを書いたシーン */
+export interface StoryEnding extends EndingProposal {
+  decidedAt: number
+  epilogueSceneId: string
 }
 
 /**
@@ -432,8 +446,6 @@ export interface Session {
   scenes: Scene[]
   /** 現在進行中のシーン */
   currentSceneId: string | null
-  /** 選択肢進行の方式 */
-  choiceMode: ChoiceMode
   /** 文体スタイル */
   narrativeStyle: NarrativeStyle
   /**
@@ -460,6 +472,17 @@ export interface Session {
    * docs/詳細設計_プロンプト構造とキャッシュ.md §7.2
    */
   rawWindowFromSceneId?: string
+  /**
+   * 目標として保持している終わり方（F4・設計 §2.7）。AI の提案から**ユーザーが選んだ1件**だけを持つ。
+   * 以後 system の【目指す結末】としてゆるい方向付けに使う。世界側にエンディング定義は持たない
+   * ＝**提案の主体は AI、選ぶ主体はプレイヤー**。
+   */
+  endingGoal?: EndingProposal
+  /**
+   * 確定した結末（F4）。エピローグを書かせた時点で入り、以後この物語は完結扱いになる。
+   * チェックポイント対象なので**分岐で戻れば未確定に戻る**。
+   */
+  ending?: StoryEnding
   /** アーカイブ済み（セッション一覧から既定で除外。UI-5） */
   archived?: boolean
   /**
@@ -525,6 +548,7 @@ export type LlmRequestKind =
   | 'nextScene'
   | 'imageDraft'
   | 'characterDraft'
+  | 'endingProposal'
 
 /** LLM 呼び出し1回ぶんの実測記録（PC0。docs/詳細設計_プロンプト構造とキャッシュ.md §2） */
 export interface UsageRecord {

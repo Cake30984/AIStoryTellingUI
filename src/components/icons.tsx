@@ -55,6 +55,8 @@ export type IconName =
   | 'panel-right'
   | 'volume-2'
   | 'copy'
+  | 'zoom-in'
+  | 'skip-forward'
 
 const PATHS: Record<IconName, ReactNode> = {
   'more-horizontal': (
@@ -375,6 +377,19 @@ const PATHS: Record<IconName, ReactNode> = {
     <>
       <rect x="9" y="9" width="12" height="12" rx="2" />
       <path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1" />
+    </>
+  ),
+  // 尺の指示（F4）: 拡大鏡＝じっくり描く／スキップ＝先へ飛ばす
+  'zoom-in': (
+    <>
+      <circle cx="11" cy="11" r="7" />
+      <path d="M21 21l-4.3-4.3M11 8v6M8 11h6" />
+    </>
+  ),
+  'skip-forward': (
+    <>
+      <path d="M5 4l10 8-10 8z" fill="currentColor" stroke="none" />
+      <path d="M19 4v16" />
     </>
   ),
 }

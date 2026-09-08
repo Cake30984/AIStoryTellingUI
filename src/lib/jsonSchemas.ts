@@ -103,6 +103,12 @@ export const CHOICES_SCHEMA: JsonSchemaSpec = {
   schema: obj({ choices: arrayOf(str) }),
 }
 
+/** 終わり方の提案（F4・設計 §2.7）。世界側に定義を持たないので id も条件も返させない */
+export const ENDING_PROPOSALS_SCHEMA: JsonSchemaSpec = {
+  name: 'ending_proposals',
+  schema: obj({ endings: arrayOf(obj({ title: str, outline: str })) }),
+}
+
 /** 次シーン候補だけの再生成 */
 export const NEXT_SCENE_SCHEMA: JsonSchemaSpec = {
   name: 'next_scene_suggestions',
