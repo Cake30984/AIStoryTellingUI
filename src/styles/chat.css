@@ -510,23 +510,23 @@
   margin-top: 8px;
 }
 
-/* ---------- トークン目安バッジ ---------- */
-.token-badge {
+/* ---------- 分量バッジ（文字数。F5・設計_物語の簡素化.md §2.8） ---------- */
+.length-badge {
   font-size: 11px;
   padding: 2px 9px;
   border-radius: 999px;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
-.token-badge.low {
+.length-badge.low {
   background: color-mix(in srgb, var(--ok) 14%, transparent);
   color: var(--ok);
 }
-.token-badge.mid {
+.length-badge.mid {
   background: color-mix(in srgb, var(--warn) 16%, transparent);
   color: var(--warn);
 }
-.token-badge.high {
+.length-badge.high {
   background: color-mix(in srgb, var(--bad) 16%, transparent);
   color: var(--bad);
 }

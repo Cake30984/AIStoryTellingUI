@@ -6,9 +6,9 @@ import {
   estimateTokens,
   RAW_WINDOW_BRIDGE_TOKENS,
   RAW_WINDOW_KEEP_RATIO,
-  SCENE_WIND_DOWN_TOKENS,
-  SCENE_WRAP_UP_TOKENS,
-  sceneTokensOf,
+  countChars,
+  SCENE_WIND_DOWN_CHARS,
+  SCENE_WRAP_UP_CHARS,
 } from './tokens'
 
 /**
@@ -338,16 +338,16 @@ function depthZeroContent(
   }
 
   // シーンのペース制御（FB5-①）: 現在シーンが長くなってきたら収束へ向かわせる。
-  // メッセージ履歴には積まず、毎回の組み立て時に推定トークンから判定する（状態を持たない）。
+  // メッセージ履歴には積まず、毎回の組み立て時に**本文の文字数**から判定する（状態を持たない。F5）。
   // 「今すぐ畳め」という指示なので深さ0＝最も近い位置に置く。
   {
-    const sceneTokens = sceneTokensOf(session)
-    if (sceneTokens >= SCENE_WRAP_UP_TOKENS) {
+    const sceneChars = sceneCharsOf(session)
+    if (sceneChars >= SCENE_WRAP_UP_CHARS) {
       parts.push(
         `【シーンの締め】\nこの場面は十分な長さに達しています。新しい話題・場所・事件を持ち込まず、` +
           `次の1〜2回の応答でこの場面を自然な一区切りへ着地させてください（続きが気になる引きは残してよい）。`,
       )
-    } else if (sceneTokens >= SCENE_WIND_DOWN_TOKENS) {
+    } else if (sceneChars >= SCENE_WIND_DOWN_CHARS) {
       parts.push(
         `【シーンの収束】\nこの場面は後半に入っています。新しい展開を広げすぎず、` +
           `いま起きている流れをまとめる方向で書き進めてください。`,
@@ -562,6 +562,28 @@ export const DIRECTIVE_HEADER =
 /** そのメッセージが「書き手への指示」か（判定はここに一本化する） */
 export function isDirective(m: Pick<Message, 'kind'>): boolean {
   return m.kind === 'directive'
+}
+
+/**
+ * そのメッセージが**物語の本文**か（F5）。読者が実際に読むものだけを真とする＝
+ * system・進行マーカー（続ける／尺の指示／シーン開始）・書き手への指示は本文ではない。
+ * 読者モデルでは物語モードのユーザー入力がすべて指示になるので、この区別が無いと
+ * 「分量」が指示文で水増しされる。
+ */
+export function isStoryText(m: Pick<Message, 'role' | 'kind' | 'content'>): boolean {
+  return m.role !== 'system' && !isDirective(m) && !isMarkerContent(m.content)
+}
+
+/**
+ * 現在シーンの**本文の文字数**（F5・設計 §2.8）。バッジ表示とペース制御ナッジの共通判定。
+ * ユーザーに見せる長さはトークンではなく文字数で数える（→ `tokens.ts` 冒頭の表）。
+ */
+export function sceneCharsOf(session: Session): number {
+  const sceneId = session.currentSceneId ?? session.scenes[session.scenes.length - 1]?.id
+  if (!sceneId) return 0
+  return session.messages
+    .filter((m) => m.sceneId === sceneId && isStoryText(m))
+    .reduce((sum, m) => sum + countChars(m.content), 0)
 }
 
 /** 指示の本文を、API へ送る枠付きテキストへ変換する */

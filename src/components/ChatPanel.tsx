@@ -7,11 +7,12 @@ import {
 } from '../store'
 import {
   isMarkerContent,
+  sceneCharsOf,
   SCENE_START_PROMPT,
   illustrationContextUser,
   isDirective,
 } from '../lib/prompts'
-import { sceneTokensOf, tokenLevel } from '../lib/tokens'
+import { lengthLevel } from '../lib/tokens'
 import { getImage, useImageUrl } from '../lib/imageStore'
 import { downloadBlob } from '../lib/io'
 import { hasStructuredLines, plainTextOf } from '../lib/structured'
@@ -295,14 +296,15 @@ export default function ChatPanel({ session }: Props) {
   const asDirective = session.mode === 'story' || rpInputMode === 'directive'
   const effectiveSpeaker = groupMode ? speaker : participants[0]?.id
 
-  // 現在シーンのおおよそのトークン量（締め時の目安。prompts.ts のペース制御ナッジと共通判定）
-  const sceneTokens = useMemo(() => sceneTokensOf(session), [session])
-  const tokLvl = tokenLevel(sceneTokens)
+  // 締め時の目安（prompts.ts のペース制御ナッジと共通判定）
+  // ユーザーに見せる分量は文字数（F5・設計 §2.8）。トークンはコストと文脈窓の管理にだけ使う
+  const sceneChars = useMemo(() => sceneCharsOf(session), [session])
+  const lenLvl = lengthLevel(sceneChars)
 
   // 締め時の提案チップ（FB5-①c）。自動でレビューは開かず、シーン単位で閉じられる
   const [wrapHintHiddenFor, setWrapHintHiddenFor] = useState<string | null>(null)
   const showWrapHint =
-    tokLvl === 'high' &&
+    lenLvl === 'high' &&
     !isStreaming &&
     !isReviewing &&
     !!scene &&
@@ -816,8 +818,11 @@ export default function ChatPanel({ session }: Props) {
               {scene.title}
               {scene.timeLabel ? `・${scene.timeLabel}` : ''}
             </span>
-            <span className={'token-badge ' + tokLvl} title="現在シーンのおおよその文量（トークン換算）">
-              文量 ~{sceneTokens.toLocaleString()}{tokLvl === 'high' ? ' ・締め時' : ''}
+            <span
+              className={'length-badge ' + lenLvl}
+              title="このシーンの本文の分量（文字数。書き手への指示・進行の合図は数えない）"
+            >
+              {sceneChars.toLocaleString()}字{lenLvl === 'high' ? '・締め時' : ''}
             </span>
           </button>
         )}
