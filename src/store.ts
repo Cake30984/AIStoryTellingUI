@@ -88,7 +88,11 @@ import {
   endingProposalNudge,
   endingProposalSystem,
   epiloguePrompt,
+  interludeMessages,
+  interludeReflectMessages,
   isMarkerContent,
+  isStoryText,
+  stripInterludeHeadings,
   PACE_PROMPTS,
   type StoryPace,
   isDirective,
@@ -105,6 +109,7 @@ import { extractJson, partialString } from './lib/json'
 import {
   CHOICES_SCHEMA,
   ENDING_PROPOSALS_SCHEMA,
+  INTERLUDE_REFLECT_SCHEMA,
   jsonModeFor,
   NEXT_SCENE_SCHEMA,
   reviewSchema,
@@ -749,6 +754,22 @@ interface AppState {
    */
   endingProposals: EndingProposal[] | null
   isProposingEndings: boolean
+  /**
+   * 別視点の幕間を生成中の対象（F6・設計 §2.9）。`"sceneId:characterId"`。
+   * **非永続**（生成中の表示だけに使う。結果は `Scene.interludes` へ入る）。
+   */
+  generatingInterlude: string | null
+  /**
+   * 「関係性へ反映」の提案（F6・§2.9.4）。幕間は既定で非正典なので、
+   * **ユーザーが承認したものだけ**が `SessionState.relations` に入る。非永続。
+   */
+  interludeReflection: {
+    sceneId: string
+    characterId: string
+    stance: string
+    aspects: { aspectId: string; name: string; note: string }[]
+  } | null
+  isReflectingInterlude: boolean
   sceneReview: SceneReview | null
   /**
    * レビュー生成中の途中経過（PC-A A-1。非永続・partialize から除外）。
@@ -911,6 +932,18 @@ interface AppState {
    * `ChoiceMode` を廃止したので自動生成の経路は無く、押された時だけ呼ばれる。
    */
   pickDirection: () => Promise<void>
+  /**
+   * 別視点の幕間を生成する（F6・設計 §2.9）。**ユーザーが要求したときだけ**走り、
+   * 状態にもプロンプトにも影響しない（読み専用・非正典）。何度でも引き直せる。
+   */
+  generateInterlude: (sceneId: string, characterId: string) => Promise<void>
+  deleteInterlude: (sceneId: string, interludeId: string) => void
+  /** 幕間の解釈を `relation[その人物 → 中心]` へ反映する案を作る（承認前。§2.9.4） */
+  reflectInterlude: (sceneId: string, interludeId: string) => Promise<void>
+  /** 反映案を破棄する */
+  cancelInterludeReflection: () => void
+  /** 反映案を承認して関係性へ書き込む */
+  confirmInterludeReflection: () => void
   /**
    * 終わり方を AI に提案させる（F4・設計 §2.7）。世界側に定義が無いので**いつでも呼べる**。
    * 結果は `endingProposals` に載るだけで、状態は何も動かさない。
@@ -1869,6 +1902,9 @@ export const useStore = create<AppState>()(
         isRegenSuggestions: false,
         endingProposals: null,
         isProposingEndings: false,
+        generatingInterlude: null,
+        interludeReflection: null,
+        isReflectingInterlude: false,
         sceneReview: null,
         reviewProgress: null,
         error: null,
@@ -3102,6 +3138,228 @@ export const useStore = create<AppState>()(
           await runCompletion()
           const done = get().sessions.find((x) => x.id === s.id)
           if (done) void recordCheckpoint(s.id, 'scene', `完結: ${ending.title}`, done, undefined, scene.title)
+        },
+
+        // ── 別視点の幕間（F6・設計_物語の簡素化.md §2.9）─────────────────
+        //
+        // 実測（計測_別視点の幕間.md）で分かっているのは ①「言い換えに潰れる」心配は起きない
+        // ②捏造は稀（3〜7%）③見出しの混入 13% だけが実装で対処すべき問題、の3点。
+        // **読み専用・非正典**なので、生成はレビューも第3の呼び出しも走らせず、本編プロンプトにも積まない。
+        generateInterlude: async (sceneId, characterId) => {
+          const s = active()
+          if (!s || get().isStreaming || get().generatingInterlude) return
+          const scene = s.scenes.find((sc) => sc.id === sceneId)
+          const viewer = get().characters.find((c) => c.id === characterId)
+          if (!scene || !viewer || characterId === s.focusCharacterId) return
+          const { provider, model } = parseModelRef(s.model || DEFAULT_MODEL, get().providers)
+          if (!isProviderUsable(provider)) {
+            set({ error: providerUnusableMessage(provider) })
+            return
+          }
+          // そのシーンの本文だけを渡す（進行マーカーと書き手への指示は落とす）
+          const isCur = sceneId === s.currentSceneId
+          const sceneText = s.messages
+            .filter((m) => (m.sceneId === sceneId || (isCur && !m.sceneId)) && isStoryText(m))
+            .map((m) => plainTextOf(m.content).trim())
+            .filter(Boolean)
+            .join('\n\n')
+          if (!sceneText.trim()) {
+            set({ error: 'このシーンにはまだ本文がありません。' })
+            return
+          }
+          const focus = get().characters.find((c) => c.id === s.focusCharacterId)
+          const world = get().worlds.find((w) => w.id === s.worldId)
+          const rel = (s.state?.relations ?? []).find(
+            (r) => r.fromId === characterId && r.toId === s.focusCharacterId,
+          )
+          const relationProse = rel
+            ? [
+                rel.stance,
+                ...rel.aspects.map((a) => {
+                  const an = world?.relationAspects.find((x) => x.id === a.aspectId)?.name
+                  return an && a.note.trim() ? `${an}: ${a.note.trim()}` : ''
+                }),
+              ]
+                .filter(Boolean)
+                .join('\n')
+            : ''
+          const timePlace = [scene.timeLabel ?? s.state?.now ?? '', s.state?.place ?? '']
+            .map((x) => x.trim())
+            .filter(Boolean)
+            .join(' / ')
+
+          set({ generatingInterlude: `${sceneId}:${characterId}`, error: null })
+          const t0 = performance.now()
+          try {
+            const raw = await streamChat(
+              {
+                provider,
+                model,
+                messages: interludeMessages({ viewer, focus, sceneText, relationProse, timePlace }),
+                temperature: 0.9,
+                maxTokens: 2500,
+              },
+              () => {},
+            )
+            get().recordUsage({
+              kind: 'interlude',
+              modelRef: s.model || DEFAULT_MODEL,
+              upstream: raw.usage?.upstream,
+              promptTokens: raw.usage?.promptTokens ?? 0,
+              cachedTokens: raw.usage?.cachedTokens ?? 0,
+              completionTokens: raw.usage?.completionTokens ?? 0,
+              cost: raw.usage?.cost,
+              ms: performance.now() - t0,
+              sessionId: s.id,
+            })
+            // 見出しの混入（実測 13%）はプロンプトで禁じたうえでここでも削る
+            const text = stripInterludeHeadings(raw.text)
+            if (!text) {
+              set({ error: '幕間を受け取れませんでした。もう一度お試しください。' })
+              return
+            }
+            const cur = get().sessions.find((x) => x.id === s.id)
+            if (!cur) return
+            get().updateSession(cur.id, {
+              scenes: cur.scenes.map((sc) =>
+                sc.id === sceneId
+                  ? {
+                      ...sc,
+                      interludes: [
+                        ...(sc.interludes ?? []),
+                        { id: uid(), characterId, text, createdAt: Date.now() },
+                      ],
+                    }
+                  : sc,
+              ),
+            })
+          } catch (e) {
+            if ((e as Error).name !== 'AbortError') set({ error: (e as Error).message })
+          } finally {
+            set({ generatingInterlude: null })
+          }
+        },
+
+        deleteInterlude: (sceneId, interludeId) => {
+          const s = active()
+          if (!s) return
+          get().updateSession(s.id, {
+            scenes: s.scenes.map((sc) =>
+              sc.id === sceneId
+                ? { ...sc, interludes: (sc.interludes ?? []).filter((it) => it.id !== interludeId) }
+                : sc,
+            ),
+          })
+        },
+
+        reflectInterlude: async (sceneId, interludeId) => {
+          const s = active()
+          if (!s || get().isReflectingInterlude) return
+          const scene = s.scenes.find((sc) => sc.id === sceneId)
+          const it = (scene?.interludes ?? []).find((x) => x.id === interludeId)
+          if (!it) return
+          const viewer = get().characters.find((c) => c.id === it.characterId)
+          const focus = get().characters.find((c) => c.id === s.focusCharacterId)
+          if (!viewer) return
+          const { provider, model } = parseModelRef(reviewModelOf(s), get().providers)
+          if (!isProviderUsable(provider)) {
+            set({ error: providerUnusableMessage(provider) })
+            return
+          }
+          const world = get().worlds.find((w) => w.id === s.worldId)
+          const aspectNames = (world?.relationAspects ?? []).map((a) => a.name).filter(Boolean)
+          const rel = (s.state?.relations ?? []).find(
+            (r) => r.fromId === it.characterId && r.toId === s.focusCharacterId,
+          )
+          set({ isReflectingInterlude: true, error: null })
+          const t0 = performance.now()
+          try {
+            const jsonMode = jsonModeFor(model, get().modelsByProvider[provider.id])
+            const raw = await streamChat(
+              {
+                provider,
+                model,
+                messages: interludeReflectMessages({
+                  viewerName: viewer.name,
+                  focusName: focus?.name.trim() || '主人公',
+                  interludeText: it.text,
+                  currentStance: rel?.stance ?? '',
+                  aspectNames,
+                }),
+                temperature: 0.4,
+                maxTokens: 800,
+                jsonSchema: jsonMode === 'none' ? undefined : INTERLUDE_REFLECT_SCHEMA,
+                jsonMode,
+              },
+              () => {},
+            )
+            get().recordUsage({
+              kind: 'interlude',
+              modelRef: reviewModelOf(s),
+              upstream: raw.usage?.upstream,
+              promptTokens: raw.usage?.promptTokens ?? 0,
+              cachedTokens: raw.usage?.cachedTokens ?? 0,
+              completionTokens: raw.usage?.completionTokens ?? 0,
+              cost: raw.usage?.cost,
+              ms: performance.now() - t0,
+              sessionId: s.id,
+            })
+            const parsed = extractJson<any>(raw.text)
+            const stance = String(parsed?.stance ?? '').trim()
+            const aspects = Array.isArray(parsed?.aspects)
+              ? parsed.aspects
+                  .map((a: any) => {
+                    const def = (world?.relationAspects ?? []).find(
+                      (d) => d.name === String(a?.name ?? '').trim(),
+                    )
+                    return def
+                      ? { aspectId: def.id, name: def.name, note: String(a?.note ?? '').trim() }
+                      : null
+                  })
+                  .filter(
+                    (a: any): a is { aspectId: string; name: string; note: string } => !!a && !!a.note,
+                  )
+              : []
+            if (!stance && aspects.length === 0) {
+              set({ error: '反映案を受け取れませんでした。' })
+              return
+            }
+            set({ interludeReflection: { sceneId, characterId: it.characterId, stance, aspects } })
+          } catch (e) {
+            if ((e as Error).name !== 'AbortError') set({ error: (e as Error).message })
+          } finally {
+            set({ isReflectingInterlude: false })
+          }
+        },
+
+        cancelInterludeReflection: () => set({ interludeReflection: null }),
+
+        confirmInterludeReflection: () => {
+          const s = active()
+          const r = get().interludeReflection
+          if (!s || !r) return
+          // レビューの relationUpdates と同じ形へ落として既存の適用経路を通す（§2.9.4）
+          const viewer = get().characters.find((c) => c.id === r.characterId)
+          const focus = get().characters.find((c) => c.id === s.focusCharacterId)
+          const next = applyReviewToState(
+            s.state,
+            {
+              relationUpdates: [
+                {
+                  fromId: r.characterId,
+                  fromName: viewer?.name ?? '',
+                  toId: s.focusCharacterId,
+                  toName: focus?.name ?? '主人公',
+                  stance: r.stance,
+                  aspects: r.aspects,
+                  reason: '幕間の解釈を反映',
+                },
+              ],
+              moodChanges: [],
+            },
+          )
+          get().updateSession(s.id, { state: next })
+          set({ interludeReflection: null })
         },
 
         applyStatusEdit: (edited) => {

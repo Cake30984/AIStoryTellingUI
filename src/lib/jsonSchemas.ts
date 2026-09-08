@@ -109,6 +109,12 @@ export const ENDING_PROPOSALS_SCHEMA: JsonSchemaSpec = {
   schema: obj({ endings: arrayOf(obj({ title: str, outline: str })) }),
 }
 
+/** 幕間の解釈を関係性へ反映する案（F6・§2.9.4）。レビューの relationUpdates 1件ぶんと同じ形 */
+export const INTERLUDE_REFLECT_SCHEMA: JsonSchemaSpec = {
+  name: 'interlude_reflection',
+  schema: obj({ stance: str, aspects: arrayOf(obj({ name: str, note: str })) }),
+}
+
 /** 次シーン候補だけの再生成 */
 export const NEXT_SCENE_SCHEMA: JsonSchemaSpec = {
   name: 'next_scene_suggestions',

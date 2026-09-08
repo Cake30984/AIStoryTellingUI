@@ -808,3 +808,89 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ---------- 別視点の幕間（F6・設計_物語の簡素化.md §2.9）----------
+   読み物であって本編ではないので、本文とは別の面（一段沈んだ背景＋左罫）で隔てる */
+.interludes {
+  margin: 8px 0 20px;
+}
+.interlude {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--badge-rp);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  margin-bottom: 10px;
+}
+.interlude-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.interlude-who {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  color: var(--badge-rp);
+}
+.interlude-actions {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+.interlude-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.interlude-actions button:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--text-faint);
+}
+.interlude-actions button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.interlude-body {
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: var(--line-height-prose);
+  font-size: var(--font-size-prose);
+  color: var(--text);
+}
+/* 関係性への反映案（承認前） */
+.interlude-reflect {
+  background: var(--bg-elev2);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  margin-bottom: 10px;
+}
+.interlude-reflect-head {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--accent);
+  margin-bottom: 6px;
+}
+.interlude-reflect .row {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+.interlude-add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.interlude-add .desc {
+  margin: 0;
+}

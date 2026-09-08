@@ -39,6 +39,28 @@ function assistantSpeakerOf(m: Message, session: Session, characters: Character[
 }
 
 /**
+ * 別視点の幕間（F6）の書き出し行。**そのシーンの本文の後ろ**にまとめて添える。
+ * 非正典（読み物）なので、本編と混ざらないよう見出しで明示的に隔てる。
+ */
+function interludeLines(
+  scene: Scene | undefined,
+  characters: Character[],
+  format: ExportFormat,
+): string[] {
+  const items = scene?.interludes ?? []
+  if (items.length === 0) return []
+  const lines: string[] = []
+  for (const it of items) {
+    const who = characters.find((c) => c.id === it.characterId)?.name ?? 'ある人物'
+    lines.push(format === 'markdown' ? `### 幕間 ―― ${who}の視点` : `―― 幕間: ${who}の視点 ――`)
+    lines.push('')
+    lines.push(it.text.trim())
+    lines.push('')
+  }
+  return lines
+}
+
+/**
  * 本文をテキストへ書き出す（要件①⑤）。scope で対象シーンを絞る。
  * user 発言は「プレイヤーが選んだこと」として中心人物名（`focusName`）を話者名に立てる。
  */
@@ -67,9 +89,11 @@ export function sessionToText(
     const sceneId = effectiveSceneId(m, session)
     if (unit.kind === 'scene' && sceneId !== unit.sceneId) continue
 
-    if (showHeadings && sceneId !== lastSceneId) {
+    if (sceneId !== lastSceneId) {
+      // 直前のシーンの幕間を、そのシーンの末尾へ流してから次の見出しへ進む（F6）
+      lines.push(...interludeLines(session.scenes.find((s) => s.id === lastSceneId), characters, format))
       const scene = session.scenes.find((s) => s.id === sceneId)
-      if (scene) {
+      if (showHeadings && scene) {
         if (sceneSeen) lines.push('')
         lines.push(heading(scene.title || 'シーン'))
         lines.push('')
@@ -90,6 +114,8 @@ export function sessionToText(
     }
     lines.push('')
   }
+  // 最後のシーンぶん（F6）
+  lines.push(...interludeLines(session.scenes.find((s) => s.id === lastSceneId), characters, format))
 
   return lines.join('\n').trim()
 }
@@ -127,9 +153,10 @@ export async function sessionToIllustratedMarkdown(
     const sceneId = effectiveSceneId(m, session)
     if (unit.kind === 'scene' && sceneId !== unit.sceneId) continue
 
-    if (showHeadings && sceneId !== lastSceneId) {
+    if (sceneId !== lastSceneId) {
+      lines.push(...interludeLines(session.scenes.find((s) => s.id === lastSceneId), characters, 'markdown'))
       const scene = session.scenes.find((s) => s.id === sceneId)
-      if (scene) {
+      if (showHeadings && scene) {
         if (sceneSeen) lines.push('')
         lines.push(`## ${scene.title || 'シーン'}`)
         lines.push('')
@@ -158,6 +185,7 @@ export async function sessionToIllustratedMarkdown(
       lines.push('')
     }
   }
+  lines.push(...interludeLines(session.scenes.find((s) => s.id === lastSceneId), characters, 'markdown'))
 
   return lines.join('\n').trim()
 }

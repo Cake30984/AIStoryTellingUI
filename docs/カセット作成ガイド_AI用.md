@@ -7,7 +7,7 @@ AI にカセットを作らせたいときは、この 1 ファイルをその�
 > その配下）を変更したら、**同じコミットでこのガイドも更新する**。ここが型より古くなると、
 > AI は「書けるのに書かない項目」を作り、最悪の場合**撤去済みの書き方を出力して黙って壊れる**。
 >
-> 2026-09-08 に全面書き直し（F1〜F5）。**条件・数・実績・結末定義・配役・特別イベント・
+> 2026-09-08 に全面書き直し（F1〜F6）。**条件・数・実績・結末定義・配役・特別イベント・
 > 固定タイムライン・ペルソナ・選択肢モードはすべて撤去済み**で、もう書けません。
 
 ---
@@ -323,7 +323,8 @@ AI にカセットを作らせたいときは、この 1 ファイルをその�
 
 **開始状態の鉄則**（ここを空にしないと「プレイ済み」データになる）:
 `messages: []` / `scenes` は 1 シーンのみ / `state.relations`・`moods`・`recentDone` は空 /
-`overlay` は空 / `ending`・`endingGoal` は付けない / `currentSceneId` は唯一のシーン id。
+`overlay` は空 / `ending`・`endingGoal` は付けない / `currentSceneId` は唯一のシーン id /
+シーンに `interludes`（別視点の幕間）を書かない＝プレイ中に読者が生成する読み物なので、配布物には入れない。
 
 ### 6.1 focusCharacterId（中心人物）— 必須
 
@@ -365,6 +366,7 @@ AI にカセットを作らせたいときは、この 1 ファイルをその�
 | `reviewGuidance` | `relationAspects[].guidance` に書く |
 | `eventAutoFire` / `usedEventIds` / `revealedLoreIds` / `revealedCharacterIds` | 何も書かない |
 | `relationFlag` 節 | 何も書かない |
+| `scenes[].interludes`（別視点の幕間） | 何も書かない。プレイ中に読者が生成する |
 
 ---
 

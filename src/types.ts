@@ -269,6 +269,20 @@ export interface AmbientPin {
   createdAt: number
 }
 
+/**
+ * 別視点の幕間（F6・`docs/設計_物語の簡素化.md` §2.9）。
+ * 同じ場面を中心人物以外の視点で描き直したもの。**読み専用・非正典**で、
+ * 本編プロンプトにも状態にも一切影響しない（気に入った解釈だけ
+ * 「関係性へ反映」でユーザーが取り込む＝`characterGrowth` の承認と同じ形）。
+ */
+export interface Interlude {
+  id: string
+  /** 誰の視点か（`Session.characterIds` の1人。中心人物は選べない） */
+  characterId: string
+  text: string
+  createdAt: number
+}
+
 /** 物語の一区切り（その場の登場キャラ・状況・終了時の要約を持つ） */
 export interface Scene {
   id: string
@@ -291,6 +305,8 @@ export interface Scene {
   illustrations?: SceneIllustration[]
   /** 環境音ピン（AM1。任意＝旧データには無い。読む側は `ambientPins ?? []`） */
   ambientPins?: AmbientPin[]
+  /** 別視点の幕間（F6。任意＝無い方が普通。読む側は `interludes ?? []`） */
+  interludes?: Interlude[]
   /** 終了済みなら時刻 */
   endedAt?: number
   createdAt: number
@@ -549,6 +565,7 @@ export type LlmRequestKind =
   | 'imageDraft'
   | 'characterDraft'
   | 'endingProposal'
+  | 'interlude'
 
 /** LLM 呼び出し1回ぶんの実測記録（PC0。docs/詳細設計_プロンプト構造とキャッシュ.md §2） */
 export interface UsageRecord {

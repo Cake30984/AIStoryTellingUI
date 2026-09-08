@@ -26,6 +26,7 @@ import AmbientPinModal from './AmbientPinModal'
 import AmbientPinLayer, { type AmbientDrag } from './AmbientPinLayer'
 import type { AmbientPin, DockTab, Message, Scene, SceneIllustration, Session } from '../types'
 import EndingModal from './EndingModal'
+import InterludePanel from './InterludePanel'
 import SessionEditor from './SessionEditor'
 import SceneEditor from './SceneEditor'
 import StoryLogModal from './StoryLogModal'
@@ -998,6 +999,10 @@ export default function ChatPanel({ session }: Props) {
                             {renderSceneContent(sc, msgs)}
                           </div>
                         ))}
+                      {/* 別視点の幕間（F6・設計 §2.9）。本文の後ろに置く＝読み物であって本編ではない */}
+                      {session.mode === 'story' && hasRealContent && (
+                        <InterludePanel session={session} scene={sc} />
+                      )}
                     </Fragment>
                   )
                 })}

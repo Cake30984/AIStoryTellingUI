@@ -900,6 +900,126 @@ export function epiloguePrompt(ending: { title: string; outline: string }): stri
   )
 }
 /**
+ * 別視点の幕間（F6・設計_物語の簡素化.md §2.9・実測 `計測_別視点の幕間.md`）の system プロンプト。
+ *
+ * **実測で分かっていること**——
+ * 1. 「同じ出来事の言い換えに潰れる」という心配は起きなかった。素材が勘違い系の構造
+ *    （中心人物が淡々と有能なことをして本人は何とも思っていない）を持てば、視点を移すだけで
+ *    受け止めの食い違いが生まれる。最弱条件でも読んだ4件すべてに出た
+ * 2. 差分要求の指示は決め手ではないが**害も無い**ので入れる。関係 prose の濃さは
+ *    「ギャップの有無」ではなく**具体性**に効く
+ * 3. 捏造は稀（3〜7%）。読み専用なので実害はさらに小さい
+ * 4. **見出しの混入が 13%**。ここで禁じたうえで `stripInterludeHeadings` でも削る（二重に守る）
+ */
+export function interludeSystem(): string {
+  return (
+    `あなたは小説の書き手です。すでに書かれた場面を、別の登場人物の視点から書き直します。\n` +
+    `出来事の流れは変えず、その人物の内面と解釈で語り直してください。\n\n` +
+    `指針:\n` +
+    `- **その人物が見聞きできた範囲だけ**を書く。中心人物の内心は分からない前提で、外から見た様子として書く。\n` +
+    `- **中心人物自身の受け止め方とは食い違う点を、必ず1つ以上含める**（中心人物が何とも思っていないことを、この人物は重く受け取る、など）。\n` +
+    `- **中心人物が見ていなかったもの**をこの人物が見ていた、という描写は加えてよい（幕間の面白さはここにある）。\n` +
+    `- ただし**元の場面に無い出来事・別の日の場面・新しい世界設定は足さない**。解釈と観察だけを加える。\n` +
+    `- **見出し・タイトル・区切り線を書かない**（「# ◯◯の視点」のような行を付けない）。本文だけを書く。\n` +
+    `- 前置き・後書き・要約もしない。いきなり本文から始める。`
+  )
+}
+
+/**
+ * 幕間の生成に渡す文脈（§2.9.2 の「入力」）。
+ * **本編の system も履歴全文も使わない**——一発生成・読み専用なので、必要なのは
+ * その場面の本文・その人物の定義・`relation[その人物 → 中心]`・時と場所だけ。
+ */
+export function interludeMessages(args: {
+  /** 視点になる人物 */
+  viewer: Character
+  /** 中心人物（居なければ「主人公」と呼ぶ） */
+  focus?: Character
+  /** その場面の本文（マーカー・指示を除いたもの） */
+  sceneText: string
+  /** viewer → focus の関係 prose（空なら渡さない） */
+  relationProse: string
+  /** 時と場所（空なら渡さない） */
+  timePlace: string
+}): ChatMessage[] {
+  const hero = args.focus?.name.trim() || `主人公`
+  const parts: string[] = [characterBlock(args.viewer, `視点になる人物`)]
+  if (args.relationProse.trim()) {
+    parts.push(`【${args.viewer.name} から見た ${hero}】\n${args.relationProse.trim()}`)
+  }
+  if (args.timePlace.trim()) parts.push(`【時と場所】${args.timePlace.trim()}`)
+  parts.push(`【元の場面（${hero}を中心に書かれたもの）】\n${args.sceneText}`)
+  parts.push(
+    `【指示】この場面を、${args.viewer.name} の視点から書き直してください。` +
+      `${args.viewer.name} が ${hero} の言動をどう受け取ったかを書き、${hero} 自身の受け止め方とは食い違う点を必ず1つ以上含めてください。`
+  )
+  return [
+    { role: `system`, content: interludeSystem() },
+    { role: `user`, content: parts.join(`\n\n`) },
+  ]
+}
+
+/**
+ * 幕間の後処理（F6）。**冒頭の見出し行を削る**——実測で 120件中 16件（13%）に
+ * 「# 千夏の視点」のような見出しが混入した。プロンプトでも禁じているが、
+ * 出力の後始末はコードで確実に行う（禁止文だけに頼らない）。
+ *
+ * 削るのは**先頭の連続する見出し・区切り・強調だけの行**に限る＝本文中の `#` は触らない。
+ */
+export function stripInterludeHeadings(text: string): string {
+  const lines = text.replace(/\r\n?/g, `\n`).split(`\n`)
+  let i = 0
+  while (i < lines.length) {
+    const t = lines[i].trim()
+    if (!t) { i++; continue }
+    // 見出し（# …）／区切り（--- ***）／**◯◯の視点** だけの行
+    const isHeading = /^#{1,6}\s/.test(t) || /^(-{3,}|_{3,}|\*{3,})$/.test(t)
+    const isBoldOnly = /^\*\*[^*]{1,30}\*\*$/.test(t)
+    const isBracketOnly = /^[「『【(（][^」』】)）]{1,30}の視点[」』】)）]$/.test(t)
+    if (isHeading || isBoldOnly || isBracketOnly) { i++; continue }
+    break
+  }
+  return lines.slice(i).join(`\n`).trim()
+}
+/**
+ * 幕間の解釈を `relation[その人物 → 中心]` へ反映する案を作らせる（F6・§2.9.4）。
+ *
+ * 幕間そのものは**非正典**なので、これは「気に入った解釈だけをユーザーが取り込む」ための
+ * 一段。返す形はレビューの `relationUpdates` と同じ（stance の全文＋次元ごとの記述）＝
+ * 適用経路も `applyReviewToState` を再利用でき、新しい書き込み口を増やさない。
+ */
+export function interludeReflectMessages(args: {
+  viewerName: string
+  focusName: string
+  interludeText: string
+  currentStance: string
+  aspectNames: string[]
+}): ChatMessage[] {
+  const aspectLine = args.aspectNames.length
+    ? `aspects の name は既存の【${args.aspectNames.join('・')}】のみを使う（新しい次元を作らない）。該当する変化が無い次元は省略してよい。`
+    : `次元が未定義なので aspects は空配列にし、stance だけを書く。`
+  const system =
+    `あなたは物語編集アシスタントです。ある人物の視点で書かれた文章を読み、` +
+    `その人物が中心人物へ抱く関係の記述を書き直します。次の JSON のみを出力してください（前後に文章・コードフェンスを付けない）。\n` +
+    `{\n` +
+    `  "stance": "${args.viewerName} が ${args.focusName} に抱く関係の現在地を1〜2文で（差分でなく全文）",\n` +
+    `  "aspects": [ {"name":"次元名","note":"その次元の現在の機微"} ]\n` +
+    `}\n` +
+    `指針:\n` +
+    `- **文章に書かれている受け止め方だけ**を根拠にする。書かれていない感情を足さない。\n` +
+    `- 【現在の関係】があるなら、それを踏まえて**書き直す**（今回読み取れなかった機微は失わず維持する）。\n` +
+    `- ${aspectLine}`
+  const parts = [`【${args.viewerName} の視点で書かれた文章】\n${args.interludeText.trim()}`]
+  if (args.currentStance.trim()) {
+    parts.push(`【現在の関係（${args.viewerName} → ${args.focusName}）】\n${args.currentStance.trim()}`)
+  }
+  return [
+    { role: 'system', content: system },
+    { role: 'user', content: parts.join('\n\n') },
+  ]
+}
+
+/**
  * 次シーン候補（suggestions）だけを作り直すための system プロンプト。
  * イベント/シーン種類を引き直した際に、新しい方向性で候補を再生成する。
  */
