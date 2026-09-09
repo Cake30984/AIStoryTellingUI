@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { appConfirm } from '../lib/dialogs'
-import { useStore } from '../store'
+import { isSceneClosed, useStore } from '../store'
 import type { Character, Scene, Session } from '../types'
 import EntityAvatar from './EntityAvatar'
 import { Icon } from './icons'
@@ -18,6 +18,11 @@ interface Props {
  *
  * **読み専用・非正典。** 生成しても状態は一切動かず、本編プロンプトにも積まれない。
  * 気に入った解釈だけ「関係性へ反映」でユーザーが取り込む。
+ *
+ * **単位はシーン丸ごと1本で、終了したシーンにしか作れない**（2026-09-09）。
+ * 1シーンはなろう系の1話に相当し、他者視点は話の途中ではなく**独立した1話として後ろに置く**もの
+ * だから。進行中のシーンでは入口を出したまま無効にして、理由をその場に書く
+ * （黙って隠すと機能が無いように見える）。
  */
 export default function InterludePanel({ session, scene }: Props) {
   const {
@@ -44,16 +49,19 @@ export default function InterludePanel({ session, scene }: Props) {
     .sort((a, b) => Number(present.has(b.id)) - Number(present.has(a.id)))
 
   const nameOf = (id: string) => characters.find((c) => c.id === id)?.name ?? 'ある人物'
+  const focusName = characters.find((c) => c.id === session.focusCharacterId)?.name ?? '中心人物'
   const busy = !!generatingInterlude
-  const reflection =
-    interludeReflection?.sceneId === scene.id ? interludeReflection : null
+  const closed = isSceneClosed(session, scene)
 
   if (candidates.length === 0 && items.length === 0) return null
 
   return (
     <div className="interludes">
-      {items.map((it) => (
-        <div key={it.id} className="interlude">
+      {items.map((it) => {
+        const reflection = interludeReflection?.interludeId === it.id ? interludeReflection : null
+        return (
+        <div key={it.id}>
+          <div className="interlude">
           <div className="interlude-head">
             <EntityAvatar
               className="dot-avatar"
@@ -65,14 +73,14 @@ export default function InterludePanel({ session, scene }: Props) {
               <button
                 onClick={() => generateInterlude(scene.id, it.characterId)}
                 disabled={busy || isStreaming}
-                title="同じ視点で書き直す（元の幕間は残ります）"
+                title="このシーンを同じ視点で書き直す（元の幕間は残ります）"
               >
                 <Icon name="rotate-ccw" size={12} /> 引き直す
               </button>
               <button
                 onClick={() => reflectInterlude(scene.id, it.id)}
                 disabled={isReflectingInterlude || busy}
-                title="この幕間の解釈を、この人物から中心人物への関係性へ取り込む"
+                title={`この幕間の解釈を、${nameOf(it.characterId)} から ${focusName} への関係性へ取り込む`}
               >
                 <Icon name="check" size={12} /> 関係性へ反映
               </button>
@@ -88,35 +96,42 @@ export default function InterludePanel({ session, scene }: Props) {
             </div>
           </div>
           <div className="interlude-body">{it.text}</div>
-        </div>
-      ))}
+          </div>
 
-      {reflection && (
-        <div className="interlude-reflect">
-          <div className="interlude-reflect-head">
-            {nameOf(reflection.characterId)} → 中心人物 の関係性をこう書き直します
-          </div>
-          {reflection.stance && <p className="desc">{reflection.stance}</p>}
-          {reflection.aspects.map((a) => (
-            <div key={a.aspectId} className="sub-field">
-              <span className="sub-label">{a.name}</span>
-              <p className="desc">{a.note}</p>
+          {reflection && (
+            <div className="interlude-reflect">
+              <div className="interlude-reflect-head">
+                {nameOf(reflection.characterId)} → {focusName} の関係性をこう書き直します
+              </div>
+              {reflection.stance && <p className="desc">{reflection.stance}</p>}
+              {reflection.aspects.map((a) => (
+                <div key={a.aspectId} className="sub-field">
+                  <span className="sub-label">{a.name}</span>
+                  <p className="desc">{a.note}</p>
+                </div>
+              ))}
+              <div className="row">
+                <button className="btn" onClick={() => cancelInterludeReflection()}>
+                  やめる
+                </button>
+                <button className="btn primary" onClick={() => confirmInterludeReflection()}>
+                  反映する
+                </button>
+              </div>
             </div>
-          ))}
-          <div className="row">
-            <button className="btn" onClick={() => cancelInterludeReflection()}>
-              やめる
-            </button>
-            <button className="btn primary" onClick={() => confirmInterludeReflection()}>
-              反映する
-            </button>
-          </div>
+          )}
         </div>
-      )}
+        )
+      })}
 
       {candidates.length > 0 && (
         <div className="interlude-add">
-          {busy ? (
+          {!closed ? (
+            // 進行中のシーンでは作れない。隠さずに理由を出す（§2.9・1シーン＝1話）
+            <span className="desc">
+              <Icon name="users" size={13} /> 別の視点で読む（このシーンを終えると使えます）
+            </span>
+          ) : busy ? (
             <span className="desc">
               {nameOf(generatingInterlude!.split(':')[1])}の視点で書いています…
             </span>
@@ -146,7 +161,7 @@ export default function InterludePanel({ session, scene }: Props) {
               className="link"
               onClick={() => setPickerOpen(true)}
               disabled={isStreaming}
-              title="同じ場面を、中心人物以外の視点で描き直します（読み物・本編には影響しません）"
+              title="このシーンを丸ごと、中心人物以外の視点で描き直します（読み物・本編には影響しません）"
             >
               <Icon name="users" size={13} /> 別の視点で読む
             </button>

@@ -568,6 +568,15 @@ function newSession(mode: SessionMode): Session {
   }
 }
 
+/**
+ * そのシーンが閉じているか（F6）。**幕間はここが true のシーンにだけ作れる**＝
+ * 1シーン＝1話が完結してから、独立した1本として別視点を書く。
+ * レビュー確定で `endedAt` が入る。過去シーンなら（旧データで `endedAt` が無くても）閉じている扱い。
+ */
+export function isSceneClosed(session: Session, scene: Scene): boolean {
+  return !!scene.endedAt || scene.id !== session.currentSceneId
+}
+
 /** セッションの現在シーンを返す（無ければ最後のシーン） */
 export function currentScene(s: Session): Scene | undefined {
   return s.scenes.find((sc) => sc.id === s.currentSceneId) ?? s.scenes[s.scenes.length - 1]
@@ -765,6 +774,8 @@ interface AppState {
    */
   interludeReflection: {
     sceneId: string
+    /** どの幕間に対する案か（その幕間の直下に出すため） */
+    interludeId: string
     characterId: string
     stance: string
     aspects: { aspectId: string; name: string; note: string }[]
@@ -935,6 +946,9 @@ interface AppState {
   /**
    * 別視点の幕間を生成する（F6・設計 §2.9）。**ユーザーが要求したときだけ**走り、
    * 状態にもプロンプトにも影響しない（読み専用・非正典）。何度でも引き直せる。
+   *
+   * **終了したシーンにしか作れない**（2026-09-09）。対象はそのシーン丸ごと＝
+   * 1シーン（なろう系の1話に相当）を、独立した1本として書き直す。
    */
   generateInterlude: (sceneId: string, characterId: string) => Promise<void>
   deleteInterlude: (sceneId: string, interludeId: string) => void
@@ -3151,6 +3165,11 @@ export const useStore = create<AppState>()(
           const scene = s.scenes.find((sc) => sc.id === sceneId)
           const viewer = get().characters.find((c) => c.id === characterId)
           if (!scene || !viewer || characterId === s.focusCharacterId) return
+          // 進行中のシーンでは作らせない（対象範囲が半端になり、続きを生成するたびに位置がずれる）
+          if (!isSceneClosed(s, scene)) {
+            set({ error: 'このシーンを終えてから、別の視点で読めます。' })
+            return
+          }
           const { provider, model } = parseModelRef(s.model || DEFAULT_MODEL, get().providers)
           if (!isProviderUsable(provider)) {
             set({ error: providerUnusableMessage(provider) })
@@ -3324,7 +3343,9 @@ export const useStore = create<AppState>()(
               set({ error: '反映案を受け取れませんでした。' })
               return
             }
-            set({ interludeReflection: { sceneId, characterId: it.characterId, stance, aspects } })
+            set({
+              interludeReflection: { sceneId, interludeId, characterId: it.characterId, stance, aspects },
+            })
           } catch (e) {
             if ((e as Error).name !== 'AbortError') set({ error: (e as Error).message })
           } finally {
