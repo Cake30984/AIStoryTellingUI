@@ -1086,12 +1086,6 @@ interface AppState {
   backfillImageLogs: () => Promise<void>
 }
 
-// 生成の中断は用途別に独立させる。単一の共有 controller だと、選択肢生成の中止が
-// 並行中の本編生成を巻き込む（またはその逆で中断が空振りする）ため分離する。
-let mainController: AbortController | null = null
-let choicesController: AbortController | null = null
-let reviewController: AbortController | null = null
-
 // チェックポイント書き込みの直列化（セッションごと。fire-and-forget での順序逆転を防ぐ。C1）
 const checkpointWriteChains = new Map<string, Promise<void>>()
 function serializeCheckpointWrite(sessionId: string, fn: () => Promise<void>): Promise<void> {
@@ -1338,6 +1332,41 @@ export const useStore = create<AppState>()(
         if (s) get().updateSession(s.id, patch)
       }
 
+      // 生成の中断は用途別に独立させる。単一の共有 controller だと、選択肢生成の中止が
+      // 並行中の本編生成を巻き込む（またはその逆で中断が空振りする）ため分離する。
+      //
+      // **signal は必ず各呼び出しのローカル controller から取る**（P2a）。ここに入っているのは
+      // 「いま停止ボタンで止められる相手」を指すだけの参照で、後から始まった生成に上書きされる。
+      // リトライ時に `mainController.signal` と書いていた頃は、並行する別の生成が終了時に
+      // null を入れた瞬間に `null.signal` で落ちていた。後片付けも同一性を見てから行う。
+      let mainController: AbortController | null = null
+      let choicesController: AbortController | null = null
+      let reviewController: AbortController | null = null
+
+      /**
+       * 物語を進める操作の入口（二重送信ガード。P2a）。
+       * `isStreaming` を見てから `await ensureLineTip` が返るまでの間はまだ生成が始まっていないので、
+       * 2回目のクリックが素通りして user メッセージが2つ積まれていた。**同期で**ロックを立ててから待つ。
+       * false を返したら呼び出し側は何もせずに抜ける（＝従来の `ensureLineTip` false と同じ扱い）。
+       *
+       * ロックは `ensureLineTip` を抜けた時点で降ろす。呼び出し側はそこから
+       * `runCompletion` の `set({ isStreaming: true })` まで await を挟まないので、
+       * その間に別のクリックが割り込むことはない（マイクロタスク境界では DOM イベントが走らない）。
+       */
+      let storyOpPending = false
+      async function claimStoryTurn(
+        sessionId: string,
+        parentNodeId: string | null | undefined,
+      ): Promise<boolean> {
+        if (storyOpPending || get().isStreaming) return false
+        storyOpPending = true
+        try {
+          return await ensureLineTip(sessionId, parentNodeId)
+        } finally {
+          storyOpPending = false
+        }
+      }
+
       /** 画像の永続記録へ1件追記する（FB6-A。採用時とバックフィルの書き込み口） */
       const appendImageRecord = (sessionId: string, record: SessionImageRecord) =>
         set((st) => ({
@@ -1577,7 +1606,10 @@ export const useStore = create<AppState>()(
           return
         }
 
-        mainController = new AbortController()
+        // signal はこのローカルから取る（モジュール/クロージャ変数を読むと、並行する別の生成が
+        // 終了時に null を入れた瞬間に `null.signal` で落ちる）
+        const controller = new AbortController()
+        mainController = controller
         set({ isStreaming: true, error: null })
 
         // 既存メッセージへ追記する場合はそれを対象に、そうでなければ空メッセージを新規追加
@@ -1638,7 +1670,7 @@ export const useStore = create<AppState>()(
                 messages: buildRequestMessages(),
                 temperature: s.temperature,
                 maxTokens: s.maxTokens,
-                signal: mainController.signal,
+                signal: controller.signal,
               },
               (chunk) => {
                 gotContent = true
@@ -1701,7 +1733,8 @@ export const useStore = create<AppState>()(
             .filter((m) => !(m.id === assistantId && m.content.trim() === ''))
           patchTarget({ messages: msgs })
         }
-        mainController = null
+        // 停止ボタンや後続の生成が既に別の controller を入れている場合は触らない
+        if (mainController === controller) mainController = null
         set({ isStreaming: false })
 
         // 選択肢は F4 でオンデマンド化した（設計 §3.4）＝ここでは生成しない。
@@ -1722,6 +1755,9 @@ export const useStore = create<AppState>()(
           )
           return
         }
+        // 中断用の controller は try の外で作る（finally が同一性を見て後片付けするため）
+        const controller = new AbortController()
+        choicesController = controller
         set({ isGeneratingChoices: true })
         try {
           const refs = resolveRefs(session)
@@ -1740,7 +1776,6 @@ export const useStore = create<AppState>()(
           const maxAttempts = 2
           let choices: Choice[] = []
           let bestChoices: Choice[] = []
-          choicesController = new AbortController()
           for (let attempt = 1; attempt <= maxAttempts; attempt++) {
             const t0 = performance.now()
             const raw = await streamChat(
@@ -1750,7 +1785,7 @@ export const useStore = create<AppState>()(
                 messages: msgs,
                 temperature: 0.5,
                 maxTokens: 600,
-                signal: choicesController.signal,
+                signal: controller.signal,
                 jsonSchema,
                 jsonMode,
               },
@@ -1797,7 +1832,7 @@ export const useStore = create<AppState>()(
             console.warn('[choices] 生成に失敗:', (e as Error)?.message)
           }
         } finally {
-          choicesController = null
+          if (choicesController === controller) choicesController = null
           set({ isGeneratingChoices: false })
         }
       }
@@ -2410,6 +2445,10 @@ export const useStore = create<AppState>()(
               })),
             },
           })
+          // 中断は1つの controller を共有する＝stopReview で分割した2本とも止まる。
+          // try の外で作るのは finally が同一性を見て後片付けするため
+          const controller = new AbortController()
+          reviewController = controller
           try {
             // resolveRefs はセッションの currentSceneId を見て登場キャラ・状況メモを決めるため、
             // 過去シーンの再レビューでは対象シーンを一時的に current 扱いにして正しい文脈を得る
@@ -2519,10 +2558,6 @@ export const useStore = create<AppState>()(
               if (same) return
               set({ reviewProgress: { ...cur, summary, calls } })
             }
-
-            // 中断は1つの controller を共有する＝stopReview で分割した2本とも止まる
-            const controller = new AbortController()
-            reviewController = controller
 
             /**
              * レビュー1本ぶん（リトライ込み）。解釈できた JSON を返す（全試行で取れなければ null）。
@@ -2792,7 +2827,7 @@ export const useStore = create<AppState>()(
           } catch (e) {
             if ((e as Error).name !== 'AbortError') set({ error: (e as Error).message })
           } finally {
-            reviewController = null
+            if (reviewController === controller) reviewController = null
             // 進行表示は確定・失敗・中断のいずれでも畳む（確定時は sceneReview 側の表示へ切り替わる）
             set({ isReviewing: false, reviewProgress: null })
           }
@@ -2959,6 +2994,9 @@ export const useStore = create<AppState>()(
           }
           // 過去シーンの再レビューでは、ライブの現在タイムラインではなく既存の次シーンの時刻を使う
           const isPastScene = scene.id !== s.currentSceneId
+          // 中断用の controller は try の外で作る（finally が同一性を見て後片付けするため）
+          const controller = new AbortController()
+          reviewController = controller
           set({ isRegenSuggestions: true, error: null })
           try {
             const refs = resolveRefs(s)
@@ -2974,7 +3012,6 @@ export const useStore = create<AppState>()(
                 `【次シーンの時間】次シーンは「${nextTimeLabel}」。時間が経過した後の場面として書いてください。`,
               )
             }
-            reviewController = new AbortController()
             const t0 = performance.now()
             const raw = await streamChat(
               {
@@ -2986,7 +3023,7 @@ export const useStore = create<AppState>()(
                 ],
                 temperature: 0.7,
                 maxTokens: 800,
-                signal: reviewController.signal,
+                signal: controller.signal,
                 jsonSchema: NEXT_SCENE_SCHEMA,
                 jsonMode: jsonModeFor(model, get().modelsByProvider[provider.id]),
               },
@@ -3017,7 +3054,7 @@ export const useStore = create<AppState>()(
           } catch (e) {
             if ((e as Error).name !== 'AbortError') set({ error: (e as Error).message })
           } finally {
-            reviewController = null
+            if (reviewController === controller) reviewController = null
             set({ isRegenSuggestions: false })
           }
         },
@@ -3043,6 +3080,9 @@ export const useStore = create<AppState>()(
             set({ error: providerUnusableMessage(provider) })
             return
           }
+          // 中断用の controller は try の外で作る（finally が同一性を見て後片付けするため）
+          const controller = new AbortController()
+          reviewController = controller
           set({ isProposingEndings: true, error: null })
           try {
             const refs = resolveRefs(s)
@@ -3051,7 +3091,6 @@ export const useStore = create<AppState>()(
             const base = choicesMessages(s, refs)
             const jsonMode = jsonModeFor(model, get().modelsByProvider[provider.id])
             const t0 = performance.now()
-            reviewController = new AbortController()
             const raw = await streamChat(
               {
                 provider,
@@ -3063,7 +3102,7 @@ export const useStore = create<AppState>()(
                 ],
                 temperature: 0.9,
                 maxTokens: 1200,
-                signal: reviewController.signal,
+                signal: controller.signal,
                 jsonSchema: jsonMode === 'none' ? undefined : ENDING_PROPOSALS_SCHEMA,
                 jsonMode,
               },
@@ -3089,7 +3128,7 @@ export const useStore = create<AppState>()(
           } catch (e) {
             if ((e as Error).name !== 'AbortError') set({ error: (e as Error).message })
           } finally {
-            reviewController = null
+            if (reviewController === controller) reviewController = null
             set({ isProposingEndings: false })
           }
         },
@@ -3457,8 +3496,8 @@ export const useStore = create<AppState>()(
           if (!s || get().isStreaming || false) return
           const trimmed = text.trim()
           if (!trimmed) return
-          // 復元で線の途中に居る場合の上書きガード（FB6-C）
-          if (!(await ensureLineTip(s.id, get().branchTrees[s.id]?.currentId))) return
+          // 復元で線の途中に居る場合の上書きガード（FB6-C）＋二重送信ガード（P2a）
+          if (!(await claimStoryTurn(s.id, get().branchTrees[s.id]?.currentId))) return
           patchActive({
             messages: [
               ...s.messages,
@@ -3478,7 +3517,7 @@ export const useStore = create<AppState>()(
         continueStory: async (speakerId, pace) => {
           const s = active()
           if (!s || get().isStreaming || false) return
-          if (!(await ensureLineTip(s.id, get().branchTrees[s.id]?.currentId))) return
+          if (!(await claimStoryTurn(s.id, get().branchTrees[s.id]?.currentId))) return
           patchActive({
             messages: [
               ...s.messages,
@@ -3510,7 +3549,7 @@ export const useStore = create<AppState>()(
           // 上書きガード → 切り詰め後に残る地点へ戻してから生成（FB3-B1/FB6-C）
           const keptIds = new Set(msgs.map((m) => m.id))
           const tree = get().branchTrees[s.id]
-          if (!(await ensureLineTip(s.id, findReanchorTarget(tree, keptIds) ?? tree?.currentId))) return
+          if (!(await claimStoryTurn(s.id, findReanchorTarget(tree, keptIds) ?? tree?.currentId))) return
           reanchorBranch(s.id, keptIds)
           patchActive({ messages: msgs })
           await runCompletion(speakerId)
@@ -3553,8 +3592,8 @@ export const useStore = create<AppState>()(
             opening = resolved.content
           }
 
-          // 復元後の開始やり直し（開始時点へ戻った場合等）の上書きガード（FB6-C）
-          if (!(await ensureLineTip(s.id, get().branchTrees[s.id]?.currentId))) return
+          // 復元後の開始やり直し（開始時点へ戻った場合等）の上書きガード（FB6-C）＋二重送信ガード（P2a）
+          if (!(await claimStoryTurn(s.id, get().branchTrees[s.id]?.currentId))) return
 
           const label = s.state.now.trim() || undefined
           const drafted = label || scene.title
@@ -3604,7 +3643,7 @@ export const useStore = create<AppState>()(
         beginScene: async () => {
           const s = active()
           if (!s || get().isStreaming) return
-          if (!(await ensureLineTip(s.id, get().branchTrees[s.id]?.currentId))) return
+          if (!(await claimStoryTurn(s.id, get().branchTrees[s.id]?.currentId))) return
           // 原文で送るシーン範囲をここで1回だけ確定する（PC3。シーン途中では動かさない＝
           // 毎ターン計算するとシーンの途中で畳まれてしまうため、結果を状態として持つ）
           const raw = selectRawScenes(
@@ -3635,7 +3674,7 @@ export const useStore = create<AppState>()(
           if (!s || get().isStreaming || false) return
           const last = [...s.messages].reverse().find((m) => m.role === 'assistant')
           if (!last) return
-          if (!(await ensureLineTip(s.id, get().branchTrees[s.id]?.currentId))) return
+          if (!(await claimStoryTurn(s.id, get().branchTrees[s.id]?.currentId))) return
           await runCompletion(last.characterId, last.id, CONTINUATION_NUDGE)
         },
 
@@ -3684,7 +3723,7 @@ export const useStore = create<AppState>()(
           // 上書きガード → 切り詰め後に残る地点へ戻してから生成（FB3-B1/FB6-C）
           const keptIds = new Set(kept.map((m) => m.id))
           const tree = get().branchTrees[s.id]
-          if (!(await ensureLineTip(s.id, findReanchorTarget(tree, keptIds) ?? tree?.currentId))) return
+          if (!(await claimStoryTurn(s.id, findReanchorTarget(tree, keptIds) ?? tree?.currentId))) return
           reanchorBranch(s.id, keptIds)
           // シーン境界をまたいで巻き戻した場合、置き去りの後続シーン（stale な見出し・あらすじ）を
           // scenes/currentSceneId から落とす（バグ修正。跨がなければ変更なし）

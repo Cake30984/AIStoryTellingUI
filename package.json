@@ -6,7 +6,7 @@
   "description": "OpenRouter を使った AI ロールプレイ & 自動ストーリー進行 UI",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "tsc && vitest run && vite build",
     "test": "vitest run",
     "preview": "vite preview",
     "tauri": "tauri",
