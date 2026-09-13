@@ -11,10 +11,12 @@
 ## コマンドと検証
 
 - Web 版: `npm run dev`（Vite・5173）／デスクトップ版: `npm run tauri:dev`（初回は Rust ビルドで数分。5173 を共有するので Web dev と同時起動不可）
-- 型: `npx tsc --noEmit`／ビルド: `npm run build`（`tsc && vite build`）／配布: `npm run tauri:build`
-- **変更後は必ず「`npx tsc --noEmit` → `npm run build`」を通す。**
+- 型: `npx tsc --noEmit`／テスト: `npm test`（`vitest run`）／ビルド: `npm run build`（`tsc && vitest run && vite build`）／配布: `npm run tauri:build`
+- **変更後は必ず「`npx tsc --noEmit` → `npm run build`」を通す。**（`build` がテストも走らせる）
 - **見た目・UX の確認は AI が自分で行う**（dev サーバ → 該当画面 → スクリーンショット → 判断。console エラー0件も確認。完了報告には「何を確認したか」を書く。ユーザーは UI 確認をしない）
-- 純関数・store のロジックは node で直叩きして確かめる。**テストランナー導入後は `npm test` を通す**（計画 P2）
+- 純関数・store のロジックは **vitest** で確かめる（`src/**/__tests__/**/*.test.ts`・node 環境・jsdom なし）。テストが要るのは純関数と store のロジックだけで、描画は対象にしない
+  - store を丸ごと動かすテスト（`src/__tests__/storyTurn.test.ts`）は `lib/openrouter` の `streamChat` と `lib/platform` の `stateStorage`/`checkpointStore` を `vi.mock` で差し替える＝ネットワークと IndexedDB を踏まない
+  - 共通のダミーデータは `src/lib/__tests__/fixtures.ts`（既定値は空・無効に寄せ、テスト側が必要な欄だけ上書きする）
 - Tauri 固有部（`appFetch`/`saveBlob`/ファイルストレージ/資格情報/OAuth）を触ったときだけ手動チェック → [`docs/開発環境と配布.md`](docs/開発環境と配布.md) §4
 - 初回準備（Rust・Build Tools・Defender の除外）と配布ビルドの検証手順も同文書
 
@@ -36,7 +38,7 @@ React 18 + TypeScript(strict) + Vite / zustand（`persist`）/ Tauri 2（`plugin
 
 ## ディレクトリ
 
-`src/types.ts` — 全データ型（**最初に読む**）／`src/store.ts` — zustand ストア（状態・全アクション・永続化・チェックポイント。4,300行の単一ファイル＝分割は計画 P2）／`src/App.tsx` — レール＋サイドバー＋メイン＋常駐モーダルの組み立て・起動時処理／`src/styles/` — `tokens`/`base`/`layout`/`chat`/`composer`/`panels`.css（`index.css` が順に import。色・z-index・spacing は `tokens.css`）／`src-tauri/` — Tauri シェル（`lib.rs`＝plugin 登録＋資格情報の save/load/delete、`oauth.rs`＝PKCE の 127.0.0.1 受け口、`capabilities/default.json`＝http は `http://*:*`/`https://*:*`・fs は `$APPDATA/**`、`installer-hooks.nsh`＝アンインストール時の資格情報削除）
+`src/types.ts` — 全データ型（**最初に読む**）／`src/store.ts` — zustand ストア（状態・全アクション・永続化・チェックポイント。4,300行の単一ファイル＝分割は計画 P2c）／`src/App.tsx` — レール＋サイドバー＋メイン＋常駐モーダルの組み立て・起動時処理／`src/styles/` — `tokens`/`base`/`layout`/`chat`/`composer`/`panels`.css（`index.css` が順に import。色・z-index・spacing は `tokens.css`）／`src-tauri/` — Tauri シェル（`lib.rs`＝plugin 登録＋資格情報の save/load/delete、`oauth.rs`＝PKCE の 127.0.0.1 受け口、`capabilities/default.json`＝http は `http://*:*`/`https://*:*`・fs は `$APPDATA/**`、`installer-hooks.nsh`＝アンインストール時の資格情報削除、`tauri.conf.json` の `app.security.csp`＝**デスクトップ版の CSP の正**）／`src/**/__tests__/` — vitest のテスト（`*.test.ts`。`src/lib/__tests__/fixtures.ts` は共通のダミーデータ）
 
 ### `src/lib/`
 - `platform.ts` — `isTauri`／`appFetch`（Tauri は plugin-http で CORS-free。`omitOrigin` で Origin を外す＝ComfyUI 用）／`saveBlob`／`stateStorage`（Web: localStorage、Tauri: `data/state.json` をアトミック書込＋500ms デバウンス＋close 時 flush）／`blockStateWrites`／`CheckpointStore`（Web: IndexedDB、Tauri: `data/checkpoints/<sessionId>/<nodeId>.bin`）／資格情報（`hydrateProviderSecrets`・`stripApiKeyForPersist`）
@@ -89,7 +91,7 @@ React 18 + TypeScript(strict) + Vite / zustand（`persist`）/ Tauri 2（`plugin
 
 ## 永続化とスキーマ版番
 
-- zustand `persist`（`name: PERSIST_KEY`・`createJSONStorage(() => stateStorage)`）。**`set()` のたびに全状態を `JSON.stringify` する構造**＝既知の性能問題（計画 P2 で分割）
+- zustand `persist`（`name: PERSIST_KEY`・`createJSONStorage(() => stateStorage)`）。**`set()` のたびに全状態を `JSON.stringify` する構造**＝既知の性能問題（計画 P2c で分割）
 - 版番は3系統: `APP_STATE_VERSION`（入れ物＝zustand の `migrate`）／`SAVE_DATA_VERSION`／`CASSETTE_DATA_VERSION`（後2つは `partialize` が `schemaVersions` として書き、`merge` で毎回判定）。移行は `migrations[from]` を1段ずつ。**段を飛ばす一発変換を書かない**
 - 読めなかったら `blockStateWrites()` で書き込みを封印し `schemaError` → App.tsx が案内画面（バックアップの場所を提示）。「無視して続ける」は作らない
 - **スキーマ変更の手順**: 型 → 初期値/factory → `exportBundle`/`importBundle` → `partialize` → 破壊的なら該当版番 +1 と移行関数1本。persist キーは変えない
@@ -127,7 +129,9 @@ React 18 + TypeScript(strict) + Vite / zustand（`persist`）/ Tauri 2（`plugin
 
 - **開始**: `startStory()`。`focusCharacterId` 未選択・置換タグ未束縛なら拒否。導入文（`story.opening`）があれば AI 生成せずそのまま最初の assistant メッセージに載せる
 - **物語モード（読者モデル）**: 入力はすべて `kind:'directive'`。主操作は「続ける」（`continueStory(pace)`。`PACE_PROMPTS` のマーカーを user に積む）／〈もっと詳しく〉〈先へ飛ばす〉／「やり直す」（`regenerate`＝現在シーン末尾の assistant を捨てて再生成）／〈展開を選ぶ〉（`pickDirection`）。ロールプレイだけ「演じて書く／書き手に指示」のチップが残る
-- **生成** `runCompletion`: `isProviderUsable` 判定 → 空の pending メッセージを積む → `streamChat` → 一時エラーは最大3回リトライ（何も受信していない時のみ）→ `finish_reason==='length'` なら `truncated`（「続きを生成」`continueLast` は同一メッセージへ追記）→ チェックポイント記録。中断は用途別の `mainController`/`choicesController`/`reviewController`
+- **生成** `runCompletion`: `isProviderUsable` 判定 → 空の pending メッセージを積む → `streamChat` → 一時エラーは最大3回リトライ（何も受信していない時のみ）→ `finish_reason==='length'` なら `truncated`（「続きを生成」`continueLast` は同一メッセージへ追記）→ チェックポイント記録
+- **二重送信ガード** `claimStoryTurn(sessionId, parentNodeId)`: 物語を進める操作（`send`/`continueStory`/`continueLast`/`regenerate`/`regenerateFrom`/`startStory`/`beginScene`）は `ensureLineTip` をこれ経由で呼ぶ。`isStreaming` を見てから `await ensureLineTip` が返るまでは生成が始まっていないので、**同期でロックを立ててから待つ**。生成を伴わない操作（`editMessage`/`deleteMessage`/`prepareSceneReview` 等）は `ensureLineTip` を直接呼ぶ
+- **中断**は用途別の `mainController`/`choicesController`/`reviewController`（ストア生成関数のスコープ）。**`signal` は必ず各呼び出しのローカル `controller` から取り、後片付けも同一性を見てから行う**——共有変数から読み直すと、並行する別の生成が終了時に null を入れた瞬間に落ちる
 - **シーン終了**: `prepareSceneReview` が A/B/T を並列に投げ、`reviewProgress` で進行を見せる（呼び出し1本＝1行）→ `SceneReviewModal` で編集・承認 → `confirmSceneReview`（overlay 追記・`applyReviewToState`・`applyTrackerToState`・新シーン作成・チェックポイント scene）→ `beginScene`（窓を確定し導入マーカーを積んで生成）
 - **上書きガード** `ensureLineTip(sessionId, parent)`: 物語操作の冒頭で、現在地より先にある**保護なし**の子サブツリーを削除する（保護＝`branchName`/`star`/`ending` を含む）。scene ノードを含む削除だけ3択（残す→命名／上書き／中止）。分岐を作る操作（`branchFromMessage`/`branchFromNode`）は先端に名前を付けて保護してから巻き戻す。シーン境界をまたぐ巻き戻しは `rewindScenesFor` で置き去りシーンを落とす
 - **復元と移動**: `restoreCheckpoint` はスナップショットで全置換（`title/model/reviewModel/choicesModel/temperature/maxTokens/archived` だけ現在値維持）。`navigateToNode` はパス外なら線の先端を復元して該当メッセージへスクロール（`scrollTarget`）。復元自体は何も消さない
@@ -165,7 +169,7 @@ React 18 + TypeScript(strict) + Vite / zustand（`persist`）/ Tauri 2（`plugin
 - シーン見出しは「本文か要約があるとき」だけ出す
 - レビューモーダルは `sceneReview.sessionId === activeId` かつ Play 表示中だけ出す
 - `ZoomOverlay` はポータル描画を維持。サムネイルの img ルールは直下セレクタで書く
-- **`useStore()` をセレクタ無しで丸ごと購読しない（新規コード）。** 既存35箇所は計画 P2 で直す
+- **`useStore()` をセレクタ無しで丸ごと購読しない（新規コード）。** 既存35箇所は計画 P2b で直す
 
 **プラットフォーム**
 - `<a download>` は Tauri で動かない。ファイル DL は `io.ts` 経由
@@ -173,13 +177,12 @@ React 18 + TypeScript(strict) + Vite / zustand（`persist`）/ Tauri 2（`plugin
 - 画像生成の定型タグ・画風の結合は `generateImage` の1箇所。`promptStyle==='natural'` では結合しない
 - 画像コストは円換算しない
 - ComfyUI のワークフローは「プレースホルダがあれば手動置換・無ければ自動検出」の排他
+- **CSP の出所は2つだけ**。Tauri 版＝`src-tauri/tauri.conf.json` の `app.security.csp`（Tauri がヘッダで注入）、Web 版＝`index.html` の `<!--CSP-->` を `vite.config.ts` が meta へ差し替える（Tauri ビルドでは消す＝二重に掛けない）。dev だけ `ws://localhost:5173` と `script-src 'unsafe-inline'`（Vite の HMR と react-refresh のプリアンブル）を足す。`frame-ancestors` は meta では無視されるので入れない。外部から読むリソース（画像・フォント・スクリプト）を足すときは両方を直す
 
 ## 既知の問題（2026-09-13 のレビューで確定。対処は計画書）
 
-- `persist` が `set()` ごとに全状態を `JSON.stringify`（20セッション×150発言≒5.7MB で 11ms/チャンク）。ストリーミング中の全量シリアライズ＋全コンポーネント再描画で、使うほど重くなる → P2
-- テスト0件・lint 無し・CI 無し → P2
-- `send`/`continueStory` は `isStreaming` 判定の後に `await ensureLineTip` があり二重送信が通る。`mainController` 等がモジュール変数で、選択肢生成中に本編生成が始まると `null.signal` になる既知バグ → P2
-- `"csp": null`（現状 LLM 出力は React が escape するので実害なし。Markdown 描画を入れる前に必ず CSP を入れる）→ P2
+- `persist` が `set()` ごとに全状態を `JSON.stringify`（20セッション×150発言≒5.7MB で 11ms/チャンク）。ストリーミング中の全量シリアライズ（→ P2c）＋全コンポーネント再描画（→ P2b）で、使うほど重くなる
+- lint 無し・CI 無し（テストは P2a で導入済み）
 - 起動直後に素材が無く、キャラ作成 → 世界作成 → セッション設定 → 中心人物選択 を経ないと最初の生成に辿り着けない → P3
 - Web 版は localStorage（約5MB）に全状態を置くため、実用にはならない → P5
 
