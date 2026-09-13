@@ -2,6 +2,9 @@
 <html lang="ja">
   <head>
     <meta charset="UTF-8" />
+    <!-- CSP: vite.config.ts が差し替える（dev は HMR 用に ws: とインラインスクリプトを許す。
+         Tauri 版の正は src-tauri/tauri.conf.json の security.csp なので、そちらのビルドでは消える） -->
+    <!--CSP-->
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>デリスト</title>
   </head>
