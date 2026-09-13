@@ -6,13 +6,15 @@ import type { ImageProvider } from '../types'
  * **円に換算しない。各サービスが実際に課金する単位のまま出す。**
  * 換算すると (a) 前払いクレジットは購入時のレート・パッケージで実額が変わり、
  * (b) USD 建ては為替で変わるため、**こちらが示した額とユーザーの実負担がずれる**。
- * ずれはそのままトラブルの原因になる。Buzz は Buzz、USD は USD で見せる。
+ * ずれはそのままトラブルの原因になる。USD は USD で見せる。
  * 円の目安が要るのは「買う前」なので、それは説明書側の仕事にする。
+ * （現在コストを返す接続先は openrouter-image だけ＝単位は usd のみ。単位フィールドは
+ * 別単位の接続先が戻ってきたときのために残してある）
  */
 
 /** そのサービスの課金単位での、画像1枚あたりのコスト */
 export interface ImageCost {
-  unit: 'usd' | 'buzz'
+  unit: 'usd'
   /** 1枚あたりの量 */
   amount: number
 }
@@ -38,16 +40,8 @@ function formatUsd(v: number): string {
   return `$${v.toFixed(2)}`
 }
 
-/**
- * 課金単位のまま1行にする。
- * - `buzz` … `1枚 3 Buzz`（Buzz は整数で桁も手頃なので1枚あたりが読みやすい）
- * - `usd`  … `10枚で $0.023`（1枚あたりだと桁が小さすぎる）
- */
+/** 課金単位のまま1行にする。`usd` … `10枚で $0.023`（1枚あたりだと桁が小さすぎる） */
 export function formatCost(cost: ImageCost): string {
-  if (cost.unit === 'buzz') {
-    const n = Number.isInteger(cost.amount) ? String(cost.amount) : cost.amount.toFixed(1)
-    return `1枚 ${n} Buzz`
-  }
   return `${USD_UNIT}枚で ${formatUsd(cost.amount * USD_UNIT)}`
 }
 

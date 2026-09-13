@@ -591,7 +591,10 @@ export interface UsageRecord {
 }
 
 /** 画像生成の接続先種別 */
-export type ImageProviderKind = 'comfyui' | 'openai-image' | 'modelslab' | 'openrouter-image' | 'civitai'
+export type ImageProviderKind = 'comfyui' | 'openai-image' | 'openrouter-image'
+
+/** 現行の種別一覧。永続データに残った撤去済み種別（civitai / modelslab）の読み捨て判定に使う */
+export const IMAGE_PROVIDER_KINDS: readonly ImageProviderKind[] = ['comfyui', 'openai-image', 'openrouter-image']
 
 /** 生成品質。API の値をそのまま持ち、UI では日本語ラベル（標準/高品質/最高品質）に翻訳して見せる */
 export type ImageQuality = 'low' | 'medium' | 'high'
@@ -616,17 +619,17 @@ export interface ImageProvider {
   kind: ImageProviderKind
   /** ComfyUI: http://127.0.0.1:8188 / OpenAI互換: https://api.openai.com/v1 等 */
   baseUrl: string
-  /** openai-image / modelslab / openrouter-image で使用（comfyui は通常不要）。openrouter-image は空なら文章側の OpenRouter キーを流用する */
+  /** openai-image / openrouter-image で使用（comfyui は通常不要）。openrouter-image は空なら文章側の OpenRouter キーを流用する */
   apiKey: string
-  /** openai-image: モデル名（dall-e-3 等） / modelslab: model_id / openrouter-image: モデルスラッグ（openai/gpt-5-image-mini 等） */
+  /** openai-image: モデル名（dall-e-3 等） / openrouter-image: モデルスラッグ（openai/gpt-5-image-mini 等） */
   model: string
   /** comfyui のみ: API Format の workflow JSON（%PROMPT% 等のプレースホルダ入り文字列） */
   workflowJson: string
   /** 生成時にプロンプト先頭へ自動結合される定型タグ（品質・画風・LoRA トリガー等。プロンプト欄には表示しない） */
   defaultPositive?: string
-  /** 生成時にネガティブ先頭へ自動結合される定型タグ（comfyui / modelslab で有効。openai-image は API 非対応） */
+  /** 生成時にネガティブ先頭へ自動結合される定型タグ（comfyui で有効。openai-image は API 非対応） */
   defaultNegative?: string
-  /** openrouter-image / civitai: 既定の生成品質（生成モーダルの選択が書き戻る） */
+  /** openrouter-image: 既定の生成品質（生成モーダルの選択が書き戻る） */
   quality?: ImageQuality
   /** プロンプトの作法。未設定なら kind から既定を決める（`promptStyleOf`）。必ず上書き可 */
   promptStyle?: PromptStyle

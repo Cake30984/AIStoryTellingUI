@@ -6,16 +6,10 @@ import {
   resolveImageApiKey,
   promptStyleOf,
   fetchComfyChoices,
-  civitaiParamsOf,
-  CIVITAI_SCHEDULERS,
   fetchOpenRouterImageModels,
   type ComfyChoices,
-  type CivitaiParams,
 } from '../lib/imageGen'
 import { analyzeComfyWorkflow, hasWorkflowPlaceholders, type ComfyPlan } from '../lib/comfyWorkflow'
-import { promptStyleFromBaseModel, resolveCivitaiResource } from '../lib/civitai'
-import { ensureTags } from '../lib/promptTags'
-import NumberInput from './NumberInput'
 import type { ImageProvider, ImageQuality, PromptStyle } from '../types'
 import { Icon } from './icons'
 
@@ -38,8 +32,6 @@ const QUALITY_LABELS: { value: ImageQuality; label: string }[] = [
 const KIND_LABELS: Record<ImageProvider['kind'], string> = {
   'openrouter-image': 'OpenRouter',
   comfyui: 'ComfyUI',
-  civitai: 'Civitai',
-  modelslab: 'ModelsLab',
   'openai-image': '画像API',
 }
 
@@ -171,197 +163,6 @@ function OpenRouterFields({
           </button>
         </div>
       )}
-    </>
-  )
-}
-
-/**
- * Civitai の欄（I5）。位置づけは「成人向け枠」ではなく **コミュニティモデル枠**
- * （Illustrious / Pony 系のアニメ特化モデルを、ローカル GPU なしで使う経路）。
- * したがってここに書くのは事実だけで、用途の推奨は書かない。
- *
- * 表に出すのは **API キーとモデル URL の2つだけ**。steps / CFG / scheduler / LoRA は詳細へ。
- */
-function CivitaiFields({ p, onChange }: { p: ImageProvider; onChange: (p: ImageProvider) => void }) {
-  const cp = civitaiParamsOf(p)
-  const [modelUrl, setModelUrl] = useState('')
-  const [loraUrl, setLoraUrl] = useState('')
-  const [busy, setBusy] = useState('')
-  const [error, setError] = useState('')
-  const [triggers, setTriggers] = useState<string[]>([])
-
-  const setParams = (patch: Partial<CivitaiParams>) =>
-    onChange({ ...p, params: { ...cp, ...patch } as Record<string, unknown> })
-
-  const loadModel = async () => {
-    setBusy('model')
-    setError('')
-    try {
-      const r = await resolveCivitaiResource(modelUrl, p.apiKey)
-      // ベースモデルから作法を推定して同時に設定する（上書きは可能）
-      onChange({
-        ...p,
-        promptStyle: promptStyleFromBaseModel(r.baseModel),
-        params: { ...cp, air: r.air, modelName: `${r.name}（${r.versionName}）`, baseModel: r.baseModel },
-      })
-      setModelUrl('')
-    } catch (e) {
-      setError((e as Error).message)
-    } finally {
-      setBusy('')
-    }
-  }
-
-  const addLora = async () => {
-    setBusy('lora')
-    setError('')
-    try {
-      const r = await resolveCivitaiResource(loraUrl, p.apiKey)
-      const loras = [...(cp.loras ?? []), { air: r.air, name: `${r.name}（${r.versionName}）`, strength: 0.8 }]
-      setParams({ loras })
-      setTriggers(r.trainedWords)
-      setLoraUrl('')
-    } catch (e) {
-      setError((e as Error).message)
-    } finally {
-      setBusy('')
-    }
-  }
-
-  /** トリガーワードは**自動で入れない**。ユーザーが見て決める（勝手にプロンプトを変えない） */
-  const applyTriggers = () => {
-    onChange({ ...p, defaultPositive: ensureTags(p.defaultPositive ?? '', triggers.join(', ')) })
-    setTriggers([])
-  }
-
-  return (
-    <>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
-        <input
-          style={{ ...inputStyle, flex: 1, width: 'auto', marginBottom: 0 }}
-          placeholder="Civitai のモデルページの URL を貼る"
-          value={modelUrl}
-          onChange={(e) => setModelUrl(e.target.value)}
-        />
-        <button
-          className="btn"
-          style={{ whiteSpace: 'nowrap' }}
-          onClick={loadModel}
-          disabled={!modelUrl.trim() || busy === 'model'}
-        >
-          {busy === 'model' ? '読込中…' : '読み込む'}
-        </button>
-      </div>
-      <div className="desc" style={{ marginBottom: 6 }}>
-        {cp.air ? (
-          <>
-            使用モデル: <b>{cp.modelName}</b>
-            {cp.baseModel ? `／ベース: ${cp.baseModel}` : ''}
-          </>
-        ) : (
-          'モデル未設定。AIR や ID を打つ必要はありません（URL から自動で解決します）。'
-        )}
-      </div>
-      {error && <p className="notice">{error}</p>}
-
-      <details style={{ marginBottom: 6 }}>
-        <summary className="desc" style={{ cursor: 'pointer' }}>
-          生成パラメータ・LoRA（詳細）
-        </summary>
-        <div style={{ marginTop: 8 }}>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6, flexWrap: 'wrap' }}>
-            <span className="desc" style={{ margin: 0 }}>ステップ数</span>
-            <NumberInput
-              value={cp.steps ?? 25}
-              min={1}
-              max={50}
-              step={1}
-              integer
-              onChange={(v) => setParams({ steps: v })}
-              style={{ width: 76 }}
-            />
-            <span className="desc" style={{ margin: 0 }}>CFG</span>
-            <NumberInput
-              value={cp.cfgScale ?? 6}
-              min={1}
-              max={20}
-              step={0.5}
-              onChange={(v) => setParams({ cfgScale: v })}
-              style={{ width: 76 }}
-            />
-            <span className="desc" style={{ margin: 0 }}>Clip Skip</span>
-            <NumberInput
-              value={cp.clipSkip ?? 2}
-              min={1}
-              max={4}
-              step={1}
-              integer
-              onChange={(v) => setParams({ clipSkip: v })}
-              style={{ width: 60 }}
-            />
-            <select
-              value={cp.scheduler || 'EulerA'}
-              onChange={(e) => setParams({ scheduler: e.target.value })}
-              style={{ flex: 1, minWidth: 120 }}
-            >
-              {CIVITAI_SCHEDULERS.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
-            <input
-              style={{ ...inputStyle, flex: 1, width: 'auto', marginBottom: 0 }}
-              placeholder="LoRA のページ URL を貼る（任意）"
-              value={loraUrl}
-              onChange={(e) => setLoraUrl(e.target.value)}
-            />
-            <button
-              className="btn"
-              style={{ whiteSpace: 'nowrap' }}
-              onClick={addLora}
-              disabled={!loraUrl.trim() || busy === 'lora'}
-            >
-              {busy === 'lora' ? '読込中…' : 'LoRA を追加'}
-            </button>
-          </div>
-          {triggers.length > 0 && (
-            <div className="desc" style={{ marginBottom: 6 }}>
-              この LoRA のトリガーワード: <code>{triggers.join(', ')}</code>{' '}
-              <button className="btn" style={{ fontSize: 12, padding: '3px 10px' }} onClick={applyTriggers}>
-                デフォルトタグに追加
-              </button>
-            </div>
-          )}
-          {(cp.loras ?? []).map((l, i) => (
-            <div key={l.air} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
-              <span className="desc" style={{ margin: 0, flex: 1 }}>{l.name}</span>
-              <NumberInput
-                value={l.strength}
-                min={0}
-                max={2}
-                step={0.05}
-                onChange={(v) => {
-                  const loras = [...(cp.loras ?? [])]
-                  loras[i] = { ...loras[i], strength: v }
-                  setParams({ loras })
-                }}
-                style={{ width: 76 }}
-              />
-              <button
-                className="icon-btn small"
-                title="削除"
-                onClick={() => setParams({ loras: (cp.loras ?? []).filter((_, j) => j !== i) })}
-              >
-                <Icon name="trash-2" size={14} />
-              </button>
-            </div>
-          ))}
-        </div>
-      </details>
     </>
   )
 }
@@ -524,16 +325,12 @@ export default function ImageProviderSettings() {
             </button>
           </div>
 
-          {/* OpenRouter / Civitai は接続先が固定なので URL 欄を出さない（触らせる意味がない） */}
-          {p.kind !== 'openrouter-image' && p.kind !== 'civitai' && (
+          {/* OpenRouter は接続先が固定なので URL 欄を出さない（触らせる意味がない） */}
+          {p.kind !== 'openrouter-image' && (
             <input
               style={inputStyle}
               placeholder={
-                p.kind === 'comfyui'
-                  ? 'Base URL（例: http://127.0.0.1:8188）'
-                  : p.kind === 'modelslab'
-                    ? 'Base URL（例: https://modelslab.com/api/v6）'
-                    : 'Base URL（例: https://api.openai.com/v1）'
+                p.kind === 'comfyui' ? 'Base URL（例: http://127.0.0.1:8188）' : 'Base URL（例: https://api.openai.com/v1）'
               }
               value={p.baseUrl}
               onChange={(e) => upsertImageProvider({ ...p, baseUrl: e.target.value })}
@@ -552,7 +349,7 @@ export default function ImageProviderSettings() {
             />
           )}
 
-          {(p.kind === 'openai-image' || p.kind === 'modelslab' || p.kind === 'civitai') && (
+          {p.kind === 'openai-image' && (
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
               <input
                 type={showKeys[p.id] ? 'text' : 'password'}
@@ -571,20 +368,14 @@ export default function ImageProviderSettings() {
             </div>
           )}
 
-          {(p.kind === 'openai-image' || p.kind === 'modelslab') && (
+          {p.kind === 'openai-image' && (
             <input
               style={inputStyle}
-              placeholder={
-                p.kind === 'modelslab'
-                  ? 'モデルID（model_id・空欄でデフォルト）'
-                  : 'モデル名（例: dall-e-3 / grok-2-image）'
-              }
+              placeholder="モデル名（例: dall-e-3 / grok-2-image）"
               value={p.model}
               onChange={(e) => upsertImageProvider({ ...p, model: e.target.value })}
             />
           )}
-
-          {p.kind === 'civitai' && <CivitaiFields p={p} onChange={upsertImageProvider} />}
 
           {p.kind === 'comfyui' && (
             <>
@@ -638,7 +429,7 @@ export default function ImageProviderSettings() {
                 value={p.defaultPositive ?? ''}
                 onChange={(e) => upsertImageProvider({ ...p, defaultPositive: e.target.value })}
               />
-              {(p.kind === 'comfyui' || p.kind === 'modelslab') && (
+              {p.kind === 'comfyui' && (
                 <textarea
                   rows={2}
                   style={inputStyle}
@@ -657,7 +448,7 @@ export default function ImageProviderSettings() {
               onClick={() => runTest(p)}
               disabled={testingId === p.id}
             >
-              {testingId === p.id ? 'テスト中…' : '🔌 接続テスト'}
+              {testingId === p.id ? 'テスト中…' : '接続テスト'}
             </button>
             {testResults[p.id] && <span style={{ fontSize: 12.5 }}>{testResults[p.id]}</span>}
           </div>
@@ -677,41 +468,22 @@ export default function ImageProviderSettings() {
         <button className="btn" style={{ flex: 1 }} onClick={() => upsertImageProvider(newImageProvider('comfyui'))}>
           <Icon name="plus" size={14} /> ComfyUI を追加
         </button>
-        <button className="btn" style={{ flex: 1 }} onClick={() => upsertImageProvider(newImageProvider('civitai'))}>
-          <Icon name="plus" size={14} /> Civitai を追加
+        <button
+          className="btn"
+          style={{ flex: 1 }}
+          onClick={() => upsertImageProvider(newImageProvider('openai-image'))}
+        >
+          <Icon name="plus" size={14} /> OpenAI 互換の画像 API を追加
         </button>
       </div>
       {/*
-        事実だけを書く。用途の推奨・勧誘はしない（docs/設計_画像生成の簡易化.md §2）。
+        事実だけを書く。用途の推奨・勧誘はしない。
         規約は各社のものなので、確認の責任がどこにあるかを明示する。
       */}
       <div className="desc" style={{ marginTop: 6 }}>
-        Civitai はコミュニティ製モデル（アニメ特化など）をローカル GPU なしで使う経路です。生成には Buzz
-        が必要で、種別によって使える範囲が違います（カードで買える Green Buzz と無料の Blue Buzz は全年齢向けのみ、
-        Yellow Buzz は暗号資産での購入）。各サービスの利用規約・課金条件は各社のもので変更されることがあります。
+        各サービスの利用規約・課金条件は各社のもので変更されることがあります。
         <b>ご自身でご確認ください。</b>ComfyUI はご自身の PC で動くため、外部サービスの規約は関係しません。
       </div>
-      <details style={{ marginTop: 6 }}>
-        <summary className="desc" style={{ cursor: 'pointer' }}>
-          その他の接続先を追加
-        </summary>
-        <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
-          <button
-            className="btn"
-            style={{ flex: 1 }}
-            onClick={() => upsertImageProvider(newImageProvider('modelslab'))}
-          >
-            <Icon name="plus" size={14} /> ModelsLab
-          </button>
-          <button
-            className="btn"
-            style={{ flex: 1 }}
-            onClick={() => upsertImageProvider(newImageProvider('openai-image'))}
-          >
-            <Icon name="plus" size={14} /> OpenAI 互換の画像 API
-          </button>
-        </div>
-      </details>
     </div>
   )
 }

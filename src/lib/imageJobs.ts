@@ -16,10 +16,6 @@ export interface ImageJob {
   negative?: string
   width: number
   height: number
-  /** modelslab のみ: ステップ数・サンプラー・CFG（他種別は未使用） */
-  steps?: number
-  sampler?: string
-  cfg?: number
   /** openrouter-image のみ: 生成品質 */
   quality?: ImageQuality
   /** 生成枚数（1〜4） */

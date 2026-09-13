@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useStore } from '../store'
 import { streamChat } from '../lib/openrouter'
 import { parseModelRef, modelRefLabel, isProviderUsable } from '../lib/providers'
@@ -11,15 +11,9 @@ import ModelPicker from './ModelPicker'
 import ModalShell from './ModalShell'
 import ZoomOverlay from './ZoomOverlay'
 import NumberInput from './NumberInput'
-import {
-  MODELSLAB_SCHEDULERS,
-  estimateCivitaiBuzz,
-  newImageProvider,
-  promptStyleOf,
-  sharedOpenRouterKey,
-} from '../lib/imageGen'
+import { newImageProvider, promptStyleOf, sharedOpenRouterKey } from '../lib/imageGen'
 import { dismissImageSetup } from '../lib/imageSetup'
-import { costLineOf, formatCost } from '../lib/cost'
+import { costLineOf } from '../lib/cost'
 import type { ArtStyle, ImageQuality } from '../types'
 import { Icon } from './icons'
 
@@ -122,10 +116,6 @@ export default function ImageGenModal({
   const [count, setCount] = useState(1)
   const [prompt, setPrompt] = useState(initialPrompt ?? '')
   const [negative, setNegative] = useState(initialNegative ?? '')
-  // ModelsLab 用パラメータ（他種別では未使用・欄も出さない）
-  const [steps, setSteps] = useState(30)
-  const [cfg, setCfg] = useState(7)
-  const [sampler, setSampler] = useState(MODELSLAB_SCHEDULERS[0])
   const [draftModel, setDraftModel] = useState(lastDraftModel || draftContext?.modelRef || '')
   const [showModelPicker, setShowModelPicker] = useState(false)
   const [drafting, setDrafting] = useState(false)
@@ -137,12 +127,10 @@ export default function ImageGenModal({
   const job = imageJobs.find((j) => j.id === jobId)
   // 文章側に OpenRouter のキーがあるか（未設定時の案内を「1クリック」にできるかの分岐）
   const sharedKey = sharedOpenRouterKey(providers)
-  const isModelsLab = provider?.kind === 'modelslab'
   const isOpenRouter = provider?.kind === 'openrouter-image'
-  const isCivitai = provider?.kind === 'civitai'
   const style = provider ? promptStyleOf(provider) : 'tags'
   // 自然文スタイルではネガティブが効かないので欄ごと消す（結合も generateImage 側でしない）
-  const showNegative = style === 'tags' && (provider?.kind === 'comfyui' || isModelsLab || isCivitai)
+  const showNegative = style === 'tags' && provider?.kind === 'comfyui'
   // 生成時に自動付加されるもの（画風＋定型タグ）を隠さず見せる
   const autoPositive = [artStyleText(style, artStyle, artCustom), style === 'tags' ? provider?.defaultPositive : '']
     .filter((s) => s && s.trim())
@@ -151,38 +139,6 @@ export default function ImageGenModal({
   // コストを返す接続先だけ表示する（返さない接続先で推測値を出さない）
   const costLine =
     provider && isOpenRouter ? costLineOf(provider, provider.model, quality, size.width, size.height) : null
-
-  /*
-   * Civitai は `whatif=true` が Buzz を消費せずに正確な料金を返すので、押す前に見せる。
-   * Buzz は暗号資産で買う前払いなので、事前の正確さが他より効く（§6.2）。
-   * サイズ・接続先が変わったときだけ取り直す（デバウンス）。
-   */
-  const [estimate, setEstimate] = useState<string | null>(null)
-  useEffect(() => {
-    if (!provider || !isCivitai) {
-      setEstimate(null)
-      return
-    }
-    const ctrl = new AbortController()
-    const timer = setTimeout(async () => {
-      try {
-        const buzz = await estimateCivitaiBuzz(
-          provider,
-          { prompt: prompt.trim() || 'preview', width: size.width, height: size.height },
-          ctrl.signal,
-        )
-        setEstimate(buzz == null ? null : `${formatCost({ unit: 'buzz', amount: buzz })}（見積り）`)
-      } catch {
-        setEstimate(null) // 見積りが取れないだけなので黙って落とす（生成はできる）
-      }
-    }, 600)
-    return () => {
-      clearTimeout(timer)
-      ctrl.abort()
-    }
-    // プロンプト本文では取り直さない（料金は解像度・ステップで決まる）
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [providerId, isCivitai, size.width, size.height, provider?.params])
 
   const draft = async () => {
     if (!draftContext || !provider) return
@@ -281,9 +237,6 @@ export default function ImageGenModal({
       negative: showNegative ? negative.trim() || undefined : undefined,
       width: size.width,
       height: size.height,
-      steps: isModelsLab ? steps : undefined,
-      sampler: isModelsLab ? sampler : undefined,
-      cfg: isModelsLab ? cfg : undefined,
       quality: isOpenRouter ? quality : undefined,
       count,
     })
@@ -422,7 +375,7 @@ export default function ImageGenModal({
 
               {/*
                 表に出すのは 画風・サイズ・品質 の3つだけ（docs/設計_画像生成の簡易化.md §7.2）。
-                接続先・枚数・サンプラー・ステップ・CFG・カスタムサイズは「詳細設定」へ降格。
+                接続先・枚数・カスタムサイズは「詳細設定」へ降格。
               */}
               <div className="field">
                 <label>画風・サイズ{isOpenRouter ? '・品質' : ''}</label>
@@ -490,9 +443,9 @@ export default function ImageGenModal({
                       生成中…（{job.results.length}/{job.count} 枚完了。ComfyUI は数十秒かかることがあります）
                     </span>
                   ) : (
-                    (estimate ?? costLine) && (
+                    costLine && (
                       <span className="desc" style={{ alignSelf: 'center', margin: 0 }}>
-                        {estimate ?? costLine}
+                        {costLine}
                       </span>
                     )
                   )}
@@ -551,27 +504,6 @@ export default function ImageGenModal({
                       <NumberInput value={customH} min={64} max={2048} step={64} integer onChange={setCustomH} style={{ width: 90 }} />
                       <span className="desc" style={{ margin: 0 }}>px</span>
                     </div>
-                  )}
-
-                  {isModelsLab && (
-                    <>
-                      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6 }}>
-                        <span className="desc" style={{ margin: 0 }}>サンプラー</span>
-                        <select value={sampler} onChange={(e) => setSampler(e.target.value)} style={{ flex: 1 }}>
-                          {MODELSLAB_SCHEDULERS.map((s) => (
-                            <option key={s} value={s}>
-                              {s}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6 }}>
-                        <span className="desc" style={{ margin: 0 }}>ステップ数</span>
-                        <NumberInput value={steps} min={1} max={100} step={1} integer onChange={setSteps} style={{ width: 80 }} />
-                        <span className="desc" style={{ margin: 0 }}>CFG（ガイダンス）</span>
-                        <NumberInput value={cfg} min={1} max={20} step={0.5} onChange={setCfg} style={{ width: 80 }} />
-                      </div>
-                    </>
                   )}
                 </div>
               </details>

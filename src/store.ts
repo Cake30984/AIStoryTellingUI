@@ -36,7 +36,7 @@ import type {
   UsageRecord,
   World,
 } from './types'
-import { DEFAULT_UI, normalizeUiPrefs } from './types'
+import { DEFAULT_UI, IMAGE_PROVIDER_KINDS, normalizeUiPrefs } from './types'
 import { fetchModels, streamChat } from './lib/openrouter'
 import { base64ToBlob, blobToBase64, gcImages, getImage, listImageIds, putImage, putImageAs } from './lib/imageStore'
 import {
@@ -1053,9 +1053,6 @@ interface AppState {
     negative?: string
     width: number
     height: number
-    steps?: number
-    sampler?: string
-    cfg?: number
     quality?: ImageQuality
     count: number
   }) => string
@@ -1824,9 +1821,6 @@ export const useStore = create<AppState>()(
           negative?: string
           width: number
           height: number
-          steps?: number
-          sampler?: string
-          cfg?: number
           quality?: ImageQuality
           count: number
         },
@@ -1852,9 +1846,6 @@ export const useStore = create<AppState>()(
                 negative: args.negative,
                 width: args.width,
                 height: args.height,
-                steps: args.steps,
-                sampler: args.sampler,
-                cfg: args.cfg,
                 quality: args.quality,
               },
               ctrl.signal,
@@ -4071,9 +4062,6 @@ export const useStore = create<AppState>()(
             negative: args.negative,
             width: args.width,
             height: args.height,
-            steps: args.steps,
-            sampler: args.sampler,
-            cfg: args.cfg,
             quality: args.quality,
             count: args.count,
             status: 'running',
@@ -4274,6 +4262,8 @@ export const useStore = create<AppState>()(
         const p = rest
         // ui は normalizeUiPrefs で現行スキーマへ正規化（旧・段階式の文字列値を数値へ引き継ぐ。F2）
         const merged = { ...current, ...p, ui: normalizeUiPrefs({ ...current.ui, ...(p.ui ?? {}) }) }
+        // 撤去した種別（civitai / modelslab。計画 P1）の画像接続先は読み捨てる。persist のみの項目なので版番は上げない
+        merged.imageProviders = (merged.imageProviders ?? []).filter((ip) => IMAGE_PROVIDER_KINDS.includes(ip.kind))
         merged.worlds = (merged.worlds ?? []).map((world) => ({
           ...world,
           ...(world.startPreset
