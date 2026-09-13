@@ -1,7 +1,6 @@
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
 import type {
-  AmbientPin,
   Avatar,
   BranchNode,
   BranchTree,
@@ -1037,11 +1036,6 @@ interface AppState {
   // 挿絵
   addIllustration: (sessionId: string, sceneId: string, ill: SceneIllustration) => void
   removeIllustration: (sessionId: string, sceneId: string, illId: string) => void
-
-  // 環境音ピン（AM1）。音源は内蔵カタログなので画像と違い GC・実体削除の概念が無い
-  addAmbientPin: (sessionId: string, sceneId: string, pin: AmbientPin) => void
-  updateAmbientPin: (sessionId: string, sceneId: string, pinId: string, patch: Partial<AmbientPin>) => void
-  removeAmbientPin: (sessionId: string, sceneId: string, pinId: string) => void
 
   // 画像生成ジョブ（V2・バックグラウンド生成）
   /** ジョブを起動し fire-and-forget で直列生成を回す。jobId を返す */
@@ -3976,60 +3970,6 @@ export const useStore = create<AppState>()(
                     ...s,
                     scenes: s.scenes.map((sc) =>
                       sc.id !== sceneId ? sc : { ...sc, illustrations: [...(sc.illustrations ?? []), ill] },
-                    ),
-                  },
-            ),
-          })),
-
-        // ── 環境音ピン（AM1）──────────────────────────────
-        // Scene の中に持つので、チェックポイント（分岐）には何もせずそのまま乗る。
-        // 削除は参照除去のみ＝内蔵カタログの音源実体には触らない（挿絵の GC 規約と同じ精神）。
-        addAmbientPin: (sessionId, sceneId, pin) =>
-          set((st) => ({
-            sessions: st.sessions.map((s) =>
-              s.id !== sessionId
-                ? s
-                : {
-                    ...s,
-                    scenes: s.scenes.map((sc) =>
-                      sc.id !== sceneId ? sc : { ...sc, ambientPins: [...(sc.ambientPins ?? []), pin] },
-                    ),
-                  },
-            ),
-          })),
-
-        updateAmbientPin: (sessionId, sceneId, pinId, patch) =>
-          set((st) => ({
-            sessions: st.sessions.map((s) =>
-              s.id !== sessionId
-                ? s
-                : {
-                    ...s,
-                    scenes: s.scenes.map((sc) =>
-                      sc.id !== sceneId
-                        ? sc
-                        : {
-                            ...sc,
-                            ambientPins: (sc.ambientPins ?? []).map((p) =>
-                              p.id === pinId ? { ...p, ...patch } : p,
-                            ),
-                          },
-                    ),
-                  },
-            ),
-          })),
-
-        removeAmbientPin: (sessionId, sceneId, pinId) =>
-          set((st) => ({
-            sessions: st.sessions.map((s) =>
-              s.id !== sessionId
-                ? s
-                : {
-                    ...s,
-                    scenes: s.scenes.map((sc) =>
-                      sc.id !== sceneId
-                        ? sc
-                        : { ...sc, ambientPins: (sc.ambientPins ?? []).filter((p) => p.id !== pinId) },
                     ),
                   },
             ),

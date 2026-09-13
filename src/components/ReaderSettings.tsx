@@ -68,8 +68,6 @@ export default function ReaderSettings() {
       contentWidth: DEFAULT_UI.contentWidth,
       speakerIconSize: DEFAULT_UI.speakerIconSize,
       dialogueTint: DEFAULT_UI.dialogueTint,
-      ambientEnabled: DEFAULT_UI.ambientEnabled,
-      ambientVolume: DEFAULT_UI.ambientVolume,
     })
 
   return (
@@ -77,7 +75,7 @@ export default function ReaderSettings() {
       <button
         className="icon-btn"
         onClick={() => setOpen((v) => !v)}
-        title="表示設定（文字サイズ・行間・話者アイコン・環境音・没入モード）"
+        title="表示設定（文字サイズ・行間・話者アイコン・没入モード）"
       >
         Aa
       </button>
@@ -117,27 +115,6 @@ export default function ReaderSettings() {
               />
               セリフを色分け
             </label>
-
-            <div className="menu-sep" />
-
-            {/* 環境音ピン（AM1）。ピン自体は本文のデータなので、ここで切れるのは鳴らすかどうかだけ */}
-            <label className="chk rs-chk">
-              <input
-                type="checkbox"
-                checked={ui.ambientEnabled}
-                onChange={(e) => setUiPrefs({ ambientEnabled: e.target.checked })}
-              />
-              環境音を鳴らす
-            </label>
-            <RsField
-              label="環境音の音量"
-              value={Math.round(ui.ambientVolume * 100)}
-              min={Math.round(UI_LIMITS.ambientVolume.min * 100)}
-              max={Math.round(UI_LIMITS.ambientVolume.max * 100)}
-              step={5}
-              unit="%"
-              onChange={(v) => setUiPrefs({ ambientVolume: v / 100 })}
-            />
 
             <div className="menu-sep" />
 

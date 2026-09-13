@@ -25,10 +25,10 @@ export const APP_STATE_VERSION = 2
  * 1本書く（＝**もう「あとから足せない」状態ではない**。migrate が入ったのでスキーマの
  * 判断を先送りしても復旧可能になった）。
  */
-export const SAVE_DATA_VERSION = 4
+export const SAVE_DATA_VERSION = 5
 
 /** カセット定義（cassettes）の版番 */
-export const CASSETTE_DATA_VERSION = 4
+export const CASSETTE_DATA_VERSION = 5
 
 /** 永続ペイロードに同梱する版番。app 側は zustand が別に持つのでここには入れない */
 export interface SchemaVersions {
@@ -137,6 +137,23 @@ const saveDataMigrations: Record<number, Migration> = {
       return rest
     }),
   }),
+  /**
+   * v4 → v5（計画 P1・環境音ピンの撤去）。`Scene.ambientPins` を落とす（`AmbientPin` を型ごと廃止した）。
+   * 音源は内蔵カタログだったので画像と違い GC・実体削除は無い＝フィールドを消すだけでよい。
+   */
+  4: (s) => ({
+    ...s,
+    sessions: (s?.sessions ?? []).map((sess: any) => ({
+      ...sess,
+      scenes: (sess?.scenes ?? []).map(dropAmbientPins),
+    })),
+  }),
+}
+
+/** `Scene` から `ambientPins` を落とす（save v4→5 / cassette v4→5 で共用） */
+function dropAmbientPins(scene: any): any {
+  const { ambientPins: _ambientPins, ...rest } = scene ?? {}
+  return rest
 }
 
 const cassetteMigrations: Record<number, Migration> = {
@@ -192,6 +209,17 @@ const cassetteMigrations: Record<number, Migration> = {
       const { choiceMode: _choiceMode, ...rest } = cas?.session ?? {}
       return { ...cas, session: rest }
     }),
+  }),
+  /** v4 → v5（計画 P1）。カセットが内包するセッションのシーンからも `ambientPins` を落とす */
+  4: (s) => ({
+    ...s,
+    cassettes: (s?.cassettes ?? []).map((cas: any) => ({
+      ...cas,
+      session: {
+        ...cas?.session,
+        scenes: (cas?.session?.scenes ?? []).map(dropAmbientPins),
+      },
+    })),
   }),
 }
 

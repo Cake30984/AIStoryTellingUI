@@ -1,6 +1,6 @@
-import { Fragment, useMemo, type ReactNode } from 'react'
+import { Fragment, useMemo } from 'react'
 import { matchCharacterByName, parseStructured, type StructuredLine } from '../lib/structured'
-import type { AmbientPin, Character } from '../types'
+import type { Character } from '../types'
 import EntityAvatar from './EntityAvatar'
 import { Icon } from './icons'
 
@@ -27,15 +27,6 @@ interface BodyProps {
   participants: Character[]
   /** ストリーミング中（末尾の未改行行を未確定として扱う） */
   pending: boolean
-  /**
-   * 環境音ピン（AM1）。行番号 → その行の直前に差し込むマーカー。
-   * パーサと同じ `content.split('\n')` の行番号なので、ここの `i` とそのまま一致する。
-   * 描画は呼び出し側（`renderPins`）に任せる。
-   */
-  pinsByLine?: Map<number, AmbientPin[]>
-  /** ドラッグ中の落とし先候補として、全行にアンカーを描くか */
-  dropTarget?: boolean
-  renderPins?: (pins: AmbientPin[], lineAnchor?: number) => ReactNode
   /**
    * 未解決の話者（参加キャラのどれにも解決できない名前）をキャラクター化する導線（発見キャラ・FB7-E）。
    * 渡すとその話者チップの隣にバッジが出て、クリックで呼ばれる。未指定ならバッジを描かない。
@@ -91,9 +82,6 @@ export function StructuredNovelBody({
   content,
   participants,
   pending,
-  pinsByLine,
-  dropTarget,
-  renderPins,
   onDefineSpeaker,
   libraryCharacters,
 }: BodyProps) {
@@ -103,25 +91,17 @@ export function StructuredNovelBody({
   const endsWithNewline = content.endsWith('\n')
   const settled = pending && !endsWithNewline ? lines.slice(0, -1) : lines
   const tail = pending && !endsWithNewline ? lines[lines.length - 1] : undefined
-  const pinsAt = (i: number) => {
-    if (!renderPins) return null
-    const pins = pinsByLine?.get(i) ?? []
-    if (pins.length === 0 && !dropTarget) return null
-    return renderPins(pins, dropTarget ? i : undefined)
-  }
 
   return (
     <>
       {settled.map((line, i) =>
         line.kind === 'narration' ? (
           <Fragment key={i}>
-            {pinsAt(i)}
             {renderProseText(line.text)}
             {'\n'}
           </Fragment>
         ) : (
           <div className="st-dialogue" key={i}>
-            {pinsAt(i)}
             <EntityAvatar
               className="st-speaker"
               avatar={speakers.find((c) => c.id === line.characterId)?.avatar ?? { color: '#666' }}

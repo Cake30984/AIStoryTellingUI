@@ -18,13 +18,8 @@ import { downloadBlob } from '../lib/io'
 import { hasStructuredLines, plainTextOf } from '../lib/structured'
 import { appConfirm } from '../lib/dialogs'
 import { isImageSetupDismissed } from '../lib/imageSetup'
-import { PIN_MARK_ATTR, pinsByAnchor, useAmbientScape } from '../lib/ambient'
-import { ambientSoundLabel } from '../lib/ambientSounds'
-import { ensureAudio, isAudioReady } from '../lib/ambientAudio'
 import ImageGenModal from './ImageGenModal'
-import AmbientPinModal from './AmbientPinModal'
-import AmbientPinLayer, { type AmbientDrag } from './AmbientPinLayer'
-import type { AmbientPin, DockTab, Message, Scene, SceneIllustration, Session } from '../types'
+import type { DockTab, Message, Scene, SceneIllustration, Session } from '../types'
 import EndingModal from './EndingModal'
 import InterludePanel from './InterludePanel'
 import SessionEditor from './SessionEditor'
@@ -47,34 +42,6 @@ import ActivityIndicator from './ActivityIndicator'
 
 interface Props {
   session: Session
-}
-
-/**
- * 自動再生の解錠案内を出したか（アプリ起動中1回だけ）。セッションを切り替えても出し直さないよう
- * コンポーネントの外に置く。
- */
-let ambientUnlockNoticeShown = false
-
-/**
- * 環境音ピンの不可視アンカー（AM1）。幅0・高さ0の span を本文フローの狙った行に差し込み、
- * これを音量計算の Y 測定点にする（見えるスピーカーは `AmbientPinLayer` が右側に置く）。
- * `lineAnchor` はドラッグ中だけ描く「落とし先の候補」で、ピンが無い行にも付く。
- */
-export function PinMark({ pins, lineAnchor }: { pins: AmbientPin[]; lineAnchor?: number }) {
-  if (pins.length === 0 && lineAnchor === undefined) return null
-  return (
-    <>
-      {lineAnchor !== undefined && <span className="ambient-anchor" data-line-anchor={lineAnchor} />}
-      {pins.map((p) => (
-        <span
-          key={p.id}
-          className="ambient-anchor"
-          {...{ [PIN_MARK_ATTR]: p.id }}
-          title={`環境音: ${ambientSoundLabel(p.soundId)}`}
-        />
-      ))}
-    </>
-  )
 }
 
 /** 挿絵1枚の表示（保存・削除・クリック拡大・再生成） */
@@ -215,9 +182,6 @@ export default function ChatPanel({ session }: Props) {
   const [editText, setEditText] = useState('')
   const taRef = useRef<HTMLTextAreaElement>(null)
   const anchorRef = useRef<HTMLDivElement>(null)
-  // 環境音ピンの音量は「この要素の中央」とマーカーの距離で決まる（AM1）
-  const chatRef = useRef<HTMLDivElement>(null)
-  const [ambientPinFor, setAmbientPinFor] = useState<{ sceneId: string; message: Message } | null>(null)
   // 自動スクロールは「自分の操作直後の1回」だけ（生成中は追従しない。FB3-A3）
   const lastScrolledRef = useRef<string | null>(null)
   // パネル開閉（FB8-E4 A案: タブ切替はドック側。最後に開いていたタブを覚えて再開する）
@@ -229,43 +193,6 @@ export default function ChatPanel({ session }: Props) {
     setUiPrefs({ dockTab: ui.dockTab ? null : lastDockTabRef.current })
 
   const scene = currentScene(session)
-  // ── 環境音ピン（AM1）─────────────────────────────────
-  // 全シーンのピンを1つの索引にまとめ、レンダラが「このメッセージのこの行」で引けるようにする。
-  // 実際に鳴るのは DOM にマーカーが描かれたものだけ（＝畳んだ過去シーンの音は鳴らない）。
-  const ambientPins = useMemo<AmbientPin[]>(
-    () => session.scenes.flatMap((sc) => sc.ambientPins ?? []),
-    [session.scenes],
-  )
-  // スピーカーの表示・移動・設定に使う（更新にはピンが属するシーンが要る）
-  const ambientPinsWithScene = useMemo(
-    () => session.scenes.flatMap((sc) => (sc.ambientPins ?? []).map((pin) => ({ pin, sceneId: sc.id }))),
-    [session.scenes],
-  )
-  const [ambientDrag, setAmbientDrag] = useState<AmbientDrag | null>(null)
-  const pinIndex = useMemo(
-    () => pinsByAnchor(session.scenes, session.messages),
-    [session.scenes, session.messages],
-  )
-  useAmbientScape(chatRef, ambientPins, ui.ambientEnabled)
-
-  // 自動再生ポリシーの案内（AM3）。ブラウザ／WebView は「一度も操作していないページ」では
-  // 音を鳴らせない。**ホイールのスクロールは操作として数えられない**ので、
-  // 「開き直して、クリックせずホイールだけで読み進める」と、ピンがあっても無音のままになる。
-  // その状況（＝解錠されていないままホイールが動いた時）に限って1回だけ案内する。
-  // クリック・キー入力で読み始めた人には出ない（App.tsx の解錠リスナで既に鳴る状態のため）。
-  useEffect(() => {
-    const el = chatRef.current
-    if (!el || !ui.ambientEnabled || ambientPins.length === 0 || ambientUnlockNoticeShown) return
-    const onWheel = () => {
-      if (isAudioReady()) return
-      ambientUnlockNoticeShown = true
-      useStore.getState().setInfoNotice('環境音は画面を一度クリックすると鳴りはじめます（ブラウザの自動再生制限）')
-      el.removeEventListener('wheel', onWheel)
-    }
-    el.addEventListener('wheel', onWheel, { passive: true })
-    return () => el.removeEventListener('wheel', onWheel)
-  }, [ui.ambientEnabled, ambientPins.length])
-
   // 顔ぶれは2種類ある。**混ぜてはいけない**（CG1 §1.4 の原則＝「AI に渡すもの」だけをゲートし、
   // 「アプリが同一性を判定するために持つもの」はゲートしない）。
   //
@@ -588,19 +515,6 @@ export default function ChatPanel({ session }: Props) {
             <Icon name="palette" size={13} /> 挿絵
           </button>
         )}
-        {/* 環境音ピン（AM1）。本文を書き換えないので挿絵と同じく完結後も許可する */}
-        {(m.sceneId ?? session.currentSceneId) && (
-          <button
-            onClick={() => {
-              // 自動再生ポリシー対策: 音を扱う操作の中で AudioContext を作る／resume する
-              ensureAudio()
-              setAmbientPinFor({ sceneId: (m.sceneId ?? session.currentSceneId)!, message: m })
-            }}
-            title="この本文の狙った段落に環境音を置く（スクロールで音量が変わる）"
-          >
-            <Icon name="volume-2" size={13} /> 環境音
-          </button>
-        )}
         {/* 末尾のアシスタント本文にだけ〈展開を選ぶ〉（F4。オンデマンド生成＝設計 §3.4）。
             完結後は続きが無いので出さない */}
         {m.id === lastAssistantId && !session.ending && (
@@ -616,33 +530,8 @@ export default function ChatPanel({ session }: Props) {
     )
   }
 
-  /**
-   * 非構造化の地の文を行単位で描く（環境音ピンのマーカーを狙った行の直前に差し込むため）。
-   * pre-wrap なので行の間に '\n' を戻せば出力文字列は従来と完全に同じ。
-   * ⚠ 現行の `renderProse` は改行を跨いだ `「…」` も1つのセリフとして色付けするため、
-   * 行分割するとその1本だけ色分けが切れる。影響をピン付きメッセージだけに閉じ込めるため、
-   * ピンが無いメッセージは従来どおり分割せずに描く。
-   */
-  const renderProseWithPins = (
-    content: string,
-    byLine: Map<number, AmbientPin[]>,
-    dropTarget: boolean,
-  ) => {
-    if (byLine.size === 0 && !dropTarget) return renderProse(content)
-    return content.split('\n').map((line, i) => (
-      <Fragment key={i}>
-        <PinMark pins={byLine.get(i) ?? []} lineAnchor={dropTarget ? i : undefined} />
-        {renderProse(line)}
-        {'\n'}
-      </Fragment>
-    ))
-  }
-
   const renderNovelMessage = (m: Message) => {
     if (editingId === m.id) return <div className="prose-block" data-msg-id={m.id} key={m.id}>{editBox()}</div>
-    const byLine = pinIndex.get(m.id) ?? new Map<number, AmbientPin[]>()
-    // ドラッグ中は、カーソルが乗っているメッセージにだけ行アンカーを増やす（落とし先の候補）
-    const dropTarget = ambientDrag?.overMessageId === m.id
     if (m.role === 'assistant') {
       const structured = hasStructuredLines(m.content, knownCast)
       return (
@@ -652,15 +541,12 @@ export default function ChatPanel({ session }: Props) {
               content={m.content}
               participants={knownCast}
               pending={!!m.pending && isStreaming}
-              pinsByLine={byLine}
-              dropTarget={dropTarget}
-              renderPins={(pins, lineAnchor) => <PinMark pins={pins} lineAnchor={lineAnchor} />}
               onDefineSpeaker={defineSpeaker}
               libraryCharacters={characters}
             />
           ) : (
             <>
-              {renderProseWithPins(m.content, byLine, dropTarget)}
+              {renderProse(m.content)}
               {m.pending && isStreaming && <span className="cursor" />}
             </>
           )}
@@ -670,7 +556,6 @@ export default function ChatPanel({ session }: Props) {
     }
     return (
       <div className="prose-action" data-msg-id={m.id} key={m.id}>
-        <PinMark pins={[...byLine.values()].flat()} />
         {m.content}
         {msgActions(m)}
       </div>
@@ -695,13 +580,9 @@ export default function ChatPanel({ session }: Props) {
   const renderMessage = (m: Message) => {
     if (isDirective(m)) return renderDirectiveMessage(m)
     if (novel) return renderNovelMessage(m)
-    // 会話形式（吹き出し）は行とDOMが1対1にならない（StructuredChatBody が行をグループへ畳む）ため、
-    // ピンはメッセージ先頭にまとめて置く＝メッセージ単位の精度に落とす（設計 §1.3）
-    const chatPins = [...(pinIndex.get(m.id)?.values() ?? [])].flat()
     if (m.role === 'assistant' && editingId !== m.id && hasStructuredLines(m.content, knownCast)) {
       return (
         <div className="st-message" data-msg-id={m.id} key={m.id}>
-          <PinMark pins={chatPins} />
           <StructuredChatBody
             content={m.content}
             participants={knownCast}
@@ -729,7 +610,6 @@ export default function ChatPanel({ session }: Props) {
           ) : (
             <>
               <div className="content">
-                <PinMark pins={chatPins} />
                 {m.content}
                 {m.pending && isStreaming && <span className="cursor" />}
               </div>
@@ -925,7 +805,7 @@ export default function ChatPanel({ session }: Props) {
       <div className="play-body">
         <div className="play-col">
           <div className="chat-wrap">
-            <div className="chat" ref={chatRef}>
+            <div className="chat">
               <div className="chat-inner">
                 {session.messages.length === 0 && (
                   <div className="chat-hint">
@@ -1007,13 +887,6 @@ export default function ChatPanel({ session }: Props) {
                   )
                 })}
                 <div ref={anchorRef} className="scroll-anchor" />
-                {/* 環境音のスピーカーは本文カラムの右側に絶対配置する（本文を汚さない） */}
-                <AmbientPinLayer
-                  sessionId={session.id}
-                  pins={ambientPinsWithScene}
-                  drag={ambientDrag}
-                  onDragChange={setAmbientDrag}
-                />
               </div>
             </div>
           </div>
@@ -1290,19 +1163,6 @@ export default function ChatPanel({ session }: Props) {
 
       {showEnding && <EndingModal onClose={() => setShowEnding(false)} />}
       {showEditor && <SessionEditor session={session} onClose={() => setShowEditor(false)} />}
-      {ambientPinFor &&
-        (() => {
-          const sc = session.scenes.find((s) => s.id === ambientPinFor.sceneId)
-          if (!sc) return null
-          return (
-            <AmbientPinModal
-              sessionId={session.id}
-              scene={sc}
-              message={ambientPinFor.message}
-              onClose={() => setAmbientPinFor(null)}
-            />
-          )
-        })()}
       {showSceneEditor && scene && (
         <SceneEditor scene={scene} onClose={() => setShowSceneEditor(false)} />
       )}
