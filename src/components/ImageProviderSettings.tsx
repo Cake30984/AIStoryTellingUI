@@ -299,8 +299,8 @@ export default function ImageProviderSettings() {
       <div className="desc">
         アバター・挿絵の生成に使います。<b>OpenRouter</b>{' '}
         なら文章用に設定済みのキーをそのまま使えます。ComfyUI は通常起動のまま使えます（デスクトップ版）。ブラウザ版から使う場合のみ
-        CORS 許可付きの起動が必要です（例: <code>python main.py --enable-cors-header '*'</code>）。API
-        キーはこの端末内にのみ保存されます。
+        CORS 許可付きの起動が必要です（例: <code>python main.py --enable-cors-header '*'</code>）。OpenAI 互換は
+        <code>/images/generations</code> を持つ画像 API（DALL·E 等）向けです。API キーはこの端末内にのみ保存されます。
       </div>
 
       {imageProviders.map((p) => (
@@ -473,7 +473,7 @@ export default function ImageProviderSettings() {
           style={{ flex: 1 }}
           onClick={() => upsertImageProvider(newImageProvider('openai-image'))}
         >
-          <Icon name="plus" size={14} /> OpenAI 互換の画像 API を追加
+          <Icon name="plus" size={14} /> OpenAI 互換を追加
         </button>
       </div>
       {/*
