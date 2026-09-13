@@ -1,393 +1,217 @@
 # AGENTS.md — デリスト（Delist / Delusion Story）
 
-> **名称（2026-08-10 確定）**: サークル名 **とかとかげ**（ドメイン `tokatokage.com`）／製品名 **デリスト**（正式名称・略さない）、フルネームは **Delusion Story**（副題扱い）。Tauri の `productName` は ASCII の `Delist`、ウィンドウタイトルは `デリスト`。**識別子は `com.tokatokage.delist`（公開後は変更不可＝`%APPDATA%\<identifier>\` がデータ保存先）。**
-> **`cards.ts` の `extensions.aistorytelling` はカードのデータ形式キーなので改名しない**（既存カードが読めなくなる）。改名対象は表示名だけ。
+サークル **とかとかげ**（`tokatokage.com`）／製品名 **デリスト**（副題 Delusion Story）。Tauri の `productName` は `Delist`、識別子 **`com.tokatokage.delist`**（＝`%APPDATA%\<identifier>\` が保存先。公開後は変更不可）。
+`cards.ts` の `extensions.aistorytelling` はカードのデータ形式キーなので改名しない。
 
-マルチプロバイダ（OpenRouter・OpenAI 互換等）で好きなモデルを使い、AI とのロールプレイ／自動進行する物語づくりを行うクライアント完結型アプリ。**Tauri 2 デスクトップ版が正式版**（`%APPDATA%` 配下にセッション・画像を保存）＋ **Web 版併存**（開発・検証用）。UI 文言・コメントは日本語。ユーザーは日本語でやり取りする。
+好きな LLM（OpenRouter・OpenAI 互換・ローカル）で **AI が自動で書き進める物語を読む**／**キャラと会話する**、クライアント完結（BYOK）のアプリ。**Tauri 2 デスクトップ版が正式版**、Web 版（Vite）を併存。UI 文言・コメント・ユーザーとのやり取りは日本語。
 
-> **このファイルの性格**: 現在の状態・規約・データモデルの参照ドキュメント。実装の変遷・意思決定の経緯は `docs/設計_*.md`（下記「設計ドキュメント」）に集約されているので、ここには履歴を書かず現状のみを簡潔に保つ。
+> **このファイルは「現在の状態」だけを書く。** 経緯・却下案は [`docs/決定記録.md`](docs/決定記録.md)、進行中の計画は [`docs/計画_レビュー対応.md`](docs/計画_レビュー対応.md)、完了済みの設計書は `docs/archive/`（**リンクを辿るとき以外は読まない**）。
+> **ファイル編集を伴うコミットで、ここに書かれた振る舞い・規約・データモデルが変わるなら同じコミットで更新する。** 履歴は書かない（git がある）。
 
-## コマンド
-- 開発（Web 版）: `npm run dev`（Vite, ポート5173）
-- 開発（デスクトップ版・Tauri シェル）: `npm run tauri:dev`（初回は Rust フルビルドで数分。Web dev と同時起動不可＝ポート競合）
-- デスクトップ版ビルド: `npm run tauri:build`
-- 型チェック: `npx tsc --noEmit` / ビルド: `npm run build`（`tsc && vite build`）
-- **変更後は必ず「型チェック → build」で確認。** Tauri 固有部を触った時のみ `npm run tauri:dev` の手動チェックリスト（後述）も実施。
-- **Rust 前提環境**（初回のみ）: rustup＋VS Build Tools（C++）。Windows Defender「コントロールされたフォルダーアクセス」有効時は `cargo.exe`/`rustc.exe` を許可アプリに追加しないとビルド失敗する（詳細は `docs/設計_Tauri化.md`）。
+## コマンドと検証
 
-## Git・バージョン管理
-- リモート: `https://github.com/Cake30984/AIStoryTellingUI.git`（ブランチ: `main`）
-- **1つの変更（機能追加・バグ修正・リファクタ等）ごとに必ず `git commit` → `git push origin main`。作業を溜め込まない。**
-- コミットメッセージは日本語可・端的に。
-- **ファイル編集を伴うコミットでは、影響する記述（ディレクトリ・データモデル・主要な振る舞い・規約等）があれば `AGENTS.md` も同じコミットで更新する。**
+- Web 版: `npm run dev`（Vite・5173）／デスクトップ版: `npm run tauri:dev`（初回は Rust ビルドで数分。5173 を共有するので Web dev と同時起動不可）
+- 型: `npx tsc --noEmit`／ビルド: `npm run build`（`tsc && vite build`）／配布: `npm run tauri:build`
+- **変更後は必ず「`npx tsc --noEmit` → `npm run build`」を通す。**
+- **見た目・UX の確認は AI が自分で行う**（dev サーバ → 該当画面 → スクリーンショット → 判断。console エラー0件も確認。完了報告には「何を確認したか」を書く。ユーザーは UI 確認をしない）
+- 純関数・store のロジックは node で直叩きして確かめる。**テストランナー導入後は `npm test` を通す**（計画 P2）
+- Tauri 固有部（`appFetch`/`saveBlob`/ファイルストレージ/資格情報/OAuth）を触ったときだけ手動チェック → [`docs/開発環境と配布.md`](docs/開発環境と配布.md) §4
+- 初回準備（Rust・Build Tools・Defender の除外）と配布ビルドの検証手順も同文書
 
-## 技術スタック
-React 18 + TypeScript + Vite / 状態管理は zustand（`persist`。storage は `src/lib/platform.ts` の `stateStorage` アダプタ経由。Web は localStorage、Tauri は `%APPDATA%/data/state.json` のファイル backend）/ 追加ライブラリは最小限。環境差（Web/Tauri）は `src/lib/platform.ts` に集約し、**`isTauri()` 分岐はこのファイル（とストレージ実装＝`imageStore.ts`）の外に書かない**。
+## Git
+
+- リモート `https://github.com/Cake30984/AIStoryTellingUI.git`／ブランチ `main`
+- **1つの変更ごとに `git commit` → `git push origin main`。** メッセージは日本語で端的に
+- `samples/`・`_ambient_work/`・`run.bat` は ignore 済みのローカル作業物。指示が無い限り触らない
+
+## 技術スタックと基本方針
+
+React 18 + TypeScript(strict) + Vite / zustand（`persist`）/ Tauri 2（`plugin-http`・`plugin-fs`・`plugin-dialog`・`plugin-opener`・`keyring`）。追加ライブラリは最小限。
+
+- **環境差（Web/Tauri）は `src/lib/platform.ts` に閉じる。** `isTauri()` 分岐をそこ（と `imageStore.ts`）の外に書かない。Tauri の JS パッケージは必ず動的 import
+- **LLM は OpenAI 互換 Chat Completions の SSE 一本**（`lib/openrouter.ts`）。プロバイダ差は `Provider` オブジェクトとヘッダ／`response_format` の降格で吸収する
+- **素材（Character/World）は不変の再利用資産。** 物語中の変化はセッション側（`state`／`overlay`）に積む
+- **状態はすべて prose**（数値・条件・フラグは持たない。`決定記録.md` §1〜2）
+- 製品の位置づけは「挿絵入りの本」。立ち絵・背景・VN 的画面は作らない
 
 ## ディレクトリ
-各ファイルの「現在の責務」を1行で。深い経緯は `docs/設計_*.md` を参照。
 
-- `src/types.ts` — 全データ型（**最初に読む**）
-- `src/store.ts` — zustand ストア。状態・全アクション・永続化（`version`/`migrate`＝移行の定義は `lib/schema.ts`。R1）・状態エンジン（関係性 prose／事実の数）・世界観イベント自動発火・チェックポイント記録/復元など中核ロジック
-- `src/styles/` — `index.css` の分割先6ファイル（`tokens`/`base`/`layout`/`chat`/`composer`/`panels`.css。`index.css` は順に `@import` するだけ）。意味色・z-index・spacing・リーダー設定用の CSS 変数は `tokens.css` の `:root` に集約
-- `src-tauri/` — Tauri シェル（Rust）。設定・権限のみで独自ロジックはほぼ無し。`tauri.conf.json`・`capabilities/default.json`（`http`/`fs`/`dialog` 権限。fs は `$APPDATA/**` 再帰読み書きにスコープ）・`src/lib.rs`（plugin 登録のみ）
+`src/types.ts` — 全データ型（**最初に読む**）／`src/store.ts` — zustand ストア（状態・全アクション・永続化・チェックポイント。4,300行の単一ファイル＝分割は計画 P2）／`src/App.tsx` — レール＋サイドバー＋メイン＋常駐モーダルの組み立て・起動時処理／`src/styles/` — `tokens`/`base`/`layout`/`chat`/`composer`/`panels`.css（`index.css` が順に import。色・z-index・spacing は `tokens.css`）／`src-tauri/` — Tauri シェル（`lib.rs`＝plugin 登録＋資格情報の save/load/delete、`oauth.rs`＝PKCE の 127.0.0.1 受け口、`capabilities/default.json`＝http は `http://*:*`/`https://*:*`・fs は `$APPDATA/**`、`installer-hooks.nsh`＝アンインストール時の資格情報削除）
 
 ### `src/lib/`
-- `platform.ts` — 環境差アダプタ層。`isTauri()`/`appFetch`（Tauri は plugin-http で CORS-free、Web は `window.fetch`。`omitOrigin: true` で Origin ヘッダを外す＝ComfyUI を通常起動で叩くのに必須。`unsafe-headers` feature 前提）/`saveBlob`（Tauri は保存ダイアログ、Web は `<a download>`）/`PERSIST_KEY`/`stateStorage`（Tauri は state.json のアトミック書込＋500msデバウンス＋close時flush・旧WebViewデータからの初回自動移行）/`blockStateWrites`＋`stateLocationLabel`（スキーマを読めなかった時に書き込みを封印し、バックアップ場所を案内する。R1）/`CheckpointStore` interface（Web:IndexedDB `aist-checkpoints` / Tauri:`data/checkpoints/<sessionId>/<nodeId>.bin`）。gzip 済みバイナリをそのまま扱う
-- `checkpoint.ts` — チェックポイント用 gzip ヘルパ（`gzipText`/`gunzipText`）
-- `providers.ts` — `Provider` 型・プリセット・`parseModelRef`/`makeModelRef`/`splitRef`/`modelRefLabel`＋**接続先が使えるかの判定**（R5）。`isLocalEndpoint(baseUrl)`（localhost/127.0.0.0-8/::1/RFC1918/`.local`）／`requiresApiKey`／`isProviderUsable`／`providerUnusableMessage`。**キーの有無を `apiKey.trim()` で直接見ない**——Ollama / LM Studio のようなローカルの OpenAI 互換サーバはキーを持たないため、正しく設定できている構成が警告になり生成が止まる。`openrouter.ts` の `commonHeaders` もこれを見て、**ローカル宛には OpenRouter 用の `HTTP-Referer`/`X-Title` を送らない**（`X-Title` はプリフライトを誘発し、Ollama の `Access-Control-Allow-Headers` に無いため Web 版の POST が全部 CORS で落ちる。Tauri 版は plugin-http なので無関係）
-- `openrouter.ts` — SSE ストリーミング補完・モデル一覧取得（provider オブジェクト駆動）。送信直前に `withCacheControl` を通す（**Anthropic 系にだけ** `cache_control` を2箇所付ける。それ以外は同一参照で素通し。PC-C）。`ChatParams.jsonSchema`＋`jsonMode` を渡すと `response_format` を付ける（schema は strict＋OpenRouter なら `provider:{require_parameters:true}`＝スキーマを無視する上流へ回されるのを防ぐ）。**弾かれたら `schema`→`object`→素と1段ずつ落として投げ直し、通った段をモデルごとに記憶**（プロセス内のみ・非永続）＝対応判定が外れても壊れない。**降格の判定はエラー文言に頼らず 401/403/429 以外の失敗すべて**（自前の互換サーバは曖昧なエラーを返すため）。モードを渡さない呼び出しのリクエストは従来と1バイトも変わらない
-- `prompts.ts` — system プロンプト組み立て・選択肢/レビュー用プロンプト・定数（`CONTINUE_PROMPT`/`SCENE_START_PROMPT`/尺の指示 `PACE_DETAIL_PROMPT`・`PACE_SKIP_PROMPT`＝**進行マーカーの一覧は `MARKER_PROMPTS`／`isMarkerContent` の1箇所**。表示・書き出し・ツリーのラベルが全部これを見る）・結末の提案とエピローグ（`endingProposalSystem`/`endingProposalNudge`/`epiloguePrompt`。F4）・画像プロンプト起案（`illustrationPromptSystem`/`avatarContextUser` 等）・発見キャラのキャラ起案（`characterDraftSystem`/`characterDraftContextUser`。FB7-E）。**本編の組み立ては system／深さ3／深さ0の3層**（PC1+PC4）＝`buildSystemPrompt(session, refs)` は**シーン境界でしか変わらない**ものだけを持ち、毎ターン変わる要素は `buildMessages` が messages 側へ注入する（深さ3＝【今回の場面に関わる設定】〔キーワード一致ロア〕＋【常に踏まえる重要事項】〔`authorNote`〕／深さ0＝【今回の応答】〔会話劇の話者指定〕＋【シーンの収束】/【シーンの締め】＋短い形式の再掲）。**深さ3は履歴末尾から3件手前へ差し込み、履歴が足りなければ system 直後へクランプ**。どちらも中身が空なら差し込まない。**履歴に載せるシーンの範囲は `session.rawWindowFromSceneId` が決める**（PC3。現在シーンだけとは限らない）＝`buildMessages` は予算計算をせず、窓の1つ手前のシーンからは原文末尾だけを「橋」として先頭に足す。窓を決めるのは `selectRawScenes`（純関数・`beginScene` だけが呼ぶ）。【時間】には時間帯固定の指示（シーン内で時間帯を先へ進めない・進行はシーン切り替わりの役割）を含む。story モードは `story.initialDirective`（最初の方向付け・FB5-②）を**最初のシーン滞在中のみ**【最初の方向付け】として注入（チャット非表示・`@` は `＠` に無害化）。現在シーンの推定トークンが閾値超過なら【シーンの収束】/【シーンの締め】ナッジを深さ0へ注入（履歴に積まない。FB5-①）。`buildSystemPrompt`/`buildMessages` は `session.structuredOutput` で【セリフの出力形式】ブロック追加や矛盾指示の条件無効化を切替。**JSON を出させる4種（レビュー・選択肢・次シーン候補・画像起案）は対応モデルなら `jsonSchemas.ts` のスキーマで固定する**（`choicesSystem(jsonSchema)` は包んだ形の指示へ切替。**F4 で `ChoiceMode` を廃止したので mode 引数は無い**）。`reviewSystem(part, aspectNames, focusName)` は `ReviewPart`（`'all'|'a'|'b'|'t'`）で出力させる項目を絞れる（A=summary/suggestions/characterGrowth/worldGrowth/newCharacters・B=relationUpdates/moods。**関係次元の拘束は B のみ**＝A の候補が歪まないように。PC-A A-2）
-- `casting.ts` — 置換タグ（`@タグ`）の検出・導入本文の実名解決（`findIntroTagRefs`/`resolveIntroText`）とロールグループのメンバー解決（`roleMembers`）・開始可否の検証（`validateCasting`）・カード/永続化入力の正規化（`normalizeWorldRoles`/`normalizeRoleAssignments`/`normalizeIntroTags`/`normalizeIntroBindings`）。React/store 非依存の純粋関数。名前置換とロール（プロンプト注入）は分離されている（A-1/A-2・`docs/設計_ロールグループと定量条件.md`）
-- `jsonSchemas.ts` — **裏方 LLM の出力を JSON スキーマで固定する**ための定義（`response_format: {type:'json_schema', strict:true}`）。`reviewSchema(part)`／`CHOICES_SCHEMA`／`ENDING_PROPOSALS_SCHEMA`（結末の提案・F4）／`NEXT_SCENE_SCHEMA`／`IMAGE_DRAFT_SCHEMA`／`CHARACTER_DRAFT_SCHEMA`（発見キャラの起案・FB7-E）＋初期モード判定 `jsonModeFor(model, models?)`（`JsonMode`＝`schema`〔項目まで固定〕/`object`〔`json_object`＝構文の崩れだけ防ぐ〕/`none`）。**判定は OpenRouter の `/models` が返す `supported_parameters` が最優先**（同系列でもモデルごとに違うため名前での一括判定はしない。`structured_outputs`→schema／`response_format` のみ→object）、一覧に申告が無い時だけモデル名パターンで当たりをつける。strict の制約に合わせ全 object は `additionalProperties:false`＋全プロパティ `required`、省略可は null 許容。**選択肢だけは root が object 必須のため `{choices:[…]}` に包む**（`choicesSystem(jsonSchema)` の書式指示も合わせて切替。`coerceChoices` は元からオブジェクト内の配列を拾えるので受け側は無改修）。**`Session.structuredOutput`（`@名前「セリフ」`の本文形式）とは別物**なので混同しないこと
-- `lorebook.ts` — 世界観ロアの抽出。`splitLoreEntries(world, messages)` が `alwaysOn`（＝シーン中は不変・system へ）と**キーワード一致**（＝直近6件のスライディングウィンドウで毎ターン入れ替わる・深さ3へ）を分けて返す。分けている理由は PC1+PC4（可変ロアが system に混ざると system 全体のキャッシュが飛ぶ）
-- `timeline.ts` — `advanceTimeline`/`timeLabelOf`/`timelinePromptInfo`/`isNearEnd`
-- `json.ts` — `extractJson`（モデル出力からの堅牢な JSON 抽出。**`repairJsonText` による修復フォールバック付き**＝素の `JSON.parse` が失敗した時だけ「文字列内の生の改行・タブ」と「末尾カンマ」を直して再挑戦する。モデルが最も多くやる2種の崩れで、直しても意味が変わらないものだけが対象＝途中で切れた出力等は直さない。PC-A 追修）＋`partialString(buf, key)`（**ストリーミング途中の未完成 JSON** から指定キーの文字列値を読めるところまで取り出す純関数。閉じ引用符が未到達ならそこまで返す＝レビューのあらすじをタイプライタ表示するのに使う。PC-A A-1）
-- `structured.ts` — 構造化出力（`@名前「セリフ」`行タグ）のパーサ。全て純粋関数。`parseLine`/`parseStructured`/`matchCharacterByName`（名前解決の一本化窓口）/`hasStructuredLines`（レンダラ分岐用・メッセージ単位）/`plainTextOf`（マークアップ除去）/`NARRATION_NAMES`（`地の文`等の予約話者名＝ラベル非表示救済）。パース失敗行は必ず narration に落とす（graceful degradation）。**話者名は行頭 `@` から最初の `「` まで**（`/^([^「]{1,24})/`）＝後方互換は持たない。旧データに残る感情タグ `@美咲(joy)「…」` は話者チップに `(joy)` が出る（`matchCharacterByName` の前方一致でアイコンは正しく解決される）、`@地の文(感情)「…」` はラベル非表示の救済が効かず話者行として描かれる
-- `tokens.ts` — **長さの単位は用途で固定する**（F5・設計_物語の簡素化.md §2.8）＝**ユーザーに見せる長さは文字数／コストと文脈窓はトークン**（選択制にはしない）。`countChars`（空白を数えない）/`lengthLevel`＋ペース制御閾値 `SCENE_WIND_DOWN_CHARS`(3000)/`SCENE_WRAP_UP_CHARS`(4500)。バッジ・提案チップ・ナッジの3者はこの閾値を共有する（FB5-①）。**何を「本文」として数えるかは `prompts.ts` の `isStoryText`/`sceneCharsOf`**（system・進行マーカー・書き手への指示を除く）＝読者モデルでは入力が全部指示になるので、これを通さないと分量が指示文で水増しされる。トークン側は `estimateTokens` と原文窓（PC3）の予算 `RAW_WINDOW_TOKENS`(12000)/畳み込み率 `RAW_WINDOW_KEEP_RATIO`(0.6)/橋 `RAW_WINDOW_BRIDGE_TOKENS`(1000)
-- `io.ts` — `downloadBundle`/`downloadBlob`（内部で `saveBlob` を呼ぶ）/`parseBundle`（取り込み検証。**ホワイトリスト再構築をやめ未知のトップレベルキーはそのまま持ち回る**＝新しい版で足された項目を古い本体が黙って捨てない。R2）。バンドル組み立て本体は `store.exportBundle`
-- `schema.ts` — 永続データのスキーマ版番と移行（R1）。`APP_STATE_VERSION`/`SAVE_DATA_VERSION`/`CASSETTE_DATA_VERSION`＋各移行連鎖＋`migrateAppState`/`migrateSubSchemas`/`schemaErrorMessage`。詳細は「永続化とスキーマ版番」節
-- `version.ts` — 本体バージョン `APP_VERSION`（`vite.config.ts` の define で package.json から注入。参照はこのファイルに一本化）＋`compareVersions`/`majorOf`。カードの `minRuntimeVersion` 判定に使う（R2）
-- `imageStore.ts` — アバター・カード画像ストア。`putImage`/`putImageAs`/`getImage`/`deleteImage`/`listImageIds`/`gcImages`＋`blobToBase64`/`base64ToBlob`＋表示用 `useImageUrl`。内部は `BlobStore` interface（Web:IndexedDB / Tauri:`data/images/<id>.<拡張子>`）。localStorage には画像を入れない
-- `avatarGen.ts` — `generateDefaultAvatar`（イニシャル＋色 canvas）/`normalizeImage`（縮小・PNG化）
-- `png.ts` — PNG tEXt チャンク読み書き（`readTextChunks`/`writeTextChunk`）。**組み立てはセグメント連結方式＝`push(...spread)` は数MB級でスタックオーバーフローするため禁止**
-- `imageGen.ts` — 画像生成抽象層。`generateImage`（**openrouter-image: POST `/images`（`/chat/completions` ではない）→ `data[0].b64_json`＋`usage.cost`。I1**／comfyui: /prompt→/history→/view／openai-image: b64_json／modelslab: /images/text2img→processing なら /images/fetch ポーリング→出力URL取得。FB8-C）は **`ImageGenResult{blob,costUsd?}` を返す**（Blob 単体ではない）/`resolveImageApiKey`（openrouter-image はキー未設定なら**文章側の `kind:'openrouter'` プロバイダのキーを流用**）/`testImageProvider`（openrouter-image は `/key`）/`fetchComfyChoices`（`/object_info/{クラス}` から ckpt/sampler/scheduler/lora の候補。**非永続のプロセス内キャッシュ**）/`comfyOverridesOf`/`estimateCivitaiBuzz`（`whatif=true`＝**Buzz を消費せず正確な料金だけ返す**ので生成前に見せられる）/`civitaiParamsOf`/`CIVITAI_SCHEDULERS`/`fillWorkflow`/`DEFAULT_COMFY_WORKFLOW`/`MODELSLAB_SCHEDULERS`/`fetchOpenRouterImageModels`（`/models?output_modalities=image`＝実測42件。**推奨モデルをコードに持たない**＝腐るので一覧は API から取り、推奨は説明書側。定数は初期値の `OPENROUTER_DEFAULT_IMAGE_MODEL` のみ）。`ImageGenRequest` に `steps?/sampler?/cfg?`（modelslab のみ）・`quality?`（openrouter-image のみ）。`promptStyleOf`/`defaultPromptStyleOf`＝接続先の作法（未設定なら kind から導出。**必ず上書き可**）。**接続先の `defaultPositive`/`defaultNegative` の結合はここ1箇所のみ**（`combineWithDefaults`）
-- `civitai.ts` — Civitai のモデル解決（I5）。`parseCivitaiUrl`（`?modelVersionId=` / スラッグ入り / civitai.red / 数字のみ / バージョン省略に対応）/`resolveCivitaiResource`（サイト API `civitai.com/api/v1` から `air`・`baseModel`・`trainedWords` を引く）/`promptStyleFromBaseModel`。**AIR を自前で組み立てない**（ecosystem 部分はベースモデル名と一致しない＝Illustrious でも `sdxl`。API が返す `air` をそのまま使う）
-- `comfyWorkflow.ts` — ComfyUI の API Format ワークフローの解析・注入（I4・**ネットワークに触れない純関数**）。`hasWorkflowPlaceholders`/`analyzeComfyWorkflow`→`ComfyPlan{ok,problems,samplerId,positiveId,negativeId,latentId,ckptId,loraId,summary}`/`injectComfyWorkflow`。**ヒューリスティックではなくリンクを辿る**（`SaveImage` から到達可能なノードに限定 → sampler を特定 → `inputs.positive`/`negative`/`latent_image` の参照先へ）。**sampler が複数（hires fix / refiner）なら黙って推測せずあきらめる**。注入は `key in node.inputs` のときだけ＝存在しない入力を生やさない（`seed` と `noise_seed` の両対応）
-- `imageSetup.ts` — 画像生成の初回案内を「今はしない」で断ったかのモジュール変数（I3）。**非永続・store に置かない**（アプリ起動ごとに1度だけ機会を作り直す）。`isImageSetupDismissed`/`dismissImageSetup`
-- `cost.ts` — 生成コストの表示（I1・I5 で単位方針を改訂）。**円に換算せず、そのサービスの課金単位のまま出す**（前払いクレジットは購入時のレートで、USD は為替で実額が変わり、示した額と実負担がずれるとトラブルになる）。`ImageCost{unit:'usd'|'buzz',amount}`/`formatCost`（buzz は「1枚 3 Buzz」・usd は「10枚で $0.023」）/`costKeyOf`/`costLineOf`（**実測があるときだけ**返す。目安テーブルは持たない）/`withCostSample`
-- `promptTags.ts` — `ensureTags`（pins のタグ欠け補完）＋`combineWithDefaults`（接続先デフォルトタグの先頭結合・重複除去）＋`artStyleText`（`ArtStyle × PromptStyle` の対応表4行）/`applyArtStyle`（**tags は先頭結合・natural は末尾に1文**。I2）
-- `ambientSounds.ts` — 内蔵環境音カタログ（AM1）。`AMBIENT_SOUNDS`/`AMBIENT_CATEGORIES`/`ambientSoundById`/`ambientSoundLabel`。実体は `src/assets/ambient/<id>.opus` を `import.meta.glob('...?url', eager)` で解決し、**宣言があってファイルが無い id は起動時に落とす**（＝音源の調達と実装を非同期にできる・別バージョンの `soundId` も黙ってスキップ）。id は `uid()` にせず `'rain-soft'` のような安定・可読キー。**音源は全て VSQ plus+ 由来・Opus 96kbps・ステレオ・48kHz。25本で約12MB**。**2026-08-23 に FLAC（可逆・127MB）から切り替えた**＝旧方針は「素材が 320kbps MP3 なので非可逆再エンコードは世代劣化する」という理由で可逆保存を選んでいたが、**配布物の 99% が環境音**（アプリ本体は 0.69MB）になり、無料版のダウンロード障壁として説明がつかなかった。加えて**11本が 192kHz で格納されており、記録上の「48kHz も素材のまま」が守られていなかった**（＝可逆保存の建前が実態と合っていなかった）。Chromium で25本すべてデコード確認済み。旧 FLAC は git 履歴に残る
-- `ambientAudio.ts` — 環境音の再生エンジン（AM1・React 非依存のモジュールレベル状態）。`ensureAudio`（**ユーザー操作の中から呼ぶ**＝自動再生ポリシー）/`setMasterVolume`/`applyTargets`/`previewSound`/`stopPreview`/`previewingSound`/`stopAll`。**試聴はピン再生と別チャンネル＋世代トークンで `await` を守る**（相乗り・トークン無しだと、デコード待ちの隙間に次のクリックが入って前の音のノードが迷子になり「試聴が止まらない」／試聴停止でピンの音まで巻き添えで切れる）。**声は soundId ごとに1つ**（同じ音の近接ピンは max で畳む＝二重再生で音量が跳ねない）・`loop=true`・目標音量へ一定速度追従（`RATE=0.4/s`）・0 が 1.5 秒続いたら source を破棄。`<audio loop>` は継ぎ目のギャップと音量制御の粗さのため使わない
-- `ambient.ts` — 環境音ピンの位置解決と音量計算（AM1）。純関数＝`ambientGain`（raised cosine・両端の傾き0）/`clampLineIndex`/`resolvePinAnchor`/`pinsByAnchor`（messageId→行番号→ピンの索引）/`mergeTargets`（soundId ごとに max・上位 `AMBIENT_MAX_VOICES`=3本）＋フック `useAmbientScape`（80ms ティックでマーカーの実測 Y を読み `applyTargets`）。`AMBIENT_DEFAULT_RADIUS`/`AMBIENT_RADIUS_CHOICES`/`AMBIENT_RADIUS_LIMITS`/`PIN_MARK_ATTR`。半径の入力 UI は `AmbientRadiusField`（3択ボタン＋スライダーの二段構え。モーダルとピンのメニューで共有）
-- `imageJobs.ts` — バックグラウンド画像生成ジョブの型（`ImageJobTarget`/`ImageJob`）とヘルパ。Blob を含むため **partialize から除外**。AbortController はモジュールレベル `Map`（`registerJobAbort`/`clearJobAbort`/`abortJobController`）。`useBlobUrl` フック
-- `cards.ts` — キャラカード（`chara_card_v2` 互換）／世界カード（`aist_world`）／ゲームカセット（`aist_cassette`＝開始状態に初期化したセッション＋素材＋画像の全部入り＋紹介文メタ）の組み立て・解釈。`exportCharacterCard`/`exportWorldCard`/`exportCassetteCard`/`parseCardPng`/`validateCard`/`attachCardImage`＋`freshSessionOf`（プレイ記録・モデル参照を初期化。カセット下書きの種にも使う・export）。画像収集/サイズ確認は `collectCardImages`/`confirmImageSize`。`avatar.imageId` は通常カードから除外（カセットのみ同梱）。**セッションカード（`aist_session`）は FB3-D で読み書きとも撤去**（過去に書き出した PNG は読めない。共有はカセット・バックアップは System のデータ書き出し）。**読み込みの検証入口は `validateCard` 1本**（全経路が `parseCardPng` を通る。R2）＝`minRuntimeVersion`（**本体が古ければ明示的に拒否**＝黙って半分だけ動かせない。書き出し側は `CARD_MIN_RUNTIME_VERSION` を刻む。**本体バージョンに自動追随させない**）／`spec`（種別違い）／`spec_version`（メジャーが上なら拒否・マイナー増と未知フィールドは読み進む）。R8 の署名検証もここへ相乗りさせる
-- `useCardDrop.ts` — PNG カード D&D 受付フック（`dragOver`＋`dropProps`）
-- `useMultiSelect.ts` — カード/セッション一覧の複数選択フック（Ctrl/Cmd=個別トグル・Shift=範囲・右クリック選択）。`handleClick` は修飾キー付きのみ true（＝開かない）。FB2-D
-- `modalStack.ts` — `useModalEscape`（最前面モーダルだけ Escape で閉じる）/`modalStackSize`
-- `dialogs.ts` — ネイティブ `confirm`/`prompt` の置き換え。`appConfirm`/`appPrompt`/`appChoices`（3択等の選択ダイアログ・value か null を返す。FB6-C）（Promise ベース・React 非依存。lib からも呼べる）。`DialogHost.tsx` が描画・解決
-- `shortcuts.ts` — `useGlobalShortcuts(onTogglePalette)`。App.tsx から1回だけ登録する単一 keydown リスナ。`Escape`=没入解除専用 → フィールドフォーカス中は Ctrl 系のみ → モーダル中は無効 → `Ctrl+K`=パレット・`Ctrl+1/2/3`=Play/Library/System・`Ctrl+G`=続ける・`Ctrl+.`=没入トグル
+- `platform.ts` — `isTauri`／`appFetch`（Tauri は plugin-http で CORS-free。`omitOrigin` で Origin を外す＝ComfyUI 用）／`saveBlob`／`stateStorage`（Web: localStorage、Tauri: `data/state.json` をアトミック書込＋500ms デバウンス＋close 時 flush）／`blockStateWrites`／`CheckpointStore`（Web: IndexedDB、Tauri: `data/checkpoints/<sessionId>/<nodeId>.bin`）／資格情報（`hydrateProviderSecrets`・`stripApiKeyForPersist`）
+- `openrouter.ts` — `streamChat`（SSE・`usage` 取得）／`fetchModels`／`withCacheControl`（Anthropic 系にだけ `cache_control` を2箇所）／`jsonSchema`+`jsonMode` を渡すと `response_format`（弾かれたら schema→object→なし と1段ずつ落として再送し、通った段をモデルごとにプロセス内で記憶）
+- `providers.ts` — `Provider` 型・プリセット・`parseModelRef`/`makeModelRef`・**接続先が使えるかの判定**（`isLocalEndpoint`/`requiresApiKey`/`isProviderUsable`。ローカル宛はキー不要・OpenRouter 用ヘッダも送らない）
+- `prompts.ts` — 本編の3層組み立て（`buildSystemPrompt`/`buildMessages`/`selectRawScenes`）と裏方プロンプト全部（選択肢・レビュー A/B/T・次シーン候補・結末提案・エピローグ・幕間・キャラ起案・画像起案）。進行マーカーは `MARKER_PROMPTS`/`isMarkerContent`、本文判定は `isStoryText`/`sceneCharsOf`
+- `jsonSchemas.ts` — 裏方 LLM の JSON スキーマ（`reviewSchema(part)`/`CHOICES_SCHEMA`/`ENDING_PROPOSALS_SCHEMA`/`NEXT_SCENE_SCHEMA`/`IMAGE_DRAFT_SCHEMA`/`CHARACTER_DRAFT_SCHEMA`）と `jsonModeFor(model, models)`（OpenRouter の `supported_parameters` 優先・無ければ名前で推定）
+- `json.ts` — `extractJson`（修復フォールバック付き）／`partialString`（ストリーミング途中の JSON から文字列値を読む）
+- `structured.ts` — `@名前「セリフ」` 行タグのパーサ（純関数。失敗行は narration へ）／`matchCharacterByName`（名前解決の唯一の窓口）／`plainTextOf`
+- `lorebook.ts` — ロアを `alwaysOn`（system）とキーワード一致（深さ3・直近6件窓）に分ける
+- `tokens.ts` — 文字数（ユーザー向け）とトークン（コスト・窓）の単位。閾値 `SCENE_WIND_DOWN_CHARS`(3000)/`SCENE_WRAP_UP_CHARS`(4500)/`RAW_WINDOW_TOKENS`(12000)
+- `casting.ts` — 導入文の置換タグ `@タグ`（`findIntroTagRefs`/`resolveIntroText`/`validateCasting`/`normalize*`）
+- `schema.ts` — 版番（`APP_STATE_VERSION`=2／`SAVE_DATA_VERSION`=4／`CASSETTE_DATA_VERSION`=4）と移行連鎖
+- `version.ts` — `APP_VERSION`（`vite.config.ts` が package.json から注入）・`compareVersions`
+- `io.ts` — `downloadBundle`/`downloadBlob`（内部で `saveBlob`）／`parseBundle`（未知キーは捨てずに持ち回る）
+- `cards.ts` — キャラカード（`chara_card_v2` 互換）／世界カード（`aist_world`）／カセット（`aist_cassette`）の書き出し・解釈。**読み込み検証は `validateCard` 1本**（`minRuntimeVersion`／`spec`／`spec_version`）。`freshSessionOf` で開始状態へ初期化
+- `png.ts` — tEXt チャンク読み書き（数MB級は `push(...spread)` 禁止＝セグメント連結）
+- `imageStore.ts` — 画像 blob ストア（Web: IndexedDB、Tauri: `data/images/`）。`putImage`/`getImage`/`gcImages`/`useImageUrl`。localStorage に画像を入れない
+- `imageGen.ts` — 画像生成の抽象層。`generateImage` → `ImageGenResult{blob,costUsd?}`。種別 `openrouter-image`（`/images`）／`civitai`（orchestration `textToImage`・`whatif` 見積り）／`comfyui`（`/prompt`→`/history`→`/view`）／`modelslab`／`openai-image`。定型タグの結合は `combineWithDefaults` の1箇所
+- `civitai.ts`／`comfyWorkflow.ts`（API Format ワークフローのリンク追跡による自動注入・純関数）／`promptTags.ts`／`imageSetup.ts`（初回案内を断ったかの非永続フラグ）／`cost.ts`（課金単位のまま表示）／`imageJobs.ts`（ジョブ型・AbortController の Map・`useBlobUrl`）／`avatarGen.ts`
+- `storyExport.ts` — 物語の書き出し（plain/markdown/挿絵つき markdown・分岐時点も可・`isBackstage` で指示とマーカーを落とす）／`storyCard.ts` — 共有用の1枚画像（1080×1350）
+- `ambientSounds.ts`（内蔵25音のカタログ。`src/assets/ambient/*.opus`・約12MB）／`ambientAudio.ts`（再生エンジン）／`ambient.ts`（ピンの位置解決と音量・`useAmbientScape`）
+- `oauthPkce.ts` — OpenRouter OAuth（PKCE。`state` 無しなので nonce 入り一回きり受け口で代替）／`checkpoint.ts`（gzip）／`dialogs.ts`（`appConfirm`/`appPrompt`/`appChoices`）／`modalStack.ts`／`shortcuts.ts`（`Ctrl+K` パレット・`Ctrl+1/2/3`・`Ctrl+G` 続ける・`Ctrl+.` 没入）／`useCardDrop.ts`／`useMultiSelect.ts`
 
 ### `src/components/`
-共通部品:
-- `DialogHost.tsx` — `dialogs.ts` のキューを描画する常駐ホスト（App.tsx に1つ）
-- `ModalShell.tsx` — 全モーダル共通シェル（overlay＋modal＋head＋body＋foot）。`dirty` が真の時のみオーバーレイクリック・Escape で破棄確認
-- `ZoomOverlay.tsx` — 画像クリック拡大の共通オーバーレイ（`caption` でキャプション付き対応）。**`document.body` へのポータル描画**（呼び出し元サムネイルの img セレクタ・stacking context の影響を受けない）でフィット表示。閉じるのは画像クリック・背景クリック・Escape（キャプションは本文選択のため stopPropagation）。FB7-A
-- `icons.tsx` — 自前 SVG アイコン（依存追加なし）。`<Icon name size? className? filled?/>`。**UI の絵文字・文字記号（⑂★✕＋等）は FB8-E2 で全廃し本アイコンへ統一**（アイコン単独可は ×/⋯/✎ 等の普遍記号＋tooltip 必須のみ。約物用途の →・＋連結表記は対象外）。旧データのノードラベル接頭辞は `BranchTreeModal` の `stripLegacyMark` が表示時に剥がす
-- `MenuPopover.tsx` — 汎用ポップオーバー（親に `position:relative` 必要・外側クリック＋Escape で閉じる）
-- `ActivityIndicator.tsx` — 本編/選択肢/レビュー/画像生成の進行状態を1チップに集約。クリックで内訳＋中止
-- `LibraryBar.tsx` — Library（作る）画面用の細いトップバー（`ActivityIndicator`＋インポートボタン＋ジョブボタン）。画像生成の進行/採用を Play に行かず確認できるよう App.tsx が各 Library ビューを `.main` でラップして表示（F6）。インポート・ジョブはラベル付きボタン（FB8-E4）。ジョブ一覧はドックが無いので `ModalShell`＋`ImageJobsBody`。インポートは PNG カード/JSON バンドルを `store.importAnyFile` で種別自動判別し、結果は `infoNotice` トーストに出す
-- `EntityAvatar.tsx` — 画像 or 色＋イニシャルの共通アバター（全画面で統一）
-- `HelpDetails.tsx` — 長い説明文の折りたたみ共通部品（FB8-E1）。見出し直下は要点1文（`.desc`）＋「詳しい説明」`<details>`（現在は未使用）
-- `NumberInput.tsx` — 数値入力の共通部品（FB8-A #13）。フォーカス中はローカル文字列で保持し blur/Enter で確定＋クランプ（`min`/`max`/`step`/`integer`）＝「0 を backspace で空欄化してから打ち直す」ができる。`RsField`（ReaderSettings）が持っていたパターンの一般化
-- `IntroTagDefEditor.tsx` — 置換タグの定義編集（追加・削除・メモ）。WorldEditor 開始テンプレート／SessionEditor／CassetteEditor で共有。`opening`/`onOpeningChange` を渡すとタグ名変更時に本文中の `@旧タグ名` を追従書き換えする（A-1）
-- `IntroTagFields.tsx` — 置換タグ（`@タグ`）→ 参加キャラ の対応付け欄＋導入文の実名解決プレビュー。セッション設定・カセット・開始時モーダルで共有（A-1）
-
-Play 領域:
-- `ChatPanel.tsx` — 会話画面。トップバー（①`.session-title-wrap`＝タイトル入力＋hover鉛筆で編集可視化・F3②`.scene-chip`＝クリックで SceneEditor（`.length-badge` で**本文の文字数**を出す。F5）③`ActivityIndicator`④パネル開閉の1ボタン（`ui.dockTab` を null⇄最後に開いていたタブでトグル。タブ切替はドック内。FB8-E4 A案）⑤`ReaderSettings`（Aa）⑥`⋯`メニュー（FB8-E4 で「あらすじ・カセットにする／アーカイブ・セッション設定／削除」の3グループに整理。モデルは「セッション設定 > AIと出力」へ・挿絵はコンポーザーボタンに一本化））。本文領域は `.play-body`＝`.play-col`（`chat-wrap`＋`composer-wrap`）と `<ContextDock/>` の2カラム。コンポーザーに常時レンダリングの `.composer-tools`（開始/続ける・**尺の指示〔もっと詳しく／先へ飛ばす〕**・やり直す・続きを生成・**展開を選ぶ**・挿絵・シーン編集・シーン終了。F4）。**物語モードの入力欄は読者モデル**＝入力の二分化チップは出さず、送信は常に `kind:'directive'`（roleplay だけ「演じて書く／書き手に指示」のチップが残る）。`session.ending` があると `.ending-banner`（完結）を出して進行系（続ける・尺の指示・展開を選ぶ・シーン終了・⋯メニューの「終わり方を考える…」）を隠す＝**やり直すだけ残す**（結末は引き直せる）。`session.endingGoal` があれば `.ending-banner.goal`。シーン本文の文字数が締め閾値（`SCENE_WRAP_UP_CHARS`）超過で操作行の直上に `.scene-wrap-hint`（シーン終了レビューの提案チップ。自動では開かない・×でシーン単位で非表示。FB5-①c）。挿絵生成は `illustGenFor: {sceneId, messageId?}` state で `ImageGenModal` を開く（FB6-B）: 導線はコンポーザー＋メッセージ操作行の「挿絵」（そのメッセージがアンカー）＋あらすじ一覧の各シーン行（過去シーン）。起案文脈は `sceneMessagesUpto`（対象シーンの本文をアンカーまで・マーカー除く）で組み立て、過去シーンはそのシーンの配役（`sceneParticipants`）を使う。assistant メッセージは `hasStructuredLines` が真なら `StructuredMessage` に描画切替。発見編集は `discoveryScope`（`DiscoveryScope`）で `DiscoveryPanel` を開く
-- `OpeningBriefing.tsx` — 開始ブリーフィング（CG3）。**セッション最初の本文メッセージ（＝導入文）の直後**に1枚だけ出す「この物語について」のカード。期間（`timeline.spanLabel`＋総日数）／`hidden:false` のエンディング（名前＋説明）／伏せた結末・実績の**件数だけ**／進め方の1行。**中身は既存データの組み立てで作者に新しい記入欄を課さない**（準備ゼロ＝既存カセットにも効く）。ネタバレ方針は作者の `hidden` 宣言をそのまま尊重する。**エンディングも実績もタイムラインも無ければ何も描かない**
-- `StructuredMessage.tsx` — 構造化出力の表示専用。`StructuredNovelBody`（narration そのまま＋dialogue は話者チップ独立行）／`StructuredChatBody`（同一話者を1吹き出しにまとめ・narration は間ブロック）。ストリーミング中の末尾未改行行は未確定表示。話者→アイコンは `useSpeakers`（参加キャラのみ。中心人物も参加キャラの1人＝F3）。`onDefineSpeaker` を渡すと**未解決話者（`characterId` が付かない dialogue 行）に ？バッジ**（`.st-unknown-speaker`）が出る＝発見キャラの導線（FB7-E）
-- `CharacterDraftModal.tsx` — 発見キャラのキャラ化（FB7-E）。ここまでの本文＋`characterDraftSystem` で裏方 LLM（`reviewModelOf`）にキャラ JSON を起案させ、そのまま `CharacterEditor` の `draft` モードで開く。保存で `addDiscoveredCharacter`。起案失敗時も空の下書きを開く（理由は編集画面の先頭に出す）
-- `ContextDock.tsx` — 右コンテキストドック本体（**`DEFAULT_UI.dockTab` は `'status'`＝新規インストールでは開いた状態から始まる。CG3**。目標＝エンディング・実績・残り日数はここにしか出ておらず、閉じていると初めて遊ぶ人はパネルの存在に気付けない。既存ユーザーの保存値は `normalizeUiPrefs` が通すので影響しない）。head に**ラベル付き常設タブ**（`DOCK_TABS`＝状態/発見/画像/分岐/ジョブ。FB8-E4 A案）を持ち、`ui.dockTab`（null=非表示）を購読し `status`=`StatusView`／`discovery`=`DiscoveryView`／`gallery`=`GalleryBody`／`branch`=`BranchTreeBody`／`jobs`=`ImageJobsBody` を出し分け。幅は `ui.dockWidth`（左端 `.dock-resizer` ドラッグで 300〜560 可変・F1）。状態タブはタブ直下 `.dock-subactions` の「編集」で `StatusPanel` を開く。発見タブの編集は `DiscoveryView` 内タブ横の「✎ 編集」が選択スコープ（世界観 or キャラ）で `DiscoveryPanel` を開く（`onEditDiscovery(scope)`・F4）
-- `StatusView.tsx`/`DiscoveryView.tsx` — ドック専用の**読み取り専用**ビュー（編集 UI・保存処理を持たない）。`StatusView` は参加キャラごとの関係性 prose と気分を出す（F1 で配役・実績・エンディング・起きた出来事の表示は撤去）。`DiscoveryView` は「🌍世界観／キャラ（アバター＋件数）」のタブ切替（F4）
-- `ReaderSettings.tsx` — Aa ボタン→ポップオーバー。文字サイズ/行間/本文幅（`RsField`＝スライダー＋数値入力・数値で自由設定。F2）/セリフ色分け/環境音のON/OFF・音量（**%表示**・内部値は0..1のまま）/没入モード/「表示を既定に戻す」を `store.ui` へ即時反映（保存ボタンなし）
-- `Rail.tsx` — 左端48px の領域スイッチ（Play/Library/System・アイコン＋日本語ラベル。設定は最下段固定。F0/F5）。Library は直前の素材ビューをローカル state で記憶
-- `Sidebar.tsx` — 文脈サイドバー。`areaOf(view)` で出し分け（play=検索＋新規＋セッション一覧＋アーカイブトグル／library=キャラ/世界観/カセットの縦ナビ）。ブランド表示なし（F3で撤去）。セッション右クリックで `MenuPopover`（開く/設定/カード化/アーカイブ/削除）。Ctrl/Shift で複数選択→選択バー・右クリックで一括削除/アーカイブ（`useMultiSelect`・FB2-D）。＋新規作成は `createSession` の返す id で設定モーダルを自動オープン。セッションカード PNG の D&D 受付
-- `CommandPalette.tsx` — `Ctrl+K` で開くパレット。セッション/素材の名前検索→移動＋固定コマンド。実行は既存 store アクション／`setUiPrefs` のみ
-
-モーダル・パネル:
-- `SessionEditor.tsx` — セッション設定。「基本／物語／進行／AIと出力」4タブ（同一 draft を共有。FB8-E3。物語タブは story モードのみ表示され、旧「基本」のジャンル・前提・導入・置換タグ・配役と固定メモを持つ〔roleplay の固定メモは基本タブ〕。「AIと出力」＝旧モデル＋出力タブの統合で、先頭に本編モデル欄あり＝⋯メニューの「モデル:」項目から移設）。フッターに「カセットにする…」（`CassetteEditor` を `seedSession` 付きで開く）。「構造化出力」チェックボックスあり。世界観選択時に開始テンプレートを空欄項目のみ自動コピー（`startPresetPatch`・W1。置換タグ定義 `introTags` も同じ規則でコピー）＋「開始テンプレートを読み込む」リンクで全上書き（確認つき）。story モードは最初の方向付け（`story.initialDirective`・非表示注入）欄→導入（`story.opening`/`openingTitle`・そのまま掲載）欄の直下に `IntroTagDefEditor`（置換タグ定義）→`IntroTagFields`（タグ→参加キャラの対応付け）の順に並ぶ。**基本タブに中心人物（`focusCharacterId`）の選択欄**（選べるのは参加キャラのみ・参加を外すと中心も外れる・最初に選んだキャラが自動で中心になる。F3）。進行タブに現在の時点（`state.now`）と「新しい登場人物」（`newCharacterPolicy`＝出してよい/出さない。FB7-E）
-- `CassetteEditor.tsx` — カセット専用エディタ（FB3-D）。左セクションナビ（基本〔タイトル・紹介文・表紙〕／世界観／登場キャラ〔＋中心人物の選択〕／開始・進行）で `Cassette`（内部に開始状態のセッション）を編成。開始・進行に最初の方向付け（`initialDirective`）欄があり、導入欄直下に `IntroTagDefEditor`→`IntroTagFields` を置く。新規＝`newCassette()`／既存編集＝`cassette` prop／セッションから＝`seedSession`（`freshSessionOf` で下書き化）。表紙はタイトルから自動（保存時に生成焼付け）／画像ファイル選択（`normalizeImage`→`putImage`）／種セッションの挿絵から選択。保存は `upsertCassette`。読み込みは Sidebar D&D・System ファイル入力・カセット棚 D&D（`importCassette`＝「棚に登録のみ」＝`cassettes` に積む。FB2-E）。PNG 書き出しは未解決の置換タグ束縛があると拒否する
-- `SettingsModal.tsx` — `export function SettingsBody()`（System ページ本体）。プロバイダ管理・新しい物語の既定モデル（`defaultModelRef`）・データ入出力（「画像も含める」チェックボックス。取り込みは `store.importAnyFile` に共通化＝Library のインポートボタンと同じ入口）・未使用画像 GC・**同梱素材のクレジット**（環境音25音の一覧。`HelpDetails` で畳む。AM3）。App.tsx が `view==='system'` で描画
-- `ImageProviderSettings.tsx` — 画像生成接続先の管理（ComfyUI/ModelsLab/画像API の追加・編集・削除・接続テスト・デフォルトタグ入力）。`SettingsBody` に組み込み。ModelsLab は API キー＋モデルID欄（FB8-C）
-- `ImageGenModal.tsx` — 画像生成モーダル（キャラアバター/挿絵で共用）。接続先・サイズ・枚数選択、「プロンプトを起案」、`target: ImageJobTarget`＋`label` で `store.startImageJob` を呼びジョブ購読。接続先/起案モデルは記憶（`lastImageProviderId`/`lastDraftModel`）。`initialPrompt`/`initialNegative` で再生成時のプロンプト事前入力に対応（FB7-A追修）。接続先未設定時は「設定・データ管理を開く」ボタンで System へ直行（FB8-E4）。**種別で欄を出し分け**（FB8-C）: ネガティブ=comfyui/modelslab、ステップ/サンプラー/CFG=modelslab のみ、サイズは3プリセット＋「カスタム」（幅・高さを `NumberInput` で数値指定・全種別）
-- `ImageJobsPanel.tsx` — `ImageJobsBody()`（ドックの jobs タブ）。running=進捗＋キャンセル、selecting=候補サムネ＋採用/破棄
-- `GalleryModal.tsx` — `GalleryBody({session, onRegenerateIllustration})`（ドックの gallery タブ）。「この分岐」（挿絵のシーン見出し付きグリッド・本文から外す）／「すべての記録」（`sessionImageLogs` の永続アルバム・配置中バッジ・記録から削除。FB6-A）のタブ切替。**`PromptCaption`**（export・ChatPanel の `IllustrationView` とも共用）＝拡大表示キャプションの共通部品。positive/negative それぞれ見出し＋グレー背景ボックス（`.prompt-box`）で表示し、元プロンプトがあれば「同じプロンプトで再生成」ボタンを出す（クリックで `ImageGenModal` を `initialPrompt`/`initialNegative` 事前入力つきで開く。対象シーンが現存しない記録・旧データの背景記録は再生成不可＝ボタン非表示。FB7-A追修）
-- `BranchTreeModal.tsx` — `BranchTreeBody({session})`（ドックの branch タブ）。**SourceTree 風コミットグラフ**（FB3-B2・`.bg-*` クラス）: 全ノードを pre-order（現在パスの子を最優先＝現在パスをレーン0の直線に保つ）で縦1列に並べ、`buildGraph` がレーン割り当て＋各行の通過縦線／分岐カーブを計算し SVG で描画。**レビュー単位の折りたたみ**（FB6-D）: `condenseTree`（純関数・export）が畳まれた章（`chapterOf`＝最寄り祖先 scene ノード）内の鎖内部 action ノードを隠して parentId を辺縮約した合成ツリーを作り、それを `buildGraph` に渡す（グラフ本体は無改修）。分岐点・葉・いまここ・★・⑂・🏁・scene ノードは畳んでも常に表示。既定＝現在いる章のみ展開（currentId の章移動で自動展開・▸/▾ トグル・畳み中は件数表示）。最初の子は親と同じレーンを継ぎ2番目以降は新レーンへ（木なので merge 無し＝分岐カーブは親行の下半分のみ）。レーン色は `--graph-lane-0..5`。行＝色ドット＋ラベル＋timeLabel＋⑂分岐名＋★＋いまここ。**行クリック＝その地点を本文で開く移動 `navigateToNode`**（hover で「→ 開く」表示。何も消さない・確認なし。FB7-B）＋⋯メニュー（しおり `setBranchStar`/`removeBranchStar`・**↩ この時点に戻す `restoreCheckpoint`**（従来の復元・確認あり。FB7-B で hover ボタンから移設）・**⑂ ここから分岐して再開 `branchFromNode`**（FB6-C）・シーン開始前へ戻る・この分岐を削除 `deleteBranchSubtree`＝現在パス上は無効）。「✂ 現在の分岐だけ残す（他n件を削除）」`pruneToCurrentPath`・「★ しおり」タブ・currentId 変化で自動スクロール
-- `ModelPicker.tsx` — プロバイダ切替・モデル一覧・お気に入り。`onPick` は `"providerId::modelId"`
-- `SceneEditor.tsx`/`SceneReviewModal.tsx`/`StoryLogModal.tsx`/`StatusPanel.tsx`/`DiscoveryPanel.tsx`/`CsvInput.tsx` — 各種閲覧・編集モーダル。`StoryLogModal` は `onGenIllustration?` を受け取り各シーン行に挿絵ボタンを出す（過去シーンへの後付け生成の導線。FB6-B）。`SceneReviewModal` は**確定前（`reviewProgress` のみ）は進行表示 `ReviewProgressView` に差し替わる**（**呼び出し1本＝1行**で `waiting`/`streaming`/`done`/`failed`＋受信文字数を出す＋流れてくるあらすじ＋中止のみ。**工程の段階表示ではなく呼び出し単位**＝分割実行では2行が同時に伸びる＝並列に走っていることが画面で分かる。PC-A A-1）。ヘッダの「✎ 編集」トグルで全項目（あらすじ・候補・成長・ロア・関係性・数値）をローカル draft 編集でき、閲覧モードは読み取り専用・編集モードはチェックボックス非表示（追加/削除なし。FB5-C）。「自分で決める」はタイトル/内容の直接記入で AI 候補と同扱い。エンディング到達プレビューは draft で計算し、確定は `updateSceneReview` で draft を書き戻してから（プレビューと発火の一致）。「新しい登場人物」節（発見キャラ・FB7-E）は**既定チェックなし**で、チェックした人物が確定後に `characterDraftQueue` へ積まれる（確定を押した瞬間に起案が始まらないようにするため）。到達エンディングの条件に subject な `exactly n` 群があれば、満たした全員（`exactCandidates`）から n 人を選ぶプルダウンをロールごとに表示（`exactPicks` state。既定＝参加キャラ順の先頭 n 人・他枠で選択済みの候補は各プルダウンから除外して重複を防ぐ）。StatusPanel/DiscoveryPanel はドックの「✎ 編集」経由で開く。`DiscoveryPanel` は `scope`（`'lore' | {characterId}`・F4）で世界観/キャラ別に編集画面を分割し、保存は live 起点でスコープ分だけ差し替え（編集中の他スコープ追記を巻き戻さない）
-- `library/` — 各素材の一覧＋エディタ（Character/World）と `CassetteLibrary`（🎮カセット棚＝「＋カセットを作る」で `CassetteEditor` 起動・表紙/紹介文/▶遊ぶ/✎編集/PNG書き出し/削除・D&D取込。FB2-E/FB3-D）と `AvatarField`。各 Library は PNG カード D&D 受付＋検索＋複数選択（`useMultiSelect`・右クリックメニュー＝`LibraryMultiSelect.tsx` の `SelectionBar`/`CardContextMenu`。Ctrl/Shift 選択→一括削除。FB2-D）＋**複製**（`duplicateWorld`/`duplicateCharacter`。複数選択なら一括・複製後もエディタは開かない。G4-a）。CharacterEditor は draft を保存ボタンで反映（`CharacterEditor` は `draft`/`draftNotice`/`onSaved` で**未保存の下書き**としても開ける＝発見キャラのキャラ化。削除・カード書き出しを隠す。FB7-E）、`AvatarField` は store 直管理フィールド（avatar.imageId）を live 購読して同期。WorldEditor はフルページ（`.section-nav`＋`.section-content`。F1 完了時点のセクションは「世界の中身〔基本・ロア〕／登場のしくみ〔関係性の次元〕／セッションの雛形〔開始テンプレート〕」の4つだけ。「開始テンプレート」= `World.startPreset` の編集・W1〔`IntroTagDefEditor` で置換タグ定義も編集・A-1〕）
-
-## 設計ドキュメント（`docs/`）
-実装の詳細設計・意思決定の経緯はここに集約。AGENTS.md で疑問が残ったら該当ドキュメントを読む。
-完了した設計書・意思決定記録は **`docs/archive/`** に移動済み。アーカイブ済みのエントリはファイル名の前に `archive/` を付けて記載。
-
-- `要件定義書.md` — 利用者視点の機能要件（実装非依存）
-- `公開計画_マネタイズと配布.md` — 公開に向けた事業判断と、それに紐づく**公開前実装要件**（2026-07-25 合意・2026-08-10 に商品構成と実装順序を改訂・**2026-08-30 に課金点を全面改訂**）。製品の位置づけ（VN ではなく「挿絵入りの本」＝立ち絵・全面背景は廃止）／プラットフォーム規約（DLsite＝棚・BOOTH＝母艦・Steam 回避・AI生成フロア判定・SPLL・成人向けの3分割）／**二層モデル**と価格（**2026-08-30 改訂**＝無料タイトル〔カセット1本を焼き込んだ単体 exe・外部カセットは読めない〕＋制作版 ¥2,980 の二段。**有料カセットは凍結**＝①買い手の動機は配布でなく自分用と見積もった ②JSON を売る商品性が低い ③有償だと BYOK の相続コストが戻る。**廃止ではなく凍結**＝無料ビルドにローダーを足せば復活する。「有料タイトル＝単体 exe」の形でも成立する）／**制作版の出力は JSON のみ**（**インポート制限は設けない**＝**カード文化は制作版どうしで育つ**。**単体 exe の書き出し〔旧 R11〕は作らない**＝無料ユーザーへ届く経路は自分だけが持つ。第三者から要望が来たら **JSON を受け取ってこちらでビルドして返す手作業**で凌ぐ）／マーケティング（**2026-08-11 に全面改訂＝DLsite をオプションに降格し、集客の本体を「製品の出力物」へ**。理由＝①ツール棚に流入が無い〔販売数は0〜10件が大半＝棚ではなくレジ〕②**DLsite は無料配布ができない**〔確定〕③接続依存・単体非動作の可否が未確認。**今後 DLsite の規約に製品設計を合わせない**）／必要手続き（問い合わせは送るが**回答を待たずに Phase 1〜3 を進める**）／**実装要件**（**課金点＝「編集能力」ではなく「読み込み能力」**〔2026-08-30 全面改訂。Copilot 等で JSON を書ける層が顧客層と重なり、旧突破ライン「JSON を手書きできる人＝最初から顧客ではない」の前提が失効した。しかも `カセット作成ガイド_AI用.md` でこちらが経路を整備済み＝**執筆を守る戦線は成立しない**。よって**無料ビルドにローダーを含めない**＋**カセットはバイナリに焼き込む**〔exe の隣に .json を置かない〕〕・抜け道8件・**ビルド分離が防御の本体**・認証はまず作らない・カセット署名は**凍結**〔読み込みを閉じ、exe 書き出しも作らないので弾く相手も注入経路も無い。**署名と exe 書き出しは対で復活する**〕・`schemaVersion` 追加＝公開ブロッカー・初回ウィザード＋**ローカルモデル**）／実装順序 Phase 1〜5（抜け道潰しは Phase 2 → Phase 4 へ後退しファネルと需要検証が前。ただし**2026-08-30 に R7 ビルド分離だけ Phase 3 へ戻した**＝課金点そのものなので**配る前**に必要。配ったビルドは回収できない）
-- `設計_公開前実装.md` — 上記の**事業判断を実装へ落とす側**（R1〜R10・**R1/R2 実装済み〔2026-08-15〕・R3 以降は未着手**）。**R5' ローカルモデルの通し動作検証が Phase 2 の最優先**（DLsite の「接続が必要な作品は不可」への唯一の反論材料＝検証前にこの主張をしない）／**R10 物語の書き出し＝集客の本体**（DLsite 降格で、許可も常駐も要らない集客経路がこれだけになった。要件は「出力できる」でなく「貼りたくなる」）。R1 `schemaVersion`+migrate（公開ブロッカー）／R2 カード検証入口＋`parseBundle` 未知キー保存／R3 **API キーを平文 `state.json` から OS 資格情報ストアへ**（現状 `partialize` が `providers`/`imageProviders` をそのまま永続化＝キーが平文。Stronghold はパスワードを要求するので不採用）／R4 **OpenRouter OAuth（PKCE）**＝コピペを消す（無料になる話ではない）・手動貼付は残す／R5 初回ウィザード（Gemini 無料枠を無条件の初期値にしない＝入力が改善利用されうる旨を添える・ローカルモデルは「最初の5分」でなく継続利用の受け皿）／R6 **体験用カセットは3シーン以内**（1ターンに複数回呼ぶので5シーンだと無料枠の日次上限に触れて途中で止まる）／R7 **配布ビルド**（2026-08-30 に改称・Phase 3 へ繰り上げ）＝**無料ビルドから読み込み経路を落とす**〔インポート UI・ファイルドロップ・`parseBundle` 呼び出し〕＋**カセットをバイナリに焼き込む**＋**`SessionOverlay` だけ開ける**（素材は閉じたまま）＋ビルド分離。接続設定は**タイトル間で共有**（無料タイトルが複数あるとキー再設定が毎回発生する）。**a/b 判断は 2026-08-15 に a で決定**＝`SessionOverlay` にキャラを持たせず、無料版では発見キャラのキャラ化（FB7-E）の導線だけ出さない（スキーマ変更なし・セーブ版番は v1 のまま）／R8 カセット署名 → **凍結（2026-08-30）**＝読み込みを制作版に閉じ、**exe 書き出しも作らない**ので弾く相手も注入経路も無い（同日に「exe 書き出しがあるなら要る」として一度解除したが、**exe 書き出し自体を見送ったので再凍結**。**両者は対で復活する**。**同一性証明にはならない**という但し書きは復活時もそのまま有効）／~~R11 作品ビルダー~~ → **見送り**（追加した当日に外した。理由＝買い手は自分用という見積もりと矛盾／R8 を道連れにする／焼いた exe はランタイムが固定され製品名を背負ったまま死ぬ／**後から足しても何も壊れない**＝R7 の無料ビルドがそのままテンプレートになる）／R9 配布（CSP・更新通知は入れる／**コード署名は計測後に判断**）
-- `設計_入力の二分化とローカルLLM案内.md` — 2件の要望の設計（2026-08-16 合意・**A/B とも実装済み**）。**A=入力の二分化（IN1）**＝ユーザー入力を「主人公のセリフ・行動」と「書き手 AI への指示」に分ける（`Message.kind`・固定枠での注入・裏方と書き出しからの除外・コンポーザーのモードチップ）。**却下案3件**（一時メモとして保持／`authorNote` へ自動追記／記号での書き分け）の理由つき。**B=ローカル LLM ガイド（LG1）** の目次と「書くときの約束」（数字は実測のあるものだけ・「全機能がオフラインで動く」と書かない）
-- `設計_登場制御の見直し.md` — シーン単位のキャスト絞り込み（`Scene.activeCharacterIds`）の廃止と、その代わりの登場制御（2026-08-16 合意・**CS1/CS2/CS4 実装済み・CS3 は実測で不採用**）。CS1=`activeCharacterIds` 撤去（登場キャラは常に `session.characterIds`・**セーブ版番は上げず旧データは読み捨て**）／CS2=状況メモ `Scene.note` に「その場に居る人物」を書かせる（レビューの `suggestions[].note` 指示文＋`WorldStartPreset.openingSceneNote`＝1シーン目ぶんを `startSession` が写す）／CS3=システム側の文法一文（**不採用**＝`prompts.ts` に何も足さない）／CS4=固定メモ欄の案内文のみ（**既定文は書かない**）。**領分は3層**＝文法（システム・不可視）／事実（`Scene.note`・可視・半自動）／方針（`authorNote`・可視・任意）。原則「**新しい振る舞い制御を不可視で足さない**」。却下案5件（既定を全員にして UI を残す／不可視の system 文だけで解く／全部 `authorNote` へ／AI に `activeCharacterIds` を自動で埋めさせる／位置ステータス化）
-- `設計_登場条件と目標提示.md` — キャラの登場条件（CG1）／カセット作成ガイドの網羅性（CG2）／開始時の目標提示（CG3）。**CG1〜CG3 すべて実装済み（2026-08-30）。ただし CG1（`characterGates`）は F1-a で撤去済み（2026-09-07・`設計_物語の簡素化.md`）＝以下は経緯の記録。**共通の骨は「**条件付きの出し分けの機構が、届くべき相手に届いていない**」。CG1=`Session.characterGates`（`resolveRefs` で `lockedCharacterIds` を1段挟む＝`gateLoreByCondition` と同じ手口。漏れる経路は `buildStateInfo`・レビュー文脈の関係性/数の一覧・プレイヤー側 UI の3つで個別に塞ぐ。**逆にゲートしてはいけない経路もある**＝`ChatPanel` は `knownCast`（ゲート前・**既に書かれた本文の話者解決**）と `participants`（ゲート後・話者チップ/次に話す/後付け画像生成）に分ける。**発見キャラの重複判定（`knownSpeakersOf`・`newCharacters`）はゲート前の `characterIds` を見続ける**＝未解禁キャラの名前が本文に出ても二重に起案されない）。**CS1（シーン単位のキャスト廃止）とは別の軸**＝あちらは可逆・シーンごと、こちらは単調・世界に1回。条件の入力（stat/counter/achievement/eventFired）はすべてシーン境界でしか動かないので system プロンプトのキャッシュを壊さない
-- `計測_登場制御.md` — 上記 §7 の実測記録（2026-08-16・480会話）。**CS3 不採用の根拠**＝普段使い帯（`deepseek-v4-flash`）は W0 で割り込み **0/40**（W1 も 0/40・W2 は 2/40 と悪化）、低性能帯（`qwen3-8b`）は W0 2/20 → W1 5/20 で**改善しない**＝足りないのは指示ではなく読解力。`leak` 0/480。**判定モデルが低性能帯で過検出する**（「声が届いた」「黒い影」を登場と誤判定）ため、フラグの立った件は人手で再確認した。副次確認: レビューの `suggestions[].note` は **68/68 で登場人物を明記**し、第三者の登場も「案として選べる」形になる
-- `設計_物語の簡素化.md` — **作り込みの機構を全面的に降ろし、AI の即興に賭ける**方針（2026-09-07 合意・**F1〜F6 完了＝全フェーズ実装済み**）。廃止＝条件エンジン一式（`Condition`/`ConditionEditor`/`gateLoreByCondition`/`CharacterGate`）・数の状態（`StatDef`/`CounterDef`）・到達目標（`AchievementDef`/`EndingDef`）・配役（`WorldRole`/`RoleAssignment`）・特別イベント（`ScheduledEvent`）・固定タイムライン（`Timeline`）・ペルソナ（→ `Character` へ統合）。追加＝自由文字列の現在時刻 `now`・予定スリップ `pending`（add/done のみ）・固定トラッカー枠・**照合済みの一文（前景）だけを深さ0へ**・`focusCharacterId`（必須。関係性の中心を兼ねる）・読者モデル（すべての入力は書き手への指示）。**実装順 F1 削除 → F2 時間と予定 → F3 ペルソナ統合 → F4 読者モデル → F5 仕上げ（文字数表示・ガイド書き直し）→ F6 別視点の幕間**。**進行: F1・F2 完了 2026-09-07／F3〜F6 完了 2026-09-08＝全フェーズ実装済み**（F6＝同じ場面を他の人物の視点で描き直す読み専用の幕間。`relation[その人物→中心]` を材料にするので**関係の保持数は増えない**）。互換性は考慮しない（未公開のため `schema.ts` の移行チェーンごと捨てる）。**§2/§4 の根拠は `計測_時間と予定.md` と `計測_別視点の幕間.md`**。却下・撤回20件を §8 に、2026-09-07 に決めた5件と残りの未決3件を §10 に置いた
-
-- `InterludePanel.tsx` — 別視点の幕間（F6・設計_物語の簡素化.md §2.9）。各シーンの本文の**後ろ**に置き、「別の視点で読む」→ 中心人物を除く参加キャラ（`presentIds` の人物が先頭）から1人選ばせて `generateInterlude` を呼ぶ。**対象はシーン丸ごと1本で、終了したシーンにしか作れない**（`isSceneClosed`＝`endedAt` があるか現在シーンでないか。2026-09-09 改訂。§2.9.2.1）＝1シーン＝なろう系の1話、幕間は独立した1話として後ろに置く。進行中のシーンでは入口を隠さず無効にして理由を出す。**読み専用・非正典**＝生成しても状態は動かず本編プロンプトにも積まれない。各幕間に 引き直す／関係性へ反映／削除。「関係性へ反映」は `reflectInterlude` が `{stance, aspects}` の案を作り、**ユーザーが承認したときだけ** `confirmInterludeReflection` が `applyReviewToState` 経由で `SessionState.relations` を書き換える（§2.9.4）。story モードのみ
-- `EndingModal.tsx` — 終わり方の提案（F4・設計_物語の簡素化.md §2.7）。⋯メニューの「終わり方を考える…」から開き、`proposeEndings` で AI に3〜5案を出させて ①`setEndingGoal`（目標として保持＝system の【目指す結末】へゆるく注入）②`concludeStory`（その場でエピローグを書かせて完結）③何も選ばない を選ばせる。**世界側にエンディング定義は無く、コードは到達判定を一切しない**
-- `計測_別視点の幕間.md` — 同じ場面を主人公以外の視点で描き直す機能（`設計_物語の簡素化.md` F6）の実測記録（2026-09-07・491呼び出し・$0.095）。**⚠ 数字は破棄した**＝「解釈が異なるか」という構文は安い判定 LLM では測れず、段階指標が 0/4 の二値へ退化した上で**両方向に誤る**（解釈ゼロの言い換えに偽陽性 9/30・手読みで明確なギャップがある11件を偽陰性）。採用したのは**手読み12件と語の出現だけ**。所見＝①**「言い換えに潰れる」は起きなかった**（最弱条件でも読んだ4件すべてにギャップ。素材が勘違い系の構造を持てば視点移動だけで生まれる）②関係 prose の濃さは「ギャップの有無」ではなく**具体性**に効く③**捏造は稀**（3〜7%・条件差なし）④**見出しの混入 13%** は後処理で削る。**次に測る人へ**＝選択肢を与えると全部挙げるか何も挙げないかに退化する／判定器を使わず語の出現だけで測れる指標に絞るのが最も安い（§4.3）
-
-- `計測_時間と予定.md` — 固定タイムライン（日・時間帯スロット）を廃止し、**現在時刻を自由文字列にして予定を言語で管理する**案の実測記録（2026-09-06・1214呼び出し・$0.153）。**最大の発見＝予定リストを本編プロンプトへ常時注入してはいけない**（該当なしの時点で 28/30 が無関係な先の予定を本文に列挙する。リスト無しの対照は 0/30）。本編へ渡すのは**照合済みの一文（前景）だけ**でよく、それだけで言及率 6/30 → 26/30・無関係な漏れは 0/30 のまま。**照合に id を返させない**（読解は当たっているのに id の書き写しだけが落ちる事故が 450回中 50回）。**件数の効果はほぼ無い**（3/8/15件で 91%/86%/89%＝上限を設ける根拠は無い）。**相対表現（「来週水曜」）は 2/30 しか発火せずその2回とも誤り**＝記録時点で絶対表現へ解決する。条件つきは「状態」として読まれるので、一度きりにしたいなら**遷移**で書く（ガイドの1節で済み、機構は要らない）。落とし穴3件を §5 に記録
-
-- `カセット作成ガイド_AI用.md` — **AI にカセット JSON を書かせるための仕様書兼指示書**（設計書ではない）。この1ファイルだけを AI へ渡す前提で、`src/types.ts` の公開データ型（World/Character/Session/Cassette 配下）を網羅する。**2026-09-08 に F1〜F6 ぶんを全面書き直し**（619行→約430行）。冒頭に **§0.1「このアプリが何であるか」**（ノベルゲームではなく挿絵入りの本／プレイヤーは読者）を置き、作るのは**ゲームのルールではなく物語の初期条件**だと最初に線を引く。**§7「書いてはいけないもの」で撤去済み項目を名指しで否定する**（`condition`/`stats`/`counters`/`achievements`/`endings`/`scheduledEvents`/`roles`/`roleAssignments`/`timeline`/`personas`/`characterGates`/`choiceMode`/`reviewGuidance`/`relationFlag`）＝**削除しただけだと学習済みの AI が古い形式を書いてくる**ため。新しく載せたのは `focusCharacterId`（必須・§6.1）・`calendarFormat`・`startNow`・`initialPending`（§5.2）・`introBindings` の新しい形（`{tag,characterId}`）。**サンプル JSON への参照は持たない**（実例が古くなるたび誤りごと写されるため。代わりにチェックリストで自己検査させる）。**このファイルの JSON 例は tsc で検査できる**＝例をオブジェクトリテラルとして公開型に当てると、欠けている必須項目と撤去済みなのに残っている項目の両方が出る（F5 で実施。検査ファイルはコミットしない）。
-> **`types.ts` の公開データ型を変えたら同じコミットでこのガイドも更新する**（AGENTS.md と同じ扱い）。ここが型より古くなると、AI は書けるはずの項目を書かず、最悪の場合**撤去済みの書き方を出力して黙って壊れる**。
-- `ガイド_ローカルLLMで動かす.md` — **利用者向けの説明書**（設計書ではない）。Ollama / LM Studio のインストール → モデル選び → OpenAI 互換 API → デリストへの接続 → ローカル特有の勘所（**思考モデルの `max_tokens`**・`num_ctx`・構造化出力・レビュー分割）→ 切り分け表。速度の数字は `R5検証チェックリスト.md` §4 の実測に測定環境つきで紐づける。**公開時のオンライン説明書・アプリ内ヘルプへ流用する前提**なので、画面名は現行 UI の表記に合わせる。**「全機能がオフラインで動く」とは書かない**（ネットワーク完全遮断の通し検証が未実施＝R5' §3）
-- `環境_ローカルツール_AI用.md` — このマシンで CLI から使えるコマンドの一覧（`winget list`＋`choco list` 由来・2026-07-23 時点）
-- `設計_環境音ピン_実験.md` — 環境音ピン（スクロール連動サウンドスケープ）の**要望まとめ・確定方針**（2026-07-26 合意）。製品方針の文脈（立ち絵・全面背景・BGM を作らない理由／残す視覚聴覚要素の判定軸＝pull型・準備ゼロ・位置固定）・v1 スコープと非スコープ・音源は内蔵カタログのみで blob ストア/GC/カセット同梱が全部不要になる根拠・却下案
-- `設計_環境音ピン.md` — 上記を実装可能な設計へ落としたもの（AM1〜AM3・**実装済み**）。挿絵実装の実測調査を踏まえ、要望書の未決点（アンカー粒度・型・半径・カーブ）を全部確定。アンカーは `{messageId, lineIndex}`＝原文 `split('\n')` の行番号で、**Range 方式は却下し「レンダラの行位置に不可視マーカー要素を差し込む」方式**（マーカーが Y の測定点とガター表示を兼ねる＝位置計算の JS が不要）。半径はチャット領域高さの倍数、カーブは raised cosine、追従は一定速度、同時発音は上位3本、声は soundId ごとに1つ
-- `環境音_音源調達リスト.md` — 内蔵環境音28本の調達作業リスト（id / 表示名 / カテゴリ / 英語検索語 / 優先度★8本）。**ライセンスは CC0 限定**（Pixabay・Zapsplat・BBC は再配布/帰属条項で除外）・素材選びの基準・`ffmpeg` の加工手順（切り出し→-23 LUFS 統一→クロスフェードループ→OGG）。分担は DL＝ユーザー / 加工＝Claude
-- `設計_画像生成の簡易化.md` — `archive/設計_画像生成連携.md` 基盤の上に載る再設計（接続先選択・プロンプトスタイル・コスト表示）。**I1〜I5 実装済み**（2026-08-09 実測後）。I1=openrouter-image（`/api/v1/images`・`quality:low` で 1/18 のコスト・42モデル）／I2=PromptStyle（`natural`/`tags`・`combineWithDefaults` 1箇所）／I3=imageSetup 初回案内の1回表示（非永続）／I4=ComfyUI ワークフロー自動検出（`SaveImage` から到達可能ノードのリンクを辿る）／I5=Civitai コミュニティモデル枠（Buzz・`whatif=true` コスト事前計算・AIR は API の `air` フィールドをそのまま使う）
-- `設計_プロンプト構造とキャッシュ.md` — プロンプトの組み立て順・注入位置（深さ）・プロンプトキャッシュ（2026-08-02 合意・**PC-B 以外は実装済み**）。リクエスト5種（本編/選択肢/レビュー/次シーン候補/画像起案）の棚卸しとキャッシュ可否・`buildSystemPrompt` の三層化（ロアを先頭から後方へ）・注入位置は system／末尾（深さ0）／深さ3 の3段階で欄ごとに設計決定（ユーザー設定は作らない）・原文窓の予算制と畳み方3原則・迎合対策（状態を帰結に接続する／失敗の許可は却下）・システムと世界観作者の領分の線引き。PC1〜PC6
-- `設計_ゲーム性向上バックログ.md` — 「同人ゲー・エロゲと比べて何が足りないか」から出たゲーム性候補の採否台帳（2026-08-02 合意・**G1〜G4 実装済み 2026-08-04・G5 不採用確定 2026-08-06**）。採用＝`Clause` への `eventFired` 節（シナリオグラフ。最優先）／ロアの解禁条件／`WORLD_PRESETS` を中立な既定1つへ＋カセットから素材を取り出す導線。保留＝ステータスの自然減衰（`reviewGuidance` で代替可・導入理由は迎合の固定化ループの遮断）。却下＝「知っているが明かすな」型のシークレットロア／プロンプトで失敗を許可／ダイス判定（選択肢が AI 生成なので作家の仕込みにならない）／難易度でカセット購入を動機づけること（作り手＝集客導線を削る。下限でなく上限を上げる）。海外コミュニティの迎合対策の一覧つき
-- `詳細設計_プロンプト構造とキャッシュ.md` — 上記2件のうち**プロンプト側の実装詳細設計**（2026-08-02・**PC0・PC-A・PC1+PC4・PC2'・PC-C+PC3 実装済み／PC-B は 2026-08-06 に実測完了＝採用案なしで対照のまま確定・ハーネスは撤去**）。冒頭に**実 API での計測結果**を持つ（`deepseek-v4-flash`/OpenRouter）＝①`usage` は無フラグで最終 SSE チャンクに載る②**キャッシュ粒度はメッセージ単位**＝system を1文字でも変えると system 全体が無効（＝**system 内の並べ替えはキャッシュに無価値**）③配置別ヒット率（同一再送96% / system 先頭・末尾・中ほど 2% / 深さ0 95% / 深さ3 87%）④**ヒットはレプリカ確率的**⑤OpenRouter は同一モデルでも上流を分散する⑥**R2 は 0% ではなく自系列に乗っている**（実測46%）。**上位設計から3点変更**＝C1: PC1 の目的を「三層への並べ替え」から「system を毎ターン byte 一致させる」へ（PC1+PC4 を統合）／C2: **PC2（R2 の接頭辞共有）を却下し対案「文脈を削る」を採用**（期待値で負けるため）／C3: PC-B の測定を2ターン制へ修正（1応答では帰結が描かれない）。フェーズ PC0→PC-A→PC-B→PC1+PC4→PC2'→(PC-C+PC3)
-- `詳細設計_ゲーム性向上.md` — 上記2件のうち**ゲーム性側の実装詳細設計**（2026-08-02・**G1〜G4 実装済み（2026-08-04）／G5 は 2026-08-06 の実測で不採用が確定＝§5.4**）。G1=`eventFired` 節（`usedEventIds` の**前方一致**・当事者の組は v1 では問わない・`matchGroups` の引数追加ではなく **`ConditionContext` オブジェクト化**を採用）／G2=消化済みイベントの可視化（**世界観エディタではなくステータスドックへ**＝素材はセッションの `usedEventIds` を読めない・**未発火は出さない**＝ネタバレ防止。`firedEventLog` が消化キーを発火順に解決＝定義削除キーは落とし、当事者名は表示直前に解決してリネームに追従）／G3=ロアの解禁条件（`LoreEntry.condition`。**`resolveRefs` で `gateLoreByCondition` を1段挟む**＝`lorebook.ts`/`prompts.ts` は無改修・循環依存を避ける・**`alwaysOn` より条件が強い**・**overlay には足さず通知のみ**＝`Session.revealedLoreIds` で1回だけ・判定文脈は「確定後 state ＋ 確定後 `usedEventIds`」）／G4=`WORLD_PRESETS` 廃止＋複製(fork)導線（`duplicateWorld`/`duplicateCharacter`＋`copyNameOf`。**世界観の内部 id は振り直さない**＝セッションの `defId` 参照が切れるため・**アバター画像 id は共有**・`newWorld()` の既定は「信頼」＋「好感度」）／G5=`decayPerScene` は**保留のまま実装しない**・再開条件（`statChanges` の符号分布）の**読み取り口だけ設定モーダルの実測記録に追加**（減少の割合が1割未満なら保留を解く）。**イベントの連鎖は1シーンに1段ずつ**（実績の連鎖解決と非対称）
-- `計測_迎合対策文面.md` — PC-B の**実測記録（2026-08-06・完了）**。740会話・1480応答・2フィクスチャ。**採用条件を満たす案は無く、システム側の文面は対照のまま確定**（ハーネスは撤去）。`leak` 0/740・`stall` 0/740／最も強い合成案が最も悪い数字を出した／効いているのはキャラ定義と関係性 prose。**踏んだ落とし穴を2つ記録してある**＝①キャラ定義に「契約外は引き受けない」と書いてあると文面の効果が測れなくなる②判定 LLM が `condition` を `hesitate` と誤分類して受容率を水増しする（人手で20件読んで発見・全件再判定した）。再現手順は §5
-- `設計_ステータスエンジン.md` — 状態エンジン（関係性 prose＋事実の数）。ADR-1 の実装計画（P1〜P5）
-- `設計_ワールド再利用とオーバーレイ.md` — セッション・オーバーレイ（発見ロア／キャラ成長の素材↔セッション分離）。B1〜B4
-- `設計_画像カードとアバター.md` — PNG カード入出力・アバター画像化。P1〜P4
-- `設計_画像生成連携.md` — ImageProvider 抽象層・ImageGenModal・挿絵・セッションカード。G1〜G4
-- `設計_画像改善_立ち絵と生成ジョブ.md` — バックグラウンドジョブ・ギャラリー・立ち絵/表情差分/背景。V1〜V4。**立ち絵・表情差分・背景は 2026-08-01 に撤去済み**（製品方針＝「挿絵入りの本」。`公開計画_マネタイズと配布.md`）＝残っているのはバックグラウンドジョブとギャラリーのみ
-- `設計_画像改善_V5_不具合修正とステージ改善.md` — 立ち絵保存バグ修正・ステージのバックドロップ化・起案タグ維持。V5a〜V5c。**ステージ（立ち絵・背景バックドロップ）は 2026-08-01 に撤去済み**＝現存するのは起案タグ維持のみ
-- `設計_Tauri化.md` — デスクトップ化（T0=画像込みエクスポート → T1=CORS-free HTTP → T2=アダプタ層 → T3=ファイルストレージ → T4=配布）
-- `設計_セーブロードと分岐.md` — チェックポイント方式（C1=基盤 → C2=ツリーUI → C3=しおり）
-- `設計_品質プロンプトのユーザー定義化.md` — スタイルプリセット廃止・接続先ごとのデフォルトタグ。Q1〜Q5
-- `設計_構造化出力.md` — `@名前「セリフ」`行タグ・graceful degradation（D-1〜D-6）。ST1〜ST5。**感情トークン `(感情)` は 2026-08-01 に廃止**（立ち絵と同時撤去＝唯一の消費先だったため。パーサにも後方互換を残していない）
-- `設計_UI全体再検討.md` — UI 全体の0ベース再検討・ADR-UI・ロードマップ UI-0〜UI-7
-- `設計_UI再設計_実装詳細.md` — UI-0〜UI-7 の実装者向けフェーズ別手順書。**UI 周りを触る時は該当節を読み直し、乖離が出たら本書も同コミットで修正**
-- `設計_開始テンプレートとゲームカセット.md` — 世界観の開始テンプレート（W1=実装済み・コピー方式）とゲームカセット専用カード `aist_cassette`（W2=実装済み）。検討経緯・却下案（フォルダ方式・閉じたカセット等）含む
-- `設計_フィードバック反映2.md` — 実使用フィードバック第2弾（2026-07-11 合意）。プロンプト注入タイミングの回答表・ユーザー決定事項（導入文=そのまま掲載／設定UI=3案ブランチ試作／カセット取込=棚登録のみ）・FB2-A（即効修正4件=分岐ツリー枝連結・カセット画像プレビュー・maxTokens既定・D&D枠。実装済み）／B（導入文・主人公像削除・開始時間帯）／C（セッション設定UI 3案）／D（右クリック＋複数選択削除）／E（カセット棚）の手順書
-- `設計_フィードバック反映3.md` — 実使用フィードバック第3弾（2026-07-11 合意・**全フェーズ実装済み**）。FB3-A（本文表示の即効改善=開始シーン見出し・マーカー罫線化・自動スクロール停止・分岐ラベル・選択UX・選択肢生成ボタン）／B（分岐チェックポイントの分岐化=anchor 親付け＋SourceTree 風フルグラフUI）／C（演出ディレクター廃止・世界観イベント一本化）／D（セッションカード全廃＋カセット専用エディタ）の手順書。決定事項: セッションカード読み書きとも撤去／カセットは専用エディタ＋セッション種も可／演出は素材ごと全廃／ツリーはフルグラフ
-- `設計_分岐ツリー生成順と導入ロール.md` — 分岐ツリーの生成順表示（BT1/BT2=実装済み）＋番号スロット式導入ロール（OR1〜3=**未実装のまま廃止**・却下経緯として保存）
-- `設計_配役システム.md` — 世界観ロール（`World.roles`）とセッション配役（`roleAssignments`）・導入文 `@ロール名` の実名解決・【配役】system 注入・開始時配役モーダル。CA1〜CA3（**実装済み**・2026-07-12 合意。**2026-07-20、`設計_ロールグループと定量条件.md` の Part A で @ロール名 の実名解決は置換タグへ分離・ロールはグループ化された**）
-- `設計_ロールグループと定量条件.md` — FB7-D の作り直し（2026-07-20 合意）。Part A（**実装済み**）＝名前置換（`@タグ`）を導入文専用機能へ分離（`IntroTag`/`IntroTagBinding`・`casting.ts`）／ロールをグループ化（`WorldRole`＝1..N人・`roleMembers`・【配役】注入一本化）。Part B（**実装済み**）＝`Clause.group`＋`matchGroups`＋`charVar`/`matchAssignments` 撤去＋`subject`＋`@ロール名`/`@相手` 置換（`bindRoleNames`）＋実績/エンディング/イベント適用。拡張（**実装済み**）＝条件エディタに「N人ぴったり」選択肢を追加（実績/エンディング/イベント共通の `ClauseRow`）。`matchGroups`/`checkEndings` は `exactCandidates`（満たした全員の候補集合）を返すようになり、エンディングレビュー（`SceneReviewModal`）は候補が n 人を超える subject な `exactly` 群ごとに n 個のプルダウンを表示して当事者を選ばせる（既定＝参加キャラ順の先頭 n 人・`confirmSceneReview` に `endingExactSelections` として渡す）。実績・イベントは自動判定でプルダウンが無いため、実績は `exactly` を `atLeast` に読み替え（B-5・既存どおり）、イベントは満たした先頭 n 人を既定選択のまま自動発火する
-- `設計_エンディング.md` — World のエンディング定義（`EndingDef`＝条件・エピローグ指針・auto/hidden/fallback）・レビュー確定時のコード判定・エピローグシーン・完結演出・周回横断到達記録。E1〜E3（**実装済み**・2026-07-17）
-- `設計_フィードバック反映5.md` — 実使用フィードバック第5弾（2026-07-18 合意）。シーン区切りのペース制御・時間帯固定・最初の方向付け・既定モデル・Library インポート・レビュー編集モード（FB5-A〜C）の決定と手順書。③ステージ透かし改善は**ステージ機能ごと撤去されたため消滅**（2026-08-01）
-- `設計_フィードバック反映6.md` — 実使用フィードバック第6弾（2026-07-19 合意・**全フェーズ実装済み**）。FB6-A（セッション画像記録=分岐から独立した生成画像アルバム・全チェックポイント走査バックフィル・ギャラリー「すべての記録」タブ）／B（挿絵・背景の後付け生成=メッセージ単位アンカー・過去シーン・起案文脈をアンカーまでに変更）／C（明示分岐=自動フォーク廃止・上書き方式・⑂ボタン・保護ルール・大きい巻き戻しのみ3択確認）／D（分岐ツリーのレビュー単位折りたたみ=既定折りたたみ・condenseTree 辺縮約）の決定と手順書。実装順は A→B→C→D 固定（C の削除は A の画像保全が前提）
-- `設計_フィードバック反映7.md` — 実使用フィードバック第7弾（2026-07-19 合意・**A〜C・E 実装済み・D は `設計_ロールグループと定量条件.md` で作り直され撤去**）。FB7-A（即効修正=画像ズームのポータル化＋等倍トグル・「スタット」→「ステータス」表記統一・最初の方向付けの開始テンプレート化）／B（分岐ツリーの履歴リンク化=行クリック＝移動・`lineTipOf`・`navigateToNode`・スクロールアンカー）／C（ポイントのレビュー確定一本化=選択肢 effects 廃止・変動幅 deltaMin/deltaMax・世界観レビュー指針 `reviewGuidance`）／D（条件エンジンのキャラ変数化=`Clause.charVar` 相手1/2/3・`matchAssignments`。2026-07-20 破棄・後継は `設計_ロールグループと定量条件.md`）／E（発見キャラ=新キャラ登場ポリシー `newCharacterPolicy`・未解決話者の？バッジ／レビューの `newCharacters`・`characterDraftQueue` で採用フロー1本化・ライブラリ直行保存。**実装済み 2026-08-05**）の決定と手順書
-- `設計_フィードバック反映8.md` — 実使用フィードバック第8弾（2026-07-21 合意）。15項目を5バッチ A〜E に整理し実装順 A→B→C→D→E で合意。**A〜E 全バッチ実装済み**（A=即効修正4件・B=完結の作法・C=ModelsLab＋生成パラメータ・D=読書ナビUX・E=**UI全面見直し**〔E1 用語統一/説明折りたたみ・E2 絵文字/文字記号の全廃→icons.tsx・E3 セッション設定4タブ再配分/世界観ナビグループ化/条件の文章形・E4 ドックのラベル付きタブ化(A案)/メニュー整理/設定への直行導線。2026-07-23〕）
-- `設計_フィードバック反映9.md` — 実使用フィードバック第9弾（2026-07-25 合意・**A〜C 全バッチ実装済み**）。FB9-A（完結後は分岐のみ操作可＝`branchToContinue` 廃止・本文中の分岐ボタンを完結後も表示〔末尾メッセージを除く〕・巻き戻し時の `ending` 整理 `rewindEndingFor`・完結中は挿絵/背景のみ許可）／B（到達エンディング記録のセッション化＝`Session.originCassetteId`・`EndingRecord.cassetteId`・ステータスはセッション単位/カセット棚は通算・「見た結末」→「到達エンディング」）／C（**関係フラグの全面撤去**＝`Relation.flags`/`RelationUpdate.flagsAdd`/`relationFlag` 節を削除。**置き換えの新しい型は作らない**〔一度きりの出来事はキャラ別カウンター 1回以上で表現できるため。§4.2 に「定義済みフラグを新設」→「内部はカウンター共有」→「新設しない」の2度の方針転換の経緯と根拠あり〕。代わりに `CounterDef.note`〔計上条件〕をレビューへ渡し、条件エディタのカウンター行に単位「回」を付ける。旧 `relationFlag` 節は `stripLegacyFlagClauses` が読み込み時に除去）の決定と手順書。実装順は A→B→C（C が最後）
-- `設計_フィードバック反映4.md` — 実使用フィードバック第4弾（2026-07-12 合意）。FB4-A（開始時間帯の防御的修正=クランプ＋開始→次シーンのプレビュー行。※繰り上げロジック自体は正しいことを全経路確認済み・症状は「夜が先頭の区切り定義」疑い）／B（選択肢の既定を auto に）／C（特別イベントの時間帯指定 `ScheduledEvent.slot`）／D（タイムライン設定欄のグレーアウト化=チェック OFF でも常時表示・fieldset disabled）／E（物語設定3欄の説明強化=3欄維持を決定）の手順書
-- `設計_UI改善_フィードバック反映.md` — UI-0〜UI-7 実装後の実使用フィードバック＋コード再監査（2026-07-10）に基づく修正フェーズ F0〜F5 の実装手順書。問題インベントリ（報告 R1〜R19・監査発見 A1〜A13、根本原因の診断付き）→ F0=即効バグ修正（没入グリッド崩壊・checkbox全幅化・System幅等）／F1=分岐ツリー刷新（主線を現在で止める・章折りたたみ・⑂/▷展開・行アクション⋯集約・ドック幅リサイズ `ui.dockWidth`）／F2=リーダー設定の数値化（UiPrefs を number 化・`normalizeUiPrefs`）＋没入案内トースト（`infoNotice`）／F3=動線（生成ボタンをコンポーザーへ・タイトル鉛筆・セッション右クリックメニュー・新規作成→設定自動オープン・ブランド撤去）／F4=発見ログのタブ化＋編集スコープ分割／F5=密度・面の階層（`--bg-rail`・余白締め・railラベル）
+- 骨格: `Rail.tsx`（Play/Library/System）／`Sidebar.tsx`（セッション一覧・素材ナビ・D&D 取込）／`ChatPanel.tsx`（会話画面本体。トップバー・本文・コンポーザー・右ドック）／`ContextDock.tsx`（状態/発見/画像/分岐/ジョブ のタブ。`StatusView`/`DiscoveryView`/`GalleryModal.GalleryBody`/`BranchTreeModal.BranchTreeBody`/`ImageJobsPanel.ImageJobsBody`）／`LibraryBar.tsx`／`CommandPalette.tsx`／`FirstRunWizard.tsx`（接続先5経路＋接続テスト）／`SettingsModal.tsx`（`SettingsBody`＝System ページ: 接続先・既定モデル・データ入出力・GC・クレジット）／`ImageProviderSettings.tsx`
+- 共通部品: `ModalShell`（全モーダル。`dirty` で破棄確認）／`DialogHost`／`MenuPopover`／`ZoomOverlay`（`document.body` へポータル）／`icons.tsx`（自前 SVG。絵文字・文字記号は使わない）／`EntityAvatar`／`NumberInput`／`CsvInput`／`HelpDetails`／`ActivityIndicator`／`IntroTagDefEditor`・`IntroTagFields`
+- Play: `StructuredMessage.tsx`（構造化本文の描画。未解決話者に ？バッジ）／`SceneReviewModal.tsx`（確定前は呼び出し単位の進行表示）／`SceneEditor`／`StoryLogModal`（あらすじ一覧）／`StatusPanel`・`DiscoveryPanel`（編集）／`EndingModal`（結末の提案）／`InterludePanel`（幕間）／`CharacterDraftModal`（発見キャラの起案→`CharacterEditor` draft）／`ImageGenModal`／`StoryExportModal`／`ReaderSettings`／`AmbientPinLayer`・`AmbientPinModal`・`AmbientRadiusField`
+- Library: `library/CharacterLibrary`・`CharacterEditor`・`WorldLibrary`・`WorldEditor`（フルページ。基本／ロア／関係性の次元／開始テンプレート）・`CassetteLibrary`・`AvatarField`・`LibraryMultiSelect`／`CassetteEditor.tsx`／`SessionEditor.tsx`（基本／物語／進行／AIと出力 の4タブ）
 
 ## データモデル（要点）
-すべて「再利用可能な素材ライブラリ」をセッションが参照する構造。
 
-- **Provider** — `{id,label,kind:'openrouter'|'openai',baseUrl,apiKey}`。localStorage のみ・エクスポート除外
-- **ImageProvider** — `{id,label,kind:'comfyui'|'openai-image'|'modelslab',baseUrl,apiKey,model,workflowJson,defaultPositive?,defaultNegative?}`。画像生成の接続先（LLM の Provider とは別リスト `imageProviders`）。localStorage のみ・エクスポート除外。`defaultPositive?`/`defaultNegative?` は生成時に先頭結合される定型タグ（`defaultNegative` は comfyui/modelslab で有効。openai-image は API 非対応）。`modelslab`（FB8-C）＝`apiKey`→body の `key`／`model`→`model_id`／`baseUrl`→`.../api/v6`
-- **Avatar** — `{imageId?, color}`。`imageId` は画像ストア id（未設定なら色＋イニシャル。表示は `EntityAvatar`）
-- **Character** — name/persona/speechStyle/appearance/exampleDialogues/greeting/avatar/tags＋`developments: Development[]`＋`model?`（chat 群像で話者確定時のみ）＋`imagePrompt?`（画像生成用固定英語タグ）
-- **World** — description＋`entries: LoreEntry[]`（`keys`/`content`/`alwaysOn`/`enabled`/`order`）＋`relationAspects: RelationAspectDef[]`（関係性 prose の次元・ワールド固定）＋`calendarFormat?`（暦の書式見本1行。レビューが `now` を書くときの体裁だけ揃え、**粒度は縛らない**。F2）＋`startPreset?: WorldStartPreset`（セッション開始テンプレート＝genre/premise/opening/openingTitle/initialDirective〔最初の方向付け・FB7-A〕/newCharacterPolicy/authorNote/openingSceneNote/`introTags?: IntroTag[]`〔導入文専用の置換タグ定義・A-1〕/`startNow?`〔開始時点の現在時刻〕/`initialPending?`〔最初から積む予定スリップ＝廃止した特別イベントの受け皿。F2〕。世界選択時にセッションへ**コピー**され素材側は不変。反映は `startPresetPatch`/`hasStartPreset`）。**F1 で `scheduledEvents`/`stats`/`counters`/`achievements`/`endings`/`roles`/`reviewGuidance`/`LoreEntry.condition` を、F2 で `timeline` を撤去**（→ `docs/設計_物語の簡素化.md`）。**`WORLD_PRESETS`（恋愛/RPG/経営）は G4-b で廃止**＝`newWorld()` が中立な既定（関係次元「信頼」）を1つ入れる
-- **Session** — characterIds/worldId/**`focusCharacterId`**（中心人物＝`characterIds` のいずれか。物語モードでは視点・ロールプレイではユーザーが演じる人物・**関係性 prose の宛先も兼ねる**。空文字は「未選択」で `startStory` が開始を拒否する。**「中心なし」は許さない**＝許すと関係が N×(N−1) に膨らむ。F3・設計 §2.5）＋`introBindings?: IntroTagBinding[]`（`story.introTags` の各タグ→参加キャラ1名の対応付け＝`{tag,characterId}`。A-1）/authorNote/story（`StorySetup` に `introTags?: IntroTag[]`＝世界選択時に `WorldStartPreset.introTags` からコピーされ、以後はセッション側で自由に編集可）/`scenes: Scene[]`/currentSceneId/narrativeStyle（novel|chat）/`reviewModel`/`choicesModel`/`newCharacterPolicy?`（allow/avoid。undefined=allow。`buildSystemPrompt` の【新しい登場人物】として注入・FB7-E）/`state: SessionState`/`overlay: SessionOverlay`/messages/model/temperature/maxTokens＋`structuredOutput?`（本編を行タグ形式で書かせる。`newSession` は既定 true・既存は `?? false`）＋`reviewSplit?`＋`rawWindowFromSceneId?`＋`archived?`（一覧から既定除外）＋`originCassetteId?`＋**`endingGoal?: EndingProposal`**（目指す結末＝system の【目指す結末】へゆるく注入するだけで**到達判定はしない**）＋**`ending?: StoryEnding`**（確定した結末＝`{title,outline,decidedAt,epilogueSceneId}`。チェックポイント対象＝**分岐で戻れば未確定に戻る**ので passthrough には入れない。F4・設計 §2.7）。**F1 で `roleAssignments`/`characterGates`/`usedEventIds`/`eventAutoFire`/旧 `ending` を、F2 で `timeline` を、F3 で `personaId` を、F4 で `choiceMode` を撤去**
-- **SessionState**（セッション固有・素材化しない）— `{relations, moods, now, place, presentIds, situation, pending, recentDone}`。**数の状態（stats/counters/achievements）は F1 で全廃**＝状態はすべて prose。`now` は**自由文字列でコードは一切解釈しない**（「8月31日 朝」でも「6月半ば」でも「翌年の春」でもよい）。`pending: PendingSlip[]`＝`{id,when,what,bornAt}` の予定スリップで、**本編プロンプトには決して渡さない**（実測: 渡すと 28/30 で無関係な先の予定を列挙した。`計測_時間と予定.md` §4.1）。書き手は第3のレビュー呼び出し（`ReviewPart` の `t`）だけ（F2・設計 §2.4）
-- **SessionOverlay**（セッション固有）— `{lore: LoreEntry[], characterDevelopments: {characterId,developments}[]}`。物語中の発見の上乗せ。**元 Character/World は不変**、レビュー承認の追記先はここ。本編には素材＋オーバーレイの実効ビュー（`resolveRefs` の `effectiveWorld`/`effectiveCharacter`）で注入。`promoteOverlayLore`/`promoteOverlayDev` で元素材へ move 昇格可
-- **Relation** — `{fromId,toId,stance,aspects:{aspectId,note}[],updatedAt}`。**キャラ → 中心人物（`toId === session.focusCharacterId`）の prose**（旧 `toId` の特別値 'hero' は F3 で廃止）。中心人物は自分自身への関係を持たないので本数は N−1。数値ティア（band）は持たない。**恒久フラグ（`flags`）は FB9-C で撤去**＝自由文字列は取り消し手段も無く永久にドリフトするため
-- **Scene** — `{title,note,summary,timeLabel?,foreground?,illustrations?,ambientPins?,interludes?,endedAt?}`。読む側は `illustrations ?? []` / `ambientPins ?? []`。`timeLabel?`＝そのシーン時点の `now` の写し（表示用）、`foreground?`＝直近レビューが作った**突き合わせ済みの一文**で、深さ0へ【いまの状況】として入る唯一の予定由来テキスト（F2）。`interludes?`＝別視点の幕間（`Interlude{id,characterId,text,createdAt}`・F6）で、**読み専用・非正典**＝本編プロンプトにも状態にも影響せず、`storyExport` にだけそのシーンの末尾として載る。**シーン単位のキャスト（`activeCharacterIds`）は CS1 で廃止**＝登場キャラは常に `session.characterIds`。「その場に誰が居るか」は `note`（【現在の場面】）が伝える
-- **AmbientSoundDef/AmbientPin**（AM1・`docs/設計_環境音ピン.md`）— `AmbientSoundDef{id,label,category,url,credit}` は**コード側の内蔵カタログ**（`ambientSounds.ts`）＝世界観データではない。`AmbientPin{id,soundId,messageId,lineIndex,radius?,maxGain?,createdAt}` は `Scene.ambientPins` に持つ。`maxGain?`＝そのピンのピーク音量の上限（素材ごとに主張の強さが違い、-23 LUFS に揃えても蝉は前に出て風は埋もれるため。距離カーブに乗算する）。`lineIndex` は**アンカー先メッセージ本文の `content.split('\n')` 上の行番号**（レンダリング上の折り返し行ではない＝幅・フォントで壊れない。`parseStructured` と両レンダラが同じ単位を使うのでマーカーの差し込み位置と構造的に一致する）。`radius` は**チャット表示領域の高さの倍数**（px 固定だとウィンドウサイズで体感が変わる。UI は 狭い0.6/ふつう1.0/広い1.6 の3択のみ）。`messageId` は挿絵と違い**必須**（アンカーが無いピンは Y を持てない）で、消失時はシーン末尾のメッセージへ実行時フォールバック。**Scene の中にあるのでチェックポイント（分岐）には何もせずそのまま乗る**＝過去へ戻ればその地点のピンが鳴る
-- **SceneIllustration** — `{id,imageId,prompt,negative?,messageId?,createdAt}`。`messageId` 直後に表示（消失時はシーン末尾）。`negative` は結合前のユーザーネガティブプロンプト（`ImageJob.negative` と同じ規約。FB7-A追修）
-- **Message** — role/characterId?/sceneId?/content/choices?/truncated?/pending?＋`kind?: MessageKind`（IN1。`'directive'`＝**書き手 AI への指示**＝主人公のセリフ・行動ではない入力。未設定＝従来の本文で旧データもこちら。**破壊的変更ではないのでセーブ版番は据え置き**）。判定は `isDirective`（`prompts.ts`）に一本化する
-- **ImageJob**（`imageJobs.ts`・store の `imageJobs`・**非永続**）— `{id,label,target,providerId,prompt,negative?,width,height,steps?,sampler?,cfg?,quality?,count,status:'running'|'selecting'|'error'|'canceled',results:Blob[],error?,createdAt}`（`steps?/sampler?/cfg?` は modelslab のみ・FB8-C）。`target`＝`scene-illustration`/`character-avatar`。1枚でも自動採用せず、採用は常にユーザー選択（`applyImageJobResult`）。`store.imageJobToasts`（選択待ち通知・非永続）
-- **Cassette/`cassettes`**（FB2-E）— `{id,title,description,coverImageId?,session,createdAt}`。ゲームカセット（`aist_cassette`）を棚に素材化して保持。`session` は開始状態（`freshSessionOf` 済み）・参照素材は取込時にライブラリへマージ済み。取込＝`importCassette`（棚登録のみ・セッションは作らない・表紙=取込カード PNG を putImage）、新規作成/編集＝`CassetteEditor`＋`upsertCassette`（`newCassette(seed?)` で下書き生成）、開始＝`playCassette`（session を新 id に複製）、削除＝`deleteCassette`。**AppState 直下**（`cassettes: Cassette[]`）・persist 対象・exportBundle/importBundle 対象・画像 GC 集合（`collectUsedImageIds` の第4引数）に含める
-- **BranchNode/BranchTree/`branchTrees`** — `BranchNode{id,parentId,kind:'action'|'scene',label,timeLabel?,createdAt,imageIds,bytes,ending?,star?:{name,thumbImageId?},branchName?}`（`ending`＝突入・完結ノードの結末名＝ツリーで 🏁 表示。`branchName`＝⑂明示分岐の名前・線の先端に付く git ブランチ ref 相当＝ツリーで ⑂ チップ表示。FB6-C）（`parentId:null`=ルート・実体は `checkpointStore` に nodeId で保存）、`BranchTree{currentId,nodes}`。`branchTrees: Record<sessionId,BranchTree>` は **Session の外・AppState 直下**（Session 内だとスナップショット深コピーが木を含んで再帰肥大するため）。persist 対象
-- **SessionImageRecord/`sessionImageLogs`**（FB6-A）— `{id,imageId,prompt,negative?,sceneId?,sceneTitle?,timeLabel?,messageId?,createdAt}`。`negative` は結合前のユーザーネガティブプロンプト（`ImageJob.negative` と同じ規約。FB7-A追修）。採用した挿絵の永続記録（分岐・シーンの生死と独立のアルバム。sceneTitle/timeLabel は採用時点の非正規化コピー）。`sessionImageLogs: Record<sessionId, SessionImageRecord[]>` は **Session の外・AppState 直下**（branchTrees と同じ理由）・persist・exportBundle/importBundle 対象（`mergeImageLogs`＝record id で dedupe マージ）・GC 使用中集合（`collectUsedImageIds` 第5引数）。追記は `applyImageJobResult`（挿絵の採用時）と `backfillImageLogs`（初回起動時の全チェックポイント走査。App.tsx から呼ぶ・`imageLogBackfillDone` フラグで1回・imageId dedupe・実在画像のみ）。削除は `deleteImageRecord`（record 除去のみ＝実体は GC 回収）と `deleteSession`（セッションと運命共同）。UI はギャラリーの「すべての記録」タブ
-- **DiscoveredCharacter/`characterDraftQueue`**（発見キャラ・FB7-E）— `DiscoveredCharacter{name, note}`。検出の2経路（①構造化本文の未解決話者の ？バッジ ②シーン終了レビューの `SceneReview.newCharacters` を承認）はどちらも `queueCharacterDrafts` で **AppState 直下の非永続 `characterDraftQueue: {sessionId,name,note?}[]`** に積むだけで、`ChatPanel` が先頭1件を `CharacterDraftModal` で開く＝**採用フローは1本**。`queueCharacterDrafts` は「参加キャラに解決できる名前（`knownSpeakersOf`＋`matchCharacterByName`）／`NARRATION_NAMES`／待機中の同名」を弾く。保存は `addDiscoveredCharacter`＝`upsertCharacter`（ライブラリの通常キャラ・タグ「発見」）→ `updateSession` で `characterIds` へ追加（CS1 でシーンへの追加は廃止）。**セッション内に埋め込まない**＝カセットの `session` は開始時スナップショットなので汚れず、カード書き出し・他セッションでの再利用がそのまま効く
-- **UiPrefs/`ui`**（`types.ts`）— `{dockTab: DockTab|null, dockWidth, fontSize, lineHeight, contentWidth, speakerIconSize, dialogueTint, ambientEnabled, ambientVolume, immersive}`（`DockTab='status'|'discovery'|'gallery'|'branch'|'jobs'`）。**AppState 直下**（`DEFAULT_UI`）・persist 対象。`fontSize`/`lineHeight`/`contentWidth`/`speakerIconSize`/`dockWidth` は number（F2で段階式 union から数値化）で可変範囲は `UI_LIMITS`。`speakerIconSize` は CSS 変数 `--speaker-icon-size`（既定22px）へ流し、小説形式の行頭アイコン `.st-speaker` を基準に会話劇の `.avatar` が 32/22 の比で追従する。`merge` は `normalizeUiPrefs()`（旧・段階式文字列値 s/m/l/xl・compact/normal/wide 等を数値へ引き継ぎ＋範囲クランプ＋欠落補完の純関数）を通す。更新は `store.setUiPrefs(patch)` に一本化（没入 OFF→ON で `infoNotice` 案内トーストをセット）・編集 UI は `ReaderSettings.tsx`（Aa。スライダー＋数値入力の `RsField`・「表示を既定に戻す」）
+型定義と各フィールドの意味は `src/types.ts` のコメントが正。ここは関係だけ。
 
-## ModelRef 形式
-モデル系フィールドはすべて `"providerId::modelId"` 形式（`::` 区切り）。区切り無しは `providers[0]`（OpenRouter）にフォールバック。空文字は「上位に継承」。
+- **Provider**（LLM 接続先）／**ImageProvider**（画像接続先）— どちらも persist のみ・**エクスポートに含めない**。Tauri では `apiKey` を資格情報ストアへ分離し `state.json` には空で書く
+- **Character** — 人格・口調・外見・セリフ例・`developments`（成長ログ）・`avatar`・`imagePrompt?`・`tags`。中心人物も同じ型
+- **World** — `description`（常時）＋`entries: LoreEntry[]`（`keys`/`alwaysOn`/`enabled`）＋`relationAspects`（関係性の次元）＋`calendarFormat?`＋`startPreset?: WorldStartPreset`（セッション作成時に**コピー**される推奨初期設定。素材側は不変）
+- **Session** — `characterIds`／`worldId`／**`focusCharacterId`**（中心人物・必須。空文字＝未選択で開始不可）／`authorNote`／`story: StorySetup`（genre/premise/opening/openingTitle/initialDirective/introTags）／`introBindings`／`scenes`／`currentSceneId`／`narrativeStyle`／`structuredOutput?`／`reviewSplit?`／`rawWindowFromSceneId?`／`newCharacterPolicy?`／`state`／`overlay`／`endingGoal?`／`ending?`／`archived?`／`originCassetteId?`／`messages`／`model`・`reviewModel`・`choicesModel`／`temperature`／`maxTokens`
+- **SessionState** — `relations: Relation[]`（キャラ→中心人物の有向 prose。`stance`＋次元ごとの `note`）／`moods`／`now`（自由文字列）／`place`／`presentIds`／`situation`／`pending: PendingSlip[]`（`when`/`what`）／`recentDone`
+- **SessionOverlay** — `lore`（発見ロア）／`characterDevelopments`。素材を汚さないための上乗せ。本編には素材＋overlay の実効ビュー（`effectiveWorld`/`effectiveCharacter`）で注入。`promoteOverlay*` で素材へ **move**
+- **Scene** — `title`/`note`（時・場所・居る人物）/`summary`/`timeLabel?`/`foreground?`（突き合わせ済みの一文）/`illustrations?`/`ambientPins?`/`interludes?`/`endedAt?`
+- **Message** — `role`/`characterId?`/`sceneId?`/`content`/`choices?`/`truncated?`/`pending?`/`kind?: 'directive'`（書き手への指示。判定は `isDirective`）
+- **AppState 直下（Session の外に置くもの）** — `branchTrees: Record<sessionId, BranchTree>`／`sessionImageLogs`／`cassettes: Cassette[]`／`ui: UiPrefs`／`defaultModelRef`／`favoriteModels`／`lastImageProviderId`／`lastDraftModel`。**`branchTrees`・`sessionImageLogs` を Session に入れない**（スナップショットに含まれて再帰肥大・復元で巻き戻る）
+- **非永続（`partialize` 除外）** — `imageJobs`/`imageJobToasts`/`reviewProgress`/`sceneReview`/`endingProposals`/`interludeReflection`/`characterDraftQueue`/`scrollTarget`/`usageLog`/`schemaError`/`modelsByProvider`/各 `is*` フラグ
+- **BranchNode/BranchTree** — `{id,parentId,kind:'action'|'scene',label,timeLabel?,createdAt,imageIds,bytes,ending?,star?,branchName?,anchorMessageId?}`／`{currentId,nodes}`。実体（gzip した Session）は `CheckpointStore`
+- **Cassette** — `{id,title,description,coverImageId?,session(開始状態),createdAt}`。棚に置く配布単位。`playCassette` が新セッションへ複製し `originCassetteId` を刻む
 
-解決の優先順位:
-- 本編: `character.model`（chat 群像・話者確定時のみ）→ `session.model`
-- レビュー用: `session.reviewModel` → `session.model`
-- 選択肢用: `session.choicesModel` → `session.model`
+## ModelRef
 
-新規作成時の初期値: `createSession`（新規セッション）と `playCassette`（カセット開始）は System の「新しい物語の既定モデル」＝AppState 直下 `defaultModelRef`（persist のみ・エクスポート除外＝プロバイダ id が端末固有のため）を刻印する。未設定なら `DEFAULT_MODEL`。カセット下書き（`newCassette`/`freshSessionOf`）はモデル参照を持たない（空文字）。
+モデル系フィールドは `"providerId::modelId"`。区切り無しは `providers[0]` へフォールバック、空文字は上位へ継承。解決: 本編 `session.model`／レビュー `reviewModel → model`／選択肢 `choicesModel → model`（`mainModelOf`/`reviewModelOf`/`choicesModelOf`）。新規セッションとカセット開始は `defaultModelRef`（未設定なら `DEFAULT_MODEL`）を刻む。カセット下書きはモデル参照を持たない。
 
-ヘルパ: `mainModelOf(session)`/`reviewModelOf(session)`/`choicesModelOf(session)`（store.ts エクスポート）。**キャラ別の専用モデル（`Character.model`）は撤去した**（2026-08-16。一度も使われず、本編モデルの解決経路とカード書き出しの除去処理を余分に持つだけだった）
+## 永続化とスキーマ版番
 
-## 永続化とスキーマ版番（R1・2026-08-15 実装。クリーンブレイク方針は終了）
-`store.ts` の persist `name: 'ai-storytelling-store-v3'`。**公開後を見据えて `version`/`migrate` を導入した**（旧「後方互換は持たない・移行連鎖を全廃」＝ADR-1 に添えられていた前提は失効。ADR-1 本体〔状態の表現方式〕は有効）。 移行の定義は `src/lib/schema.ts` に集約する。
+- zustand `persist`（`name: PERSIST_KEY`・`createJSONStorage(() => stateStorage)`）。**`set()` のたびに全状態を `JSON.stringify` する構造**＝既知の性能問題（計画 P2 で分割）
+- 版番は3系統: `APP_STATE_VERSION`（入れ物＝zustand の `migrate`）／`SAVE_DATA_VERSION`／`CASSETTE_DATA_VERSION`（後2つは `partialize` が `schemaVersions` として書き、`merge` で毎回判定）。移行は `migrations[from]` を1段ずつ。**段を飛ばす一発変換を書かない**
+- 読めなかったら `blockStateWrites()` で書き込みを封印し `schemaError` → App.tsx が案内画面（バックアップの場所を提示）。「無視して続ける」は作らない
+- **スキーマ変更の手順**: 型 → 初期値/factory → `exportBundle`/`importBundle` → `partialize` → 破壊的なら該当版番 +1 と移行関数1本。persist キーは変えない
+- チェックポイント: 3契機で自動記録（本編生成の正常完了＝action／編集・削除直後＝action／シーン終了確定＝scene）。`stableSessionJson` 一致なら積まない。書込は sessionId ごとに直列化
 
-- **3系統を別々にバージョニングする**（片方の変更でもう片方を壊さないため）。`APP_STATE_VERSION`＝永続化の入れ物（zustand persist の `version`）／`SAVE_DATA_VERSION`＝セーブデータ（`sessions`/`branchTrees`/チェックポイント）／`CASSETTE_DATA_VERSION`＝カセット定義。いずれも現行 `1`
-- 入れ物の版番は zustand が持つ仕組み（`migrate`）に乗る。**セーブ／カセットは `partialize` が書く `schemaVersions: {save, cassette}` を `merge` 側で毎回見る**（入れ物の版番が据え置きでも単独で上げられるようにするため）
-- 移行は `migrations[from]` を1段ずつ適用する連鎖。**段を飛ばす一発変換を書かない**（途中の版から上げてきたデータが素通りする）
-- **読めなかったときは黙って落とさない。** `blockStateWrites()`（`platform.ts`）で以後の書き込みを封印して保存済みデータを原状のまま残し、`AppState.schemaError` を立てて App.tsx が案内画面（`.app.solo` ＋ `.schema-block`。バックアップの場所を提示）に差し替える。**「無視して続ける」導線は作らない**（保存が全部封印されているため、続けても何もできない）
-- `exportBundle.version` は現行 `1`、`importBundle` は現行スキーマのみ id マージ
+## プロンプトの構造
 
-**スキーマ変更時の手順: 型更新 → 初期state/factory更新 → exportBundle/importBundle 反映 → partialize に新フィールド → 破壊的なら `schema.ts` の該当版番を +1 して移行関数を1本足す。**（persist キーは変えない＝旧データを捨てない）
+本編は **system／深さ3／深さ0 の3層**（`prompts.ts`）。理由はプロンプトキャッシュの粒度がメッセージ単位だから（system が1文字変わると全体が無効）。
+
+| 層 | 変わる頻度 | 中身 |
+|---|---|---|
+| system（`buildSystemPrompt`） | **シーン境界でのみ** | 世界観概要＋常時ロア／これまでのあらすじ／【現在の場面】＝`scene.note`／【時間】＝`state.now`／【状態】＝関係性 prose・気分／登場人物定義（中心人物ラベル付き）／新しい登場人物の方針／【中心人物】／【目指す結末】／物語設定（ジャンル・前提・最初のシーンだけ初期方向付け）／文体ルール／構造化出力の形式 |
+| 深さ3（履歴末尾から3件手前。足りなければ system 直後） | 毎ターン | 【今回の場面に関わる設定】＝キーワード一致ロア／【常に踏まえる重要事項】＝`authorNote`＋`CONSEQUENCE_CLAUSE` |
+| 深さ0（末尾） | 毎ターン | 【今回の応答】話者指定（会話劇）／【いまの状況】＝`scene.foreground`／【シーンの収束】/【締め】ナッジ（文字数閾値超過時）／形式の短い再掲 |
+
+- 履歴に載せるシーン範囲は `session.rawWindowFromSceneId`（`selectRawScenes`・`beginScene` だけが決める。**シーン途中で動かさない・古い方へ戻さない**）。窓の1つ手前のシーンは末尾だけ「橋」として足す
+- `kind:'directive'` の入力は `DIRECTIVE_HEADER` の固定枠で user として送る。裏方の文脈・書き出しからは落とす
+- `withCacheControl` は Anthropic 系にだけ system 末尾と深さ3の手前にマーカーを付ける
+
+**裏方の呼び出し**（すべて `reviewModelOf`/`choicesModelOf` のモデル・対応モデルなら JSON スキーマ固定）:
+
+| 呼び出し | いつ | 入力 |
+|---|---|---|
+| レビュー A（要約・次シーン候補・成長・ロア追加・新キャラ） | シーン終了 | 本文 transcript＋素材 |
+| レビュー B（関係性 prose 全文書き直し・気分） | シーン終了（A と並列。`reviewSplit===false` なら A/B を1本） | 同上 |
+| トラッカー T（`now`/`place`/`presentIds`/`situation`/`pending` の add・done／`foreground`） | シーン終了（A/B と並列） | 本文＋現在＋予定＋名前だけ |
+| 選択肢 | 〈展開を選ぶ〉を押したとき | `choicesMessages`（専用に圧縮） |
+| 結末の提案／エピローグ | 「終わり方を考える」／確定時 | 本文＋状態 |
+| 幕間／幕間の反映 | 終了シーンで生成／「関係性へ反映」 | そのシーン本文＋関係 prose |
+| キャラ起案／画像起案 | ？バッジ・レビュー承認／挿絵・アバター生成 | 本文＋定義 |
+
+→ **シーン終了1回＝3呼び出し、1ターン＝1呼び出し。** 無料枠（OpenRouter 未課金 50 req/日）では短編1本/日が上限になる。
 
 ## 主要な振る舞い
-- **シーン進行**: `このシーンを終える` → `prepareSceneReview`（要約＋`nextScheduledEvent`＋成長案＋関係値差分。max_tokens 途中切れ対策＝拡大＋`finish_reason==='length'` で最大2回再試行、失敗時は明示エラー。**開始と同時に `reviewProgress` を立てモーダルを開き、あらすじを流し込む**〔`partialString`・16ms スロットリング〕。**`Session.reviewSplit !== false` なら A/B の2本を `Promise.all` で並列実行**〔`reviewController` は1つ共有＝中止で両方止まる・usage は2件記録・**片方が失敗しても続行**してその項目だけ空になる・両方失敗時のみエラー〕。PC-A）→ レビュー確認 → `confirmSceneReview`（成長/イベント反映・関係値加算/気分更新・タイムライン前進・新シーン作成。新シーンのタイトルは 提案タイトル → イベント名 → 連番 の優先＝ユーザー編集を優先。FB5-C）→ `beginScene()` → 選択肢。物語開始は `startStory()`。**導入（`story.opening`）が非空なら AI 生成せずその文章を最初の assistant メッセージとして掲載**（`openingTitle` があれば見出しに採用）→ 選択肢生成＋チェックポイント（FB2-B）
-- **セッション・オーバーレイ**: 素材（Character/World）は再利用資産なので**レビューは書き換えない**。採用された発見は `confirmSceneReview`（`applyDiscovery`）で `overlay` に追記。本編・レビュー文脈は必ず実効ビュー（`effectiveWorld`/`effectiveCharacter`）を読む（片方だけ素材素を読むと発見が消えて見える）。閲覧/編集は `DiscoveryPanel`、昇格は `promoteOverlayLore`/`promoteOverlayDev`（**move**。copy だと実効合成で二重注入）
-- **世界観イベント自動発火** `nextScheduledEvent`: 未消化・day 到来・condition 成立のイベントを day 順・参加キャラ順で1つ選び、人の承認なしでコードが自動発火（`session.eventAutoFire===false` で無効化）。subject な group 節を含む条件は当事者の組ごとに独立発火し、消化キーは `eventUsedKey`（`eventId` or `eventId@charId1[+charId2]`）で `usedEventIds` に積む（素の eventId は旧データ＝全組み消化済み扱い）。note の `@ロール名`/`@相手` は当事者名へ置換（`bindRoleNames`）。**演出タイプ抽選（旧ディレクター・SceneType）は FB3-C で全廃**し、世界観イベントに一本化
-- **状態エンジン**（`Session.state`／ADR-1）: **状態はすべて prose**（F1-b で数の状態を撤去）。`reviewSystem` がレビュー時に `relationUpdates`（stance/aspects 全文書き直し）と `moods` を出力し、**prose は全文置換**。関係次元（`World.relationAspects`）だけがレビューを拘束する。`StatDef`/`CounterDef`/`StatValue`/`CounterValue`/`statChanges`/`counterEvents`/`reviewGuidance`/`clampStat`/`clampReviewDelta`/`clampCounterAmount`/`UsageRecord.deltaSigns` はもう無い。**到達目標は F1-c・配役は F1-d・特別イベントは F1-e で全廃**＝`AchievementDef`/`EndingDef`/`EndingRecord`/`endingRecords`/`Session.ending`/`finalizeStory`/`isSessionFinalized`/`rewindEndingFor`/`OpeningBriefing.tsx`/エピローグ注入/完結ロック が消え、物語に「終わり」の概念は無い（F4 で任意タイミングのエンディングとして作り直す）。配役は `WorldRole`/`RoleAssignment`/`roleMembers`/【配役】注入/`CastingFields`/`CastingModal`/`resolveParties` が消え、**`IntroTag`/`introBindings`（導入文の @タグ 置換）だけが残る**（置換タグの不足はモーダルではなくエラー文言で伝える）。特別イベントは `ScheduledEvent`/`World.scheduledEvents`/`usedEventIds`/`eventAutoFire`/`nextScheduledEvent`/`firedEventLog`/`eventUsedKey`/`Partner`/`RoleParty`/`bindRoleNames` が消え、次シーンの方向はレビューの `suggestions` だけになった。**F4 で読者モデルへ**＝物語モードの入力はすべて書き手への指示（`kind:'directive'`）になり入力の二分化チップが消え、尺の指示〈もっと詳しく〉〈先へ飛ばす〉が常設ボタンになり、`ChoiceMode` は型ごと廃止して〈展開を選ぶ〉のオンデマンド生成1つになった。エンディングは**世界側の定義を持たない別物として復活**（`endingGoal`／`ending`・`EndingModal`・到達判定なし）。**F3 でペルソナを撤去**＝`Persona`/`personas`/`PersonaLibrary`/`PersonaEditor`/`newPersona`/`duplicatePersona`/`importPersonaCard`/`exportPersonaCard`/`aist_persona` カード/`persona-avatar` ジョブ/`IntroTagBinding` の `kind` が消え、中心人物は `Session.focusCharacterId` が指す**ただの参加キャラ**になった（＝全登場人物が等しく `Character`。関係性は `toId === focusCharacterId` の有向ペア）。
-- **時間と予定（F2・2026-09-07）**: `Timeline`／`lib/timeline.ts` を全廃し、`SessionState` が `now`（自由文字列・**コードは一切解釈しない**）／`place`／`presentIds`／`situation`／`pending: PendingSlip[]`／`recentDone` を持つ。更新は**レビュー A/B と並列に投げる第3の呼び出し**（`ReviewPart` の `'t'`・`trackerSystem`・`TRACKER_PROPS`）で、入力は本文＋`now`＋`pending`＋名前だけ＝キャラ定義もロアも関係性も渡さない。結果は `SceneReview.tracker`（`TrackerResult`）に載り、`applyTrackerToState` が `now/place/presentIds/situation` を上書き・`pending` を **add と done の2操作だけ**で更新する。**`pendingDone` は id ではなく `what` の引用**で受け、`matchPendingDone` が正規化して双方向部分一致・**候補がちょうど1件のときだけ消す**（0件でも2件以上でも残す＝誤爆より取りこぼしを選ぶ）。本編への注入は **`now` が system の【時間】／突き合わせ済みの一文が `Scene.foreground` → 深さ0の【いまの状況】**の2つだけで、**`pending` はどこにも渡さない**（計測_時間と予定.md §4.1）。世界側は `World.calendarFormat`（暦の書式見本1行・粒度は縛らない）と `WorldStartPreset.startNow`/`initialPending`（廃止した特別イベントの受け皿）。セーブ版番 save/cassette は 2 へ（`saveDataMigrations[1]`/`cassetteMigrations[1]` が旧 `timeline` を落として `state` を埋める）
-- **選択肢** `genChoices`: choiceMode≠off で各応答後に生成。`choicesModelOf` 使用、`extractJson`→`coerceChoices`（文字列配列・`{"text":...}` ラップを受理。旧 effects は読み捨て）。手動再生成は `regenChoices()`。**選択肢は加点を持たない**（FB7-C）＝クリックはそのまま `send`。**文脈は `buildMessages` を使わず `choicesMessages` が専用に圧縮**（PC2'。登場人物一言＋現在状態＋直前あらすじ1件＋直近本文数件のみ。R1 との system 接頭辞共有＝上位設計 PC2 は実測で却下）
-- **次シーン候補の再生成** `regenerateSuggestions`: レビュー画面で候補を作り直す（`nextSceneSystem()`。方向性は発火中の特別イベント有無のみ）
-- **入力の二分化**（IN1・`docs/設計_入力の二分化とローカルLLM案内.md`）: コンポーザーの入力は「主人公として書く」（既定）と「書き手に指示」の2択で、後者は `send(text, speakerId, 'directive')` が `Message.kind='directive'` として積む。**指示もそのまま生成が走る**（＝方向づけ付きの「続ける」）／**その場かぎり**（常設したい方針は `authorNote` の担当）／**履歴には残す**。本編プロンプトでは `buildMessages` の `toChat` が `DIRECTIVE_HEADER` の**固定枠**をかぶせて user として送る（枠を可変にすると過去メッセージが書き換わってキャッシュが切れる）。**深さ0への追加注入も system への説明追加もしない**。UI はチップ2つ＋`textarea.directive`（破線枠）、本文では `.prose-directive`（文体によらず同じ見た目）で描き、操作行は 編集/ここから/分岐/削除 のみ（挿絵・環境音は本文の一点に紐づく機能なので出さない）
-- **文体**: novel=地の文＋「」混在（話者プレフィックスなし）/ chat=キャラ別吹き出し（「名前:」先頭をパースして characterId 判定）
-- **出力停止対策**: `finish_reason==='length'` で `message.truncated`→「続きを生成」（`continueLast`＝appendToId で同一メッセージへ追記）。開始の一時エラーは最大3回自動リトライ。**中断は用途別に独立**: `stop`（本編）/`stopChoices`（選択肢）/`stopReview`（レビュー）でモジュールレベル AbortController を分離
-- **メッセージ操作と上書き方式（FB6-C）**: 編集/削除/「ここから」（`regenerateFrom`）/「⑂ 分岐」（`branchFromMessage`）。**物語操作（`send`/`continueStory`/`continueLast`/`regenerate`/`regenerateFrom`/`editMessage`/`deleteMessage`/`beginScene`/`prepareSceneReview`/`startStory`）は冒頭で上書きガード `ensureLineTip(sessionId, parent)` を通す**（parent＝巻き戻し系は `findReanchorTarget` の戻り先・それ以外は currentId）。ガードは parent 直下の**保護なし子サブツリー**（保護＝`branchName`/`star`/`ending` をサブツリーに含む＝`subtreeHasProtection`）をチェックポイントごと即時削除し、currentId が削除対象なら parent へ付け替える。**削除対象に scene ノードを含む時のみ** `appChoices` 3択（⑂残す→最新の葉に命名／上書き／キャンセル=操作中止）。保護枝は丸ごと温存（部分削除しない）・別の線へジャンプして続けても離れた線は消さない。巻き戻し後の currentId 移動は従来どおり `reanchorBranch`（anchor 無しの旧木は直列動作）。`editMessage`/`deleteMessage` は async（キャンセル時は本文も変えない）。⑂ボタン＝`branchFromMessage`（本文操作行）/`branchFromNode`（ツリー行）は**現在の線の先端（currentId）に名前を付けて保護**してから regenerateFrom/restore を実行。**`regenerateFrom` はシーン境界をまたいだ巻き戻しで `rewindScenesFor(session, kept)` を通す**（export・純関数）: kept の末尾メッセージが属するシーンが `currentSceneId` と異なる場合、後続の置き去りシーン（stale な見出し・あらすじが本文に残ってしまうバグの原因だった）を `scenes` 配列から落とし `currentSceneId` を戻す。またがない通常のケース（`regenerate`＝同一シーン内のみ末尾を差し戻す設計なので対象外）は変更なし
-- **`runCompletion(speakerId?, appendToId?)`**: novel 時は speaker 無効。chat 時は speaker 確定→`mainModelOf`（セッション本編モデル）→`parseModelRef`→`streamChat`
-- **画像生成ジョブ**（store の `imageJobs`）: `startImageJob(args)`→`runImageJobLoop`（fire-and-forget）で `count` 枚を**直列**生成（ComfyUI は並列に弱い）。全滅で `error`、1枚以上で `selecting`（自動採用しない）。`cancelImageJob`/`dismissImageJob`（除去前に `abortJobController` で実行中 fetch も中断）/`applyImageJobResult(jobId, index)`（target で分岐・**旧 imageId は削除せず参照を外すだけ**）
-- **構造化出力の裏方文脈整流**（`plainTextOf`）: 裏方 LLM への文脈・UI ラベルには自然表記で渡す。適用は4箇所のみ——①`prepareSceneReview` transcript（assistant 行）②`actionCheckpointLabel`③挿絵起案 recentMessages④選択肢生成の`choicesMessages`直近の本文（PC2'）。**`buildMessages` 履歴・`estimateTokens`・編集UI・エクスポート・チェックポイント本体は対象外**（生テキストのまま）
-- **チェックポイント記録**（`recordCheckpoint`・UIなし）: 3契機——①`runCompletion` 正常完了後（kind:action・`finishReason===null` は積まない）②`editMessage`/`deleteMessage` 直後（kind:action）③`confirmSceneReview` 直後（kind:scene）。木が空ならルート（label「開始時点」）を遅延生成（`recordCheckpoint` に `rootLabel` を渡すとルート自体をその名前で命名＝導入テキスト開始時は「空の開始時点＋導入」に割らず**シーンのタイトルを持つルート1つ**に畳む。FB3追補）。action ノードのラベルは末尾アシスタント本文の冒頭（`actionCheckpointLabel`・「⏩ 続き」等の固定ラベルは廃止＝中身が分かるように。FB3-A4）。dedupe＝`stableSessionJson`（updatedAt 除外）一致なら積まない。書込は `serializeCheckpointWrite` で sessionId ごと直列化
-- **復元** `restoreCheckpoint(sessionId, nodeId)`: streaming/choices/review 中は例外。スナップショットで全置換するが**プレイ用ノブだけ現在値維持**（passthrough: title/model/reviewModel/choicesModel/temperature/maxTokens/archived）。復元自体は何も削除しない（過去を読みに行くだけの移動は安全）。置き去りの記録の削除・確認は次の物語操作冒頭の `ensureLineTip` が行う（FB6-C）
-- **ツリー行クリックの移動** `navigateToNode(sessionId, nodeId)`（FB7-B）: ノードが現在パス上なら復元せず、パス外なら**乗っている線の先端**（`lineTipOf`＝nodes 配列順で最初の子を辿った葉・export・`buildGraph` のレーン継承と同規則）を `restoreCheckpoint` で読み込み、非永続 state `scrollTarget: {sessionId, messageId, seq}` をセット。アンカーは `node.anchorMessageId` → 無い旧ノードは自身のスナップショット末尾 → それも無ければスクロールなし。ChatPanel が effect で消化: シーンが畳まれていれば `queueMicrotask` へ逃がしてから `flushSync(setExpanded)` で同期展開（`useEffect` 内で直接 `flushSync` を呼ぶと「レンダリング中」警告になり展開が rAF の DOM 検索に間に合わない競合の元になるため、レンダリングが確実に終わるマイクロタスクへずらす。バグ修正）→ rAF 2フレーム後に `[data-msg-id]` へ `scrollIntoView({block:'center'})`＋`.msg-flash` 約2秒 → `scrollTarget` を null に。DOM に無い id（マーカー等）は直前の描画メッセージ・それも無ければ末尾へフォールバック
-- **発見キャラ**（FB7-E）: `Session.newCharacterPolicy`（`allow`/`avoid`・undefined=allow）を `buildSystemPrompt` が【新しい登場人物】として**どちらの値でも**注入する（allow を出さないと「出してよい」が伝わらない。セッション設定なのでシーン境界でも動かない＝PC1+PC4 の禁止に当たらない）。検出→承認→起案→保存は `characterDraftQueue`／`CharacterDraftModal`／`addDiscoveredCharacter` の1本（データモデル節を参照）。起案は `characterDraftSystem`＋`CHARACTER_DRAFT_SCHEMA` で `reviewModelOf` のモデルへ投げ（実測種別 `characterDraft`）。**契約は `Character` の記入欄を一通り埋めること**＝`exampleDialogues`（5個以上・配列）と `tags` も含め空を返させない／`persona`・`speechStyle`・`appearance` に**他の登場人物名を書かせない**（素材として単体で持ち出せなくなるため）／`appearance` は**自然な日本語の描写文**で受け取り、タグ化は画像生成時に `illustrationPromptSystem` が接続先の作法へ変換する。`name` は検出した表記で固定する（起案側の言い換えを採らない＝`matchCharacterByName` が解決できず「?」バッジが消えなくなる）。結果は `CharacterEditor` の `draft` モード（削除・カード書き出しを隠す）で確認・編集させてから保存する。**起案に失敗しても空の下書きを開く**（手書きで定義したい人を止めない）。「?」バッジは**ライブラリに同名がいるなら出さない**（`StructuredMessage` の `libraryCharacters`／`queueCharacterDrafts` の両方で弾く＝同名の重複を作らせない）
-- **GC 一本化**: アバター置換等の**即時 `deleteImage` は全廃**、参照除去のみ。回収は `gcUnusedImages` に一本化。使用中集合＝`collectUsedImageIds`（characters/sessions＋`cassettes`＝表紙・同梱セッション画像＋`sessionImageLogs`＝画像の永続記録。FB2-E/FB6-A）∪`branchTrees` 全ノードの `imageIds`∪`star.thumbImageId`。セッション1件分の抽出は `sessionImageIds(session)`。`deleteSession` は木・画像記録も削除し `checkpointStore.deleteSession`
-- **剪定**: `deleteBranchSubtree`（サブツリー削除・**現在パス上は例外で拒否**）/`pruneToCurrentPath`（現在パス以外を一括削除）。書込は `Promise.all` 並列（削除は順序非依存）
-- **しおり**: `setBranchStar(sessionId, nodeId, name)` はチェックポイントを読み `pickThumbFromSnapshot`（最新の挿絵）でサムネ自動選択。取得失敗でも名前は保存。`removeBranchStar` は同期
-- **孤児掃除** `cleanupOrphanCheckpoints`: `checkpointStore.listNodeIds` と木の id を突き合わせ、木に無い実体だけ削除。App.tsx 起動時（hydration 後）に1回
+
+- **開始**: `startStory()`。`focusCharacterId` 未選択・置換タグ未束縛なら拒否。導入文（`story.opening`）があれば AI 生成せずそのまま最初の assistant メッセージに載せる
+- **物語モード（読者モデル）**: 入力はすべて `kind:'directive'`。主操作は「続ける」（`continueStory(pace)`。`PACE_PROMPTS` のマーカーを user に積む）／〈もっと詳しく〉〈先へ飛ばす〉／「やり直す」（`regenerate`＝現在シーン末尾の assistant を捨てて再生成）／〈展開を選ぶ〉（`pickDirection`）。ロールプレイだけ「演じて書く／書き手に指示」のチップが残る
+- **生成** `runCompletion`: `isProviderUsable` 判定 → 空の pending メッセージを積む → `streamChat` → 一時エラーは最大3回リトライ（何も受信していない時のみ）→ `finish_reason==='length'` なら `truncated`（「続きを生成」`continueLast` は同一メッセージへ追記）→ チェックポイント記録。中断は用途別の `mainController`/`choicesController`/`reviewController`
+- **シーン終了**: `prepareSceneReview` が A/B/T を並列に投げ、`reviewProgress` で進行を見せる（呼び出し1本＝1行）→ `SceneReviewModal` で編集・承認 → `confirmSceneReview`（overlay 追記・`applyReviewToState`・`applyTrackerToState`・新シーン作成・チェックポイント scene）→ `beginScene`（窓を確定し導入マーカーを積んで生成）
+- **上書きガード** `ensureLineTip(sessionId, parent)`: 物語操作の冒頭で、現在地より先にある**保護なし**の子サブツリーを削除する（保護＝`branchName`/`star`/`ending` を含む）。scene ノードを含む削除だけ3択（残す→命名／上書き／中止）。分岐を作る操作（`branchFromMessage`/`branchFromNode`）は先端に名前を付けて保護してから巻き戻す。シーン境界をまたぐ巻き戻しは `rewindScenesFor` で置き去りシーンを落とす
+- **復元と移動**: `restoreCheckpoint` はスナップショットで全置換（`title/model/reviewModel/choicesModel/temperature/maxTokens/archived` だけ現在値維持）。`navigateToNode` はパス外なら線の先端を復元して該当メッセージへスクロール（`scrollTarget`）。復元自体は何も消さない
+- **結末**: `proposeEndings` → `setEndingGoal`（system の【目指す結末】）または `concludeStory`（エピローグシーンを書いて `ending` 確定 → 進行系を隠し「やり直す」だけ残す）。分岐で戻れば未確定
+- **幕間**: 終了シーンの末尾に `generateInterlude(sceneId, characterId)`（中心人物以外）。`reflectInterlude` で関係 prose の差分を出し `confirmInterludeReflection` で反映
+- **発見キャラ**: 構造化本文の未解決話者の ？バッジ／レビューの `newCharacters` 承認 → `queueCharacterDrafts`（既知の名前・`NARRATION_NAMES`・待機中同名は弾く）→ `CharacterDraftModal` が起案 → `addDiscoveredCharacter`（ライブラリの通常キャラ＋`characterIds` へ追加）
+- **画像**: `startImageJob` → 直列生成 → `selecting`（自動採用しない）→ `applyImageJobResult`（挿絵は `Scene.illustrations`＋`sessionImageLogs`、アバターは `avatar.imageId`。旧画像は参照を外すだけ）。回収は `gcUnusedImages`（使用中集合＝`collectUsedImageIds`）
+- **環境音ピン**（実験機能）: 本文の一点に `AmbientPin` を置き、スクロール中心との距離で音量。`Scene` の中なので分岐に乗る
+- **書き出し**: `StoryExportModal`（plain/markdown/挿絵つき/共有カード画像・分岐時点指定可）。キャラ・世界・カセットは PNG カード、全データは JSON バンドル（画像同梱可）。取り込みは `importAnyFile` に一本化
+- **初回**: `FirstRunWizard`（かんたん接続=OAuth／無料枠=Gemini／品質重視／緩いモデル／PC で動かす）→ 接続テスト → `defaultModelRef` 設定。閉じても `Provider` 未設定なら生成時に案内
+- **起動時**: hydration 後に `hydrateProviderSecrets`・`cleanupOrphanCheckpoints`・`backfillImageLogs`
 
 ## 規約・落とし穴
-- **カンマ区切り入力は必ず `CsvInput`**（タグ・ロアのキーワード・timeline slots）。生の `value=arr.join`＋split はカンマが消えるバグの原因
-- **typeable な必須数値欄は `NumberInput`**（FB8-A #13）。生の `type="number"`＋`Number(e.target.value)` は「0 を消して空欄→1」ができない（`Number('')` が 0/NaN に化けて即スナップ）。任意欄（`=== '' ? undefined`）・プルダウン・スライダーは対象外。onChange は blur/Enter 確定発火なので即時反映が要る経路には使わない
-- **シーン見出し（`.scene-divider`）は「本文 or 要約があるとき」だけ出す**（FB8-A #4）。`showDivider` に `session.scenes.length > 1` を足すと、本文を全削除した空シーンでもタイトルだけ残る。空シーンの Scene オブジェクト自体は消さない（`currentSceneId`・タイムライン結合のため表示層で抑止）
-- マーカー疑似メッセージ（`CONTINUE_PROMPT`/`SCENE_START_PROMPT`）は user として積むが、UI では本文を描かず**ターン境界の薄い水平線 `.gen-divider`** で表現（続ける＝線、シーン導入＝見出しが担うので線なし）。小説形式ではユーザー入力の前にも `.gen-divider` を1本入れる（`renderSceneContent` の `seenContent` 判定・FB3-A2）。`isMarker` で判定
-- API キーは localStorage のみ。エクスポートバンドルに providers は含めない
-- **環境音ピンを `sessionImageIds`／`collectUsedImageIds` に足さない**（AM1）。`AmbientPin` が持つのは `soundId`＝内蔵カタログの安定キーであって画像 id ではない。音源はアプリ同梱の静的アセットなので blob ストア・GC・カセット同梱・エクスポートのいずれとも無関係
-- **環境音マーカーの差し込みは3か所**（AM1・`ChatPanel.tsx` の非構造化 novel／`StructuredMessage.tsx` の `StructuredNovelBody`／会話形式）。**レンダラを増やしたら全部に入れる**（入れないとそのメッセージのピンは Y を持てず鳴らない）。
-- **本文に差し込むのは幅0・高さ0のアンカーだけ。見えるスピーカーは `AmbientPinLayer` が `.chat-inner` 直下の層に絶対配置する**（AM2）。「横位置＝本文カラムの右端／縦位置＝その行」は CSS だけでは表現できない（containing block を横と縦で使い分けられない）ため、縦位置だけ JS で入れている。**位置の測り直しは同期1回では足りない**＝文字サイズ・行間・本文幅は `App.tsx` の `useEffect` が CSS 変数へ書くので子の `useLayoutEffect` の後に効き、同期分だけだと下の行ほど大きくずれる（実測100px超）。`useLayoutEffect` 同期 →`setTimeout(0)`→`requestAnimationFrame` の3段＋`ResizeObserver` で収束させる会話形式は `StructuredChatBody` が行をグループへ畳むため行対応が保てず、**メッセージ単位精度へフォールバック**するのが仕様。非構造化 novel は**ピンがあるメッセージだけ**行分割して描く（`renderProseWithPins`）＝改行を跨いだ `「…」` の色分けが切れる副作用をピン付きメッセージに閉じ込めるため
-- **カタログに無い `soundId` は音量計算の前に落とす**（`useAmbientScape`）。同時発音数の上限があるので、後段で落とすと鳴らないピンが枠を食って鳴るはずのピンが押し出される
-- **画像 id を持つフィールドを増やしたら `sessionImageIds`（store.ts）に追加する**。入れ忘れると GC で使用中画像が消える／チェックポイント参照画像が誤回収される。カセットの画像収集（`collectCardImages`）・remap にも追加が必要。**セッション外のデータに画像 id を持たせる場合は `collectUsedImageIds` の引数に追加する**（`sessionImageLogs` が前例。FB6-A）
-- **画像の即時 `deleteImage` を新規に書かない**。分岐チェックポイントが imageId を参照しうるため、削除は常に「参照除去のみ＋`gcUnusedImages` 回収」
-- **`branchTrees`・`sessionImageLogs` を `Session` の中に入れない**。スナップショット深コピーに含まれて再帰肥大する／復元で巻き戻ってしまう。必ず AppState 直下
-- **`restoreCheckpoint` の passthrough リストの変更は慎重に**。「本文・進行と結合しているか」で判定（結合＝復元対象／非結合＝現在値維持）。迷ったらスナップショット側に倒す
-- **store 直接管理のフィールドを draft 全置換系のエディタ保存で上書きしない**（かつて `character.sprites` がこの罠にはまった＝エディタ draft のスナップショットで巻き戻る）。素材に「エディタの外から書かれるフィールド」を足す時は `upsertCharacter` 等で明示的に保持する
-- **`<a download>` は Tauri の WebView で機能しない**。ファイル DL は必ず `io.ts` の `downloadBundle`/`downloadBlob`（内部で `saveBlob` 経由）を使う
-- **`isTauri()` 分岐は `platform.ts`（と `imageStore.ts`）の外に書かない**。コンポーネント・store に環境分岐を持ち込まない
-- **Tauri plugin の JS パッケージ（`@tauri-apps/plugin-*`）は必ず動的 import**（Web バンドルを汚さない・Web 実行時に評価させない）
-- **`capabilities/default.json` の http スコープはポート成分 `:*` を省略しない**（`http://*:*`）。`http://**` と書くとポートが空文字＝デフォルトポート 80/443 限定になり、ローカルサーバ（ComfyUI の :8188 等）が `url not allowed on the configured scope` で全滅する。検証は URLPattern の **constructor-string 形式**で行うこと（object 形式は省略した `port` が `*` に既定化されて誤判定する）
-- **画像生成のプロンプトへ定型タグ・画風を UI 側で結合しない**。結合は `generateImage`（imageGen.ts）1箇所のみ。`ImageJob.prompt`/`SceneIllustration.prompt` は結合前のユーザープロンプトを保つ
-- **`promptStyle==='natural'` では `defaultPositive`/`defaultNegative` を結合しない**（I2）。UI で欄を隠すだけだと、スタイル切り替え後に古いタグが見えないまま混ざる。**「欄を隠す」と「結合しない」は必ずセット**
-- **画像生成のコストを円に換算して表示しない**（I5）。各サービスの課金単位のまま出す（Buzz は Buzz、USD は USD）。円の目安は説明書側の仕事
-- **Civitai を「成人向け枠」として説明しない**（I5）。位置づけは**コミュニティモデル枠**（ローカル GPU なしで Illustrious/Pony 系を使う経路）で、成人向けが通るのは結果。UI・ドキュメントに書くのは事実だけ（Buzz の種別と使える範囲・**規約の確認責任は利用者にある**こと）で、**用途の推奨も「関知しない」宣言も書かない**。理由は `docs/設計_画像生成の簡易化.md` §2（道具屋の立ち位置を崩さない）
-- **Civitai の生成は `orchestration.civitai.com` の `textToImage`**（`api.civitai.com` は Web サイトを返す／サイト API `civitai.com/api/v1` は情報取得専用）。**未知プロパティは黙って無視される**ので、パラメータ名を実測形から動かさない。`seed` は 0〜4294967295 で `-1` は 400＝ランダムは「送らない」で表現する
-- **ComfyUI の workflow は「プレースホルダがあれば手動置換・無ければ自動検出」の排他**（I4）。両方効かせると二重注入で壊れる。判定は `hasWorkflowPlaceholders` 1箇所。自動検出できない構成は**必ず理由を返してユーザーに見せる**（黙って片方の sampler に入れない）
-- **画像生成が未設定でも挿絵・アバター生成のボタンを消さない**（I3）。押した先の `ImageGenModal` 内で設定を完結させる（文章側の OpenRouter キーがあれば1クリック）。**物語の途中で設定画面へ自動遷移させない**。断られたときだけ `imageSetup` のフラグでボタンを引っ込める
-- **画像プロンプト起案の system を呼び出し側で組み立てない**（I2）。作法は「モーダル内で選ばれた接続先」で決まるので `illustrationPromptSystem(style)` の呼び出しは `ImageGenModal` の中だけ。`draftContext` は `{user, modelRef}` のみを渡す
-- **構造化出力のパース失敗行は必ず narration に落とす**（graceful degradation）。名前解決は `matchCharacterByName`（`structured.ts`）に一本化し、他所でコピーしない
-- **構造化レンダラのフォールバック判定はメッセージ単位**（`hasStructuredLines`）。トグルでレンダラを直接切り替えると旧平文・フォーマット無視応答で表示が崩れる
-- **書き手への指示（`kind:'directive'`）は本編プロンプトの履歴と画面表示だけに出す**（IN1）。裏方 LLM の文脈・書き出しからは**マーカーと同じく落とす**——レビューの transcript（`prepareSceneReview`）・選択肢の直近本文（`recentPlainLines`）・挿絵起案（`sceneMessagesUpto`）・キャラ起案（`CharacterDraftModal`）・物語の書き出し（`storyExport` の `isBackstage`）・チェックポイントのラベル（`actionCheckpointLabel`）。**新しく「本文を読む処理」を足したら、そこでも落とすか判断する**（迷ったら落とす側＝指示は物語ではない）。例外は `sceneTokensOf`＝実際に文脈を食っているので文量には数える
-- **`buildMessages` の履歴からマークアップを剥がさない**。過去メッセージは `@名前「…」` 込みの生テキストで送る（few-shot 効果で形式遵守が強化される）。`plainTextOf` を適用してよいのは裏方文脈・ラベルの4箇所のみ
-- **原文窓（`rawWindowFromSceneId`）をシーンの途中で動かさない**（PC3）。`selectRawScenes` を呼んでよいのは `beginScene` だけ＝`buildMessages` や描画のたびに再計算すると、履歴が伸びただけでシーンの途中に畳み目が入る（キャッシュも文脈も最悪の切り方）。窓は**古い方へ戻さない**（畳んだ直後に再拡張すると次のシーンでまた畳む振動になる）
-- **`buildSystemPrompt` に毎ターン変わる値を足さない**（PC1+PC4）。プロンプトキャッシュの粒度は**メッセージ単位**で、system が1文字でも変わると system 全体が無効になる（実測ヒット率 2%）＝日付・トークン数・乱数・直近の会話に依存する抽出結果などは禁止。ターンごとに変えたいものは `buildMessages` の深さ3（素材・拘束）か深さ0（今すぐ効かせたい指示）へ置く。**深さ0は毎ターン非キャッシュなので短く保つ**
-- **ZoomOverlay はポータル描画を維持する**（サムネイル内で普通に描画すると `.job-thumb > img` 等の祖先セレクタが拡大画像に当たる事故に戻る）。サムネイル用の img ルールは**直下セレクタ（`> img`）**で書き、子孫全体に効く `... img` を書かない（FB7-A）
-- **モーダルは `ModalShell` を使う。ネイティブ `confirm`/`prompt` の直呼び禁止**。破棄/削除確認・名前入力は `appConfirm`/`appPrompt`/`appChoices`。draft を持つモーダルは `dirty` state を共通変更入口で立てて `ModalShell` に渡す
-- **分岐の自動削除は必ず保護判定（`subtreeHasProtection`）を通し、`recordCheckpoint` 内では剪定しない**（fail-open。ガード＝`ensureLineTip` を通らない経路で兄弟ができたら従来どおり表示され、取り漏らしをバグとして発見できる。FB6-C）
-- **ツリー行クリックは移動（`navigateToNode`）**。ツリーは「読む・移動する」装置で、分岐を作る操作は本文の操作行（⑂・ここから・編集・削除）に集約。復元＝「↩ この時点に戻す」は ⋯ メニューのみ（FB7-B）
-- **立ち絵（`Character.sprites`）・シーン背景（`Scene.backgroundImageId`）・ステージ表示は復活させない**（2026-08-01 撤去）。製品の位置づけが VN ではなく**「挿絵入りの本」**だから＝事前に大量の絵素材を用意させるモデルへ逆走する（`docs/公開計画_マネタイズと配布.md`・`docs/設計_環境音ピン_実験.md` の判定軸）。「場所の絵」が欲しくなったら挿絵へ吸収する。**表情判定（`classifyEmotions`・`emotionSystem`）と構造化出力の感情トークン（`EMOTIONS`/`EmotionId`/`resolveEmotionToken`・出力形式の `(感情)`）も一緒に撤去済み**＝いずれも唯一の消費先が立ち絵だったため。出力形式は `@名前「セリフ」` に簡素化した
-- **選択肢は加点を持たない**（P5 廃止・FB7-C）。状態の書き手はシーン終了レビュー（＋状態パネルの手動編集）のみ。選択肢生成・表示に effects 系の分岐を復活させない
-- **完結分岐は `isSessionFinalized(s)` でロックし、続きは「分岐」だけ**（FB8-B・#3/#15 → FB9-A で導線を一本化）。生成/継続系の物語操作を増やしたら、その冒頭でも `isSessionFinalized` ガードを足す（UI で隠すだけでは `Ctrl+G` 等の経路を塞げない。現状ガード済み＝`send`/`continueStory`/`continueLast`/`regenerate`/`regenerateFrom`）。**完結後に出す操作は本文の「分岐」と挿絵生成だけ**（編集・削除・ここから・シーン編集・入力欄は出さない）。`regenerateFrom` の完結ガードは `opts.fromBranch` でのみ解除でき、その唯一の呼び出し元が `branchFromMessage`＝**ガード自体を消さない**。分岐で巻き戻したら `rewindEndingFor`（純関数）で結末を整理する＝エピローグシーンごと消えたら `ending` 解除、残っていれば `endedAt` だけ解除（＝`isEpilogue` のままで「完結する」で再締め可）。`rewindScenesFor` の**後**に掛けること。**一番最後の生成文（`session.messages` の末尾）からは分岐させない**（同じ線の続きになり、廃止した `branchToContinue` の復活と等価）。🏁 ノードは `ending` で保護され温存。`endingRecords`（到達記録）は分岐で戻っても消さない
-- **レビューモーダルは `SceneReview.sessionId`（または生成中は `reviewProgress.sessionId`）＋Play 表示中でゲート**（FB8-B・#14／PC-A A-1）。`App.tsx` は `view==='sessions' && (sceneReview?.sessionId === activeId || reviewProgress?.sessionId === activeId)` の時だけ `SceneReviewModal` を出す。`SceneReview` を新規構築する箇所を増やしたら `sessionId` を必ず刻む（`prepareSceneReview` が前例）
-- **実績・イベントの発火記録は「定義×当事者の組（ロール別 `parties`）」単位**（subject な group 節を含む場合）。実績＝`SessionState.achievements[].parties`、イベント消化＝`usedEventIds` のキー `eventId@charId1[+charId2]`（`eventUsedKey`）。当事者の組ごとに独立発火（A・Bで解除→後日 A・B・C の組でも同じ定義が再発火）。素の `eventId` は「全組み消化済み」扱い（旧データ安全側）
-- **発見キャラの「もう知っている話者か」判定は `knownSpeakersOf`（store・export）＋`matchCharacterByName` に一本化**（FB7-E）。**現在シーンの顔ぶれではなくセッションの参加キャラ全員**で判定する（中心人物も参加キャラの1人＝F3）（今のシーンに出ていないだけの参加キャラを新キャラと誤検出しないため）。検出経路を増やしても採用は `queueCharacterDrafts` へ流し、別の保存処理を書かない（セッション内埋め込みキャラを作らない＝立ち絵・配役・状態エンジン・カード化の全系統に「素材でないキャラ」の分岐が波及するため却下済み）
-- **名前の `@ロール名`/`@相手` 置換は `bindRoleNames` に一本化**。`@ロール名` はその subject ロールの当事者名（・連結）、`@相手` は全 subject 当事者名の連結。適用箇所＝実績トースト・状態パネル解除一覧・イベント note・エンディング名/エピローグ指針注入。永続化は名前を持たない `PartyRef{roleId,characterIds}`、表示・置換直前に `resolveParties` で現在の実名へ解決する（リネーム追従のため）
 
-## 検証ワークフロー
-**方針（2026-08-05 改定）: 見た目・UX の確認も AI が自分で行う。** ブラウザで dev サーバを開き、該当画面まで遷移して**スクリーンショットを撮り、意図どおりかを自分で判断してから**完了報告する。ユーザーは UI の確認を行わない＝「確認してほしいこと」を並べて終わりにしない。
+**プロンプト**
+- `buildSystemPrompt` に毎ターン変わる値を足さない。ターンごとに変えたいものは深さ3（素材・拘束）か深さ0（今すぐ効かせる短い指示）へ
+- `selectRawScenes` を呼んでよいのは `beginScene` だけ
+- `pending`（予定）を本編プロンプトに渡さない。`now` は system、突き合わせ済みの一文は深さ0
+- `buildMessages` の履歴からマークアップを剥がさない。`plainTextOf` は裏方文脈・ラベルだけ（レビュー transcript／チェックポイントラベル／挿絵起案／選択肢の直近本文）
+- 新しく「本文を読む処理」を足したら、`kind:'directive'` とマーカーを落とすか判断する（迷ったら落とす。例外は文字数カウント）
+- 迎合対策の文面を強くしない（実測で効かなかった。`決定記録.md` §3）
 
-> 旧方針（2026-07-08〜2026-08-05）は「見た目確認はユーザー、Claude はロジックのみ」だった。トークン効率より「確認されないまま残る不具合」のコストが上回ったため反転した。
+**データ**
+- 画像 id を持つフィールドを増やしたら `sessionImageIds`／`collectUsedImageIds`／`collectCardImages` に追加する（入れ忘れ＝GC で使用中画像が消える）
+- 画像の即時 `deleteImage` を書かない（参照除去＋GC）
+- `restoreCheckpoint` の passthrough を増やすときは「本文・進行と結合しているか」で判定。迷ったらスナップショット側
+- 分岐の自動削除は `subtreeHasProtection` を通す。`recordCheckpoint` 内では剪定しない
+- store 直管理のフィールド（`avatar.imageId` 等）を draft 全置換の保存で上書きしない
+- 環境音ピンは画像 id を持たない。GC・エクスポート・カセット同梱と無関係
 
-1. `npx tsc --noEmit` → `npm run build` を必ず通す（従来どおり必須・ここは省略しない）
-2. **ロジック検証**: 純粋関数・store 関数は esbuild でバンドルして node で直叩き（アサーション形式）。「目視では追えないもの」——byte 一致・注入位置・件数・境界条件——はこちらで固める
-3. **見た目・UX 検証**: dev サーバを起動 → 対象画面へ遷移 → スクリーンショット → 目視判断。console のエラー0件も併せて確認する。**変更した画面は必ず1枚は撮る。** 検証後は seed したデータを片付けてサーバを停止する
-4. 完了報告には**撮った画面と、そこで何を確認したか**を書く（「〜を確認してください」ではなく「〜を確認した」）
-5. **Tauri 固有部**（appFetch/saveBlob/ファイルストレージ）だけは自動確認できないため、`npm run tauri:dev` の手動チェックリストを提示する（本編ストリーミング＋停止／ComfyUI 生成→採用／保存ダイアログでカード PNG・JSON 保存／再起動でデータ保持＝`%APPDATA%\com.tokatokage.delist\data\` の state.json・images/／旧 WebView データの自動移行）
+**UI**
+- モーダルは `ModalShell`。ネイティブ `confirm`/`prompt` 禁止（`appConfirm`/`appPrompt`/`appChoices`）
+- カンマ区切り入力は `CsvInput`、必須の数値欄は `NumberInput`
+- アイコンは `icons.tsx` の SVG。絵文字・文字記号（★⑂✕）を UI に使わない（ユーザーが「安っぽい・意味不明」と明言）。アイコン単独は ×/⋯/✎ 等の普遍記号＋tooltip のみ
+- 用語: 素材は「キャラクター」（「キャラ」不可）・セッション内は「登場キャラクター」・作成ボタンは「＋ 〜を作る」の動詞形・内部 ID（`openrouter/auto` 等）を UI に出さない
+- 長い説明文は `HelpDetails`（要点1文＋折りたたみ）。見出し直下に段落を並べない
+- シーン見出しは「本文か要約があるとき」だけ出す
+- レビューモーダルは `sceneReview.sessionId === activeId` かつ Play 表示中だけ出す
+- `ZoomOverlay` はポータル描画を維持。サムネイルの img ルールは直下セレクタで書く
+- 環境音のアンカー差し込みは3レンダラ（非構造化 novel／`StructuredNovelBody`／会話形式）全部に入れる
+- **`useStore()` をセレクタ無しで丸ごと購読しない（新規コード）。** 既存35箇所は計画 P2 で直す
 
-## 実装状況
-**主要機能はすべて実装済み**。セッション(RP/物語)・素材ライブラリ（キャラ/世界観）・ロアブック・グループ会話・シーン管理・タイムライン・選択肢進行・統合レビュー・世界観イベント自動発火・文体切替・マルチプロバイダ・会話編集/削除/作り直し・エクスポート/インポート・出力停止対策、および以下の大型フェーズが完了:
+**プラットフォーム**
+- `<a download>` は Tauri で動かない。ファイル DL は `io.ts` 経由
+- `capabilities/default.json` の http スコープはポート成分 `:*` を省略しない
+- 画像生成の定型タグ・画風の結合は `generateImage` の1箇所。`promptStyle==='natural'` では結合しない
+- 画像コストは円換算しない。Civitai を成人向け枠として説明しない
+- ComfyUI のワークフローは「プレースホルダがあれば手動置換・無ければ自動検出」の排他
 
-- 状態エンジン（関係性 prose のみ。ADR-1。※選択肢連動加点は FB7-C で廃止・条件エンジンは F1-a・数の状態は F1-b・実績とエンディングは F1-c で撤去）
-- セッション・オーバーレイ（発見の素材↔セッション分離・実効ビュー注入・昇格。B1〜B4）
-- 画像基盤・PNG カード入出力（IndexedDB 画像ストア・EntityAvatar・ST 互換キャラカード・世界カード・ゲームカセット。P1〜P4 / G1〜G4。※セッションカードは FB3-D で撤去）
-- 画像改善（バックグラウンドジョブ・ギャラリー・各種 store 不具合修正。V1〜V5。※立ち絵/表情差分/背景/ステージのバックドロップは 2026-08-01 に撤去）
-- Tauri 化（画像込みエクスポート・CORS-free HTTP・環境アダプタ層・`%APPDATA%` ファイルストレージ＋自動移行。T0〜T3。**T4=配布は当面見送り**）
-- セーブ/ロードと分岐周回（チェックポイント基盤・ツリーUI・しおり。C1〜C3）
-- 品質プロンプトのユーザー定義化（スタイルプリセット廃止・接続先ごとのデフォルトタグ。Q1〜Q5）
-- 構造化出力（行タグパーサ・構造化レンダラ・プロンプト形式指示・裏方文脈整流・`@地の文` ラベル非表示。ST1〜ST5。※感情トークンとストリーミング表情切替は 2026-08-01 に撤去）
-- UI 再設計（3領域IA＋右コンテキストドック・トップバー4要素化・リーダー設定＋没入モード・ショートカット/コマンドパレット・SVG アイコン一掃。UI-0〜UI-7）
-- 世界観の開始テンプレート＋ゲームカセット（世界からセッションへ推奨初期設定をコピー／1枚で最初から遊べる `aist_cassette` 配布カード。W1〜W2）
-- エンディング定義（`EndingDef`＝条件・エピローグ指針・auto/hidden/fallback／`checkEndings`＋`applyReviewToState` の純関数判定／レビュー内到達プレビュー・エピローグシーン・【エンディング】注入・`finalizeStory`・完結演出／到達記録 `endingRecords`・ツリー🏁・カセット棚バッジ。E1〜E3。※到達記録の集計軸は FB9-B でセッション／カセットへ変更）
-- フィードバック反映9-C（**関係フラグの全面撤去**＝`Relation.flags`/`RelationUpdate.flagsAdd`/`Clause`・`GroupSubClause` の `relationFlag` を削除・置き換えの新しい型は作らない〔一度きりの出来事はキャラ別カウンター 1回以上〕・`CounterDef.note` をレビューへ伝達・条件エディタのカウンター行に単位「回」・旧節は `stripLegacyFlagClauses` が読み込み時に除去。FB9-C）
-- フィードバック反映9-B（到達エンディング記録のセッション化＝`Session.originCassetteId`・`EndingRecord.cassetteId`・ステータスは `sessionId` 単位／カセット棚は `cassetteId` 通算・用語を「見た結末」→「到達エンディング」に統一。FB9-B）
-- フィードバック反映5（シーン区切りのペース制御＋時間帯固定・最初の方向付け `initialDirective`・既定モデル `defaultModelRef`・Library インポート・レビュー編集モード。FB5-A〜C）
-- フィードバック反映6（セッション画像記録 `sessionImageLogs`＋全チェックポイント走査バックフィル＋ギャラリー「すべての記録」タブ／挿絵の後付け生成＝メッセージ単位アンカー・過去シーン（背景は撤去）／明示分岐＝上書き方式・`ensureLineTip` ガード・⑂ボタン・保護ルール・シーン跨ぎ3択／分岐ツリーのレビュー単位折りたたみ `condenseTree`。FB6-A〜D）
-- フィードバック反映8-A（即効バグ修正＝空シーンの見出し残り修正〔`showDivider` から `scenes.length>1` を除去〕・数値入力の共通部品 `NumberInput`〔文字列保持・blur確定＝backspace で空欄化可〕・ツリーリンクの再中央寄せ補正・UI 表記「当事者」→「主要登場人物」。FB8-A）
-- フィードバック反映8-B（完結の作法＝完結分岐のロック〔`isSessionFinalized`・入力/続ける/やり直す/選択肢/メッセージ生成系を隠し `send`/`continueStory`/`continueLast`/`regenerate`/`regenerateFrom` を store でもガード〕＋「⑂ ここから分岐して続ける」`branchToContinue`〔**FB9-A で廃止**。続きは本文の「分岐」に一本化〕／レビュー完了モーダルを `SceneReview.sessionId`＋`view==='sessions'` で該当セッション表示時のみ表示。FB8-B）
-- フィードバック反映9-A（完結後は分岐のみ＝`branchToContinue` 廃止・本文の「分岐」を完結後も表示〔末尾の生成文を除く〕・`regenerateFrom(id,{fromBranch})` で完結ガードを明示解除・`rewindEndingFor` で巻き戻し時に `ending`／`endedAt` を整理・完結中は挿絵のみ許可。FB9-A）
-- フィードバック反映8-C（画像生成の強化＝`imageGen.ts` に `kind:'modelslab'`〔text2img→processing なら fetch ポーリング→出力URL取得〕・`ImageGenRequest`/`ImageJob` に `steps?/sampler?/cfg?`・`ImageGenModal` で種別ごとに欄出し分け〔ネガティブ=comfyui/modelslab・steps/sampler/CFG=modelslab・自由サイズ「カスタム」を全種別に〕・`ImageProviderSettings` に ModelsLab 追加。FB8-C）
-- **立ち絵・背景の撤去（2026-08-01）**＝`Character.sprites`／`Scene.backgroundImageId`／`Session.spritesEnabled`・`spriteEmotions`／`UiPrefs.stageBgOpacity`・`stageSpriteOpacity`／`StageBackdrop.tsx`・`SpriteSetField.tsx`／ImageJobTarget の `character-sprite`・`scene-background`／`startSpriteBatch`・`setCharacterSprite`・`removeSceneBackground`／`classifyEmotions`・`resolveEmotionUpdates`・`emotionUpdatesOf`・`emotionSystem`／`backgroundPromptSystem`・`backgroundContextUser` を全削除。**形骸化した派生も同時に削除**＝`EMOTIONS`/`EmotionId`/`resolveEmotionToken`/`StructuredLine.emotion`／出力形式の `(感情)` 指示／`ImageGenModal.defaultSizeIdx`／`SessionImageRecord.kind`（後方互換は持たない方針＝旧 `'background'` の記録も他の記録と同列に扱う。画像自体はアルバムに残る）
-- 環境音ピン AM1〜AM3（本文の一点に環境音をピン留めし、スクロール中心との距離で音量が上下する実験機能。`AmbientPin`＝`{messageId, lineIndex}` アンカー・不可視アンカーが Y の測定点・本文右側のスピーカーは絶対配置層＋ドラッグで位置変更・クリックで音量上限/半径/削除・raised cosine のカーブ・一定速度追従・同時3本・soundId ごとに1声・内蔵カタログの欠品は黙ってスキップ）
-- フィードバック反映8-D（読書・ナビUX＝会話折りたたみの右スパイン `.scene-block`/`.scene-spine`〔過去シーンを高さ全体クリックで畳む・見出し折返し崩れも修正〕／分岐ツリーの非破壊トグル「現在の分岐だけ表示」`onlyCurrentPath`〔off-path を隠すだけ・prune とは別〕／画像→本文リンク＝`revealMessage`＋ギャラリー両タブの全画像（挿絵・すべての記録）に「本文へ」〔飛び先解決は `jumpTargetFor`＝アンカー現存→同シーン先頭→無ければ非表示〕。FB8-D）
-- フィードバック反映8-E（**UI全面見直し**。当初の「設定のわかりやすさ」をユーザー要望で拡大＝E1 用語・文言〔素材=キャラクター／セッション内=登場キャラクター・作成ボタンは「＋ 〜を作る」・内部ID露出の排除・`~n tok`→「文量」・WorldEditor の説明ウォールを「先頭1文＋折りたたみ」〕／E2 **文字記号・絵文字の全廃**〔`⑂`🏁🎮🌍📖🎲✨⚙✎✕★☆▶✂↩ 等を `icons.tsx` の SVG＋テキストラベルへ・アイコン単独は ×閉じる/⋯メニュー/✎鉛筆のみ＋tooltip 必須・`recordCheckpoint` のラベル接頭辞は生成側から除去し既存データは描画時にレガシー剥がし・関係の向き `→` 等の約物は対象外〕／E3 設定の再編〔SessionEditor を「基本／物語／進行／AIと出力」4タブへ再配分・WorldEditor ナビに `SECTION_GROUPS` のグループ見出し・条件エディタを助詞テキスト `.clause-joint`＋`OP_LABELS` の**文章形**へリライト（ロジック無改修）〕／E4 導線・磨き〔ドック切替は**A案**＝トップバーの5トグルを廃しドック側に常設ラベル付きタブ・⋯メニュー整理・`ImageGenModal` の「設定を開く」・D&D ヒントを空状態/ドラッグ中のみ・濃さ%表示〕。FB8-E1〜E4。2026-07-23）
-- IN1（入力の二分化。`docs/設計_入力の二分化とローカルLLM案内.md` A）＝入力欄の上のチップで「主人公として書く」／「書き手に指示」を切り替え、後者は `Message.kind='directive'` として積む。本編プロンプトには `DIRECTIVE_HEADER` の固定枠付きで載せ（履歴は byte 安定のまま）、裏方 LLM の文脈4種・物語の書き出し・チェックポイントのラベルからは落とす。本文では `.prose-directive`（破線枠＋ラベル・文体によらず同じ見た目）。**スキーマ変更なし**（任意フィールド追加）。2026-08-16
-- PC0（LLM 呼び出しの実測記録。`docs/詳細設計_プロンプト構造とキャッシュ.md` §2）＝`streamChat` が SSE の `usage`/`provider` を拾い `ChatResult.usage` で返す〔`[DONE]` の前後どちらでも取りこぼさない〕・`UsageRecord`（種別/モデル参照/upstream/トークン内訳/コスト/所要ms/セッションID/レビューの statChanges 符号内訳）を非永続 `usageLog` に最大1000件 FIFO で記録・本編/選択肢/レビュー/次シーン候補/画像起案/キャラ起案（FB7-E）の全経路で記録・System ページ「モデル使用状況（計測）」に種別別集計〔件数・prompt/cached(率)/completion/cost計・平均秒〕＋合計行＋上流プロバイダ内訳＋JSON書き出し/クリア。2026-08-02
-- PC-A（レビューの体感速度。`docs/詳細設計_プロンプト構造とキャッシュ.md` §3）＝A-1 ストリーミング進行表示〔`partialString`・非永続 `reviewProgress{sessionId,sceneId,summary,calls}`・`ReviewCallProgress`＝呼び出し単位の状態と受信文字数・「シーンを終える」直後にモーダルが開く〕／A-2 レビューの2分割並列〔`reviewSystem(part)`・`Session.reviewSplit`（undefined=ON）・セッション設定「AIと出力」のチェックボックス・待ち時間が約半分／入力コストが約2倍〕。**再試行まわりの追修**＝①`extractJson` に修復フォールバック（再試行の主因だった「生の改行・末尾カンマ」を吸収）②**再試行は同じリクエストを投げ直さない**＝失敗理由に応じた追伸（`retryHint`）を user メッセージで1通足す③進行表示に**再試行の理由**（途中で切れた／JSON として読み取れない／summary が空）を出す④**対応モデルでは JSON スキーマ（`response_format`）で出力を固定**＝解釈失敗そのものが起きなくなる（`jsonSchemas.ts`）。2026-08-02
-- PC1+PC4（system の byte 一致と深さ注入。`docs/詳細設計_プロンプト構造とキャッシュ.md` §5）＝**system を毎ターン byte 一致させる**ため、毎ターン変わっていた2つ〔キーワード一致ロア・会話劇の話者指定〕とペース制御ナッジ・`authorNote` を system から messages 側へ移した。`splitLoreEntries`（`lorebook.ts`）で `alwaysOn`／キーワード一致を分離し、後者は**深さ3**（履歴末尾から3件手前・不足時は system 直後へクランプ）へ `authorNote` と同居させ、話者指定・締めのナッジ・短い形式の再掲は**深さ0**（末尾）へ。選択肢生成は `buildMessages` を使わない（PC2' で `choicesMessages` に置き換え。本編用の形式指示が混ざると JSON を出さなくなるため）。**上位設計の「三層への並べ替え」は却下**＝キャッシュ粒度がメッセージ単位なので system 内の順序は1トークンも寄与しない（詳細設計 C1）。2026-08-02
+## 既知の問題（2026-09-13 のレビューで確定。対処は計画書）
 
-- PC2'（選択肢の文脈を削る。`docs/詳細設計_プロンプト構造とキャッシュ.md` §6）＝`genChoices` は `buildMessages` を使わず `choicesMessages(session, refs, mode)` が専用の圧縮文脈（登場人物の一行＋【状態（現在）】＋直前あらすじ1件＋直近本文4件・`plainTextOf` 適用）を組む。**上位設計 PC2〔R1 と system 接頭辞を共有〕は実測で却下**——R2 は system 固定により既に自系列でヒットしており（平均46%）、接頭辞共有は送信量を約1.6倍にしてヒット時ほぼ相殺・ミス時は明確に悪化する（ヒットは確率的）。2026-08-02
-- PC-C+PC3（`cache_control` と原文窓。`docs/詳細設計_プロンプト構造とキャッシュ.md` §7）＝**セットで実施**（PC-C 無しで PC3 を出すと BYOK の請求に直撃するため）。PC3＝原文で送るシーン範囲を**シーン開始時（`beginScene`）に1回だけ** `selectRawScenes` で決め `Session.rawWindowFromSceneId` に保存する〔畳み方4原則: ①予算超過時**のみ**予算の60%までまとめて落とす・窓は古い方へ戻さない（毎シーン滑らない／振動しない。**前回の窓を引数で渡すことが必須**）②落とした直前シーンの原文末尾約1000トークンを「橋」として残す〔最低1件〕③シーン境界でのみ畳む④落ちたシーンは既存の `priorSummaries` があらすじで引き継ぐ〕。参照が使えない〔未設定・巻き戻しで消えた・現在シーンより後ろ〕ときは現在シーンのみ＝PC3 以前へ落とす。PC-C＝`withCacheControl`（`openrouter.ts`・送信直前の1箇所に閉じ込める）が **Anthropic 系にだけ** `cache_control:{type:'ephemeral'}` を2箇所〔①system の末尾 ②最終 messages の末尾から7件目＝毎ターン変わる6件〔深さ3・その後ろの履歴3件・深さ0・呼び出し側の念押し〕の手前〕へ付ける。**それ以外は同一参照で素通し＝リクエストを1バイトも変えない**。最小キャッシュ長（1024）未満には付けない。**Claude 系実機で実効を確認済み**（2026-08-05・§7.1.1。2ターン目に `cached_tokens=6351`・実コスト2.85倍。ただし Anthropic 直叩きは `usage` に cache 情報が無く計測不能＝OpenRouter 経由を推奨）。2026-08-02
-- PC-B（迎合対策の文面。`docs/詳細設計_プロンプト構造とキャッシュ.md` §4 / `docs/計測_迎合対策文面.md`）＝**実測完了・採用案なしで決着（2026-08-06）**。深さ3の「拘束」側に置く1文（見出しは【ふるまいの決まり方】＝「拘束文」等の仕組みを匂わす語は `leak` を誘発するので使わない）を7案切り替えて 740会話・1480応答を実測した結果、**どの案も対照を上回らなかった**ため、`ConsequenceVariant`／`CONSEQUENCE_CLAUSES`／`CONSEQUENCE_LABELS`／`debugConsequenceVariant`／`ResolvedRefs.consequenceVariant`／System のプルダウンを**すべて削除**し、`prompts.ts` の定数 `CONSEQUENCE_CLAUSE` 1つに畳んだ（**プロンプト出力は18ケースで byte 一致を確認**＝この撤去でリクエストは1バイトも変わっていない）。**文面が出る条件は `stateInfo` 非空**（「現在の関係性」が指す先が無いと成立しないため）。実測の要点＝①最も長く強い合成案が①の受容も②③の不成立も最悪＝**強くするほど良くならない**②**`leak` 0/740・`stall` 0/740**＝上位設計が最大の失敗モードに挙げていたものは起きない③効いているのは**キャラ定義と関係性 prose**（キャラの人格欄に一行足すだけで受容率が半減した）。**「数値をセリフに出さない」禁止は文面と独立に system 側へ常設**（`buildSystemPrompt` 1.9）。2026-08-06
-各フェーズの詳細・検証記録は対応する `docs/設計_*.md` を参照。
+- `persist` が `set()` ごとに全状態を `JSON.stringify`（20セッション×150発言≒5.7MB で 11ms/チャンク）。ストリーミング中の全量シリアライズ＋全コンポーネント再描画で、使うほど重くなる → P2
+- テスト0件・lint 無し・CI 無し → P2
+- `send`/`continueStory` は `isStreaming` 判定の後に `await ensureLineTip` があり二重送信が通る。`mainController` 等がモジュール変数で、選択肢生成中に本編生成が始まると `null.signal` になる既知バグ → P2
+- `"csp": null`（現状 LLM 出力は React が escape するので実害なし。Markdown 描画を入れる前に必ず CSP を入れる）→ P2
+- 起動直後に素材が無く、キャラ作成 → 世界作成 → セッション設定 → 中心人物選択 を経ないと最初の生成に辿り着けない → P3
+- Web 版は localStorage（約5MB）に全状態を置くため、実用にはならない → P5
 
-## 未着手・残タスク
+## ドキュメント
 
-**この節には「まだ手を付けていないこと」だけを置く。** 決着した項目は下の「決着済み（参照用）」へ移す。
+| 文書 | 役割 |
+|---|---|
+| [`docs/計画_レビュー対応.md`](docs/計画_レビュー対応.md) | **進行中の計画。** 各フェーズを独立したセッションで進める前提の手順書 |
+| [`docs/決定記録.md`](docs/決定記録.md) | 決めたこと・却下したことの一覧。新しい案の前に読む |
+| [`docs/要件定義書.md`](docs/要件定義書.md) | 利用者視点の現行機能（実装非依存） |
+| [`docs/開発環境と配布.md`](docs/開発環境と配布.md) | 初回準備・配布ビルド・インストーラ検証・Tauri 手動チェック |
+| [`docs/設計_物語の簡素化.md`](docs/設計_物語の簡素化.md) | 現行の物語機構（読者モデル・時間と予定・幕間）の設計理由 |
+| [`docs/設計_プロンプト構造とキャッシュ.md`](docs/設計_プロンプト構造とキャッシュ.md) | 3層構造とキャッシュの設計理由（実装済み。現状の正はこのファイル） |
+| [`docs/設計_入力の二分化とローカルLLM案内.md`](docs/設計_入力の二分化とローカルLLM案内.md) | `kind:'directive'` の設計理由 |
+| [`docs/計測_時間と予定.md`](docs/計測_時間と予定.md)／[`docs/計測_別視点の幕間.md`](docs/計測_別視点の幕間.md) | 現行設計を決めた実測 |
+| [`docs/カセット作成ガイド_AI用.md`](docs/カセット作成ガイド_AI用.md) | カセット JSON を書くためのガイド（利用者・AI 向け） |
+| [`docs/ガイド_ローカルLLMで動かす.md`](docs/ガイド_ローカルLLMで動かす.md) | Ollama / LM Studio 接続ガイド（利用者向け） |
+| [`docs/環境音_音源調達リスト.md`](docs/環境音_音源調達リスト.md) | 同梱音源の出所とライセンス（消さない） |
+| [`docs/環境_ローカルツール_AI用.md`](docs/環境_ローカルツール_AI用.md) | このマシンで使える CLI 一覧 |
+| `docs/archive/` | 完了・撤去済みの設計書。**リンクを辿るとき以外は読まない** |
 
-- **T1 で判明した既知の問題**: ①選択肢生成中に本編生成が始まると選択肢側 AbortController が追従せず `Cannot read properties of null (reading 'signal')`（再現手順が不明で切り分け未着手のまま据え置き）
-- **T4（配布）**: NSIS（`docs/設計_Tauri化.md` T4 の「実施記録」）。**2026-08-23 にほぼ完了**＝本番ビルド初成功・インストーラ 15.1MiB・クリーンインストール/初回ウィザード/生成/終了/データ保持まで実機確認済み。**T4 完了（2026-08-23）**＝インストール〜アンインストールの一巡で何も残らないことを確認（インストール先・ユーザーデータ・資格情報・アンインストール登録の4つとも消える）。この工程で不具合3件を検出（配布サイズ 126.7MiB→15.1MiB／X ボタンで終了できない／アンインストールでキーが残る＋対策フックが無言で2回失敗）。コード署名は計測後の判断で、当面は未署名＋SmartScreen 回避手順を README に記載済み。**配布形式は NSIS のみ**（2026-08-23 に `targets: ["nsis"]` へ。MSI は管理者権限が要る企業向け一斉配布の形式で個人配布には不要）
-- **画像生成の簡易化（I1〜I5 すべて実装済み・2026-08-09）**: 設計 → `docs/設計_画像生成の簡易化.md`。接続先を **OpenRouter（既定・文章側のキーを再利用）／Civitai（成人向け）／ComfyUI（パワーユーザー）の3枠**に固定し、設定項目を「プロンプト・画風・サイズ・品質」の4つへ削る。プロンプトスタイル（タグ羅列／自然文）は**欄を消す設定**として定義。コストは常に円で表示。**API 仕様・料金は 2026-08-09 に実APIで実測済み**（OpenRouter `/api/v1/images` は `quality:"low"` で 0.35円/枚・Civitai は `orchestration.civitai.com` の `textToImage` で 3 Buzz・`whatif=true` で生成前見積り）。接続先は **OpenRouter（既定）／Civitai（コミュニティモデル）／ComfyUI（ローカル）の3枠で確定**。**カード決済 × 成人向け許可 × 従量課金は市場構造として空集合に近い**ため（Visa の VIRP Tier 1・主要プロセッサの拒否）、Runware・Novita・fal・Replicate・AI Horde はいずれも却下済み＝**再調査しないこと**（根拠は設計書 §1.3・§10）
-- ~~**ワークフローテンプレ拡充**（SDXL 以外・LoRA ノード入り）~~ → **不要と判断して決着（I4・2026-08-09）**。テンプレを在庫として抱えるのは「ユーザーが自分の workflow を持ち込めない」前提の対処だったが、自動注入で持ち込みが楽になり、モデル名も `/object_info` のプルダウンから選べるようになったため。ComfyUI の実機動作確認は**接続テスト・実生成（`/prompt`→`/history`→`/view`）とも完了（2026-08-08）**。通常起動での接続不可（旧「T1 の既知の問題②」）も原因特定・修正済み。残る未検証は plugin-http 経由の POST とバイナリ blob のみ（`docs/設計_Tauri化.md` の T1 節）
-- **openai-image 系の実プロバイダ確認**（`response_format: b64_json` 非対応 API への追従が必要になったら `imageGen.ts` の openai 経路にバリエーション追加）
+## コード中のコメントに残るタグ
 
-### 公開に向けた未着手フェーズ（最大の残ブロック）
-事業判断は `docs/公開計画_マネタイズと配布.md` §6、実装は `docs/設計_公開前実装.md`（R1〜R10）。**順序は 2026-08-10 に改訂。Phase 1 の `schemaVersion` は「唯一あとから足せない」もの**なので他より先に潰す。
-
-- **Phase 0（済）**: ✅サークル名/製品名/ドメイン・DLsite サークル登録・BOOTH 開設／✅**R7 の a/b 判断＝a で決定**（2026-08-15。`SessionOverlay` にキャラを持たせない＝スキーマ変更なし）
-- **Phase 1（公開ブロッカー）**: ✅**R1 `schemaVersion` + migrate／R2 カード検証入口＋`parseBundle` 未知キー保存（2026-08-15 実装済み）**
-- **Phase 2（ファネルと集客装置）**: ✅**R5' ローカルモデルの通し動作検証（2026-08-23 完了）**＝ファイアウォールで外向き通信を遮断した状態で、起動〜3シーン完走〜チェックポイント復元〜カセット/バンドル/物語の書き出しまで全項目が通り、**画像生成（ComfyUI）も遮断下で動作**した。**⚠ ただしこれは DLsite §1.8-③ への反論材料にはならない**（2026-08-23 に解釈を訂正。条文が問うのは「接続しない構成を*選べるか*」ではなく「**購入物だけで動くか**」＝ Ollama/ComfyUI の入手を要求する時点で該当する）。R5' が証明したのは「**ローカル構成が実際に通ること**」＝ BOOTH 版の訴求点・将来の DLsite 版 SKU の前提条件／✅R3 キーの安全な保存／✅R4 OpenRouter OAuth／✅R5 初回ウィザード／✅**R10 物語の書き出し＋組版改善（＝集客の本体・旧 Phase 3 から繰り上げ）**／**残り＝公開版の API 案内ページ＋動画**（ローカルモデル分の原稿は `docs/ガイド_ローカルLLMで動かす.md` に用意済み＝2026-08-16。**外部サービス側の案内がまだ**）
-- **Phase 3（需要検証）**: **T4 配布ビルド（NSIS インストーラ）を一度通す＝ここが先頭**（2026-08-23 追加。以降の配布・計測が全部これに乗る）／R9 CSP・更新通知／R6 短編カセット2〜3本（**3シーン以内・本文は人力執筆**）→ ファネル指標を実測。初回生成到達率が低ければ Phase 4 に進まず Phase 2 へ戻る／**利用規約・プライバシーポリシー（§4.3）＋ §4.2 の手続き**（2026-08-23 追加・公開の直接ブロッカー）／**R7 配布ビルド（ローダー除去＋カセット焼き込み・成果物を grep で検証）**〔2026-08-30 に Phase 4 から繰り上げ＝課金点そのもの〕／**BOOTH で無料タイトルを公開**（無料の入口はここ。DLsite では不可）／制作版のテスター募集
-- **Phase 4（線引きの残り）**: Session の書き込み境界・プレイ中の編集経路。**売れる確証が出てから**。~~R7 ビルド分離~~ は **Phase 3 へ移動**（**無料ビルドから落とすものに FB7-E の2経路〔？バッジ→`CharacterDraftModal`／レビュー `newCharacters` 承認→`characterDraftQueue`〕を含める**＝R7 案 a の実体）、~~R8 署名~~ は**凍結**（~~R11 作品ビルダー~~ と対で復活する）。**⚠ 旧記載「守る相手は〔JSON を手書きできる層〕＝最初から顧客ではない」は 2026-08-30 に失効**（AI 支援でその層は顧客と重なった）
-- **Phase 5（コンテンツ）**: 無料**タイトル**の量産／~~有料カセット（長編）~~ → **凍結**（不発時は「有料タイトル＝同じ単体 exe」の形で検討）／R18 タイトル／静的カタログ → **保留**（第三者の作品が実際に出てから着手＝先に器を作る意味が無い）
-- **別トラックA（DLsite）**: **2026-08-23 に凍結（BOOTH 優先）。再開の条件＝BOOTH で需要が出たとき。** 前提が変わった経緯: DLsite に出すには「購入物だけで動く」＝**モデルと推論ランタイムを同梱した別 SKU** が要る（前例＝HermitNode の BOOTH 版〔モデル非同梱・差し替えが売り文句〕と DLsite 版〔Llama 3.1 8B 同梱・4.32GB〕の2SKU構成）。これは検証タスクではなく**開発プロジェクト**で、①ランタイム埋め込み ②モデルのライセンス（R18 と AUP の衝突＝ Apache-2.0 系に絞る必要）③画像同梱は10GB超＋用途制限で現実的でない ④既定接続先の作り替え（R7 と同種）が付く。**今は作らない**＝ §1.8「DLsite の規約に製品設計を合わせない」がそのまま効く。Phase 3 の計測後に判断。**任意の追加ダウンロードは禁止されていない**（DLsite 版も「自己責任で無検閲モデルへ差し替え可」と書いている）ので、**API 機能を残すこと自体は障害にならない**
-
-### 決着済み（参照用）
-**再提案する前にここを読むこと。** 却下・不採用の理由は各ドキュメントに残してある。
-
-- ~~**R7 の a/b 判断（`SessionOverlay` にキャラを持たせるか）**~~ → **✅ 2026-08-15 に案 a で決定**（`docs/設計_公開前実装.md` R7）。無料版では**発見キャラのキャラ化（FB7-E）の導線を出さない**ことで線を引き、`SessionOverlay` は `lore`＋`characterDevelopments` のまま据え置く（＝R1 のセーブ版番は v1 で確定・スキーマ変更なし）。案 b（`SessionOverlay.characters`）は**素材でないキャラが合成ビュー・カード書き出し・配役・状態エンジンの全経路に出てくる**ため見送り＝FB7-E で一度却下した「セッション内埋め込みキャラ」の再来。**型コメント（`types.ts` の `SessionOverlay`）にも刻んであるので、思いつきで `characters` を足さないこと。** 寝返るなら `SAVE_DATA_VERSION` を 2 に上げて移行関数を1本書く（migrate が入ったので後戻り可能になった）
-
-- ~~**PC-B の本実測**~~ → **✅ 2026-08-06 に完了・採用案なしで決着**（`docs/計測_迎合対策文面.md`）。740会話（1480応答）を2フィクスチャで実測し、**どの案も対照を上回らなかった**ため、切り替えハーネス（`ConsequenceVariant`/`CONSEQUENCE_CLAUSES`/`debugConsequenceVariant`/System のプルダウン）を全削除し `prompts.ts` の定数 `CONSEQUENCE_CLAUSE` 1つにした（**プロンプト出力は18ケースで byte 一致**）。要点＝①最も強い合成案（旧 V2+V5）が①の受容も②③の不成立も最悪＝**強くするほど良くならない**②**`leak` 0/740・`stall` 0/740**＝上位設計が最大の失敗モードに挙げていたものは起きない③実際に効いているのは**キャラ定義と関係性 prose**。**「もっと強い文面」を足す前に `docs/計測_迎合対策文面.md` §4.3「やらないこと」を読むこと**
-- ~~**`startPreset.authorNote` の既定文**~~ → **✅ 実施しないと決定**（同 §4.4）。汎用の1文が効かないのが実測の結論なので、同じ内容を `authorNote` へ移しても効かず、既定値にすると毎ターン非キャッシュのトークンだけ確実に増える。代わりに**入力欄の案内**で「人物の芯はキャラクターの人格欄に書く方が効く」と伝える形にした。`newWorld()` の `startPreset.authorNote` は `''` のまま
-- ~~**G5 の判定＝`decayPerScene` の保留を解くか**~~ → **✅ 2026-08-06 に不採用で決着**（`docs/詳細設計_ゲーム性向上.md` §5.4）。摩擦シーンを5本混ぜた12シーンを実際に通しで回した結果、**減少の割合 27.3%**（増16/減6）＝§5.2 の「2〜3割なら保留のまま」に該当。「数値は上振れ方向にしか動かない」という前提が成立せず、しかも**下げるべきものだけを下げている**（仲間を庇わなかったシーンで好感度-5・士気-5 が出る一方、規定に従った点は信用+5）。`reviewGuidance` で足りるという整理が正しかった
-- ~~**Anthropic 系での `cache_control` 実効確認**~~ → **✅ 2026-08-05 に確認済み**（`docs/詳細設計_プロンプト構造とキャッシュ.md` §7.1.1）。`anthropic/claude-haiku-4.5` へアプリと同じ `withCacheControl`＋`buildMessages` を通し、2ターン目に `cached_tokens=6351`・実コスト $0.0084→$0.0030（**2.85倍**）を確認。`cache_control` なしの対照は 0＝効果は PC-C の付与そのものによる。**ただし Anthropic 直叩き（OpenAI 互換）経路は `usage` に `prompt_tokens_details` が無く実効を確認できない**＝Claude 系は OpenRouter 経由を推奨（§7.1.2）
-
-- **環境音ピン（AM1〜AM3 すべて実装済み・2026-08-01 完了）**: 要望 → `docs/設計_環境音ピン_実験.md`、設計 → `docs/設計_環境音ピン.md`、音源 → `docs/環境音_音源調達リスト.md`。本文の一点に環境音をピン留めし、スクロール位置との距離で音量を上下させる**実験機能**。AM1=基盤（型・`ambientSounds.ts`・`ambientAudio.ts`・`ambient.ts`・store 3アクション・アンカー差し込み3か所・`AmbientPinModal`・`ReaderSettings` の ON/OFF と音量・`App.tsx` の解錠リスナ）／AM2=UI 仕上げ（本文右側のスピーカー `AmbientPinLayer`・上下ドラッグで位置変更・クリックで設定メニュー〔音量上限・半径・削除〕・`maxGain`・モーダルの2カラム化と配置プレビュー）／AM3=解錠の案内（**未解錠のままホイールでスクロールした時だけ** `infoNotice` で1回。ホイールは user activation に数えられないため、クリックせずに読み進めると無音のままになるのが唯一の抜け道）＋System の同梱素材クレジット（`HelpDetails` で畳んだ25音の一覧）。**体感チューニングは実プレイで問題なしと確認できたため実施せず**、`StoryLogModal` からの導線は「ピンはメッセージと行まで決めないと置けない＝シーン単位の導線が短くならない」ため作らない
-  - 音源は **VSQ plus+ の25本**（利用規約の確認結果は `docs/環境音_音源調達リスト.md` §0.2）。効果音ラボは再配布規約の判断が割れるため**不使用**（§0.1）
-  - **⚠ 波7本のラベルは測定による暫定名**（聴いて確かめていない）。実際と違えば `ambientSounds.ts` の `label` を張り替える
-- **フィードバック反映8（FB8・A〜E すべて実装済み）**: 手順書 → `docs/設計_フィードバック反映8.md`。15項目を5バッチへ整理、実装順 A→B→C→D→E で合意。A=即効バグ修正（#4 空シーン見出し・#13 数値入力 `NumberInput`・#9 スクロール再中央寄せ・#11「当事者」→「主要登場人物」。**実装済み 2026-07-21**）／B=完結の作法（完結分岐で入力/続ける/やり直す/選択肢/メッセージ生成系をロック＝`isSessionFinalized`＋store ガード・「⑂ ここから分岐して続ける」`branchToContinue`・レビュー popup を `SceneReview.sessionId`＋Play 表示時のみに限定 #14。**実装済み 2026-07-22**）／C=画像生成の強化（`imageGen.ts` に `kind:'modelslab'`＝text2img＋fetch ポーリング・`steps/sampler/cfg` を `ImageGenRequest`/`ImageJob` に追加・`ImageGenModal` で種別ごとに欄出し分け＋自由サイズ「カスタム」・`ImageProviderSettings` に ModelsLab。**実装済み 2026-07-22**）／D=読書・ナビUX（会話折りたたみの右スパイン `.scene-block`/`.scene-spine`・分岐ツリーの非破壊トグル `onlyCurrentPath`・挿絵→本文リンク `revealMessage`。**実装済み 2026-07-22**）／E=当初の「設定のわかりやすさ」をユーザー要望で **UI全面見直し**へ拡大（E1 用語・文言の平易化〔キャラクター表記統一・作成ボタン動詞形・内部ID非表示・説明ウォールの折りたたみ〕・E2 文字記号/絵文字の全廃〔`icons.tsx` へ SVG 統一・`recordCheckpoint` のラベル接頭辞は生成側から除去し描画時にレガシー剥がし〕・E3 設定の再編〔セッション設定4タブ・世界観ナビの `SECTION_GROUPS`・条件エディタの文章形〕・E4 導線・磨き〔ドックのラベル付きタブ化=A案・⋯メニュー整理・設定への直行導線〕）。**実装済み 2026-07-23**
-- **ロールグループと定量条件（Part B・拡張は F1-a/F1-d で撤去済み。Part A の `IntroTag` 系だけ現役）**: 手順書 → `docs/設計_ロールグループと定量条件.md`。Part A=名前置換の分離（`IntroTag`/`IntroTagBinding`・`findIntroTagRefs`/`resolveIntroText`・`IntroTagDefEditor`/`IntroTagFields`）＋ロールのグループ化（`roleMembers`・`CastingFields` 複数選択・【配役】注入一本化。**実装済み**）／Part B=`Clause.group`＋`matchGroups`＋`charVar`/`matchAssignments` 撤去＋`subject`＋`@ロール名`/`@相手` 置換（`bindRoleNames`）＋実績（`unlockAchievements`）/エンディング（`checkEndings`）/イベント（`nextScheduledEvent`）適用＋条件エディタに「グループ条件」行（ロール・数量詞・下位条件・当事者チェック。`WorldEditor.tsx`）。**実装済み**（数量詞 UI は 全員/N人以上 のみ。node直叩きで matchGroups/bindRoleNames/eventUsedKey 検証済み）／拡張=条件エディタに「N人ぴったり」（`exactly`）を追加＋`matchGroups`/`checkEndings` が `exactCandidates` を返し、エンディングレビューは候補が n 人を超える subject な `exactly` 群ごとにプルダウンで当事者を選ばせる（`endingExactSelections`）。実績は `exactly` を `atLeast` に読み替え・イベントは先頭 n 人で自動発火。**実装済み**
-- **フィードバック反映7（FB7・A〜C・E 実装済み・D は上記で作り直され撤去）**: 手順書 → `docs/設計_フィードバック反映7.md`。A=即効修正（画像ズームのポータル化＋等倍トグル・表記統一・方向付けテンプレート。**実装済み 2026-07-19**）／B=分岐ツリーの履歴リンク化（行クリック＝移動 `navigateToNode`・`lineTipOf`・`scrollTarget`。**実装済み**）／C=ポイントのレビュー確定一本化＋変動幅＋レビュー指針（選択肢 effects 廃止・`deltaMin/deltaMax`・`reviewGuidance`。**実装済み**）／D=条件エンジンのキャラ変数化（`Clause.charVar`＝相手1〜3・`matchAssignments`。2026-07-20、上記「ロールグループと定量条件」Part B により撤去・後継へ移行）／E=発見キャラ（`Session`/`WorldStartPreset.newCharacterPolicy`＋【新しい登場人物】注入・未解決話者の ？バッジ・レビューの `newCharacters` 提案・`characterDraftQueue`→`CharacterDraftModal`→`addDiscoveredCharacter` の採用フロー1本化・ライブラリ直行保存＋タグ「発見」。**実装済み 2026-08-05**）
-- **フィードバック反映6（FB6・A〜D すべて実装済み・2026-07-19）**: 手順書 → `docs/設計_フィードバック反映6.md`。A=セッション画像記録／B=挿絵の後付け生成（背景は撤去）／C=明示分岐（上書き方式）／D=ツリーのレビュー単位折りたたみ
-- **フィードバック反映3（FB3・A〜D すべて実装済み・2026-07-12）**: 手順書 → `docs/設計_フィードバック反映3.md`。A=本文表示の即効改善（`.gen-divider`・自動スクロール停止・分岐ラベル本文冒頭・選択UX・選択肢生成ボタン）／B=巻き戻しの兄弟分岐化（`anchorMessageId`＋`reanchorBranch`）＋SourceTree 風フルグラフ／C=演出ディレクター廃止（`nextScheduledEvent` 一本化・`eventAutoFire`）／D=セッションカード全廃＋`CassetteEditor`（専用エディタ・`newCassette`/`upsertCassette`・セッションからは「カセットにする…」で `seedSession`）
-## 設計上の根本分岐（ADR）
-後から別パターンを試せるよう、根本決定と**却下案**を残す。詳細は `docs/設計_ステータスエンジン.md`。
-
-### ADR-1: 状態（感情・関係・パラメータ）の表現方式（2026-06-30 決定）
-- **背景**: 「ワールドごとに独自ゲームシステムを構築できる、自由度の極めて高いギャルゲ」を目指す。任意キャラパラメータ・実績・行動カウンター・条件付きイベントを足すにあたり、状態表現を根本から再検討
-- **原則: 事実は数、判断は言葉。**
-  - 判断（感情の機微・関係の質）＝ **prose**（ワールド固定の aspect ごとの記述＋stance）。LLM が読み生成に使う。**条件判定には使わない**
-  - 事実（好感度ポイント・回数・所持金・レベル・日数）＝ **数**。プレイヤーとコードが読み、**イベント発火条件**に使う（ADR-1 当時の「フラグ」は FB9-C で撤去＝カウンターに一本化）
-- **採用（案A）**: 関係性は prose（数値化しない・次元はワールド固定）／進捗は prose と別レイヤーの「好感度ポイント」（イベント/行動で固定値加点・LLM に査定させない・"細かく上昇"は選択肢連動の小刻み加点＝P5）／イベント発火は人の承認なし・コード自動判定／**band（派生ティア）は不採用**／レビューが状態の唯一の書き手（prose は全文書き直し・数値はコードが加算）
-- **方針転換（FB7-C・2026-07-19）**: P5 の選択肢連動加点は**廃止**し、ポイント確定をシーン終了レビューの結果ベース評価に一本化（「事前にポイントが見えると面白味が半減」「独自行動にも同じ土俵で加点したい」という実プレイの知見）。「LLM に査定させない」は緩和し、定義ごとの変動幅（`deltaMin/deltaMax`＝プロンプト目安＋コードのクランプ）と世界観のレビュー指針（`reviewGuidance`）で暴走を抑制する。機械的保証が必要になったら「条件付き自動変動ルール」（コード実行）を次弾で検討（発展案）
-- **却下した代替（後で試す用）**:
-  - **案B**: 進捗は主人公の数値スタットのみ・関係性は純 prose（キャラ別好感度ポイントなし）
-  - **案C**: 純 prose 一本（進捗の可視的な楽しみを持たない・最小だが"レベル上げ感"が出ない）
-  - **band を条件にも使う**: 偽閾値とドリフトが条件層に侵入するため不採用
-  - **イベントの LLM 言語判定発火**: 非再現・早漏発火／**人による承認制発火**: 無粋で没入を損なう、ため不採用
-  - **旧来の連続数値（信頼60 等）**: LLM が数値更新を苦手＋機微を非可逆圧縮するため不採用
-- **共有/コミュニティ観点**: 構造（固定 aspect・名前付きイベント・実績）と発火の再現性が「共有可能なゲーム」の要。prose は没入、数は再現、で役割分担
-- ~~**後方互換**: 不要。クリーンブレイク（persist キー変更で旧データ破棄・移行連鎖を全廃）~~ → **2026-08-15 に終了**。公開後は前提が崩れるため R1 で `version`/`migrate` を導入した（「永続化とスキーマ版番」節）
+コメントの `（FB7-E）` のような印は、その変更を入れた設計書の項目名。文書は archive か削除済みなので**辿らなくてよい**。意味だけ: `Fn`=物語の簡素化のフェーズ／`PC*`=プロンプト構造とキャッシュ／`IN1`=入力の二分化／`Rn`=公開前実装（R1 版番・R2 カード検証・R3 資格情報・R4 OAuth・R5 ウィザード・R10 書き出し）／`In`=画像生成の簡易化／`AMn`=環境音ピン／`Tn`=Tauri 化／`CSn`=登場制御／`FBn-X`=フィードバック反映 n／`Gn`・`CGn`・`En`・`Wn`・`Pn`・`Vn`・`Bn`・`Cn`・`Qn`・`STn`・`UI-n`=旧フェーズ名。
 
 ## ユーザーの進め方の好み
-- 大きめの要望は「機能検討（設計提案＋選択式質問）→合意→実装→検証→要約報告」の流れを好む
-- 1ターンで作りすぎない（大改修はフェーズ分割して各ターンで検証可能に）
-- 実装/技術に触れない要件定義書が欲しい場合がある（`docs/要件定義書.md`）
+
+- 大きめの要望は「機能検討（設計提案＋選択式質問）→合意→実装→検証→要約報告」
+- 1ターンで作りすぎない。大改修はフェーズ分割し、各フェーズを検証可能にする
+- 実装に触れない要件定義書が欲しいことがある（`docs/要件定義書.md`）
+- 見た目の確認は AI が行い、報告は「確認した」の形で
