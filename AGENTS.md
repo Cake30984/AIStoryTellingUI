@@ -22,7 +22,7 @@
 
 - リモート `https://github.com/Cake30984/AIStoryTellingUI.git`／ブランチ `main`
 - **1つの変更ごとに `git commit` → `git push origin main`。** メッセージは日本語で端的に
-- `samples/`・`_ambient_work/`・`run.bat` は ignore 済みのローカル作業物。指示が無い限り触らない
+- `samples/`・`_ambient_work/`（撤去済み環境音の作業残骸）・`run.bat` は ignore 済みのローカル作業物。指示が無い限り触らない
 
 ## 技術スタックと基本方針
 
@@ -49,22 +49,21 @@ React 18 + TypeScript(strict) + Vite / zustand（`persist`）/ Tauri 2（`plugin
 - `lorebook.ts` — ロアを `alwaysOn`（system）とキーワード一致（深さ3・直近6件窓）に分ける
 - `tokens.ts` — 文字数（ユーザー向け）とトークン（コスト・窓）の単位。閾値 `SCENE_WIND_DOWN_CHARS`(3000)/`SCENE_WRAP_UP_CHARS`(4500)/`RAW_WINDOW_TOKENS`(12000)
 - `casting.ts` — 導入文の置換タグ `@タグ`（`findIntroTagRefs`/`resolveIntroText`/`validateCasting`/`normalize*`）
-- `schema.ts` — 版番（`APP_STATE_VERSION`=2／`SAVE_DATA_VERSION`=4／`CASSETTE_DATA_VERSION`=4）と移行連鎖
+- `schema.ts` — 版番（`APP_STATE_VERSION`=2／`SAVE_DATA_VERSION`=5／`CASSETTE_DATA_VERSION`=5）と移行連鎖
 - `version.ts` — `APP_VERSION`（`vite.config.ts` が package.json から注入）・`compareVersions`
 - `io.ts` — `downloadBundle`/`downloadBlob`（内部で `saveBlob`）／`parseBundle`（未知キーは捨てずに持ち回る）
 - `cards.ts` — キャラカード（`chara_card_v2` 互換）／世界カード（`aist_world`）／カセット（`aist_cassette`）の書き出し・解釈。**読み込み検証は `validateCard` 1本**（`minRuntimeVersion`／`spec`／`spec_version`）。`freshSessionOf` で開始状態へ初期化
 - `png.ts` — tEXt チャンク読み書き（数MB級は `push(...spread)` 禁止＝セグメント連結）
 - `imageStore.ts` — 画像 blob ストア（Web: IndexedDB、Tauri: `data/images/`）。`putImage`/`getImage`/`gcImages`/`useImageUrl`。localStorage に画像を入れない
-- `imageGen.ts` — 画像生成の抽象層。`generateImage` → `ImageGenResult{blob,costUsd?}`。種別 `openrouter-image`（`/images`）／`civitai`（orchestration `textToImage`・`whatif` 見積り）／`comfyui`（`/prompt`→`/history`→`/view`）／`modelslab`／`openai-image`。定型タグの結合は `combineWithDefaults` の1箇所
-- `civitai.ts`／`comfyWorkflow.ts`（API Format ワークフローのリンク追跡による自動注入・純関数）／`promptTags.ts`／`imageSetup.ts`（初回案内を断ったかの非永続フラグ）／`cost.ts`（課金単位のまま表示）／`imageJobs.ts`（ジョブ型・AbortController の Map・`useBlobUrl`）／`avatarGen.ts`
+- `imageGen.ts` — 画像生成の抽象層。`generateImage` → `ImageGenResult{blob,cost?}`。種別は **`openrouter-image`（`/images`・コストを返す唯一の種別）／`comfyui`（`/prompt`→`/history`→`/view`）／`openai-image` の3つ**（`IMAGE_PROVIDER_KINDS`。旧 civitai/modelslab は persist から `merge` で読み捨てる）。定型タグの結合は `combineWithDefaults` の1箇所
+- `comfyWorkflow.ts`（API Format ワークフローのリンク追跡による自動注入・純関数）／`promptTags.ts`／`imageSetup.ts`（初回案内を断ったかの非永続フラグ）／`cost.ts`（課金単位のまま表示。現在は usd のみ）／`imageJobs.ts`（ジョブ型・AbortController の Map・`useBlobUrl`）／`avatarGen.ts`
 - `storyExport.ts` — 物語の書き出し（plain/markdown/挿絵つき markdown・分岐時点も可・`isBackstage` で指示とマーカーを落とす）／`storyCard.ts` — 共有用の1枚画像（1080×1350）
-- `ambientSounds.ts`（内蔵25音のカタログ。`src/assets/ambient/*.opus`・約12MB）／`ambientAudio.ts`（再生エンジン）／`ambient.ts`（ピンの位置解決と音量・`useAmbientScape`）
 - `oauthPkce.ts` — OpenRouter OAuth（PKCE。`state` 無しなので nonce 入り一回きり受け口で代替）／`checkpoint.ts`（gzip）／`dialogs.ts`（`appConfirm`/`appPrompt`/`appChoices`）／`modalStack.ts`／`shortcuts.ts`（`Ctrl+K` パレット・`Ctrl+1/2/3`・`Ctrl+G` 続ける・`Ctrl+.` 没入）／`useCardDrop.ts`／`useMultiSelect.ts`
 
 ### `src/components/`
-- 骨格: `Rail.tsx`（Play/Library/System）／`Sidebar.tsx`（セッション一覧・素材ナビ・D&D 取込）／`ChatPanel.tsx`（会話画面本体。トップバー・本文・コンポーザー・右ドック）／`ContextDock.tsx`（状態/発見/画像/分岐/ジョブ のタブ。`StatusView`/`DiscoveryView`/`GalleryModal.GalleryBody`/`BranchTreeModal.BranchTreeBody`/`ImageJobsPanel.ImageJobsBody`）／`LibraryBar.tsx`／`CommandPalette.tsx`／`FirstRunWizard.tsx`（接続先5経路＋接続テスト）／`SettingsModal.tsx`（`SettingsBody`＝System ページ: 接続先・既定モデル・データ入出力・GC・クレジット）／`ImageProviderSettings.tsx`
+- 骨格: `Rail.tsx`（Play/Library/System）／`Sidebar.tsx`（セッション一覧・素材ナビ・D&D 取込）／`ChatPanel.tsx`（会話画面本体。トップバー・本文・コンポーザー・右ドック）／`ContextDock.tsx`（状態/発見/画像/分岐/ジョブ のタブ。`StatusView`/`DiscoveryView`/`GalleryModal.GalleryBody`/`BranchTreeModal.BranchTreeBody`/`ImageJobsPanel.ImageJobsBody`）／`LibraryBar.tsx`／`CommandPalette.tsx`／`FirstRunWizard.tsx`（接続先5経路＋接続テスト）／`SettingsModal.tsx`（`SettingsBody`＝System ページ: 接続先・既定モデル・データ入出力・GC・使用状況）／`ImageProviderSettings.tsx`
 - 共通部品: `ModalShell`（全モーダル。`dirty` で破棄確認）／`DialogHost`／`MenuPopover`／`ZoomOverlay`（`document.body` へポータル）／`icons.tsx`（自前 SVG。絵文字・文字記号は使わない）／`EntityAvatar`／`NumberInput`／`CsvInput`／`HelpDetails`／`ActivityIndicator`／`IntroTagDefEditor`・`IntroTagFields`
-- Play: `StructuredMessage.tsx`（構造化本文の描画。未解決話者に ？バッジ）／`SceneReviewModal.tsx`（確定前は呼び出し単位の進行表示）／`SceneEditor`／`StoryLogModal`（あらすじ一覧）／`StatusPanel`・`DiscoveryPanel`（編集）／`EndingModal`（結末の提案）／`InterludePanel`（幕間）／`CharacterDraftModal`（発見キャラの起案→`CharacterEditor` draft）／`ImageGenModal`／`StoryExportModal`／`ReaderSettings`／`AmbientPinLayer`・`AmbientPinModal`・`AmbientRadiusField`
+- Play: `StructuredMessage.tsx`（構造化本文の描画。未解決話者に ？バッジ）／`SceneReviewModal.tsx`（確定前は呼び出し単位の進行表示）／`SceneEditor`／`StoryLogModal`（あらすじ一覧）／`StatusPanel`・`DiscoveryPanel`（編集）／`EndingModal`（結末の提案）／`InterludePanel`（幕間）／`CharacterDraftModal`（発見キャラの起案→`CharacterEditor` draft）／`ImageGenModal`／`StoryExportModal`／`ReaderSettings`
 - Library: `library/CharacterLibrary`・`CharacterEditor`・`WorldLibrary`・`WorldEditor`（フルページ。基本／ロア／関係性の次元／開始テンプレート）・`CassetteLibrary`・`AvatarField`・`LibraryMultiSelect`／`CassetteEditor.tsx`／`SessionEditor.tsx`（基本／物語／進行／AIと出力 の4タブ）
 
 ## データモデル（要点）
@@ -77,7 +76,7 @@ React 18 + TypeScript(strict) + Vite / zustand（`persist`）/ Tauri 2（`plugin
 - **Session** — `characterIds`／`worldId`／**`focusCharacterId`**（中心人物・必須。空文字＝未選択で開始不可）／`authorNote`／`story: StorySetup`（genre/premise/opening/openingTitle/initialDirective/introTags）／`introBindings`／`scenes`／`currentSceneId`／`narrativeStyle`／`structuredOutput?`／`reviewSplit?`／`rawWindowFromSceneId?`／`newCharacterPolicy?`／`state`／`overlay`／`endingGoal?`／`ending?`／`archived?`／`originCassetteId?`／`messages`／`model`・`reviewModel`・`choicesModel`／`temperature`／`maxTokens`
 - **SessionState** — `relations: Relation[]`（キャラ→中心人物の有向 prose。`stance`＋次元ごとの `note`）／`moods`／`now`（自由文字列）／`place`／`presentIds`／`situation`／`pending: PendingSlip[]`（`when`/`what`）／`recentDone`
 - **SessionOverlay** — `lore`（発見ロア）／`characterDevelopments`。素材を汚さないための上乗せ。本編には素材＋overlay の実効ビュー（`effectiveWorld`/`effectiveCharacter`）で注入。`promoteOverlay*` で素材へ **move**
-- **Scene** — `title`/`note`（時・場所・居る人物）/`summary`/`timeLabel?`/`foreground?`（突き合わせ済みの一文）/`illustrations?`/`ambientPins?`/`interludes?`/`endedAt?`
+- **Scene** — `title`/`note`（時・場所・居る人物）/`summary`/`timeLabel?`/`foreground?`（突き合わせ済みの一文）/`illustrations?`/`interludes?`/`endedAt?`
 - **Message** — `role`/`characterId?`/`sceneId?`/`content`/`choices?`/`truncated?`/`pending?`/`kind?: 'directive'`（書き手への指示。判定は `isDirective`）
 - **AppState 直下（Session の外に置くもの）** — `branchTrees: Record<sessionId, BranchTree>`／`sessionImageLogs`／`cassettes: Cassette[]`／`ui: UiPrefs`／`defaultModelRef`／`favoriteModels`／`lastImageProviderId`／`lastDraftModel`。**`branchTrees`・`sessionImageLogs` を Session に入れない**（スナップショットに含まれて再帰肥大・復元で巻き戻る）
 - **非永続（`partialize` 除外）** — `imageJobs`/`imageJobToasts`/`reviewProgress`/`sceneReview`/`endingProposals`/`interludeReflection`/`characterDraftQueue`/`scrollTarget`/`usageLog`/`schemaError`/`modelsByProvider`/各 `is*` フラグ
@@ -136,7 +135,6 @@ React 18 + TypeScript(strict) + Vite / zustand（`persist`）/ Tauri 2（`plugin
 - **幕間**: 終了シーンの末尾に `generateInterlude(sceneId, characterId)`（中心人物以外）。`reflectInterlude` で関係 prose の差分を出し `confirmInterludeReflection` で反映
 - **発見キャラ**: 構造化本文の未解決話者の ？バッジ／レビューの `newCharacters` 承認 → `queueCharacterDrafts`（既知の名前・`NARRATION_NAMES`・待機中同名は弾く）→ `CharacterDraftModal` が起案 → `addDiscoveredCharacter`（ライブラリの通常キャラ＋`characterIds` へ追加）
 - **画像**: `startImageJob` → 直列生成 → `selecting`（自動採用しない）→ `applyImageJobResult`（挿絵は `Scene.illustrations`＋`sessionImageLogs`、アバターは `avatar.imageId`。旧画像は参照を外すだけ）。回収は `gcUnusedImages`（使用中集合＝`collectUsedImageIds`）
-- **環境音ピン**（実験機能）: 本文の一点に `AmbientPin` を置き、スクロール中心との距離で音量。`Scene` の中なので分岐に乗る
 - **書き出し**: `StoryExportModal`（plain/markdown/挿絵つき/共有カード画像・分岐時点指定可）。キャラ・世界・カセットは PNG カード、全データは JSON バンドル（画像同梱可）。取り込みは `importAnyFile` に一本化
 - **初回**: `FirstRunWizard`（かんたん接続=OAuth／無料枠=Gemini／品質重視／緩いモデル／PC で動かす）→ 接続テスト → `defaultModelRef` 設定。閉じても `Provider` 未設定なら生成時に案内
 - **起動時**: hydration 後に `hydrateProviderSecrets`・`cleanupOrphanCheckpoints`・`backfillImageLogs`
@@ -157,7 +155,6 @@ React 18 + TypeScript(strict) + Vite / zustand（`persist`）/ Tauri 2（`plugin
 - `restoreCheckpoint` の passthrough を増やすときは「本文・進行と結合しているか」で判定。迷ったらスナップショット側
 - 分岐の自動削除は `subtreeHasProtection` を通す。`recordCheckpoint` 内では剪定しない
 - store 直管理のフィールド（`avatar.imageId` 等）を draft 全置換の保存で上書きしない
-- 環境音ピンは画像 id を持たない。GC・エクスポート・カセット同梱と無関係
 
 **UI**
 - モーダルは `ModalShell`。ネイティブ `confirm`/`prompt` 禁止（`appConfirm`/`appPrompt`/`appChoices`）
@@ -168,14 +165,13 @@ React 18 + TypeScript(strict) + Vite / zustand（`persist`）/ Tauri 2（`plugin
 - シーン見出しは「本文か要約があるとき」だけ出す
 - レビューモーダルは `sceneReview.sessionId === activeId` かつ Play 表示中だけ出す
 - `ZoomOverlay` はポータル描画を維持。サムネイルの img ルールは直下セレクタで書く
-- 環境音のアンカー差し込みは3レンダラ（非構造化 novel／`StructuredNovelBody`／会話形式）全部に入れる
 - **`useStore()` をセレクタ無しで丸ごと購読しない（新規コード）。** 既存35箇所は計画 P2 で直す
 
 **プラットフォーム**
 - `<a download>` は Tauri で動かない。ファイル DL は `io.ts` 経由
 - `capabilities/default.json` の http スコープはポート成分 `:*` を省略しない
 - 画像生成の定型タグ・画風の結合は `generateImage` の1箇所。`promptStyle==='natural'` では結合しない
-- 画像コストは円換算しない。Civitai を成人向け枠として説明しない
+- 画像コストは円換算しない
 - ComfyUI のワークフローは「プレースホルダがあれば手動置換・無ければ自動検出」の排他
 
 ## 既知の問題（2026-09-13 のレビューで確定。対処は計画書）
@@ -201,13 +197,13 @@ React 18 + TypeScript(strict) + Vite / zustand（`persist`）/ Tauri 2（`plugin
 | [`docs/計測_時間と予定.md`](docs/計測_時間と予定.md)／[`docs/計測_別視点の幕間.md`](docs/計測_別視点の幕間.md) | 現行設計を決めた実測 |
 | [`docs/カセット作成ガイド_AI用.md`](docs/カセット作成ガイド_AI用.md) | カセット JSON を書くためのガイド（利用者・AI 向け） |
 | [`docs/ガイド_ローカルLLMで動かす.md`](docs/ガイド_ローカルLLMで動かす.md) | Ollama / LM Studio 接続ガイド（利用者向け） |
-| [`docs/環境音_音源調達リスト.md`](docs/環境音_音源調達リスト.md) | 同梱音源の出所とライセンス（消さない） |
+| [`docs/環境音_音源調達リスト.md`](docs/環境音_音源調達リスト.md) | **撤去済み**環境音の、過去の同梱音源の出所とライセンス記録（消さない） |
 | [`docs/環境_ローカルツール_AI用.md`](docs/環境_ローカルツール_AI用.md) | このマシンで使える CLI 一覧 |
 | `docs/archive/` | 完了・撤去済みの設計書。**リンクを辿るとき以外は読まない** |
 
 ## コード中のコメントに残るタグ
 
-コメントの `（FB7-E）` のような印は、その変更を入れた設計書の項目名。文書は archive か削除済みなので**辿らなくてよい**。意味だけ: `Fn`=物語の簡素化のフェーズ／`PC*`=プロンプト構造とキャッシュ／`IN1`=入力の二分化／`Rn`=公開前実装（R1 版番・R2 カード検証・R3 資格情報・R4 OAuth・R5 ウィザード・R10 書き出し）／`In`=画像生成の簡易化／`AMn`=環境音ピン／`Tn`=Tauri 化／`CSn`=登場制御／`FBn-X`=フィードバック反映 n／`Gn`・`CGn`・`En`・`Wn`・`Pn`・`Vn`・`Bn`・`Cn`・`Qn`・`STn`・`UI-n`=旧フェーズ名。
+コメントの `（FB7-E）` のような印は、その変更を入れた設計書の項目名。文書は archive か削除済みなので**辿らなくてよい**。意味だけ: `Fn`=物語の簡素化のフェーズ／`PC*`=プロンプト構造とキャッシュ／`IN1`=入力の二分化／`Rn`=公開前実装（R1 版番・R2 カード検証・R3 資格情報・R4 OAuth・R5 ウィザード・R10 書き出し）／`In`=画像生成の簡易化／`AMn`=環境音ピン（撤去済み）／`Tn`=Tauri 化／`CSn`=登場制御／`FBn-X`=フィードバック反映 n／`Gn`・`CGn`・`En`・`Wn`・`Pn`・`Vn`・`Bn`・`Cn`・`Qn`・`STn`・`UI-n`=旧フェーズ名。
 
 ## ユーザーの進め方の好み
 

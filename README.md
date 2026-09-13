@@ -12,7 +12,7 @@
 
 - Windows 10 / 11（64bit）
 - 接続先の LLM: OpenRouter・OpenAI 互換 API・Gemini（OpenAI 互換エンドポイント）・**ローカル（Ollama / LM Studio）**
-- 画像生成（任意）: OpenRouter / Civitai / **ComfyUI（ローカル）**
+- 画像生成（任意）: OpenRouter / OpenAI 互換の画像 API / **ComfyUI（ローカル）**
 
 ## インストール（配布版）
 
