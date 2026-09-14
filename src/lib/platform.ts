@@ -220,6 +220,35 @@ const tauriStateStorage: StateStorageLike = {
 /** 環境に応じた永続化ストレージ。Web は localStorage、Tauri は %APPDATA%/data/state.json */
 export const stateStorage: StateStorageLike = isTauri() ? tauriStateStorage : webStateStorage
 
+/**
+ * 上書きの前に、保存されていた永続データの**原文をそのまま**退避する（P2c の一度きりの移行用）。
+ * 形を変えず1回だけ書くので、移行がおかしければここから手で戻せる。
+ *
+ * 退避に失敗しても移行は止めない——セッション本体は先に `SessionStore` へ書き終えている前提で
+ * 呼ぶこと（Web は localStorage が満杯に近いと原文の複製で `QuotaExceededError` になりうる）。
+ */
+export async function backupStateSnapshot(raw: string): Promise<void> {
+  if (stateWritesBlocked) return
+  try {
+    if (isTauri()) {
+      const { writeTextFile, BaseDirectory } = await import('@tauri-apps/plugin-fs')
+      await ensureStateDir()
+      await writeTextFile(`${STATE_FILE}.bak`, raw, { baseDir: BaseDirectory.AppData })
+    } else {
+      localStorage.setItem(`${PERSIST_KEY}-bak`, raw)
+    }
+  } catch (e) {
+    console.error('[platform] 旧データの退避に失敗（移行は続行する）', e)
+  }
+}
+
+/** 退避先の場所（案内の表示用） */
+export function stateBackupLocationLabel(): string {
+  return isTauri()
+    ? '%APPDATA%\\com.tokatokage.delist\\data\\state.json.bak'
+    : `ブラウザの localStorage（キー: ${PERSIST_KEY}-bak）`
+}
+
 // --- CheckpointStore（C1: セーブ/ロードと分岐周回のチェックポイント実体） ---
 // stateStorage / BlobStore と同じ流儀で Web(IndexedDB)/Tauri(ファイル) を切替。
 // 実体は gzip 済みバイナリ（呼び出し側で圧縮/伸長する）。
@@ -416,6 +445,17 @@ export interface SessionStore {
   delete(id: string): Promise<void>
 }
 
+/**
+ * 直近の読み出しで**中身を読めずに飛ばした**件数。壊れた1件でライブラリ全体を封印しない代わりに、
+ * 黙って減らしもしない——store が起動時にこの件数を案内へ出す（P2c）。
+ */
+let unreadableSessions = 0
+
+/** 直近の `getAll`/`list` で読めずに飛ばしたセッションの件数（起動時の案内用） */
+export function unreadableSessionCount(): number {
+  return unreadableSessions
+}
+
 const SESSION_DB_NAME = 'aist-sessions'
 const SESSION_DB_VERSION = 1
 const SESSION_STORE_NAME = 'sessions'
@@ -466,6 +506,22 @@ async function withSessionStore<T>(
   })
 }
 
+// 同じ id への読み書きは**バックエンドによらず**直列化する。ファイルなら `.tmp` を分けても
+// rename 前に次の書込が走ると新旧が混ざり、IndexedDB ならトランザクションの確定順が入れ替わって
+// **`delete` の後に `put` が着地＝消したセッションが復活する**。チェックポイントの
+// serializeCheckpointWrite と同じ流儀。
+const sessionWrites = new Map<string, Promise<void>>()
+
+function serializeSessionWrite(id: string, fn: () => Promise<void>): Promise<void> {
+  const prev = sessionWrites.get(id) ?? Promise.resolve()
+  const next = prev.then(fn, fn)
+  sessionWrites.set(id, next)
+  void next.finally(() => {
+    if (sessionWrites.get(id) === next) sessionWrites.delete(id)
+  })
+  return next
+}
+
 /**
  * Web 実装（IndexedDB）。localStorage の約5MB 上限から出るのがそもそもの目的。
  * structured clone で入るので、**Web 側は保存に JSON.stringify を通らない**
@@ -478,7 +534,17 @@ const webSessionStore: SessionStore = {
   },
   async getAll() {
     const rows = await withSessionStore<SessionRow[]>('readonly', (store) => store.getAll())
-    return rows.map((r) => ({ v: r.v, session: r.session }))
+    unreadableSessions = 0
+    const out: SessionRecord[] = []
+    for (const r of rows) {
+      if (typeof r?.session?.id !== 'string' || typeof r?.v !== 'number') {
+        unreadableSessions++
+        console.error('[platform] セッションの行の形式が違います', r?.id)
+        continue
+      }
+      out.push({ v: r.v, session: r.session })
+    }
+    return out
   },
   async get(id) {
     const row = await withSessionStore<SessionRow | undefined>('readonly', (store) => store.get(id))
@@ -486,11 +552,17 @@ const webSessionStore: SessionStore = {
   },
   async put(record) {
     if (stateWritesBlocked) return
-    await withSessionStore('readwrite', (store) => store.put(rowOf(record)))
+    const row = rowOf(record)
+    await serializeSessionWrite(row.id, async () => {
+      if (stateWritesBlocked) return
+      await withSessionStore('readwrite', (store) => store.put(row))
+    })
   },
   async delete(id) {
     if (stateWritesBlocked) return
-    await withSessionStore('readwrite', (store) => store.delete(id))
+    await serializeSessionWrite(id, async () => {
+      await withSessionStore('readwrite', (store) => store.delete(id))
+    })
   },
 }
 
@@ -514,22 +586,9 @@ async function ensureSessionsDir(): Promise<void> {
   }
 }
 
-// 同じ id への書き込みは直列化する（.tmp をファイル名ごとに分けても、rename 前に次の書込が
-// 走ると新旧が混ざる）。チェックポイントの serializeCheckpointWrite と同じ流儀。
-const sessionFileWrites = new Map<string, Promise<void>>()
-
-function serializeSessionFileWrite(id: string, fn: () => Promise<void>): Promise<void> {
-  const prev = sessionFileWrites.get(id) ?? Promise.resolve()
-  const next = prev.then(fn, fn)
-  sessionFileWrites.set(id, next)
-  void next.finally(() => {
-    if (sessionFileWrites.get(id) === next) sessionFileWrites.delete(id)
-  })
-  return next
-}
-
 async function readSessionFiles(): Promise<{ record: SessionRecord; bytes: number }[]> {
   const { readDir, readTextFile, exists, BaseDirectory } = await import('@tauri-apps/plugin-fs')
+  unreadableSessions = 0
   if (!(await exists(SESSIONS_DIR, { baseDir: BaseDirectory.AppData }))) return []
   const entries = await readDir(SESSIONS_DIR, { baseDir: BaseDirectory.AppData })
   const out: { record: SessionRecord; bytes: number }[] = []
@@ -538,10 +597,15 @@ async function readSessionFiles(): Promise<{ record: SessionRecord; bytes: numbe
     try {
       const text = await readTextFile(`${SESSIONS_DIR}/${entry.name}`, { baseDir: BaseDirectory.AppData })
       const parsed = JSON.parse(text) as SessionRecord
-      if (typeof parsed?.session?.id !== 'string' || typeof parsed?.v !== 'number') continue
+      if (typeof parsed?.session?.id !== 'string' || typeof parsed?.v !== 'number') {
+        unreadableSessions++
+        console.error('[platform] セッションファイルの形式が違います', entry.name)
+        continue
+      }
       out.push({ record: parsed, bytes: text.length })
     } catch (e) {
       // 壊れた1件でライブラリ全体を読めなくしない（ファイルは消さずに残す＝後から救出できる）
+      unreadableSessions++
       console.error('[platform] セッションファイルを読めませんでした', entry.name, e)
     }
   }
@@ -577,7 +641,7 @@ const tauriSessionStore: SessionStore = {
     if (stateWritesBlocked) return
     const id = record.session.id
     const value = JSON.stringify(record)
-    await serializeSessionFileWrite(id, async () => {
+    await serializeSessionWrite(id, async () => {
       if (stateWritesBlocked) return
       const { writeTextFile, rename, BaseDirectory } = await import('@tauri-apps/plugin-fs')
       await ensureSessionsDir()
@@ -591,7 +655,7 @@ const tauriSessionStore: SessionStore = {
   },
   async delete(id) {
     if (stateWritesBlocked) return
-    await serializeSessionFileWrite(id, async () => {
+    await serializeSessionWrite(id, async () => {
       const { remove, exists, BaseDirectory } = await import('@tauri-apps/plugin-fs')
       const path = `${SESSIONS_DIR}/${sessionFileName(id)}`
       if (await exists(path, { baseDir: BaseDirectory.AppData })) {
@@ -639,21 +703,40 @@ export function cancelSessionWrite(id: string): void {
   pendingSessionRecords.delete(id)
 }
 
-/** デバウンス中の書き込みを確定する（終了時・タブを隠したとき） */
+/**
+ * デバウンス中の書き込みを確定する（終了時・タブを隠したとき）。
+ * **1件ずつ待ち行列から取り出して書く**——まとめて取り出してから書くと、書いている途中に
+ * `cancelSessionWrite`（＝削除）が入った1件を拾えず、消したセッションを書き戻してしまう。
+ */
 export async function flushSessionWrites(): Promise<void> {
   if (sessionWriteTimer) {
     clearTimeout(sessionWriteTimer)
     sessionWriteTimer = null
   }
-  if (stateWritesBlocked || pendingSessionRecords.size === 0) return
-  const records = [...pendingSessionRecords.values()]
-  pendingSessionRecords.clear()
-  for (const record of records) {
+  if (stateWritesBlocked) return
+  for (const id of [...pendingSessionRecords.keys()]) {
+    const record = pendingSessionRecords.get(id)
+    if (!record) continue // 取り出す直前に取り消された
+    pendingSessionRecords.delete(id)
     try {
       await sessionStore.put(record)
     } catch (e) {
-      console.error('[platform] セッションの保存に失敗', record.session.id, e)
+      console.error('[platform] セッションの保存に失敗', id, e)
     }
+  }
+}
+
+/**
+ * セッション1件を消す。**待機中の書き込みを捨ててから**消す（逆にすると、待機中の1件が
+ * 削除のあとに着地してセッションが復活する）。飛んでいる `put` との順序は
+ * `serializeSessionWrite` が id ごとに守る。
+ */
+export async function deleteSessionRecord(id: string): Promise<void> {
+  cancelSessionWrite(id)
+  try {
+    await sessionStore.delete(id)
+  } catch (e) {
+    console.error('[platform] セッションの削除に失敗', id, e)
   }
 }
 
