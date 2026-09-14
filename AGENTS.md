@@ -41,7 +41,7 @@ React 18 + TypeScript(strict) + Vite / zustand（`persist`）/ Tauri 2（`plugin
 `src/types.ts` — 全データ型（**最初に読む**）／`src/store.ts` — zustand ストア（状態・全アクション・永続化・チェックポイント・描画の購読ヘルパ。4,400行の単一ファイル＝分割は計画 P2c）／`src/App.tsx` — レール＋サイドバー＋メイン＋常駐モーダルの組み立て・起動時処理／`src/styles/` — `tokens`/`base`/`layout`/`chat`/`composer`/`panels`.css（`index.css` が順に import。色・z-index・spacing は `tokens.css`）／`src-tauri/` — Tauri シェル（`lib.rs`＝plugin 登録＋資格情報の save/load/delete、`oauth.rs`＝PKCE の 127.0.0.1 受け口、`capabilities/default.json`＝http は `http://*:*`/`https://*:*`・fs は `$APPDATA/**`、`installer-hooks.nsh`＝アンインストール時の資格情報削除、`tauri.conf.json` の `app.security.csp`＝**デスクトップ版の CSP の正**）／`src/**/__tests__/` — vitest のテスト（`*.test.ts`。`src/lib/__tests__/fixtures.ts` は共通のダミーデータ）
 
 ### `src/lib/`
-- `platform.ts` — `isTauri`／`appFetch`（Tauri は plugin-http で CORS-free。`omitOrigin` で Origin を外す＝ComfyUI 用）／`saveBlob`／`stateStorage`（Web: localStorage、Tauri: `data/state.json` をアトミック書込＋500ms デバウンス＋close 時 flush）／`blockStateWrites`／`CheckpointStore`（Web: IndexedDB、Tauri: `data/checkpoints/<sessionId>/<nodeId>.bin`）／資格情報（`hydrateProviderSecrets`・`stripApiKeyForPersist`）
+- `platform.ts` — `isTauri`／`appFetch`（Tauri は plugin-http で CORS-free。`omitOrigin` で Origin を外す＝ComfyUI 用）／`saveBlob`／`stateStorage`（Web: localStorage、Tauri: `data/state.json` をアトミック書込＋500ms デバウンス＋close 時 flush）／`blockStateWrites`／`CheckpointStore`（Web: IndexedDB、Tauri: `data/checkpoints/<sessionId>/<nodeId>.bin`）／`SessionStore`（Web: IndexedDB `aist-sessions`、Tauri: `data/sessions/<id>.json`。1件＝`{v, session}` で版番をレコードごとに持つ・500ms デバウンス・**計画 P2c の骨組みでまだどこからも呼ばれていない**）／資格情報（`hydrateProviderSecrets`・`stripApiKeyForPersist`）
 - `openrouter.ts` — `streamChat`（SSE・`usage` 取得）／`fetchModels`／`withCacheControl`（Anthropic 系にだけ `cache_control` を2箇所）／`jsonSchema`+`jsonMode` を渡すと `response_format`（弾かれたら schema→object→なし と1段ずつ落として再送し、通った段をモデルごとにプロセス内で記憶）
 - `providers.ts` — `Provider` 型・プリセット・`parseModelRef`/`makeModelRef`・**接続先が使えるかの判定**（`isLocalEndpoint`/`requiresApiKey`/`isProviderUsable`。ローカル宛はキー不要・OpenRouter 用ヘッダも送らない）
 - `prompts.ts` — 本編の3層組み立て（`buildSystemPrompt`/`buildMessages`/`selectRawScenes`）と裏方プロンプト全部（選択肢・レビュー A/B/T・次シーン候補・結末提案・エピローグ・幕間・キャラ起案・画像起案）。進行マーカーは `MARKER_PROMPTS`/`isMarkerContent`、本文判定は `isStoryText`/`sceneCharsOf`
@@ -92,7 +92,7 @@ React 18 + TypeScript(strict) + Vite / zustand（`persist`）/ Tauri 2（`plugin
 ## 永続化とスキーマ版番
 
 - zustand `persist`（`name: PERSIST_KEY`・`createJSONStorage(() => stateStorage)`）。**`set()` のたびに全状態を `JSON.stringify` する構造**＝既知の性能問題（計画 P2c で分割）
-- 版番は3系統: `APP_STATE_VERSION`（入れ物＝zustand の `migrate`）／`SAVE_DATA_VERSION`／`CASSETTE_DATA_VERSION`（後2つは `partialize` が `schemaVersions` として書き、`merge` で毎回判定）。移行は `migrations[from]` を1段ずつ。**段を飛ばす一発変換を書かない**
+- 版番は3系統: `APP_STATE_VERSION`（入れ物＝zustand の `migrate`）／`SAVE_DATA_VERSION`／`CASSETTE_DATA_VERSION`（後2つは `partialize` が `schemaVersions` として書き、`merge` で毎回判定）。移行は `migrations[from]` を1段ずつ。**段を飛ばす一発変換を書かない**。セッションを触る段は `sessionMigrations` に切り出してあり（`saveDataMigrations` は `mapSessions` で包むだけ）、1件ぶんを上げるのが `migrateSession`（P2c の `SessionStore` 用）
 - 読めなかったら `blockStateWrites()` で書き込みを封印し `schemaError` → App.tsx が案内画面（バックアップの場所を提示）。「無視して続ける」は作らない
 - **スキーマ変更の手順**: 型 → 初期値/factory → `exportBundle`/`importBundle` → `partialize` → 破壊的なら該当版番 +1 と移行関数1本。persist キーは変えない
 - チェックポイント: 3契機で自動記録（本編生成の正常完了＝action／編集・削除直後＝action／シーン終了確定＝scene）。`stableSessionJson` 一致なら積まない。書込は sessionId ごとに直列化
