@@ -1,9 +1,12 @@
-import { useState } from 'react'
+import { memo, useState } from 'react'
 import { storeActions, useStore } from '../store'
 import MenuPopover from './MenuPopover'
 
-/** 本編/選択肢/レビュー/画像生成の進行状態を一元表示し、中止できるチップ */
-export default function ActivityIndicator() {
+/**
+ * 本編/選択肢/レビュー/画像生成の進行状態を一元表示し、中止できるチップ。
+ * `memo`＝親（ChatPanelBody）の再描画では描き直さず、自分が購読している進行状態だけで動く（P2b）
+ */
+function ActivityIndicator() {
   const isStreaming = useStore((st) => st.isStreaming)
   const isGeneratingChoices = useStore((st) => st.isGeneratingChoices)
   const isReviewing = useStore((st) => st.isReviewing)
@@ -51,3 +54,5 @@ export default function ActivityIndicator() {
     </div>
   )
 }
+
+export default memo(ActivityIndicator)

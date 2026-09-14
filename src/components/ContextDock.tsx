@@ -1,6 +1,6 @@
 import { memo, useRef } from 'react'
 import type { DockTab } from '../types'
-import { storeActions, useSessionExceptMessages, useStore } from '../store'
+import { storeActions, useSessionExceptBody, useStore } from '../store'
 import { Icon } from './icons'
 import StatusView from './StatusView'
 import DiscoveryView from './DiscoveryView'
@@ -39,7 +39,7 @@ const DOCK_MAX = 560
 /**
  * 右コンテキストドック（UI-3）。状態・発見・ギャラリー・分岐・ジョブを1タブぶん常駐表示する。
  *
- * **ここは本文（messages）を読まない。** そのため `useSessionExceptMessages` で購読し、
+ * **ここは本文（messages）を読まない。** そのため `useSessionExceptBody` で購読し、
  * 親（ChatPanelBody）からの再描画は `memo` で止める＝ストリーミング中は描き直さない（P2b）。
  */
 function ContextDock({
@@ -48,7 +48,7 @@ function ContextDock({
   onEditDiscovery,
   onRegenerateIllustration,
 }: Props) {
-  const session = useSessionExceptMessages(sessionId)
+  const session = useSessionExceptBody(sessionId)
   const tab = useStore((st) => st.ui.dockTab)
   const dockWidth = useStore((st) => st.ui.dockWidth)
   const { setUiPrefs } = storeActions()

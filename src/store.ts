@@ -4330,23 +4330,24 @@ export function useListStore<T>(selector: (st: AppState) => T[]): T[] {
   return useStoreWithEqualityFn(useStore, selector, listShallow)
 }
 
-/** `messages` を除いたセッションの同一性（`useSessionExceptMessages` 用） */
-function sameSessionExceptMessages(a: Session, b: Session): boolean {
+/** 本文（`messages` と、本文の更新でも必ず動く `updatedAt`）を除いたセッションの同一性 */
+const BODY_KEYS: (keyof Session)[] = ['messages', 'updatedAt']
+function sameSessionExceptBody(a: Session, b: Session): boolean {
   if (a === b) return true
   const keys = Object.keys(a) as (keyof Session)[]
   if (keys.length !== Object.keys(b).length) return false
-  return keys.every((k) => k === 'messages' || a[k] === b[k])
+  return keys.every((k) => BODY_KEYS.includes(k) || a[k] === b[k])
 }
 
 /**
  * **本文（`messages`）を読まない**購読でだけ使う、セッション1件の購読（右ドックなど）。
- * `messages` 以外に変化が無い間は同じ参照を返す＝ストリーミングの1チャンクごとに描き直さない。
- * **本文を読む用途にこれを使わない**（古い本文を掴んだままになる）。
+ * 本文以外に変化が無い間は同じ参照を返す＝ストリーミングの1チャンクごとに描き直さない。
+ * **本文や `updatedAt` を読む用途にこれを使わない**（古い値を掴んだままになる）。
  */
-export function useSessionExceptMessages(sessionId: string): Session | undefined {
+export function useSessionExceptBody(sessionId: string): Session | undefined {
   return useStoreWithEqualityFn(
     useStore,
     (st) => st.sessions.find((s) => s.id === sessionId),
-    (a, b) => (a && b ? sameSessionExceptMessages(a, b) : a === b),
+    (a, b) => (a && b ? sameSessionExceptBody(a, b) : a === b),
   )
 }
