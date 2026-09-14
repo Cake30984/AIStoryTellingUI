@@ -38,7 +38,7 @@ React 18 + TypeScript(strict) + Vite / zustand（`persist`）/ Tauri 2（`plugin
 
 ## ディレクトリ
 
-`src/types.ts` — 全データ型（**最初に読む**）／`src/store.ts` — zustand ストア（状態・全アクション・永続化の口・チェックポイント・描画の購読ヘルパ。4,500行の単一ファイル）／`src/App.tsx` — レール＋サイドバー＋メイン＋常駐モーダルの組み立て・起動時処理／`src/styles/` — `tokens`/`base`/`layout`/`chat`/`composer`/`panels`.css（`index.css` が順に import。色・z-index・spacing は `tokens.css`）／`src-tauri/` — Tauri シェル（`lib.rs`＝plugin 登録＋資格情報の save/load/delete、`oauth.rs`＝PKCE の 127.0.0.1 受け口、`capabilities/default.json`＝http は `http://*:*`/`https://*:*`・fs は `$APPDATA/**`、`installer-hooks.nsh`＝アンインストール時の資格情報削除、`tauri.conf.json` の `app.security.csp`＝**デスクトップ版の CSP の正**）／`src/**/__tests__/` — vitest のテスト（`*.test.ts`。`src/lib/__tests__/fixtures.ts` は共通のダミーデータ）
+`src/types.ts` — 全データ型（**最初に読む**）／`src/store.ts` — zustand ストア（状態・全アクション・永続化の口・チェックポイント・描画の購読ヘルパ。4,500行の単一ファイル）／`src/App.tsx` — レール＋サイドバー＋メイン＋常駐モーダルの組み立て・起動時処理／`src/styles/` — `tokens`/`base`/`layout`/`chat`/`composer`/`panels`.css（`index.css` が順に import。色・z-index・spacing は `tokens.css`）／`src-tauri/` — Tauri シェル（`lib.rs`＝plugin 登録＋資格情報の save/load/delete、`oauth.rs`＝PKCE の 127.0.0.1 受け口、`capabilities/default.json`＝http は `http://*:*`/`https://*:*`・fs は `$APPDATA/**`、`installer-hooks.nsh`＝アンインストール時の資格情報削除、`tauri.conf.json` の `app.security.csp`＝**デスクトップ版の CSP の正**）／`src/starter/` — 既定コンテンツ（サンプルの世界観1・登場人物3・開始セッションの雛形。純データ＝`store.ts` を import しない）／`src/**/__tests__/` — vitest のテスト（`*.test.ts`。`src/lib/__tests__/fixtures.ts` は共通のダミーデータ）
 
 ### `src/lib/`
 - `platform.ts` — `isTauri`／`appFetch`（Tauri は plugin-http で CORS-free。`omitOrigin` で Origin を外す＝ComfyUI 用）／`saveBlob`／`stateStorage`（Web: localStorage、Tauri: `data/state.json` をアトミック書込＋500ms デバウンス＋close 時 flush）／`backupStateSnapshot`／`blockStateWrites`／`CheckpointStore`（Web: IndexedDB、Tauri: `data/checkpoints/<sessionId>/<nodeId>.bin`）／`SessionStore`（Web: IndexedDB `aist-sessions`、Tauri: `data/sessions/<id>.json`。1件＝`{v, session}` で版番をレコードごとに持つ・**読み書きは id ごとに直列化**・`scheduleSessionWrite`＝500ms デバウンス・`deleteSessionRecord`＝取り消してから削除・Web はタブが隠れた時点で flush）／資格情報（`hydrateProviderSecrets`・`stripApiKeyForPersist`）
@@ -75,15 +75,16 @@ React 18 + TypeScript(strict) + Vite / zustand（`persist`）/ Tauri 2（`plugin
 - **Provider**（LLM 接続先）／**ImageProvider**（画像接続先）— どちらも persist のみ・**エクスポートに含めない**。Tauri では `apiKey` を資格情報ストアへ分離し `state.json` には空で書く
 - **Character** — 人格・口調・外見・セリフ例・`developments`（成長ログ）・`avatar`・`imagePrompt?`・`tags`。中心人物も同じ型
 - **World** — `description`（常時）＋`entries: LoreEntry[]`（`keys`/`alwaysOn`/`enabled`）＋`relationAspects`（関係性の次元）＋`calendarFormat?`＋`startPreset?: WorldStartPreset`（セッション作成時に**コピー**される推奨初期設定。素材側は不変）
-- **Session** — `characterIds`／`worldId`／**`focusCharacterId`**（中心人物・必須。空文字＝未選択で開始不可）／`authorNote`／`story: StorySetup`（genre/premise/opening/openingTitle/initialDirective/introTags）／`introBindings`／`scenes`／`currentSceneId`／`narrativeStyle`／`structuredOutput?`／`reviewSplit?`／`rawWindowFromSceneId?`／`newCharacterPolicy?`／`state`／`overlay`／`endingGoal?`／`ending?`／`archived?`／`originCassetteId?`／`messages`／`model`・`reviewModel`・`choicesModel`／`temperature`／`maxTokens`
+- **Session** — `characterIds`／`worldId`／**`focusCharacterId`**（中心人物・必須。空文字＝未選択で開始不可）／`authorNote`／`story: StorySetup`（genre/premise/opening/openingTitle/initialDirective/introTags）／`introBindings`／`scenes`／`currentSceneId`／`narrativeStyle`／`structuredOutput?`／`reviewSplit?`／`rawWindowFromSceneId?`／`newCharacterPolicy?`／`state`／`overlay`／`endingGoal?`／`ending?`／`archived?`／`originCassetteId?`／`messages`／`usage?`（このセッションの累計。下記）／`model`・`reviewModel`・`choicesModel`／`temperature`／`maxTokens`
 - **SessionState** — `relations: Relation[]`（キャラ→中心人物の有向 prose。`stance`＋次元ごとの `note`）／`moods`／`now`（自由文字列）／`place`／`presentIds`／`situation`／`pending: PendingSlip[]`（`when`/`what`）／`recentDone`
 - **SessionOverlay** — `lore`（発見ロア）／`characterDevelopments`。素材を汚さないための上乗せ。本編には素材＋overlay の実効ビュー（`effectiveWorld`/`effectiveCharacter`）で注入。`promoteOverlay*` で素材へ **move**
 - **Scene** — `title`/`note`（時・場所・居る人物）/`summary`/`timeLabel?`/`foreground?`（突き合わせ済みの一文）/`illustrations?`/`interludes?`/`endedAt?`
 - **Message** — `role`/`characterId?`/`sceneId?`/`content`/`choices?`/`truncated?`/`pending?`/`kind?: 'directive'`（書き手への指示。判定は `isDirective`）
-- **AppState 直下（Session の外に置くもの）** — `branchTrees: Record<sessionId, BranchTree>`／`sessionImageLogs`／`cassettes: Cassette[]`／`ui: UiPrefs`／`defaultModelRef`／`favoriteModels`／`lastImageProviderId`／`lastDraftModel`。**`branchTrees`・`sessionImageLogs` を Session に入れない**（スナップショットに含まれて再帰肥大・復元で巻き戻る）
+- **AppState 直下（Session の外に置くもの）** — `branchTrees: Record<sessionId, BranchTree>`／`sessionImageLogs`／`cassettes: Cassette[]`／`ui: UiPrefs`／`defaultModelRef`／`favoriteModels`／`lastImageProviderId`／`lastDraftModel`／`starterSeeded`（既定コンテンツを一度入れたか）。**`branchTrees`・`sessionImageLogs` を Session に入れない**（スナップショットに含まれて再帰肥大・復元で巻き戻る）
 - **非永続（`partialize` 除外）** — `imageJobs`/`imageJobToasts`/`reviewProgress`/`sceneReview`/`endingProposals`/`interludeReflection`/`characterDraftQueue`/`scrollTarget`/`usageLog`/`schemaError`/`modelsByProvider`/各 `is*` フラグ
 - **BranchNode/BranchTree** — `{id,parentId,kind:'action'|'scene',label,timeLabel?,createdAt,imageIds,bytes,ending?,star?,branchName?,anchorMessageId?}`／`{currentId,nodes}`。実体（gzip した Session）は `CheckpointStore`
 - **Cassette** — `{id,title,description,coverImageId?,session(開始状態),createdAt}`。棚に置く配布単位。`playCassette` が新セッションへ複製し `originCassetteId` を刻む
+- **SessionUsage**（`Session.usage?`）— `{promptTokens, completionTokens, cost?}`。**加算は `recordUsage` の1か所だけ**（本編も裏方もそこを通る）。単位は提供元が返したまま＝トークンと USD（円換算しない）。**分岐の復元では巻き戻さない**（`restoreCheckpoint` の passthrough。使った額は本文の進行と結合していない）。`freshSessionOf` が落とすのでカセットには載らない
 
 ## ModelRef
 
@@ -142,8 +143,9 @@ React 18 + TypeScript(strict) + Vite / zustand（`persist`）/ Tauri 2（`plugin
 - **発見キャラ**: 構造化本文の未解決話者の ？バッジ／レビューの `newCharacters` 承認 → `queueCharacterDrafts`（既知の名前・`NARRATION_NAMES`・待機中同名は弾く）→ `CharacterDraftModal` が起案 → `addDiscoveredCharacter`（ライブラリの通常キャラ＋`characterIds` へ追加）
 - **画像**: `startImageJob` → 直列生成 → `selecting`（自動採用しない）→ `applyImageJobResult`（挿絵は `Scene.illustrations`＋`sessionImageLogs`、アバターは `avatar.imageId`。旧画像は参照を外すだけ）。回収は `gcUnusedImages`（使用中集合＝`collectUsedImageIds`）
 - **書き出し**: `StoryExportModal`（plain/markdown/挿絵つき/共有カード画像・分岐時点指定可）。キャラ・世界・カセットは PNG カード、全データは JSON バンドル（画像同梱可）。取り込みは `importAnyFile` に一本化
-- **初回**: `FirstRunWizard`（かんたん接続=OAuth／無料枠=Gemini／品質重視／緩いモデル／PC で動かす）→ 接続テスト → `defaultModelRef` 設定。閉じても `Provider` 未設定なら生成時に案内
-- **起動時**: hydration 後に `hydrateProviderSecrets`・`cleanupOrphanCheckpoints`・`backfillImageLogs`
+- **初回**: `FirstRunWizard`（かんたん接続=OAuth／無料枠=Gemini／品質重視／緩いモデル／PC で動かす）→ 接続テスト → `defaultModelRef` 設定 → 最後に「サンプルの物語を開く」（`openStarterStory`。「完了」と同義で行き先が1つ増えるだけ）。閉じても `Provider` 未設定なら生成時に案内
+- **既定コンテンツ**: 素材が空の初回起動で `seedStarterContent` が `src/starter/` をライブラリへ入れ、開始状態のセッションを1本作って開く。**自動投入は1回きり**（`starterSeeded`）＝消した人へ勝手に戻さない。入れ直しは Library の「サンプルを追加し直す」（素材は固定 id へ上書き＝増えない・セッションだけ1本増える）。Play の空状態は素材が無ければサンプルへ、あれば `SessionEditor` へ送る（物語の導線は1本）
+- **起動時**: hydration 後に `hydrateProviderSecrets`・`cleanupOrphanCheckpoints`・`backfillImageLogs`・`seedStarterContent`（初回のみ）
 
 ## 描画の購読（P2b）
 
@@ -195,14 +197,13 @@ React 18 + TypeScript(strict) + Vite / zustand（`persist`）/ Tauri 2（`plugin
 - `<a download>` は Tauri で動かない。ファイル DL は `io.ts` 経由
 - `capabilities/default.json` の http スコープはポート成分 `:*` を省略しない
 - 画像生成の定型タグ・画風の結合は `generateImage` の1箇所。`promptStyle==='natural'` では結合しない
-- 画像コストは円換算しない
+- コストは円換算しない（画像も、セッション累計＝`formatSessionUsage` も。提供元の課金単位のまま出す）
 - ComfyUI のワークフローは「プレースホルダがあれば手動置換・無ければ自動検出」の排他
 - **CSP の出所は2つだけ**。Tauri 版＝`src-tauri/tauri.conf.json` の `app.security.csp`（Tauri がヘッダで注入）、Web 版＝`index.html` の `<!--CSP-->` を `vite.config.ts` が meta へ差し替える（Tauri ビルドでは消す＝二重に掛けない）。dev だけ `ws://localhost:5173` と `script-src 'unsafe-inline'`（Vite の HMR と react-refresh のプリアンブル）を足す。`frame-ancestors` は meta では無視されるので入れない。外部から読むリソース（画像・フォント・スクリプト）を足すときは両方を直す
 
 ## 既知の問題（2026-09-13 のレビューで確定。対処は計画書）
 
 - lint 無し・CI 無し（テストは P2a で導入済み）
-- 起動直後に素材が無く、キャラ作成 → 世界作成 → セッション設定 → 中心人物選択 を経ないと最初の生成に辿り着けない → P3
 - カセットは開始状態のセッションを内包したまま軽い状態に残る。長い物語からカセットを作ると、そのぶんが毎 `set()` の直列化に乗る（20セッション×150発言の実測で、カセット無し 0.04ms／150発言ぶんを内包したカセット1本で 0.92ms）
 - Tauri 側の `data/sessions/`（P2c）と CSP（P2a）は**実機で未検証**（Windows と Rust が要る）。次に `tauri:dev` を回せるときに [`docs/開発環境と配布.md`](docs/開発環境と配布.md) §4 を一巡させる
 
