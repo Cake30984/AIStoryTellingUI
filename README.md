@@ -39,7 +39,8 @@
 
 ```text
 %APPDATA%\com.tokatokage.delist\data\
-  state.json      … セッション・キャラクター・世界観などすべての状態
+  state.json      … キャラクター・世界観・カセット・表示設定・接続先
+  sessions\       … 物語（セッション）1本ごとに1ファイル
   images\         … 生成・添付した画像
   checkpoints\    … 分岐用のチェックポイント
 ```
@@ -87,7 +88,7 @@ npm run tauri build -- --no-bundle   # 実行ファイルのみ（インスト�
 ## 技術構成
 
 - React 18 + TypeScript + Vite
-- Zustand（状態管理）＋ ファイル永続化（デスクトップ版）／localStorage（Web 版）
+- Zustand（状態管理）＋ ファイル永続化（デスクトップ版）／localStorage・IndexedDB（Web 版）
 - Tauri 2（デスクトップ・`plugin-http` / `plugin-fs` / `plugin-dialog`）
 - OpenAI 互換 Chat Completions API（SSE ストリーミング）
 

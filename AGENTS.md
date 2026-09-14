@@ -38,10 +38,10 @@ React 18 + TypeScript(strict) + Vite / zustand（`persist`）/ Tauri 2（`plugin
 
 ## ディレクトリ
 
-`src/types.ts` — 全データ型（**最初に読む**）／`src/store.ts` — zustand ストア（状態・全アクション・永続化・チェックポイント・描画の購読ヘルパ。4,400行の単一ファイル＝分割は計画 P2c）／`src/App.tsx` — レール＋サイドバー＋メイン＋常駐モーダルの組み立て・起動時処理／`src/styles/` — `tokens`/`base`/`layout`/`chat`/`composer`/`panels`.css（`index.css` が順に import。色・z-index・spacing は `tokens.css`）／`src-tauri/` — Tauri シェル（`lib.rs`＝plugin 登録＋資格情報の save/load/delete、`oauth.rs`＝PKCE の 127.0.0.1 受け口、`capabilities/default.json`＝http は `http://*:*`/`https://*:*`・fs は `$APPDATA/**`、`installer-hooks.nsh`＝アンインストール時の資格情報削除、`tauri.conf.json` の `app.security.csp`＝**デスクトップ版の CSP の正**）／`src/**/__tests__/` — vitest のテスト（`*.test.ts`。`src/lib/__tests__/fixtures.ts` は共通のダミーデータ）
+`src/types.ts` — 全データ型（**最初に読む**）／`src/store.ts` — zustand ストア（状態・全アクション・永続化の口・チェックポイント・描画の購読ヘルパ。4,500行の単一ファイル）／`src/App.tsx` — レール＋サイドバー＋メイン＋常駐モーダルの組み立て・起動時処理／`src/styles/` — `tokens`/`base`/`layout`/`chat`/`composer`/`panels`.css（`index.css` が順に import。色・z-index・spacing は `tokens.css`）／`src-tauri/` — Tauri シェル（`lib.rs`＝plugin 登録＋資格情報の save/load/delete、`oauth.rs`＝PKCE の 127.0.0.1 受け口、`capabilities/default.json`＝http は `http://*:*`/`https://*:*`・fs は `$APPDATA/**`、`installer-hooks.nsh`＝アンインストール時の資格情報削除、`tauri.conf.json` の `app.security.csp`＝**デスクトップ版の CSP の正**）／`src/**/__tests__/` — vitest のテスト（`*.test.ts`。`src/lib/__tests__/fixtures.ts` は共通のダミーデータ）
 
 ### `src/lib/`
-- `platform.ts` — `isTauri`／`appFetch`（Tauri は plugin-http で CORS-free。`omitOrigin` で Origin を外す＝ComfyUI 用）／`saveBlob`／`stateStorage`（Web: localStorage、Tauri: `data/state.json` をアトミック書込＋500ms デバウンス＋close 時 flush）／`blockStateWrites`／`CheckpointStore`（Web: IndexedDB、Tauri: `data/checkpoints/<sessionId>/<nodeId>.bin`）／`SessionStore`（Web: IndexedDB `aist-sessions`、Tauri: `data/sessions/<id>.json`。1件＝`{v, session}` で版番をレコードごとに持つ・500ms デバウンス・**計画 P2c の骨組みでまだどこからも呼ばれていない**）／資格情報（`hydrateProviderSecrets`・`stripApiKeyForPersist`）
+- `platform.ts` — `isTauri`／`appFetch`（Tauri は plugin-http で CORS-free。`omitOrigin` で Origin を外す＝ComfyUI 用）／`saveBlob`／`stateStorage`（Web: localStorage、Tauri: `data/state.json` をアトミック書込＋500ms デバウンス＋close 時 flush）／`backupStateSnapshot`／`blockStateWrites`／`CheckpointStore`（Web: IndexedDB、Tauri: `data/checkpoints/<sessionId>/<nodeId>.bin`）／`SessionStore`（Web: IndexedDB `aist-sessions`、Tauri: `data/sessions/<id>.json`。1件＝`{v, session}` で版番をレコードごとに持つ・**読み書きは id ごとに直列化**・`scheduleSessionWrite`＝500ms デバウンス・`deleteSessionRecord`＝取り消してから削除・Web はタブが隠れた時点で flush）／資格情報（`hydrateProviderSecrets`・`stripApiKeyForPersist`）
 - `openrouter.ts` — `streamChat`（SSE・`usage` 取得）／`fetchModels`／`withCacheControl`（Anthropic 系にだけ `cache_control` を2箇所）／`jsonSchema`+`jsonMode` を渡すと `response_format`（弾かれたら schema→object→なし と1段ずつ落として再送し、通った段をモデルごとにプロセス内で記憶）
 - `providers.ts` — `Provider` 型・プリセット・`parseModelRef`/`makeModelRef`・**接続先が使えるかの判定**（`isLocalEndpoint`/`requiresApiKey`/`isProviderUsable`。ローカル宛はキー不要・OpenRouter 用ヘッダも送らない）
 - `prompts.ts` — 本編の3層組み立て（`buildSystemPrompt`/`buildMessages`/`selectRawScenes`）と裏方プロンプト全部（選択肢・レビュー A/B/T・次シーン候補・結末提案・エピローグ・幕間・キャラ起案・画像起案）。進行マーカーは `MARKER_PROMPTS`/`isMarkerContent`、本文判定は `isStoryText`/`sceneCharsOf`
@@ -91,10 +91,12 @@ React 18 + TypeScript(strict) + Vite / zustand（`persist`）/ Tauri 2（`plugin
 
 ## 永続化とスキーマ版番
 
-- zustand `persist`（`name: PERSIST_KEY`・`createJSONStorage(() => stateStorage)`）。**`set()` のたびに全状態を `JSON.stringify` する構造**＝既知の性能問題（計画 P2c で分割）
-- 版番は3系統: `APP_STATE_VERSION`（入れ物＝zustand の `migrate`）／`SAVE_DATA_VERSION`／`CASSETTE_DATA_VERSION`（後2つは `partialize` が `schemaVersions` として書き、`merge` で毎回判定）。移行は `migrations[from]` を1段ずつ。**段を飛ばす一発変換を書かない**。セッションを触る段は `sessionMigrations` に切り出してあり（`saveDataMigrations` は `mapSessions` で包むだけ）、1件ぶんを上げるのが `migrateSession`（P2c の `SessionStore` 用）
-- 読めなかったら `blockStateWrites()` で書き込みを封印し `schemaError` → App.tsx が案内画面（バックアップの場所を提示）。「無視して続ける」は作らない
-- **スキーマ変更の手順**: 型 → 初期値/factory → `exportBundle`/`importBundle` → `partialize` → 破壊的なら該当版番 +1 と移行関数1本。persist キーは変えない
+- **保存先は2つ**。入れ物＝`PERSIST_KEY`（Web: localStorage／Tauri: `data/state.json`）に**軽い状態だけ**（素材・カセット・分岐木・画像記録・UI・接続先）。**セッション本体は `SessionStore`**（Web: IndexedDB `aist-sessions`／Tauri: `data/sessions/<id>.json`）に1件＝1レコード（`{v, session}`。`v` はそのレコードのセーブ版番）
+- 読み書きの口は store.ts の `appStateStorage`（`createJSONStorage` は使わない）。**読み**＝軽い状態に `sessions` を差し込んでから persist へ返す（`migrate`・`merge` の移行と正規化を素通しさせるため）。**書き**＝`partialize` から `sessions` を外し、ハイドレーション後の購読（`startSessionPersistence`）が**参照比較で変わった1件だけ** `scheduleSessionWrite`（500ms デバウンス）へ流す。消えた id は `deleteSessionRecord`。**`pending` メッセージを持つセッションは書かない**（生成中は書かず完了時の1回にまとめる）
+- 旧形式（入れ物に `sessions` がある）は起動時に一度だけ `SessionStore` へ移し、**原文を `state.json.bak`／`${PERSIST_KEY}-bak` へ残してから**軽い状態で上書きする。移せなければ封印して案内へ（本体を失わせない）
+- 版番は3系統: `APP_STATE_VERSION`（入れ物＝zustand の `migrate`）／`SAVE_DATA_VERSION`／`CASSETTE_DATA_VERSION`（後2つは `partialize` が `schemaVersions` として書き、`merge` で毎回判定）。移行は `migrations[from]` を1段ずつ。**段を飛ばす一発変換を書かない**。セッションを触る段は `sessionMigrations` が本体で、`saveDataMigrations` は**そこから導出**する（＝**セッション以外を触るセーブの段をそこへ直接足さない**。レコード経由の読み出しでは走らない）。1件ぶんを上げるのが `migrateSession`
+- 読めなかったら `blockStateWrites()` で書き込みを封印し `schemaError` → App.tsx が案内画面（入れ物と本体、両方の場所を提示）。「無視して続ける」は作らない。**壊れたセッション1件では封印しない**——その1件だけ飛ばして件数を `infoNotice` に出す（保存先のデータは消さない）
+- **スキーマ変更の手順**: 型 → 初期値/factory → `exportBundle`/`importBundle` → `partializeAppState` → 破壊的なら該当版番 +1 と移行関数1本（セッションを触るなら `sessionMigrations` へ）。persist キーは変えない
 - チェックポイント: 3契機で自動記録（本編生成の正常完了＝action／編集・削除直後＝action／シーン終了確定＝scene）。`stableSessionJson` 一致なら積まない。書込は sessionId ごとに直列化
 
 ## プロンプトの構造
@@ -199,10 +201,10 @@ React 18 + TypeScript(strict) + Vite / zustand（`persist`）/ Tauri 2（`plugin
 
 ## 既知の問題（2026-09-13 のレビューで確定。対処は計画書）
 
-- `persist` が `set()` ごとに全状態を `JSON.stringify`（20セッション×150発言≒5.7MB で 11ms/チャンク）。ストリーミング中の全量シリアライズで、使うほど重くなる → P2c（描画側の全再描画は P2b で解消済み）
 - lint 無し・CI 無し（テストは P2a で導入済み）
 - 起動直後に素材が無く、キャラ作成 → 世界作成 → セッション設定 → 中心人物選択 を経ないと最初の生成に辿り着けない → P3
-- Web 版は localStorage（約5MB）に全状態を置くため、実用にはならない → P5
+- カセットは開始状態のセッションを内包したまま軽い状態に残る。長い物語からカセットを作ると、そのぶんが毎 `set()` の直列化に乗る（20セッション×150発言の実測で、カセット無し 0.04ms／150発言ぶんを内包したカセット1本で 0.92ms）
+- Tauri 側の `data/sessions/`（P2c）と CSP（P2a）は**実機で未検証**（Windows と Rust が要る）。次に `tauri:dev` を回せるときに [`docs/開発環境と配布.md`](docs/開発環境と配布.md) §4 を一巡させる
 
 ## ドキュメント
 
