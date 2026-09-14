@@ -1432,6 +1432,7 @@ const appStateStorage: PersistStorage<PersistedState> = {
   async getItem(name) {
     sessionLoadError = null
     sessionsSkippedOnLoad = 0
+    legacySessionsMoved = false
     const raw = await stateStorage.getItem(name)
     const parsed = (raw === null ? null : JSON.parse(raw)) as StorageValue<PersistedState> | null
     const payload = parsed?.state as (Partial<PersistedState> & { sessions?: unknown }) | undefined
@@ -4491,6 +4492,14 @@ function syncSessionRecords(sessions: Session[]): void {
  * ハイドレーション**完了後に**購読を張る。基準を読み込み直後の値にすることで、
  * 起動のたびに全件を書き戻さない（初期値 [] → 読み込み済みの遷移を差分と見ない）。
  */
+let sessionPersistenceStarted = false
+/**
+ * 購読は張ったまま、**読み直しの最中だけ差分を見ない**。ハイドレーションの `set()` は
+ * 「読み込み前の値 → 読み込んだ値」の遷移として購読へ届くので、そのまま差分と見なすと
+ * 起動のたびに全件を書き戻してしまう（基準を取り直すのはその `set()` の後）。
+ */
+let sessionPersistenceReady = false
+
 function startSessionPersistence(): void {
   // 読めなかった状態では何も書かない（blockStateWrites と二重の歯止め。R1）
   if (useStore.getState().schemaError) return
@@ -4503,12 +4512,19 @@ function startSessionPersistence(): void {
   } else {
     persistedSessions = new Map(sessions.map((s) => [s.id, s]))
   }
+  sessionPersistenceReady = true
+  // 購読は1本だけ（`rehydrate()` で読み直したときは基準を取り直すだけ）
+  if (sessionPersistenceStarted) return
+  sessionPersistenceStarted = true
   useStore.subscribe((st, prev) => {
-    if (st.sessions === prev.sessions) return
+    if (!sessionPersistenceReady || st.sessions === prev.sessions) return
     syncSessionRecords(st.sessions)
   })
 }
 
+useStore.persist.onHydrate(() => {
+  sessionPersistenceReady = false
+})
 if (useStore.persist.hasHydrated()) startSessionPersistence()
 else useStore.persist.onFinishHydration(() => startSessionPersistence())
 

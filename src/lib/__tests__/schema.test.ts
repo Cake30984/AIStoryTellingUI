@@ -141,6 +141,20 @@ describe('migrateSession（P2c: SessionStore の1レコード＝1版番）', () 
     expect(viaRecord.ok && viaState.ok && viaRecord.state).toEqual(viaState.ok && viaState.state.sessions[0])
   })
 
+  it('どの版から上げても、全体（migrateSubSchemas）の段と1対1で対応する', () => {
+    // saveDataMigrations は sessionMigrations から導出している。段の書き写し忘れをここで止める
+    for (let from = 1; from < SAVE_DATA_VERSION; from++) {
+      const whole = migrateSubSchemas({
+        schemaVersions: { save: from, cassette: CASSETTE_DATA_VERSION },
+        sessions: [legacySave().sessions[0]],
+        cassettes: [],
+      })
+      const one = migrateSession(legacySave().sessions[0], from)
+      expect(one.ok, `v${from} の段が欠けている`).toBe(true)
+      expect(one.ok && one.state).toEqual(whole.ok && whole.state.sessions[0])
+    }
+  })
+
   it('現行版のレコードは素通し（同一参照）＝二重適用しない', () => {
     const sess = { id: 'a', scenes: [] }
     const out = migrateSession(sess, SAVE_DATA_VERSION)
