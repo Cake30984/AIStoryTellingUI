@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useStore } from '../store'
+import { storeActions, useStore } from '../store'
 import type { BranchNode, BranchTree, Session } from '../types'
 import { useImageUrl } from '../lib/imageStore'
 import { appConfirm, appPrompt } from '../lib/dialogs'
@@ -242,8 +242,11 @@ const stripLegacyMark = (s: string) => s.replace(/^(?:📖|🏁|🗑|⑂|★)\s*
  * 行アクション（しおり・削除・シーン開始前へ戻る）は ⋯ メニューに集約。
  */
 export function BranchTreeBody({ session }: { session: Session }) {
+  const branchTrees = useStore((st) => st.branchTrees)
+  const isStreaming = useStore((st) => st.isStreaming)
+  const isGeneratingChoices = useStore((st) => st.isGeneratingChoices)
+  const isReviewing = useStore((st) => st.isReviewing)
   const {
-    branchTrees,
     restoreCheckpoint,
     navigateToNode,
     branchFromNode,
@@ -251,10 +254,7 @@ export function BranchTreeBody({ session }: { session: Session }) {
     pruneToCurrentPath,
     setBranchStar,
     removeBranchStar,
-    isStreaming,
-    isGeneratingChoices,
-    isReviewing,
-  } = useStore()
+  } = storeActions()
   const tree = branchTrees[session.id]
   const generating = isStreaming || isGeneratingChoices || isReviewing
   const [busyAction, setBusyAction] = useState(false)

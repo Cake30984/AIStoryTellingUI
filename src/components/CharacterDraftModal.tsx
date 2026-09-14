@@ -1,5 +1,12 @@
 import { useEffect, useState } from 'react'
-import { currentScene, knownSpeakersOf, newCharacter, reviewModelOf, useStore } from '../store'
+import {
+  currentScene,
+  knownSpeakersOf,
+  newCharacter,
+  reviewModelOf,
+  storeActions,
+  useStore,
+} from '../store'
 import { streamChat } from '../lib/openrouter'
 import { isProviderUsable, parseModelRef } from '../lib/providers'
 import { extractJson } from '../lib/json'
@@ -33,8 +40,11 @@ interface Props {
  * 裏方モデルはレビュー用（`reviewModelOf`）を流用する。
  */
 export default function CharacterDraftModal({ session, name, note, onClose }: Props) {
-  const { characters, worlds, providers, modelsByProvider, recordUsage, addDiscoveredCharacter } =
-    useStore()
+  const characters = useStore((st) => st.characters)
+  const worlds = useStore((st) => st.worlds)
+  const providers = useStore((st) => st.providers)
+  const modelsByProvider = useStore((st) => st.modelsByProvider)
+  const { recordUsage, addDiscoveredCharacter } = storeActions()
   const [draft, setDraft] = useState<Character | null>(null)
   const [error, setError] = useState('')
 

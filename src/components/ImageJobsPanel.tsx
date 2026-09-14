@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useStore } from '../store'
+import { storeActions, useStore } from '../store'
 import { useBlobUrl } from '../lib/imageJobs'
 import ZoomOverlay from './ZoomOverlay'
 import { Icon } from './icons'
@@ -22,7 +22,8 @@ function Candidate({ blob, busy, onUse }: { blob: Blob; busy: boolean; onUse: ()
 
 /** 進行中・選択待ちの画像生成ジョブ一覧本体（ドックを閉じても継続するジョブをここから採用/破棄する。UI-3でドックへ移設・モーダル版廃止） */
 export function ImageJobsBody() {
-  const { imageJobs, cancelImageJob, dismissImageJob, applyImageJobResult } = useStore()
+  const imageJobs = useStore((st) => st.imageJobs)
+  const { cancelImageJob, dismissImageJob, applyImageJobResult } = storeActions()
   const [busyId, setBusyId] = useState<string | null>(null)
   const [error, setError] = useState('')
 

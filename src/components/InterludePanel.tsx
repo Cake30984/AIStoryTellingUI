@@ -1,13 +1,19 @@
 import { useState } from 'react'
 import { appConfirm } from '../lib/dialogs'
-import { isSceneClosed, useStore } from '../store'
-import type { Character, Scene, Session } from '../types'
+import { storeActions, useStore } from '../store'
+import type { Character, Scene } from '../types'
 import EntityAvatar from './EntityAvatar'
 import { Icon } from './icons'
 
 interface Props {
-  session: Session
   scene: Scene
+  /** セッションの顔ぶれ全員（中心人物を含む。P2b: セッションを丸ごと受け取らない） */
+  cast: Character[]
+  focusCharacterId: string
+  /** いま居合わせている人物の id（候補の並べ替えに使う） */
+  presentIds: string[]
+  /** このシーンが閉じているか（F6。閉じたシーンにしか幕間は作れない） */
+  closed: boolean
 }
 
 /**
@@ -24,34 +30,39 @@ interface Props {
  * だから。進行中のシーンでは入口を出したまま無効にして、理由をその場に書く
  * （黙って隠すと機能が無いように見える）。
  */
-export default function InterludePanel({ session, scene }: Props) {
+export default function InterludePanel({
+  scene,
+  cast,
+  focusCharacterId,
+  presentIds,
+  closed,
+}: Props) {
+  // 名前・アイコンの引き当てはライブラリ全体で行う（顔ぶれから外れた人物の幕間も残るため）
+  const characters = useStore((st) => st.characters)
+  const generatingInterlude = useStore((st) => st.generatingInterlude)
+  const isReflectingInterlude = useStore((st) => st.isReflectingInterlude)
+  const interludeReflection = useStore((st) => st.interludeReflection)
+  const isStreaming = useStore((st) => st.isStreaming)
   const {
-    characters,
-    generatingInterlude,
     generateInterlude,
     deleteInterlude,
     reflectInterlude,
-    isReflectingInterlude,
-    interludeReflection,
     cancelInterludeReflection,
     confirmInterludeReflection,
-    isStreaming,
-  } = useStore()
+  } = storeActions()
   const [pickerOpen, setPickerOpen] = useState(false)
 
   const items = scene.interludes ?? []
   // 中心人物は自分の視点を持たない（本編がそれ）。候補はいま居合わせている人を先に出す
-  const present = new Set(session.state?.presentIds ?? [])
-  const candidates: Character[] = session.characterIds
-    .filter((id) => id !== session.focusCharacterId)
-    .map((id) => characters.find((c) => c.id === id))
-    .filter((c): c is Character => !!c)
+  const present = new Set(presentIds)
+  const candidates: Character[] = cast
+    .filter((c) => c.id !== focusCharacterId)
+    .slice()
     .sort((a, b) => Number(present.has(b.id)) - Number(present.has(a.id)))
 
   const nameOf = (id: string) => characters.find((c) => c.id === id)?.name ?? 'ある人物'
-  const focusName = characters.find((c) => c.id === session.focusCharacterId)?.name ?? '中心人物'
+  const focusName = characters.find((c) => c.id === focusCharacterId)?.name ?? '中心人物'
   const busy = !!generatingInterlude
-  const closed = isSceneClosed(session, scene)
 
   if (candidates.length === 0 && items.length === 0) return null
 

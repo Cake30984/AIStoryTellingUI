@@ -1,6 +1,6 @@
-import { useRef } from 'react'
-import type { DockTab, Session } from '../types'
-import { useStore } from '../store'
+import { memo, useRef } from 'react'
+import type { DockTab } from '../types'
+import { storeActions, useSessionExceptMessages, useStore } from '../store'
 import { Icon } from './icons'
 import StatusView from './StatusView'
 import DiscoveryView from './DiscoveryView'
@@ -10,7 +10,7 @@ import { BranchTreeBody } from './BranchTreeModal'
 import { ImageJobsBody } from './ImageJobsPanel'
 
 interface Props {
-  session: Session
+  sessionId: string
   onEditStatus: () => void
   onEditDiscovery: (scope: DiscoveryScope) => void
   onRegenerateIllustration: (sceneId: string, messageId: string | undefined, prompt: string, negative?: string) => void
@@ -36,22 +36,29 @@ const DOCK_TABS: { key: DockTab; label: string; icon: Parameters<typeof Icon>[0]
 const DOCK_MIN = 300
 const DOCK_MAX = 560
 
-/** 右コンテキストドック（UI-3）。状態・発見・ギャラリー・分岐・ジョブを1タブぶん常駐表示する */
-export default function ContextDock({
-  session,
+/**
+ * 右コンテキストドック（UI-3）。状態・発見・ギャラリー・分岐・ジョブを1タブぶん常駐表示する。
+ *
+ * **ここは本文（messages）を読まない。** そのため `useSessionExceptMessages` で購読し、
+ * 親（ChatPanelBody）からの再描画は `memo` で止める＝ストリーミング中は描き直さない（P2b）。
+ */
+function ContextDock({
+  sessionId,
   onEditStatus,
   onEditDiscovery,
   onRegenerateIllustration,
 }: Props) {
-  const { ui, setUiPrefs } = useStore()
-  const tab = ui.dockTab
+  const session = useSessionExceptMessages(sessionId)
+  const tab = useStore((st) => st.ui.dockTab)
+  const dockWidth = useStore((st) => st.ui.dockWidth)
+  const { setUiPrefs } = storeActions()
   const dockRef = useRef<HTMLDivElement>(null)
 
   // 左端ハンドルのドラッグで幅を変える（右に配置なのでポインタが左へ動くほど広がる。F1/A9）
   const onResizeDown = (e: React.MouseEvent) => {
     e.preventDefault()
     const startX = e.clientX
-    const startW = dockRef.current?.offsetWidth ?? ui.dockWidth
+    const startW = dockRef.current?.offsetWidth ?? dockWidth
     document.body.style.userSelect = 'none'
     const onMove = (ev: MouseEvent) => {
       const w = Math.min(DOCK_MAX, Math.max(DOCK_MIN, startW + (startX - ev.clientX)))
@@ -61,17 +68,17 @@ export default function ContextDock({
       document.removeEventListener('mousemove', onMove)
       document.removeEventListener('mouseup', onUp)
       document.body.style.userSelect = ''
-      const w = dockRef.current?.offsetWidth ?? ui.dockWidth
+      const w = dockRef.current?.offsetWidth ?? dockWidth
       setUiPrefs({ dockWidth: Math.min(DOCK_MAX, Math.max(DOCK_MIN, w)) })
     }
     document.addEventListener('mousemove', onMove)
     document.addEventListener('mouseup', onUp)
   }
 
-  if (!tab) return null
+  if (!tab || !session) return null
 
   return (
-    <div className="dock" ref={dockRef} style={{ width: ui.dockWidth }}>
+    <div className="dock" ref={dockRef} style={{ width: dockWidth }}>
       <div className="dock-resizer" onMouseDown={onResizeDown} title="ドラッグで幅を変更" />
       <div className="dock-head">
         <div className="dock-tabs" role="tablist">
@@ -118,3 +125,5 @@ export default function ContextDock({
     </div>
   )
 }
+
+export default memo(ContextDock)

@@ -1,5 +1,5 @@
 import { useState, type CSSProperties } from 'react'
-import { sessionImageIds, useStore } from '../store'
+import { sessionImageIds, storeActions, useStore } from '../store'
 import { getImage, useImageUrl } from '../lib/imageStore'
 import { downloadBlob } from '../lib/io'
 import { appConfirm } from '../lib/dialogs'
@@ -239,7 +239,8 @@ export function GalleryBody({
   /** 再生成モーダルを開く（挿絵）。messageId は元の記録のアンカー */
   onRegenerateIllustration: (sceneId: string, messageId: string | undefined, prompt: string, negative?: string) => void
 }) {
-  const { removeIllustration, deleteImageRecord, sessionImageLogs, revealMessage } = useStore()
+  const sessionImageLogs = useStore((st) => st.sessionImageLogs)
+  const { removeIllustration, deleteImageRecord, revealMessage } = storeActions()
   const [tab, setTab] = useState<'branch' | 'all'>('branch')
 
   const records = sessionImageLogs[session.id] ?? []

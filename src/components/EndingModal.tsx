@@ -1,4 +1,4 @@
-import { useStore } from '../store'
+import { storeActions, useStore } from '../store'
 import ModalShell from './ModalShell'
 import { Icon } from './icons'
 
@@ -14,17 +14,10 @@ interface Props {
  * コードは到達判定を一切しない＝**提案の主体は AI、選ぶ主体はプレイヤー**。
  */
 export default function EndingModal({ onClose }: Props) {
-  const {
-    sessions,
-    activeId,
-    endingProposals,
-    isProposingEndings,
-    proposeEndings,
-    setEndingGoal,
-    concludeStory,
-    clearEndingProposals,
-  } = useStore()
-  const session = sessions.find((s) => s.id === activeId)
+  const endingProposals = useStore((st) => st.endingProposals)
+  const isProposingEndings = useStore((st) => st.isProposingEndings)
+  const session = useStore((st) => st.sessions.find((s) => s.id === st.activeId))
+  const { proposeEndings, setEndingGoal, concludeStory, clearEndingProposals } = storeActions()
   if (!session) return null
 
   const goal = session.endingGoal

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useStore } from '../store'
+import { storeActions, useStore } from '../store'
 import MenuPopover from './MenuPopover'
 import NumberInput from './NumberInput'
 import { DEFAULT_UI, UI_LIMITS } from '../types'
@@ -58,7 +58,8 @@ function RsField({
 
 /** topbar の Aa ボタン→ポップオーバー。文字サイズ・行間・本文幅・セリフ色分け・環境音・没入モード（UI-4・F2で数値化） */
 export default function ReaderSettings() {
-  const { ui, setUiPrefs } = useStore()
+  const ui = useStore((st) => st.ui)
+  const { setUiPrefs } = storeActions()
   const [open, setOpen] = useState(false)
 
   const resetReader = () =>

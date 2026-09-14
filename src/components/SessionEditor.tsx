@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { currentScene, hasStartPreset, startPresetPatch, useStore } from '../store'
+import { currentScene, hasStartPreset, startPresetPatch, storeActions, useStore } from '../store'
 import { modelRefLabel } from '../lib/providers'
 import { appConfirm } from '../lib/dialogs'
 import type { Session } from '../types'
@@ -21,7 +21,10 @@ interface Props {
 }
 
 export default function SessionEditor({ session, onClose }: Props) {
-  const { updateSession, characters, worlds, providers, setView } = useStore()
+  const characters = useStore((st) => st.characters)
+  const worlds = useStore((st) => st.worlds)
+  const providers = useStore((st) => st.providers)
+  const { updateSession, setView } = storeActions()
   const [d, setD] = useState<Session>(session)
   const [tab, setTab] = useState<Tab>('basic')
   const [pickerTarget, setPickerTarget] = useState<PickerTarget | null>(null)

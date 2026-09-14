@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { newCharacter, useStore } from '../../store'
+import { newCharacter, storeActions, useStore } from '../../store'
 import type { Character } from '../../types'
 import CharacterEditor from './CharacterEditor'
 import EntityAvatar from '../EntityAvatar'
@@ -11,7 +11,8 @@ import { SelectionBar, CardContextMenu } from './LibraryMultiSelect'
 import { Icon } from '../icons'
 
 export default function CharacterLibrary() {
-  const { characters, importCharacterCard, deleteCharacter, duplicateCharacter } = useStore()
+  const characters = useStore((st) => st.characters)
+  const { importCharacterCard, deleteCharacter, duplicateCharacter } = storeActions()
   const [editing, setEditing] = useState<Character | null>(null)
   const [notice, setNotice] = useState('')
   const [query, setQuery] = useState('')

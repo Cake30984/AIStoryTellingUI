@@ -1,9 +1,5 @@
 import { useEffect, useState } from 'react'
-import {
-  useStore,
-  type ReviewCallProgress,
-  type ReviewCallStatus,
-} from '../store'
+import { storeActions, useStore, type ReviewCallProgress, type ReviewCallStatus } from '../store'
 import type {
   DiscoveredCharacter,
   NextSceneSuggestion,
@@ -108,19 +104,12 @@ export default function SceneReviewModal() {
 }
 
 function ReviewBody() {
-  const {
-    sceneReview,
-    confirmSceneReview,
-    updateSceneReview,
-    cancelReview,
-    isReviewing,
-    isRegenSuggestions,
-    sessions,
-    activeId,
-    stopReview,
-  } = useStore()
+  const sceneReview = useStore((st) => st.sceneReview)
+  const isReviewing = useStore((st) => st.isReviewing)
+  const isRegenSuggestions = useStore((st) => st.isRegenSuggestions)
+  const session = useStore((st) => st.sessions.find((s) => s.id === st.activeId))
+  const { confirmSceneReview, updateSceneReview, cancelReview, stopReview } = storeActions()
   const review = sceneReview!
-  const session = sessions.find((s) => s.id === activeId)
   const isPastScene = !!session && review.sceneId !== session.currentSceneId
 
   // 次シーンの時点（第3の呼び出しが読み取った now。取れていなければ出さない）

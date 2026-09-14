@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { useStore } from '../store'
+import { storeActions, useStore } from '../store'
 import { Icon } from './icons'
 import ActivityIndicator from './ActivityIndicator'
 import ModalShell from './ModalShell'
@@ -11,7 +11,8 @@ import { ImageJobsBody } from './ImageJobsPanel'
  * インポート（PNG カード / JSON バンドル）も System に行かずここから取り込める。
  */
 export default function LibraryBar() {
-  const { imageJobs, importAnyFile, setInfoNotice } = useStore()
+  const imageJobs = useStore((st) => st.imageJobs)
+  const { importAnyFile, setInfoNotice } = storeActions()
   const [showJobs, setShowJobs] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const selecting = imageJobs.some((j) => j.status === 'selecting')

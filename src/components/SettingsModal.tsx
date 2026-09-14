@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { useStore } from '../store'
+import { storeActions, useStore } from '../store'
 import { downloadBundle, downloadBlob } from '../lib/io'
 import { PROVIDER_PRESETS, defaultOpenRouterProvider, modelRefLabel, newProvider } from '../lib/providers'
 import { oauthPkceAvailable } from '../lib/platform'
@@ -35,20 +35,20 @@ const USAGE_KIND_LABELS: Record<LlmRequestKind, string> = {
 
 /** System ページ（設定・データ管理）の中身。UI-5でモーダルからページ化するため抽出。ロジックは無変更 */
 export function SettingsBody() {
+  const providers = useStore((st) => st.providers)
+  const modelsLoadingFor = useStore((st) => st.modelsLoadingFor)
+  const defaultModelRef = useStore((st) => st.defaultModelRef)
+  const usageLog = useStore((st) => st.usageLog)
   const {
-    providers,
     upsertProvider,
     deleteProvider,
     loadModels,
-    modelsLoadingFor,
     exportBundle,
     importAnyFile,
     gcUnusedImages,
-    defaultModelRef,
     setDefaultModelRef,
-    usageLog,
     clearUsageLog,
-  } = useStore()
+  } = storeActions()
 
   // API キーはローカルバッファに保持し「保存」ボタンで確定
   const [localKeys, setLocalKeys] = useState<Record<string, string>>(

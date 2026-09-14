@@ -1,5 +1,8 @@
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
+import { shallow } from 'zustand/shallow'
+import { useShallow } from 'zustand/react/shallow'
+import { useStoreWithEqualityFn } from 'zustand/traditional'
 import type {
   Avatar,
   BranchNode,
@@ -4288,3 +4291,62 @@ export const useStore = create<AppState>()(
     },
   ),
 )
+
+
+// ---------------------------------------------------------------------------
+// 購読ヘルパ（計画 P2b）
+//
+// **`useStore()` をセレクタ無しで丸ごと購読しない。** 丸ごと購読すると、ストリーミングの
+// 1チャンク（＝`set()` 1回）ごとに、その本文と無関係なコンポーネントまで再描画される。
+// ---------------------------------------------------------------------------
+
+/**
+ * アクションをまとめて取る（購読しない）。アクションはストア生成時に固定され差し替わらないので、
+ * 参照は毎回同じ＝`React.memo` の子へそのまま渡してよい。
+ * **状態（`sessions` 等）をここから読まない**——描画が更新されなくなる。
+ */
+export function storeActions(): AppState {
+  return useStore.getState()
+}
+
+/** 複数スライスをまとめて購読する（返り値を1段だけ浅く比べる） */
+export function useShallowStore<T>(selector: (st: AppState) => T): T {
+  return useStore(useShallow(selector))
+}
+
+/** 要素ごとに1段浅く比べる（`map` で組み立てた小さなオブジェクトの配列を返すセレクタ用） */
+function listShallow(a: unknown, b: unknown): boolean {
+  if (a === b) return true
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false
+  return a.every((x, i) => shallow(x, b[i]))
+}
+
+/**
+ * 一覧描画用に「小さな行オブジェクトの配列」を購読する。
+ * 行の中身が変わらなければ再描画しない（`useShallowStore` は配列の要素までは見ない）。
+ * 行には**プリミティブだけ**を入れること（配列・オブジェクトを入れると毎回不一致になる）。
+ */
+export function useListStore<T>(selector: (st: AppState) => T[]): T[] {
+  return useStoreWithEqualityFn(useStore, selector, listShallow)
+}
+
+/** `messages` を除いたセッションの同一性（`useSessionExceptMessages` 用） */
+function sameSessionExceptMessages(a: Session, b: Session): boolean {
+  if (a === b) return true
+  const keys = Object.keys(a) as (keyof Session)[]
+  if (keys.length !== Object.keys(b).length) return false
+  return keys.every((k) => k === 'messages' || a[k] === b[k])
+}
+
+/**
+ * **本文（`messages`）を読まない**購読でだけ使う、セッション1件の購読（右ドックなど）。
+ * `messages` 以外に変化が無い間は同じ参照を返す＝ストリーミングの1チャンクごとに描き直さない。
+ * **本文を読む用途にこれを使わない**（古い本文を掴んだままになる）。
+ */
+export function useSessionExceptMessages(sessionId: string): Session | undefined {
+  return useStoreWithEqualityFn(
+    useStore,
+    (st) => st.sessions.find((s) => s.id === sessionId),
+    (a, b) => (a && b ? sameSessionExceptMessages(a, b) : a === b),
+  )
+}

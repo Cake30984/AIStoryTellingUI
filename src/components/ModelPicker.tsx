@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useStore } from '../store'
+import { storeActions, useStore } from '../store'
 import { makeModelRef, splitRef } from '../lib/providers'
 import ModalShell from './ModalShell'
 import { Icon } from './icons'
@@ -11,14 +11,11 @@ interface Props {
 }
 
 export default function ModelPicker({ current, onPick, onClose }: Props) {
-  const {
-    providers,
-    modelsByProvider,
-    modelsLoadingFor,
-    loadModels,
-    favoriteModels,
-    toggleFavorite,
-  } = useStore()
+  const providers = useStore((st) => st.providers)
+  const modelsByProvider = useStore((st) => st.modelsByProvider)
+  const modelsLoadingFor = useStore((st) => st.modelsLoadingFor)
+  const favoriteModels = useStore((st) => st.favoriteModels)
+  const { loadModels, toggleFavorite } = storeActions()
 
   // current から初期プロバイダを決定
   const { providerId: curProviderId, model: curModelId } = splitRef(current)

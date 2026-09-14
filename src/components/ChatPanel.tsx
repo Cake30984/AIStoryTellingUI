@@ -1,8 +1,9 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import {
   currentScene,
   reviewModelOf,
+  storeActions,
   useStore,
 } from '../store'
 import {
@@ -19,7 +20,15 @@ import { hasStructuredLines, plainTextOf } from '../lib/structured'
 import { appConfirm } from '../lib/dialogs'
 import { isImageSetupDismissed } from '../lib/imageSetup'
 import ImageGenModal from './ImageGenModal'
-import type { DockTab, Message, Scene, SceneIllustration, Session } from '../types'
+import type {
+  Character,
+  DockTab,
+  Message,
+  Scene,
+  SceneIllustration,
+  Session,
+  SessionMode,
+} from '../types'
 import EndingModal from './EndingModal'
 import InterludePanel from './InterludePanel'
 import SessionEditor from './SessionEditor'
@@ -41,7 +50,99 @@ import MenuPopover from './MenuPopover'
 import ActivityIndicator from './ActivityIndicator'
 
 interface Props {
-  session: Session
+  sessionId: string
+}
+
+/**
+ * 本文の描画へ渡すセッションの読み取り専用スライス（P2b）。**`messages` を含めない**——
+ * ストリーミング中に変わるのは `messages` だけなので、ここを安定させておけば
+ * シーン・メッセージの `React.memo` が効き、描き直しが末尾の1件に収まる。
+ */
+interface SessionMeta {
+  id: string
+  mode: SessionMode
+  /** セッションの顔ぶれ全員（CS1）。**既に書かれた本文の話者解決**に使う */
+  cast: Character[]
+  /** 中心人物（F3） */
+  focus?: Character
+  focusCharacterId: string
+  /** ライブラリのキャラクター全員（？バッジの抑止判定に使う） */
+  libraryCharacters: Character[]
+  currentSceneId: string | null
+  novel: boolean
+  /** いま居合わせている人物の id（幕間の候補の並べ替え） */
+  presentIds: string[]
+  /** 完結済み（続きの導線を出さない） */
+  concluded: boolean
+}
+
+/**
+ * 本文1件ぶんの操作。**参照が変わらない**ように `ChatPanelBody` が `useMemo` で1つ作り、
+ * メッセージ・シーンへそのまま配る（`React.memo` を壊さないため）。
+ */
+interface MessageActions {
+  startEdit: (messageId: string) => void
+  cancelEdit: () => void
+  saveEdit: (messageId: string, text: string) => Promise<void>
+  remove: (messageId: string) => void
+  regenerateFrom: (messageId: string) => void
+  branchFrom: (messageId: string) => void
+  defineSpeaker: (name: string) => void
+  illustrate: (sceneId: string, messageId: string) => void
+  removeIllustration: (sceneId: string, illId: string) => void
+  regenerateIllustration: (
+    sceneId: string,
+    messageId: string | undefined,
+    prompt: string,
+    negative?: string,
+  ) => void
+  pickDirection: () => void
+  toggleScene: (sceneId: string) => void
+  regenerateSummary: (sceneId: string) => void
+}
+
+/** 小説形式: 地の文と「」セリフを分けて軽く装飾 */
+function renderProse(text: string) {
+  return text.split(/(「[^」]*」)/g).map((p, i) =>
+    p.startsWith('「') ? (
+      <span key={i} className="dialogue">
+        {p}
+      </span>
+    ) : (
+      <span key={i}>{p}</span>
+    ),
+  )
+}
+
+const isMarker = (m: Message) => m.role === 'user' && isMarkerContent(m.content)
+
+/** 本文を持たないシーンへ配る空配列（毎回新しい配列を作ると memo が効かない） */
+const EMPTY_MESSAGES: Message[] = []
+
+/** 本文の編集ボックス。入力中の文字は編集中の1件が持つ（P2b で ChatPanel の state から分離） */
+function EditBox({
+  initial,
+  onCancel,
+  onSave,
+}: {
+  initial: string
+  onCancel: () => void
+  onSave: (text: string) => void
+}) {
+  const [text, setText] = useState(initial)
+  return (
+    <div className="edit-box">
+      <textarea rows={4} value={text} autoFocus onChange={(e) => setText(e.target.value)} />
+      <div className="edit-actions">
+        <button className="btn" onClick={onCancel}>
+          キャンセル
+        </button>
+        <button className="btn primary" onClick={() => onSave(text)}>
+          保存
+        </button>
+      </div>
+    </div>
+  )
 }
 
 /** 挿絵1枚の表示（保存・削除・クリック拡大・再生成） */
@@ -113,11 +214,429 @@ function IllustrationView({
   )
 }
 
-export default function ChatPanel({ session }: Props) {
+/**
+ * メッセージ1件の描画（P2b で `ChatPanel` から切り出し）。
+ *
+ * **`React.memo` を壊さないこと。** props はすべて「ストリーミング中に変わらないもの」か
+ * 「このメッセージ自身」にしてある。ここへセッションや配列を丸ごと渡すと、1チャンクごとに
+ * 全メッセージが描き直る元の姿へ戻る。
+ */
+interface MessageRowProps {
+  m: Message
+  meta: SessionMeta
+  isStreaming: boolean
+  isGeneratingChoices: boolean
+  /** この行を編集中か */
+  editing: boolean
+  /** 末尾のアシスタント本文か（〈展開を選ぶ〉を出す対象。FB3-A6） */
+  isLastAssistant: boolean
+  showIllustButtons: boolean
+  act: MessageActions
+}
+
+const MessageRow = memo(function MessageRow({
+  m,
+  meta,
+  isStreaming,
+  isGeneratingChoices,
+  editing,
+  isLastAssistant,
+  showIllustButtons,
+  act,
+}: MessageRowProps) {
+  const editBox = () => (
+    <EditBox
+      initial={m.content}
+      onCancel={act.cancelEdit}
+      onSave={(text) => void act.saveEdit(m.id, text)}
+    />
+  )
+
+  /**
+   * メッセージ操作行。書き手への指示（IN1）では本文に紐づく操作を出さない——
+   * 挿絵は「本文の一点」に紐づく機能で、指示行に置く意味がないため。
+   */
+  const msgActions = () => {
+    if (isStreaming || m.pending) return null
+    if (isDirective(m)) {
+      return (
+        <div className="msg-actions">
+          <button onClick={() => act.startEdit(m.id)}>
+            <Icon name="pencil" size={13} /> 編集
+          </button>
+          <button onClick={() => act.regenerateFrom(m.id)} title="この指示以降を作り直す">
+            <Icon name="rotate-ccw" size={13} /> ここから
+          </button>
+          <button
+            onClick={() => act.branchFrom(m.id)}
+            title="今の続きを分岐として残してから、ここから作り直す"
+          >
+            <Icon name="git-branch" size={13} /> 分岐
+          </button>
+          <button onClick={() => act.remove(m.id)}>
+            <Icon name="trash-2" size={13} /> 削除
+          </button>
+        </div>
+      )
+    }
+    const sceneId = m.sceneId ?? meta.currentSceneId
+    return (
+      <div className="msg-actions">
+        <button onClick={() => act.startEdit(m.id)}>
+          <Icon name="pencil" size={13} /> 編集
+        </button>
+        <button onClick={() => act.regenerateFrom(m.id)} title="この発言以降を作り直す">
+          <Icon name="rotate-ccw" size={13} /> ここから
+        </button>
+        {/* ⑂ 明示分岐（FB6-C）: 今の続きに名前を付けて残してから、ここから作り直す。
+            完結後も出す（唯一の続きを描く導線）が、一番最後の生成文からは分岐させない（FB9-A） */}
+        <button
+          onClick={() => act.branchFrom(m.id)}
+          title="今の続きを分岐として残してから、ここから作り直す"
+        >
+          <Icon name="git-branch" size={13} /> 分岐
+        </button>
+        <button onClick={() => act.remove(m.id)}>
+          <Icon name="trash-2" size={13} /> 削除
+        </button>
+        {/* 任意のメッセージをアンカーに後付け生成（過去シーンも可。FB6-B） */}
+        {showIllustButtons && sceneId && (
+          <button
+            onClick={() => act.illustrate(sceneId, m.id)}
+            title="このメッセージの直後に挿絵を生成"
+          >
+            <Icon name="palette" size={13} /> 挿絵
+          </button>
+        )}
+        {/* 末尾のアシスタント本文にだけ〈展開を選ぶ〉（F4。オンデマンド生成＝設計 §3.4）。
+            完結後は続きが無いので出さない */}
+        {isLastAssistant && !meta.concluded && (
+          <button
+            onClick={() => act.pickDirection()}
+            disabled={isGeneratingChoices}
+            title="この続きの展開の候補を出す"
+          >
+            <Icon name="git-branch" size={13} /> 展開を選ぶ
+          </button>
+        )}
+      </div>
+    )
+  }
+
+  /**
+   * 書き手への指示（IN1）。地の文でもセリフでもないことがひと目で分かる形で描く。
+   * **文体（novel / chat）では見た目を変えない**——文体は物語の描き方の設定であって、
+   * 舞台裏の表示を変える理由がないため。
+   */
+  if (isDirective(m)) {
+    return (
+      <div className="prose-directive" data-msg-id={m.id}>
+        <div className="directive-label">
+          <Icon name="clapperboard" size={12} /> 書き手への指示
+        </div>
+        {editing ? editBox() : <div className="directive-body">{m.content}</div>}
+        {msgActions()}
+      </div>
+    )
+  }
+
+  if (meta.novel) {
+    if (editing) return <div className="prose-block" data-msg-id={m.id}>{editBox()}</div>
+    if (m.role === 'assistant') {
+      const structured = hasStructuredLines(m.content, meta.cast)
+      return (
+        <div className="prose-block" data-msg-id={m.id}>
+          {structured ? (
+            <StructuredNovelBody
+              content={m.content}
+              participants={meta.cast}
+              pending={!!m.pending && isStreaming}
+              onDefineSpeaker={act.defineSpeaker}
+              libraryCharacters={meta.libraryCharacters}
+            />
+          ) : (
+            <>
+              {renderProse(m.content)}
+              {m.pending && isStreaming && <span className="cursor" />}
+            </>
+          )}
+          {msgActions()}
+        </div>
+      )
+    }
+    return (
+      <div className="prose-action" data-msg-id={m.id}>
+        {m.content}
+        {msgActions()}
+      </div>
+    )
+  }
+
+  if (m.role === 'assistant' && !editing && hasStructuredLines(m.content, meta.cast)) {
+    return (
+      <div className="st-message" data-msg-id={m.id}>
+        <StructuredChatBody
+          content={m.content}
+          participants={meta.cast}
+          pending={!!m.pending && isStreaming}
+          onDefineSpeaker={act.defineSpeaker}
+          libraryCharacters={meta.libraryCharacters}
+        />
+        {msgActions()}
+      </div>
+    )
+  }
+
+  const speaker =
+    m.role === 'assistant'
+      ? (meta.libraryCharacters.find((x) => x.id === m.characterId) ?? meta.cast[0])
+      : undefined
+  const av =
+    m.role === 'assistant'
+      ? speaker
+        ? { avatar: speaker.avatar, name: speaker.name || 'AI' }
+        : { avatar: { color: '#7c5cff' }, name: meta.mode === 'story' ? '物語' : 'AI' }
+      : null
+  const name = m.role === 'assistant' ? (av?.name ?? 'AI') : meta.focus?.name || 'あなた'
+  return (
+    <div className="msg" data-msg-id={m.id}>
+      {m.role === 'assistant' ? (
+        <EntityAvatar className="avatar" avatar={av!.avatar} name={av!.name} />
+      ) : (
+        <EntityAvatar className="avatar" avatar={meta.focus?.avatar} name={meta.focus?.name || 'あなた'} />
+      )}
+      <div className="bubble">
+        <div className="name">{name}</div>
+        {editing ? (
+          editBox()
+        ) : (
+          <>
+            <div className="content">
+              {m.content}
+              {m.pending && isStreaming && <span className="cursor" />}
+            </div>
+            {msgActions()}
+          </>
+        )}
+      </div>
+    </div>
+  )
+})
+
+/**
+ * シーン1つぶんの描画（見出し・あらすじ・本文・幕間）。P2b で `React.memo` 化した。
+ * ストリーミング中に描き直るのは、末尾の pending メッセージを含む**現在シーンだけ**になる。
+ */
+interface SceneBlockProps {
+  scene: Scene
+  /** このシーンに属する本文（`ChatPanelBody` が1回の走査で作った Map から渡す） */
+  msgs: Message[]
+  meta: SessionMeta
+  isCurrent: boolean
+  open: boolean
+  isStreaming: boolean
+  isReviewing: boolean
+  isGeneratingChoices: boolean
+  editingId: string | null
+  lastAssistantId: string | null
+  showIllustButtons: boolean
+  act: MessageActions
+}
+
+const SceneBlock = memo(function SceneBlock({
+  scene,
+  msgs,
+  meta,
+  isCurrent,
+  open,
+  isStreaming,
+  isReviewing,
+  isGeneratingChoices,
+  editingId,
+  lastAssistantId,
+  showIllustButtons,
+  act,
+}: SceneBlockProps) {
+  if (msgs.length === 0 && !scene.summary && !isCurrent) return null
+  // シーンに本文（マーカー以外）か要約があれば見出しを表示（FB3-A1）。
+  // 「複数シーンあれば無条件で見出し」は、本文を全削除した空シーンでもタイトルだけ残る
+  // 原因だったので外した（FB8-A #4）。健全なシーンは本文か要約を必ず持つのでこれで十分。
+  const hasRealContent = msgs.some((m) => m.content.trim() && !isMarkerContent(m.content))
+  const showDivider = hasRealContent || !!scene.summary
+
+  return (
+    <>
+      {showDivider && (
+        <div className="scene-divider">
+          <span className="scene-title">
+            <Icon name="book-open" size={13} className="scene-title-icon" /> {scene.title}
+          </span>
+          {!isCurrent && msgs.length > 0 && (
+            <button className="scene-toggle" onClick={() => act.toggleScene(scene.id)}>
+              {open ? '会話を隠す' : '会話を表示'}
+            </button>
+          )}
+        </div>
+      )}
+      {!isCurrent && scene.summary && (
+        <div className="scene-summary">
+          <div className="scene-summary-label">
+            あらすじ
+            <button
+              className="scene-summary-regen"
+              onClick={() => act.regenerateSummary(scene.id)}
+              disabled={isStreaming || isReviewing}
+              title="このシーンの要約と次シーンの方針を再生成する"
+            >
+              <Icon name="refresh-cw" size={12} /> 再生成
+            </button>
+          </div>
+          <div className="scene-summary-body">{scene.summary}</div>
+        </div>
+      )}
+      {open &&
+        (isCurrent ? (
+          <SceneContent
+            scene={scene}
+            msgs={msgs}
+            meta={meta}
+            isStreaming={isStreaming}
+            isGeneratingChoices={isGeneratingChoices}
+            editingId={editingId}
+            lastAssistantId={lastAssistantId}
+            showIllustButtons={showIllustButtons}
+            act={act}
+          />
+        ) : (
+          // 過去シーンは右側の縦スパイン（] ブラケット）でどこからでも折りたためる（FB8-D #7）
+          <div className="scene-block">
+            <button
+              className="scene-spine"
+              onClick={() => act.toggleScene(scene.id)}
+              title="クリックで会話を隠す"
+              aria-label="会話を隠す"
+            />
+            <SceneContent
+              scene={scene}
+              msgs={msgs}
+              meta={meta}
+              isStreaming={isStreaming}
+              isGeneratingChoices={isGeneratingChoices}
+              editingId={editingId}
+              lastAssistantId={lastAssistantId}
+              showIllustButtons={showIllustButtons}
+              act={act}
+            />
+          </div>
+        ))}
+      {/* 別視点の幕間（F6・設計 §2.9）。本文の後ろに置く＝読み物であって本編ではない */}
+      {meta.mode === 'story' && hasRealContent && (
+        <InterludePanel
+          scene={scene}
+          cast={meta.cast}
+          focusCharacterId={meta.focusCharacterId}
+          presentIds={meta.presentIds}
+          closed={!!scene.endedAt || !isCurrent}
+        />
+      )}
+    </>
+  )
+})
+
+/** メッセージ＋挿絵をアンカー順に描画（アンカー消失分はシーン末尾に集約） */
+function SceneContent({
+  scene,
+  msgs,
+  meta,
+  isStreaming,
+  isGeneratingChoices,
+  editingId,
+  lastAssistantId,
+  showIllustButtons,
+  act,
+}: Omit<SceneBlockProps, 'isCurrent' | 'open' | 'isReviewing'>) {
+  const ills = scene.illustrations ?? []
+  const msgIds = new Set(msgs.map((m) => m.id))
+  const byMessage = new Map<string, SceneIllustration[]>()
+  const orphans: SceneIllustration[] = []
+  for (const ill of ills) {
+    if (ill.messageId && msgIds.has(ill.messageId)) {
+      const list = byMessage.get(ill.messageId) ?? []
+      list.push(ill)
+      byMessage.set(ill.messageId, list)
+    } else {
+      orphans.push(ill)
+    }
+  }
+  const illView = (ill: SceneIllustration) => (
+    <IllustrationView
+      key={ill.id}
+      ill={ill}
+      onRemove={() => act.removeIllustration(scene.id, ill.id)}
+      onRegenerate={() =>
+        act.regenerateIllustration(scene.id, ill.messageId, ill.prompt, ill.negative)
+      }
+    />
+  )
+  // マーカーは本文を持たず、ターンの境目に薄い水平線（.gen-divider）だけを描く。
+  // 小説形式ではユーザー入力の前にも線を1本入れる。シーン先頭（＝直前に本文が無い）では線を出さない（A2）
+  let seenContent = false
+  const out: JSX.Element[] = []
+  for (const m of msgs) {
+    const marker = isMarker(m)
+    const isSceneStart = m.content === SCENE_START_PROMPT
+    const boundary = seenContent && !isSceneStart && (marker || (meta.novel && m.role === 'user'))
+    if (boundary) out.push(<div className="gen-divider" key={m.id + '-div'} />)
+    if (marker) {
+      seenContent = true
+      continue
+    }
+    out.push(
+      <Fragment key={m.id}>
+        <MessageRow
+          m={m}
+          meta={meta}
+          isStreaming={isStreaming}
+          isGeneratingChoices={isGeneratingChoices}
+          editing={editingId === m.id}
+          isLastAssistant={m.id === lastAssistantId}
+          showIllustButtons={showIllustButtons}
+          act={act}
+        />
+        {(byMessage.get(m.id) ?? []).map(illView)}
+      </Fragment>,
+    )
+    seenContent = true
+  }
+  return (
+    <>
+      {out}
+      {orphans.map(illView)}
+    </>
+  )
+}
+
+/**
+ * 本編セッションの購読はここで閉じる（P2b）。**`App` へ `session` を持ち上げない**——
+ * 持ち上げるとストリーミングの1チャンクごとに `App` が描き直り、レール・サイドバーまで
+ * 巻き添えになる。
+ */
+export default function ChatPanel({ sessionId }: Props) {
+  const session = useStore((st) => st.sessions.find((s) => s.id === sessionId))
+  if (!session) return null
+  return <ChatPanelBody session={session} />
+}
+
+function ChatPanelBody({ session }: { session: Session }) {
+  const isStreaming = useStore((st) => st.isStreaming)
+  const isReviewing = useStore((st) => st.isReviewing)
+  const isGeneratingChoices = useStore((st) => st.isGeneratingChoices)
+  const imageJobCount = useStore((st) => st.imageJobs.length)
+  const characters = useStore((st) => st.characters)
+  const ui = useStore((st) => st.ui)
+  const scrollTarget = useStore((st) => st.scrollTarget)
+  const characterDraftQueue = useStore((st) => st.characterDraftQueue)
   const {
-    isStreaming,
-    isReviewing,
-    isGeneratingChoices,
     send,
     continueStory,
     regenerate,
@@ -128,23 +647,12 @@ export default function ChatPanel({ session }: Props) {
     startStory,
     continueLast,
     pickDirection,
-    editMessage,
-    deleteMessage,
-    regenerateFrom,
-    branchFromMessage,
     updateSession,
     deleteSession,
     startSession,
-    removeIllustration,
-    imageJobs,
-    characters,
-    ui,
     setUiPrefs,
-    scrollTarget,
-    characterDraftQueue,
-    queueCharacterDrafts,
     dismissCharacterDraft,
-  } = useStore()
+  } = storeActions()
 
   const [text, setText] = useState('')
   /**
@@ -179,7 +687,6 @@ export default function ChatPanel({ session }: Props) {
   const [speaker, setSpeaker] = useState<string | undefined>(undefined)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [editText, setEditText] = useState('')
   const taRef = useRef<HTMLTextAreaElement>(null)
   const anchorRef = useRef<HTMLDivElement>(null)
   // 自動スクロールは「自分の操作直後の1回」だけ（生成中は追従しない。FB3-A3）
@@ -209,12 +716,9 @@ export default function ChatPanel({ session }: Props) {
     [session.characterIds, characters],
   )
   const participants = knownCast
-  // 中心人物＝ユーザーの立ち位置（F3。ペルソナ廃止で参加キャラの1人になった）
-  const focus = knownCast.find((c) => c.id === session.focusCharacterId)
   const novel = session.narrativeStyle === 'novel'
   // 発見キャラ（FB7-E）: 未解決話者の ？バッジ → キャラ化待ちへ積む。
   // 先頭1件だけモーダルを開く（複数承認された時は保存/中止のたびに次が出る）
-  const defineSpeaker = (name: string) => queueCharacterDrafts(session.id, [{ name, note: '' }])
   const pendingDraft = characterDraftQueue.find((q) => q.sessionId === session.id)
   const groupMode = session.mode === 'roleplay' && participants.length > 1 && !novel
   /**
@@ -223,6 +727,99 @@ export default function ChatPanel({ session }: Props) {
    */
   const asDirective = session.mode === 'story' || rpInputMode === 'directive'
   const effectiveSpeaker = groupMode ? speaker : participants[0]?.id
+
+  // --- 本文描画へ渡すもの（P2b）。ここから下は「参照が変わらないこと」が仕様の一部 ---
+
+  /** 本文の描画が読むセッションの断片。`messages` を含めない＝1チャンクごとに変わらない */
+  const meta = useMemo<SessionMeta>(
+    () => ({
+      id: session.id,
+      mode: session.mode,
+      cast: knownCast,
+      focus: knownCast.find((c) => c.id === session.focusCharacterId),
+      focusCharacterId: session.focusCharacterId,
+      libraryCharacters: characters,
+      currentSceneId: session.currentSceneId,
+      novel,
+      presentIds: session.state?.presentIds ?? [],
+      concluded: !!session.ending,
+    }),
+    [
+      session.id,
+      session.mode,
+      session.focusCharacterId,
+      session.currentSceneId,
+      session.state?.presentIds,
+      session.ending,
+      knownCast,
+      characters,
+      novel,
+    ],
+  )
+
+  /**
+   * sceneId → 本文メッセージ の対応表（1回の走査で作る。旧コードはシーンごとに
+   * `messages.filter` を回していた＝シーン数×発言数）。
+   * **内容の変わらないシーンは前回の配列をそのまま返す**——ここで参照が変わると
+   * `SceneBlock` の `React.memo` が全滅する。
+   */
+  const prevByScene = useRef<Map<string, Message[]>>(new Map())
+  const messagesByScene = useMemo(() => {
+    const next = new Map<string, Message[]>()
+    for (const m of session.messages) {
+      // 旧データの sceneId 無しメッセージは現在シーンへ入れる
+      const key = m.sceneId ?? session.currentSceneId ?? ''
+      const list = next.get(key)
+      if (list) list.push(m)
+      else next.set(key, [m])
+    }
+    for (const [key, list] of next) {
+      const prev = prevByScene.current.get(key)
+      if (prev && prev.length === list.length && prev.every((m, i) => m === list[i]))
+        next.set(key, prev)
+    }
+    prevByScene.current = next
+    return next
+  }, [session.messages, session.currentSceneId])
+
+  /** 本文1件ぶんの操作。参照を固定して `React.memo` の子へ配る */
+  const act = useMemo<MessageActions>(() => {
+    const st = storeActions()
+    return {
+      startEdit: (id) => setEditingId(id),
+      cancelEdit: () => setEditingId(null),
+      // 上書きガード（FB6-C）を通すため await（キャンセル時は本文が変わらないまま編集ボックスを閉じる）
+      saveEdit: async (id, textValue) => {
+        await st.editMessage(id, textValue)
+        setEditingId(null)
+      },
+      remove: (id) => void st.deleteMessage(id),
+      regenerateFrom: (id) => void st.regenerateFrom(id),
+      branchFrom: (id) => void st.branchFromMessage(id),
+      defineSpeaker: (name) => st.queueCharacterDrafts(session.id, [{ name, note: '' }]),
+      illustrate: (sceneId, messageId) => setIllustGenFor({ sceneId, messageId }),
+      removeIllustration: (sceneId, illId) => st.removeIllustration(session.id, sceneId, illId),
+      regenerateIllustration: (sceneId, messageId, prompt, negative) =>
+        setIllustGenFor({ sceneId, messageId, regenPrompt: prompt, regenNegative: negative }),
+      pickDirection: () => void st.pickDirection(),
+      toggleScene: (id) =>
+        setExpanded((prev) => {
+          const nextSet = new Set(prev)
+          nextSet.has(id) ? nextSet.delete(id) : nextSet.add(id)
+          return nextSet
+        }),
+      regenerateSummary: (sceneId) => void st.prepareSceneReview(sceneId),
+    }
+  }, [session.id])
+
+  // 右ドックへ渡すコールバック（参照を固定して ContextDock の memo を効かせる）
+  const onEditStatus = useCallback(() => setShowStatus(true), [])
+  const onEditDiscovery = useCallback((scope: DiscoveryScope) => setDiscoveryScope(scope), [])
+  const onRegenerateIllustration = useCallback(
+    (sceneId: string, messageId: string | undefined, prompt: string, negative?: string) =>
+      setIllustGenFor({ sceneId, messageId, regenPrompt: prompt, regenNegative: negative }),
+    [],
+  )
 
   // 締め時の目安（prompts.ts のペース制御ナッジと共通判定）
   // ユーザーに見せる分量は文字数（F5・設計 §2.8）。トークンはコストと文脈窓の管理にだけ使う
@@ -348,13 +945,6 @@ export default function ChatPanel({ session }: Props) {
     }
   }
 
-  const toggleScene = (id: string) =>
-    setExpanded((prev) => {
-      const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
-      return next
-    })
-
   const isConfigured =
     participants.length > 0 || (session.mode === 'story' && !!session.story.premise)
 
@@ -377,55 +967,6 @@ export default function ChatPanel({ session }: Props) {
     !!lastMsg.choices &&
     lastMsg.choices.length > 0
 
-  const avatarFor = (characterId?: string) => {
-    const c = characters.find((x) => x.id === characterId) ?? participants[0]
-    return c
-      ? { avatar: c.avatar, name: c.name || 'AI' }
-      : { avatar: { color: '#7c5cff' }, name: session.mode === 'story' ? '物語' : 'AI' }
-  }
-
-  // 小説形式: 地の文と「」セリフを分けて軽く装飾
-  const renderProse = (text: string) =>
-    text.split(/(「[^」]*」)/g).map((p, i) =>
-      p.startsWith('「') ? (
-        <span key={i} className="dialogue">
-          {p}
-        </span>
-      ) : (
-        <span key={i}>{p}</span>
-      ),
-    )
-
-  const startEdit = (m: Message) => {
-    setEditingId(m.id)
-    setEditText(m.content)
-  }
-  const saveEdit = async () => {
-    // 上書きガード（FB6-C）を通すため await（キャンセル時は本文が変わらないまま編集ボックスを閉じる）
-    if (editingId) await editMessage(editingId, editText)
-    setEditingId(null)
-  }
-
-  const editBox = () => (
-    <div className="edit-box">
-      <textarea
-        rows={4}
-        value={editText}
-        autoFocus
-        onChange={(e) => setEditText(e.target.value)}
-      />
-      <div className="edit-actions">
-        <button className="btn" onClick={() => setEditingId(null)}>
-          キャンセル
-        </button>
-        <button className="btn primary" onClick={saveEdit}>
-          保存
-        </button>
-      </div>
-    </div>
-  )
-
-  const isMarker = (m: Message) => m.role === 'user' && isMarkerContent(m.content)
 
   /**
    * 対象シーンの本文メッセージ（マーカー・空を除く）をアンカーまで返す（FB6-B）。
@@ -446,236 +987,6 @@ export default function ChatPanel({ session }: Props) {
     return idx >= 0 ? msgs.slice(0, idx + 1) : msgs
   }
 
-  /**
-   * メッセージ操作行。書き手への指示（IN1）では本文に紐づく操作を出さない——
-   * 挿絵・環境音ピンは「本文の一点」に紐づく機能で、指示行に置く意味がないうえ、
-   * ピンは `messageId` 必須なので指示行へ置かれると表示先を失う。
-   */
-  const msgActions = (m: Message) => {
-    if (isStreaming || m.pending) return null
-    const directive = isDirective(m)
-    if (directive) {
-      return (
-        <div className="msg-actions">
-          <>
-            <button onClick={() => startEdit(m)}>
-              <Icon name="pencil" size={13} /> 編集
-            </button>
-            <button onClick={() => regenerateFrom(m.id)} title="この指示以降を作り直す">
-              <Icon name="rotate-ccw" size={13} /> ここから
-            </button>
-          </>
-          {(
-            <button
-              onClick={() => branchFromMessage(m.id)}
-              title="今の続きを分岐として残してから、ここから作り直す"
-            >
-              <Icon name="git-branch" size={13} /> 分岐
-            </button>
-          )}
-          <button onClick={() => deleteMessage(m.id)}>
-            <Icon name="trash-2" size={13} /> 削除
-          </button>
-        </div>
-      )
-    }
-    return (
-      <div className="msg-actions">
-        {(
-          <>
-            <button onClick={() => startEdit(m)}>
-              <Icon name="pencil" size={13} /> 編集
-            </button>
-            <button onClick={() => regenerateFrom(m.id)} title="この発言以降を作り直す">
-              <Icon name="rotate-ccw" size={13} /> ここから
-            </button>
-          </>
-        )}
-        {/* ⑂ 明示分岐（FB6-C）: 今の続きに名前を付けて残してから、ここから作り直す。
-            完結後も出す（唯一の続きを描く導線）が、一番最後の生成文からは分岐させない（FB9-A） */}
-        {(
-          <button
-            onClick={() => branchFromMessage(m.id)}
-            title="今の続きを分岐として残してから、ここから作り直す"
-          >
-            <Icon name="git-branch" size={13} /> 分岐
-          </button>
-        )}
-        <button onClick={() => deleteMessage(m.id)}>
-          <Icon name="trash-2" size={13} /> 削除
-        </button>
-        {/* 任意のメッセージをアンカーに後付け生成（過去シーンも可。FB6-B） */}
-        {showIllustButtons && (m.sceneId ?? session.currentSceneId) && (
-          <button
-            onClick={() =>
-              setIllustGenFor({ sceneId: (m.sceneId ?? session.currentSceneId)!, messageId: m.id })
-            }
-            title="このメッセージの直後に挿絵を生成"
-          >
-            <Icon name="palette" size={13} /> 挿絵
-          </button>
-        )}
-        {/* 末尾のアシスタント本文にだけ〈展開を選ぶ〉（F4。オンデマンド生成＝設計 §3.4）。
-            完結後は続きが無いので出さない */}
-        {m.id === lastAssistantId && !session.ending && (
-          <button
-            onClick={() => pickDirection()}
-            disabled={isGeneratingChoices}
-            title="この続きの展開の候補を出す"
-          >
-            <Icon name="git-branch" size={13} /> 展開を選ぶ
-          </button>
-        )}
-      </div>
-    )
-  }
-
-  const renderNovelMessage = (m: Message) => {
-    if (editingId === m.id) return <div className="prose-block" data-msg-id={m.id} key={m.id}>{editBox()}</div>
-    if (m.role === 'assistant') {
-      const structured = hasStructuredLines(m.content, knownCast)
-      return (
-        <div className="prose-block" data-msg-id={m.id} key={m.id}>
-          {structured ? (
-            <StructuredNovelBody
-              content={m.content}
-              participants={knownCast}
-              pending={!!m.pending && isStreaming}
-              onDefineSpeaker={defineSpeaker}
-              libraryCharacters={characters}
-            />
-          ) : (
-            <>
-              {renderProse(m.content)}
-              {m.pending && isStreaming && <span className="cursor" />}
-            </>
-          )}
-          {msgActions(m)}
-        </div>
-      )
-    }
-    return (
-      <div className="prose-action" data-msg-id={m.id} key={m.id}>
-        {m.content}
-        {msgActions(m)}
-      </div>
-    )
-  }
-
-  /**
-   * 書き手への指示（IN1）。地の文でもセリフでもないことがひと目で分かる形で描く。
-   * **文体（novel / chat）では見た目を変えない**——文体は物語の描き方の設定であって、
-   * 舞台裏の表示を変える理由がないため。
-   */
-  const renderDirectiveMessage = (m: Message) => (
-    <div className="prose-directive" data-msg-id={m.id} key={m.id}>
-      <div className="directive-label">
-        <Icon name="clapperboard" size={12} /> 書き手への指示
-      </div>
-      {editingId === m.id ? editBox() : <div className="directive-body">{m.content}</div>}
-      {msgActions(m)}
-    </div>
-  )
-
-  const renderMessage = (m: Message) => {
-    if (isDirective(m)) return renderDirectiveMessage(m)
-    if (novel) return renderNovelMessage(m)
-    if (m.role === 'assistant' && editingId !== m.id && hasStructuredLines(m.content, knownCast)) {
-      return (
-        <div className="st-message" data-msg-id={m.id} key={m.id}>
-          <StructuredChatBody
-            content={m.content}
-            participants={knownCast}
-            pending={!!m.pending && isStreaming}
-            onDefineSpeaker={defineSpeaker}
-            libraryCharacters={characters}
-          />
-          {msgActions(m)}
-        </div>
-      )
-    }
-    const av = m.role === 'assistant' ? avatarFor(m.characterId) : null
-    const name = m.role === 'assistant' ? (av?.name ?? 'AI') : focus?.name || 'あなた'
-    return (
-      <div className="msg" data-msg-id={m.id} key={m.id}>
-        {m.role === 'assistant' ? (
-          <EntityAvatar className="avatar" avatar={av!.avatar} name={av!.name} />
-        ) : (
-          <EntityAvatar className="avatar" avatar={focus?.avatar} name={focus?.name || 'あなた'} />
-        )}
-        <div className="bubble">
-          <div className="name">{name}</div>
-          {editingId === m.id ? (
-            editBox()
-          ) : (
-            <>
-              <div className="content">
-                {m.content}
-                {m.pending && isStreaming && <span className="cursor" />}
-              </div>
-              {msgActions(m)}
-            </>
-          )}
-        </div>
-      </div>
-    )
-  }
-
-  /** メッセージ＋挿絵をアンカー順に描画（アンカー消失分はシーン末尾に集約） */
-  // 開始ブリーフィング（CG3）を差し込む位置＝**セッション最初の本文メッセージ（＝導入文）の直後**。
-
-  const renderSceneContent = (sc: Scene, msgs: Message[]) => {
-    const ills = sc.illustrations ?? []
-    const msgIds = new Set(msgs.map((m) => m.id))
-    const byMessage = new Map<string, SceneIllustration[]>()
-    const orphans: SceneIllustration[] = []
-    for (const ill of ills) {
-      if (ill.messageId && msgIds.has(ill.messageId)) {
-        const list = byMessage.get(ill.messageId) ?? []
-        list.push(ill)
-        byMessage.set(ill.messageId, list)
-      } else {
-        orphans.push(ill)
-      }
-    }
-    const illView = (ill: SceneIllustration) => (
-      <IllustrationView
-        key={ill.id}
-        ill={ill}
-        onRemove={() => removeIllustration(session.id, sc.id, ill.id)}
-        onRegenerate={() =>
-          setIllustGenFor({ sceneId: sc.id, messageId: ill.messageId, regenPrompt: ill.prompt, regenNegative: ill.negative })
-        }
-      />
-    )
-    // マーカーは本文を持たず、ターンの境目に薄い水平線（.gen-divider）だけを描く。
-    // 小説形式ではユーザー入力の前にも線を1本入れる。シーン先頭（＝直前に本文が無い）では線を出さない（A2）
-    let seenContent = false
-    const out: JSX.Element[] = []
-    for (const m of msgs) {
-      const marker = isMarker(m)
-      const isSceneStart = m.content === SCENE_START_PROMPT
-      const boundary = seenContent && !isSceneStart && (marker || (novel && m.role === 'user'))
-      if (boundary) out.push(<div className="gen-divider" key={m.id + '-div'} />)
-      if (marker) {
-        seenContent = true
-        continue
-      }
-      out.push(
-        <Fragment key={m.id}>
-          {renderMessage(m)}
-          {(byMessage.get(m.id) ?? []).map(illView)}
-        </Fragment>,
-      )
-      seenContent = true
-    }
-    return (
-      <>
-        {out}
-        {orphans.map(illView)}
-      </>
-    )
-  }
 
   return (
     <div className="main">
@@ -717,7 +1028,7 @@ export default function ChatPanel({ session }: Props) {
           title={ui.dockTab ? 'パネルを閉じる' : 'パネルを開く（状態・発見・画像・分岐・ジョブ）'}
         >
           <Icon name="panel-right" />
-          {imageJobs.length > 0 && <span className="icon-badge">{imageJobs.length}</span>}
+          {imageJobCount > 0 && <span className="icon-badge">{imageJobCount}</span>}
         </button>
 
         <ReaderSettings />
@@ -822,70 +1133,23 @@ export default function ChatPanel({ session }: Props) {
                   </div>
                 )}
 
-                {session.scenes.map((sc) => {
-                  const isCurrent = sc.id === session.currentSceneId
-                  const msgs = session.messages.filter(
-                    (m) => m.sceneId === sc.id || (isCurrent && !m.sceneId),
-                  )
-                  if (msgs.length === 0 && !sc.summary && !isCurrent) return null
-                  const open = isCurrent || expanded.has(sc.id)
-                  // シーンに本文（マーカー以外）か要約があれば見出しを表示（FB3-A1）。
-                  // 「複数シーンあれば無条件で見出し」は、本文を全削除した空シーンでもタイトルだけ残る
-                  // 原因だったので外した（FB8-A #4）。健全なシーンは本文か要約を必ず持つのでこれで十分。
-                  const hasRealContent = msgs.some((m) => m.content.trim() && !isMarkerContent(m.content))
-                  const showDivider = hasRealContent || !!sc.summary
-                  return (
-                    <Fragment key={sc.id}>
-                      {showDivider && (
-                        <div className="scene-divider">
-                          <span className="scene-title">
-                            <Icon name="book-open" size={13} className="scene-title-icon" /> {sc.title}
-                          </span>
-                          {!isCurrent && msgs.length > 0 && (
-                            <button className="scene-toggle" onClick={() => toggleScene(sc.id)}>
-                              {open ? '会話を隠す' : '会話を表示'}
-                            </button>
-                          )}
-                        </div>
-                      )}
-                      {!isCurrent && sc.summary && (
-                        <div className="scene-summary">
-                          <div className="scene-summary-label">
-                            あらすじ
-                            <button
-                              className="scene-summary-regen"
-                              onClick={() => prepareSceneReview(sc.id)}
-                              disabled={isStreaming || isReviewing}
-                              title="このシーンの要約と次シーンの方針を再生成する"
-                            >
-                              <Icon name="refresh-cw" size={12} /> 再生成
-                            </button>
-                          </div>
-                          <div className="scene-summary-body">{sc.summary}</div>
-                        </div>
-                      )}
-                      {open &&
-                        (isCurrent ? (
-                          renderSceneContent(sc, msgs)
-                        ) : (
-                          // 過去シーンは右側の縦スパイン（] ブラケット）でどこからでも折りたためる（FB8-D #7）
-                          <div className="scene-block">
-                            <button
-                              className="scene-spine"
-                              onClick={() => toggleScene(sc.id)}
-                              title="クリックで会話を隠す"
-                              aria-label="会話を隠す"
-                            />
-                            {renderSceneContent(sc, msgs)}
-                          </div>
-                        ))}
-                      {/* 別視点の幕間（F6・設計 §2.9）。本文の後ろに置く＝読み物であって本編ではない */}
-                      {session.mode === 'story' && hasRealContent && (
-                        <InterludePanel session={session} scene={sc} />
-                      )}
-                    </Fragment>
-                  )
-                })}
+                {session.scenes.map((sc) => (
+                  <SceneBlock
+                    key={sc.id}
+                    scene={sc}
+                    msgs={messagesByScene.get(sc.id) ?? EMPTY_MESSAGES}
+                    meta={meta}
+                    isCurrent={sc.id === session.currentSceneId}
+                    open={sc.id === session.currentSceneId || expanded.has(sc.id)}
+                    isStreaming={isStreaming}
+                    isReviewing={isReviewing}
+                    isGeneratingChoices={isGeneratingChoices}
+                    editingId={editingId}
+                    lastAssistantId={lastAssistantId}
+                    showIllustButtons={showIllustButtons}
+                    act={act}
+                  />
+                ))}
                 <div ref={anchorRef} className="scroll-anchor" />
               </div>
             </div>
@@ -1152,12 +1416,10 @@ export default function ChatPanel({ session }: Props) {
           </div>
         </div>
         <ContextDock
-          session={session}
-          onEditStatus={() => setShowStatus(true)}
-          onEditDiscovery={(scope) => setDiscoveryScope(scope)}
-          onRegenerateIllustration={(sceneId, messageId, prompt, negative) =>
-            setIllustGenFor({ sceneId, messageId, regenPrompt: prompt, regenNegative: negative })
-          }
+          sessionId={session.id}
+          onEditStatus={onEditStatus}
+          onEditDiscovery={onEditDiscovery}
+          onRegenerateIllustration={onRegenerateIllustration}
         />
       </div>
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useStore } from './store'
+import { storeActions, useStore } from './store'
 import Rail from './components/Rail'
 import Sidebar from './components/Sidebar'
 import ChatPanel from './components/ChatPanel'
@@ -52,23 +52,20 @@ function ToastItem({
 }
 
 export default function App() {
-  const {
-    sessions,
-    activeId,
-    view,
-    providers,
-    error,
-    clearError,
-    createSession,
-    sceneReview,
-    reviewProgress,
-    imageJobToasts,
-    dismissImageJobToasts,
-    infoNotice,
-    setInfoNotice,
-    schemaError,
-    ui,
-  } = useStore()
+  // **セッション本体をここで購読しない**（P2b）。購読すると本編生成の1チャンクごとに
+  // App ＝レール・サイドバー・本文の全部が描き直される。本文の購読は ChatPanel が持つ
+  const activeId = useStore((st) => st.activeId)
+  const hasActiveSession = useStore((st) => st.sessions.some((s) => s.id === st.activeId))
+  const view = useStore((st) => st.view)
+  const providers = useStore((st) => st.providers)
+  const error = useStore((st) => st.error)
+  const sceneReview = useStore((st) => st.sceneReview)
+  const reviewProgress = useStore((st) => st.reviewProgress)
+  const imageJobToasts = useStore((st) => st.imageJobToasts)
+  const infoNotice = useStore((st) => st.infoNotice)
+  const schemaError = useStore((st) => st.schemaError)
+  const ui = useStore((st) => st.ui)
+  const { clearError, createSession, dismissImageJobToasts, setInfoNotice } = storeActions()
   // storage は async 化済み（Web は同期 localStorage・Tauri は T3 のファイル backend）。
   // ハイドレーション完了までスプラッシュを表示する。
   const [hydrated, setHydrated] = useState(() => useStore.persist.hasHydrated())
@@ -80,14 +77,14 @@ export default function App() {
   // 空状態から新規作成した直後に開くセッション設定（F3/R15）
   const [newEditorId, setNewEditorId] = useState<string | null>(null)
   const startNew = (mode: 'roleplay' | 'story') => setNewEditorId(createSession(mode))
-  const newEditorSession = newEditorId ? sessions.find((s) => s.id === newEditorId) : undefined
+  const newEditorSession = useStore((st) =>
+    newEditorId ? st.sessions.find((s) => s.id === newEditorId) : undefined,
+  )
 
   // 使える接続先が1つでもあるか。**キーの有無ではなく「使えるか」で見る**
   // ——ローカル接続先（Ollama / LM Studio）はキーを持たないので、キーで数えると
   // 正しく設定できている人に「キーを登録してください」と出てしまう（R5）
   const hasUsableProvider = providers.some(isProviderUsable)
-
-  const active = sessions.find((s) => s.id === activeId)
 
   useEffect(() => {
     if (useStore.persist.hasHydrated()) {
@@ -225,8 +222,8 @@ export default function App() {
             <SettingsBody />
           </div>
         </div>
-      ) : active ? (
-        <ChatPanel key={active.id} session={active} />
+      ) : activeId && hasActiveSession ? (
+        <ChatPanel key={activeId} sessionId={activeId} />
       ) : (
         <div className="main">
           <div className="empty">

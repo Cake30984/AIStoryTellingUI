@@ -1,9 +1,5 @@
 import { useState } from 'react'
-import {
-  newLoreEntry,
-  newRelationAspect,
-  useStore,
-} from '../../store'
+import { newLoreEntry, newRelationAspect, storeActions } from '../../store'
 import type {
   LoreEntry,
   RelationAspectDef,
@@ -47,7 +43,7 @@ interface Props {
 }
 
 export default function WorldEditor({ world, onClose }: Props) {
-  const { upsertWorld, deleteWorld } = useStore()
+  const { upsertWorld, deleteWorld } = storeActions()
   const [d, setD] = useState<World>(world)
   const [exporting, setExporting] = useState(false)
   const [dirty, setDirty] = useState(false)

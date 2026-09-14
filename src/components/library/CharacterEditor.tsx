@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useStore } from '../../store'
+import { storeActions } from '../../store'
 import type { Character } from '../../types'
 import AvatarField from './AvatarField'
 import CsvInput from '../CsvInput'
@@ -23,7 +23,7 @@ interface Props {
 }
 
 export default function CharacterEditor({ character, onClose, draft, draftNotice, onSaved }: Props) {
-  const { upsertCharacter, deleteCharacter } = useStore()
+  const { upsertCharacter, deleteCharacter } = storeActions()
   const [d, setD] = useState<Character>(character)
   const [exporting, setExporting] = useState(false)
   const [dirty, setDirty] = useState(false)

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useStore } from '../store'
+import { storeActions } from '../store'
 import type { Scene } from '../types'
 import ModalShell from './ModalShell'
 
@@ -9,7 +9,7 @@ interface Props {
 }
 
 export default function SceneEditor({ scene, onClose }: Props) {
-  const { updateScene } = useStore()
+  const { updateScene } = storeActions()
   const [d, setD] = useState<Scene>(scene)
   const [dirty, setDirty] = useState(false)
   const patch = (p: Partial<Scene>) => {

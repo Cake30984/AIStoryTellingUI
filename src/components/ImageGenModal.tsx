@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useStore } from '../store'
+import { storeActions, useStore } from '../store'
 import { streamChat } from '../lib/openrouter'
 import { parseModelRef, modelRefLabel, isProviderUsable } from '../lib/providers'
 import { extractJson } from '../lib/json'
@@ -86,23 +86,23 @@ export default function ImageGenModal({
   pinTags,
   onClose,
 }: Props) {
+  const imageProviders = useStore((st) => st.imageProviders)
+  const providers = useStore((st) => st.providers)
+  const lastImageProviderId = useStore((st) => st.lastImageProviderId)
+  const lastDraftModel = useStore((st) => st.lastDraftModel)
+  const imageJobs = useStore((st) => st.imageJobs)
+  const modelsByProvider = useStore((st) => st.modelsByProvider)
   const {
-    imageProviders,
-    providers,
-    lastImageProviderId,
     setLastImageProviderId,
-    lastDraftModel,
     setLastDraftModel,
-    imageJobs,
     startImageJob,
     cancelImageJob,
     dismissImageJob,
     applyImageJobResult,
     setView,
     recordUsage,
-    modelsByProvider,
     upsertImageProvider,
-  } = useStore()
+  } = storeActions()
   const [providerId, setProviderId] = useState(
     imageProviders.some((p) => p.id === lastImageProviderId) ? lastImageProviderId! : imageProviders[0]?.id ?? '',
   )

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { currentScene, useStore, type View } from '../store'
+import { currentScene, storeActions, useStore, type View } from '../store'
 import { useModalEscape } from '../lib/modalStack'
 import type { DockTab } from '../types'
 import { Icon, type IconName } from './icons'
@@ -18,21 +18,15 @@ interface Props {
 
 /** Ctrl+K で開くコマンドパレット（UI-7）。セッション・素材への移動＋固定コマンドの実行 */
 export default function CommandPalette({ onClose }: Props) {
-  const {
-    sessions,
-    activeId,
-    characters,
-    worlds,
-    ui,
-    isStreaming,
-    isReviewing,
-    setActive,
-    setView,
-    setUiPrefs,
-    continueStory,
-    startStory,
-    prepareSceneReview,
-  } = useStore()
+  const sessions = useStore((st) => st.sessions)
+  const activeId = useStore((st) => st.activeId)
+  const characters = useStore((st) => st.characters)
+  const worlds = useStore((st) => st.worlds)
+  const ui = useStore((st) => st.ui)
+  const isStreaming = useStore((st) => st.isStreaming)
+  const isReviewing = useStore((st) => st.isReviewing)
+  const { setActive, setView, setUiPrefs, continueStory, startStory, prepareSceneReview } =
+    storeActions()
 
   const [query, setQuery] = useState('')
   const [index, setIndex] = useState(0)

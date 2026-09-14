@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useStore } from '../store'
+import { storeActions, useStore } from '../store'
 import {
   newImageProvider,
   testImageProvider,
@@ -275,7 +275,9 @@ function ComfyFields({ p, onChange }: { p: ImageProvider; onChange: (p: ImagePro
 
 /** SettingsBody（System ページ）内の「画像生成の接続先」管理セクション */
 export default function ImageProviderSettings() {
-  const { imageProviders, upsertImageProvider, deleteImageProvider, providers } = useStore()
+  const imageProviders = useStore((st) => st.imageProviders)
+  const providers = useStore((st) => st.providers)
+  const { upsertImageProvider, deleteImageProvider } = storeActions()
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({})
   const [testResults, setTestResults] = useState<Record<string, string>>({})
   const [testingId, setTestingId] = useState<string | null>(null)

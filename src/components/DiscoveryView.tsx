@@ -12,7 +12,7 @@ interface Props {
 
 /** セッションで発見・深化した設定（オーバーレイ）の読み取り専用ビュー（ドック用。編集は DiscoveryPanel モーダルで行う。F4でタブ化） */
 export default function DiscoveryView({ session, onEdit }: Props) {
-  const { characters } = useStore()
+  const characters = useStore((st) => st.characters)
   const ov = session.overlay
   const devGroups = ov.characterDevelopments.filter((x) => x.developments.length > 0)
   const isEmpty = ov.lore.length === 0 && devGroups.length === 0

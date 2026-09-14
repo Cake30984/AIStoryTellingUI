@@ -37,7 +37,9 @@ const fieldStyle = {
 
 /** R10: 物語の書き出し（テキスト・挿絵つき Markdown・X 向け画像カード） */
 export default function StoryExportModal({ sessionId, nodeId, onClose }: Props) {
-  const { sessions, characters, cassettes } = useStore()
+  const sessions = useStore((st) => st.sessions)
+  const characters = useStore((st) => st.characters)
+  const cassettes = useStore((st) => st.cassettes)
   const liveSession = sessions.find((s) => s.id === sessionId)
 
   // フックはすべて早期 return より前に置く（Rules of Hooks）

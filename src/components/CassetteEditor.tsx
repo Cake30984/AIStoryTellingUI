@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { hasStartPreset, newCassette, startPresetPatch, useStore } from '../store'
+import { hasStartPreset, newCassette, startPresetPatch, storeActions, useStore } from '../store'
 import type { Cassette, Session } from '../types'
 import { appConfirm } from '../lib/dialogs'
 import { putImage, useImageUrl } from '../lib/imageStore'
@@ -22,7 +22,9 @@ interface Props {
 
 /** カセット専用エディタ（FB3-D）。世界観・キャラ・中心人物・開始設定を1つにまとめてカセットを作る */
 export default function CassetteEditor({ cassette, seedSession, onClose }: Props) {
-  const { characters, worlds, upsertCassette, setView } = useStore()
+  const characters = useStore((st) => st.characters)
+  const worlds = useStore((st) => st.worlds)
+  const { upsertCassette, setView } = storeActions()
   const [d, setD] = useState<Cassette>(() => cassette ?? newCassette(seedSession))
   const [tab, setTab] = useState<Tab>('basic')
   const [dirty, setDirty] = useState(false)

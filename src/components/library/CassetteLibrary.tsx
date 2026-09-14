@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useStore } from '../../store'
+import { storeActions, useStore } from '../../store'
 import type { Cassette } from '../../types'
 import { parseCardPng, exportCassetteCard } from '../../lib/cards'
 import { getImage, useImageUrl } from '../../lib/imageStore'
@@ -64,8 +64,10 @@ function CassetteCard({
 }
 
 export default function CassetteLibrary() {
-  const { cassettes, characters, worlds, importCassette, playCassette, deleteCassette } =
-    useStore()
+  const cassettes = useStore((st) => st.cassettes)
+  const characters = useStore((st) => st.characters)
+  const worlds = useStore((st) => st.worlds)
+  const { importCassette, playCassette, deleteCassette } = storeActions()
   const [notice, setNotice] = useState('')
   // null=閉じている / {}=新規 / {cassette}=編集
   const [editing, setEditing] = useState<{ cassette?: Cassette } | null>(null)

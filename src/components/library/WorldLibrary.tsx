@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { newWorld, useStore } from '../../store'
+import { newWorld, storeActions, useStore } from '../../store'
 import type { World } from '../../types'
 import WorldEditor from './WorldEditor'
 import { parseCardPng } from '../../lib/cards'
@@ -10,7 +10,8 @@ import { SelectionBar, CardContextMenu } from './LibraryMultiSelect'
 import { Icon } from '../icons'
 
 export default function WorldLibrary() {
-  const { worlds, importWorldCard, deleteWorld, duplicateWorld } = useStore()
+  const worlds = useStore((st) => st.worlds)
+  const { importWorldCard, deleteWorld, duplicateWorld } = storeActions()
   const [editing, setEditing] = useState<World | null>(null)
   const [notice, setNotice] = useState('')
   const [query, setQuery] = useState('')

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useStore } from '../store'
+import { storeActions, useStore } from '../store'
 import type { Development, LoreEntry, Session, SessionOverlay } from '../types'
 import CsvInput from './CsvInput'
 import { appConfirm } from '../lib/dialogs'
@@ -17,7 +17,9 @@ interface Props {
 
 /** セッションで発見・深化した設定（オーバーレイ）の閲覧・手動編集パネル。元 World/Character は不変。 */
 export default function DiscoveryPanel({ session, scope, onClose }: Props) {
-  const { characters, worlds, updateSession, promoteOverlayLore, promoteOverlayDev } = useStore()
+  const characters = useStore((st) => st.characters)
+  const worlds = useStore((st) => st.worlds)
+  const { updateSession, promoteOverlayLore, promoteOverlayDev } = storeActions()
   const charName = (id: string) => characters.find((c) => c.id === id)?.name || '無名'
   const worldName = worlds.find((w) => w.id === session.worldId)?.name
   const isLore = scope === 'lore'

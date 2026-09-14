@@ -10,7 +10,8 @@ interface Props {
 
 /** 状態（関係性 prose ＋ 事実の数）の読み取り専用ビュー（ドック用。編集は StatusPanel モーダルで行う） */
 export default function StatusView({ session }: Props) {
-  const { worlds, characters } = useStore()
+  const worlds = useStore((st) => st.worlds)
+  const characters = useStore((st) => st.characters)
   const world = worlds.find((w) => w.id === session.worldId)
   const heroName = characters.find((c) => c.id === session.focusCharacterId)?.name || '主人公'
   // 中心人物は自分自身への関係を持たない（F3）

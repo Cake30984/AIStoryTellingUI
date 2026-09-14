@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
-import { areaOf, useStore, type View } from '../store'
+import { areaOf, storeActions, useStore, type View } from '../store'
 import { Icon } from './icons'
 
 const LIBRARY_VIEWS: View[] = ['characters', 'worlds', 'cassettes']
 
 /** 左端48pxの領域スイッチ（Play/Library/System。UI-5） */
 export default function Rail() {
-  const { view, setView } = useStore()
+  const view = useStore((st) => st.view)
+  const { setView } = storeActions()
   const [lastLibrary, setLastLibrary] = useState<View>('characters')
   const area = areaOf(view)
 

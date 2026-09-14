@@ -1,11 +1,12 @@
 import { useState } from 'react'
-import { areaOf, useStore, type View } from '../store'
+import { areaOf, storeActions, useListStore, useStore, type View } from '../store'
 import { parseCardPng } from '../lib/cards'
 import { useCardDrop } from '../lib/useCardDrop'
 import { useMultiSelect } from '../lib/useMultiSelect'
 import { appConfirm } from '../lib/dialogs'
 import { Icon, type IconName } from './icons'
 import MenuPopover from './MenuPopover'
+import type { SessionMode } from '../types'
 import SessionEditor from './SessionEditor'
 import CassetteEditor from './CassetteEditor'
 
@@ -15,19 +16,35 @@ const LIBRARY_NAV: { key: View; label: string; icon: IconName }[] = [
   { key: 'cassettes', label: 'カセット', icon: 'library-big' },
 ]
 
+/** サイドバーの一覧に要るセッションの見出しだけ（本文は含めない。P2b） */
+interface SessionRow {
+  id: string
+  title: string
+  mode: SessionMode
+  archived: boolean
+  /** 参加キャラの id を連結したもの（行はプリミティブだけで持つ＝配列を入れると毎回不一致になる） */
+  castKey: string
+  messageCount: number
+}
+
 export default function Sidebar() {
-  const {
-    sessions,
-    activeId,
-    view,
-    setView,
-    setActive,
-    createSession,
-    updateSession,
-    deleteSession,
-    characters,
-    importCassette,
-  } = useStore()
+  const activeId = useStore((st) => st.activeId)
+  const view = useStore((st) => st.view)
+  const characters = useStore((st) => st.characters)
+  // 一覧が読むのは見出しだけ。**本文（messages）を購読しない**＝ストリーミングの
+  // 1チャンクごとにサイドバー全体を描き直さない（P2b）
+  const rows = useListStore<SessionRow>((st) =>
+    st.sessions.map((s) => ({
+      id: s.id,
+      title: s.title,
+      mode: s.mode,
+      archived: !!s.archived,
+      castKey: s.characterIds.join('\u0000'),
+      messageCount: s.messages.length,
+    })),
+  )
+  const { setView, setActive, createSession, updateSession, deleteSession, importCassette } =
+    storeActions()
   const [notice, setNotice] = useState('')
   const [query, setQuery] = useState('')
   const [showArchived, setShowArchived] = useState(false)
@@ -62,16 +79,17 @@ export default function Sidebar() {
     setEditingId(id)
   }
 
+  const castIdsOf = (row: SessionRow) => (row.castKey ? row.castKey.split('\u0000') : [])
   const q = query.trim().toLowerCase()
-  const matchesQuery = (s: (typeof sessions)[number]) => {
+  const matchesQuery = (s: SessionRow) => {
     if (!q) return true
     if ((s.title || '').toLowerCase().includes(q)) return true
-    return s.characterIds.some((id) =>
+    return castIdsOf(s).some((id) =>
       (characters.find((c) => c.id === id)?.name ?? '').toLowerCase().includes(q),
     )
   }
-  const archivedCount = sessions.filter((s) => s.archived).length
-  const visible = sessions.filter((s) => (showArchived || !s.archived) && matchesQuery(s))
+  const archivedCount = rows.filter((s) => s.archived).length
+  const visible = rows.filter((s) => (showArchived || !s.archived) && matchesQuery(s))
 
   const { selected, clear, handleClick, selectForContext } = useMultiSelect(visible.map((s) => s.id))
 
@@ -91,10 +109,15 @@ export default function Sidebar() {
     clear()
   }
 
-  const ctxSession = ctxMenu ? sessions.find((s) => s.id === ctxMenu.id) : undefined
+  const ctxSession = ctxMenu ? rows.find((s) => s.id === ctxMenu.id) : undefined
   const ctxMulti = ctxMenu ? selected.has(ctxMenu.id) && selected.size > 1 : false
-  const editingSession = editingId ? sessions.find((s) => s.id === editingId) : undefined
-  const cassetteSeed = cassetteSeedId ? sessions.find((s) => s.id === cassetteSeedId) : undefined
+  // 編集・カセット化はセッション全体が要るので、開いている間だけ本体を購読する
+  const editingSession = useStore((st) =>
+    editingId ? st.sessions.find((s) => s.id === editingId) : undefined,
+  )
+  const cassetteSeed = useStore((st) =>
+    cassetteSeedId ? st.sessions.find((s) => s.id === cassetteSeedId) : undefined,
+  )
 
   return (
     <aside className="sidebar" {...dropProps} style={dragOver ? { outline: '2px dashed var(--accent)', outlineOffset: -4 } : undefined}>
@@ -140,18 +163,18 @@ export default function Sidebar() {
             {notice && (
               <p style={{ color: 'var(--accent)', fontSize: 12, padding: '4px 12px' }}>{notice}</p>
             )}
-            {sessions.length === 0 && (
+            {rows.length === 0 && (
               <p style={{ color: 'var(--text-faint)', fontSize: 13, padding: '8px 12px' }}>
                 まだセッションがありません。
               </p>
             )}
-            {sessions.length > 0 && visible.length === 0 && (
+            {rows.length > 0 && visible.length === 0 && (
               <p style={{ color: 'var(--text-faint)', fontSize: 13, padding: '8px 12px' }}>
                 見つかりません。
               </p>
             )}
             {visible.map((s) => {
-              const cast = s.characterIds
+              const cast = castIdsOf(s)
                 .map((id) => characters.find((c) => c.id === id)?.name)
                 .filter(Boolean)
               return (
@@ -178,7 +201,7 @@ export default function Sidebar() {
                     <span className={'badge ' + s.mode}>{s.mode === 'roleplay' ? 'RP' : '物語'}</span>
                     {s.archived && <span className="badge">アーカイブ</span>}
                     {cast.length > 0 && <span className="cast">{cast.join('・')}</span>}
-                    <span title="このセッションの発言数">発言 {s.messages.length}</span>
+                    <span title="このセッションの発言数">発言 {s.messageCount}</span>
                   </div>
                 </div>
               )

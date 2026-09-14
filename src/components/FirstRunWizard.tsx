@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useStore } from '../store'
+import { storeActions, useStore } from '../store'
 import { isLocalEndpoint, makeModelRef, newProvider, requiresApiKey } from '../lib/providers'
 import { oauthPkceAvailable } from '../lib/platform'
 import { startOpenRouterOAuth } from '../lib/oauthPkce'
@@ -93,7 +93,8 @@ const inputStyle = {
  * OpenRouter を OAuth で選んだ場合（Tauri のみ）はキー入力が要らないため2ステップに縮む。
  */
 export default function FirstRunWizard({ onClose }: { onClose: () => void }) {
-  const { providers, upsertProvider, setDefaultModelRef } = useStore()
+  const providers = useStore((st) => st.providers)
+  const { upsertProvider, setDefaultModelRef } = storeActions()
 
   const [pathId, setPathId] = useState<PathId | null>(null)
   const [providerId, setProviderId] = useState<string | null>(null)

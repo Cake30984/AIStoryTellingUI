@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useStore } from '../store'
+import { storeActions, useStore } from '../store'
 import type { Session, SessionState } from '../types'
 import EntityAvatar from './EntityAvatar'
 import ModalShell from './ModalShell'
@@ -11,7 +11,9 @@ interface Props {
 
 /** セッションの状態（関係性 prose）の閲覧・手動編集パネル */
 export default function StatusPanel({ session, onClose }: Props) {
-  const { worlds, characters, applyStatusEdit } = useStore()
+  const worlds = useStore((st) => st.worlds)
+  const characters = useStore((st) => st.characters)
+  const { applyStatusEdit } = storeActions()
   const world = worlds.find((w) => w.id === session.worldId)
   const heroName = characters.find((c) => c.id === session.focusCharacterId)?.name || '主人公'
   const cast = session.characterIds
