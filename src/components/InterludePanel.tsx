@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { memo, useState } from 'react'
 import { appConfirm } from '../lib/dialogs'
 import { storeActions, useStore } from '../store'
 import type { Character, Scene } from '../types'
@@ -30,7 +30,7 @@ interface Props {
  * だから。進行中のシーンでは入口を出したまま無効にして、理由をその場に書く
  * （黙って隠すと機能が無いように見える）。
  */
-export default function InterludePanel({
+function InterludePanel({
   scene,
   cast,
   focusCharacterId,
@@ -182,3 +182,9 @@ export default function InterludePanel({
     </div>
   )
 }
+
+/**
+ * 過去シーンぶんも本文と一緒に並ぶので `memo`＝ストリーミング中に描き直さない（P2b）。
+ * props はすべて本文の更新では変わらないものにしてある（`session` を丸ごと渡さない理由）。
+ */
+export default memo(InterludePanel)
