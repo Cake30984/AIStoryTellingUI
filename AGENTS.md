@@ -38,7 +38,7 @@ React 18 + TypeScript(strict) + Vite / zustand（`persist`）/ Tauri 2（`plugin
 
 ## ディレクトリ
 
-`src/types.ts` — 全データ型（**最初に読む**）／`src/store.ts` — zustand ストア（状態・全アクション・永続化・チェックポイント。4,300行の単一ファイル＝分割は計画 P2c）／`src/App.tsx` — レール＋サイドバー＋メイン＋常駐モーダルの組み立て・起動時処理／`src/styles/` — `tokens`/`base`/`layout`/`chat`/`composer`/`panels`.css（`index.css` が順に import。色・z-index・spacing は `tokens.css`）／`src-tauri/` — Tauri シェル（`lib.rs`＝plugin 登録＋資格情報の save/load/delete、`oauth.rs`＝PKCE の 127.0.0.1 受け口、`capabilities/default.json`＝http は `http://*:*`/`https://*:*`・fs は `$APPDATA/**`、`installer-hooks.nsh`＝アンインストール時の資格情報削除、`tauri.conf.json` の `app.security.csp`＝**デスクトップ版の CSP の正**）／`src/**/__tests__/` — vitest のテスト（`*.test.ts`。`src/lib/__tests__/fixtures.ts` は共通のダミーデータ）
+`src/types.ts` — 全データ型（**最初に読む**）／`src/store.ts` — zustand ストア（状態・全アクション・永続化・チェックポイント・描画の購読ヘルパ。4,400行の単一ファイル＝分割は計画 P2c）／`src/App.tsx` — レール＋サイドバー＋メイン＋常駐モーダルの組み立て・起動時処理／`src/styles/` — `tokens`/`base`/`layout`/`chat`/`composer`/`panels`.css（`index.css` が順に import。色・z-index・spacing は `tokens.css`）／`src-tauri/` — Tauri シェル（`lib.rs`＝plugin 登録＋資格情報の save/load/delete、`oauth.rs`＝PKCE の 127.0.0.1 受け口、`capabilities/default.json`＝http は `http://*:*`/`https://*:*`・fs は `$APPDATA/**`、`installer-hooks.nsh`＝アンインストール時の資格情報削除、`tauri.conf.json` の `app.security.csp`＝**デスクトップ版の CSP の正**）／`src/**/__tests__/` — vitest のテスト（`*.test.ts`。`src/lib/__tests__/fixtures.ts` は共通のダミーデータ）
 
 ### `src/lib/`
 - `platform.ts` — `isTauri`／`appFetch`（Tauri は plugin-http で CORS-free。`omitOrigin` で Origin を外す＝ComfyUI 用）／`saveBlob`／`stateStorage`（Web: localStorage、Tauri: `data/state.json` をアトミック書込＋500ms デバウンス＋close 時 flush）／`blockStateWrites`／`CheckpointStore`（Web: IndexedDB、Tauri: `data/checkpoints/<sessionId>/<nodeId>.bin`）／資格情報（`hydrateProviderSecrets`・`stripApiKeyForPersist`）
@@ -143,6 +143,23 @@ React 18 + TypeScript(strict) + Vite / zustand（`persist`）/ Tauri 2（`plugin
 - **初回**: `FirstRunWizard`（かんたん接続=OAuth／無料枠=Gemini／品質重視／緩いモデル／PC で動かす）→ 接続テスト → `defaultModelRef` 設定。閉じても `Provider` 未設定なら生成時に案内
 - **起動時**: hydration 後に `hydrateProviderSecrets`・`cleanupOrphanCheckpoints`・`backfillImageLogs`
 
+## 描画の購読（P2b）
+
+`set()` 1回＝ストリーミングの1チャンク。**そのとき描き直るコンポーネントを最小にする**のがここの規約。
+
+| 使うもの（`store.ts`） | いつ |
+|---|---|
+| `useStore((st) => st.x)` | 状態を1つ読む（既定。これで足りるなら他は使わない） |
+| `storeActions()` | アクションを取る。**購読しない**（アクションは生成時に固定され差し替わらない）。ここから状態を読まない |
+| `useShallowStore(sel)` | 複数スライスをまとめて読む（返り値を1段だけ浅く比べる） |
+| `useListStore(sel)` | 一覧用に**プリミティブだけの小さな行オブジェクトの配列**を読む（Sidebar のセッション一覧） |
+| `useSessionExceptBody(id)` | **本文を読まない**購読でセッション1件を読む（右ドック）。`messages`／`updatedAt` の変化では同じ参照を返す |
+
+- 本文の描画は `ChatPanel.tsx` の `ChatPanelBody` → `SceneBlock`（memo）→ `SceneContent` → `MessageRow`（memo）。`ChatPanelBody` が `sceneId → messages` の対応表を1回の走査で作り、**内容の変わらないシーンは前回の配列をそのまま返す**（参照が変われば memo が全滅する）
+- `SessionMeta`（`ChatPanel.tsx`）＝本文以外のセッションのスライス。`MessageActions` ＝操作をまとめた参照固定のオブジェクト。どちらも `useMemo` で作って配る
+- `ContextDock`・`ActivityIndicator`・`InterludePanel` は `memo`。props に `Session` を入れると全部無効になる
+- 実測（30シーン・600発言・40チャンク1回）: 全体の再描画 App 44→0／Sidebar 44→1／右ドック 44→0／幕間 1320→60 回
+
 ## 規約・落とし穴
 
 **プロンプト**
@@ -169,7 +186,8 @@ React 18 + TypeScript(strict) + Vite / zustand（`persist`）/ Tauri 2（`plugin
 - シーン見出しは「本文か要約があるとき」だけ出す
 - レビューモーダルは `sceneReview.sessionId === activeId` かつ Play 表示中だけ出す
 - `ZoomOverlay` はポータル描画を維持。サムネイルの img ルールは直下セレクタで書く
-- **`useStore()` をセレクタ無しで丸ごと購読しない（新規コード）。** 既存35箇所は計画 P2b で直す
+- **`useStore()` をセレクタ無しで丸ごと購読しない。** 丸ごと購読すると `set()` 1回（＝ストリーミングの1チャンク）ごとに無関係なコンポーネントまで描き直る。使い分けは `store.ts` の購読ヘルパ節を見る
+- **本文を描くコンポーネントへ `Session` を丸ごと渡さない。** `messages` が毎チャンク変わるので `React.memo` が全部外れる。渡すのは `SessionMeta`（本文以外のスライス）と、そのメッセージ・シーン自身
 
 **プラットフォーム**
 - `<a download>` は Tauri で動かない。ファイル DL は `io.ts` 経由
@@ -181,7 +199,7 @@ React 18 + TypeScript(strict) + Vite / zustand（`persist`）/ Tauri 2（`plugin
 
 ## 既知の問題（2026-09-13 のレビューで確定。対処は計画書）
 
-- `persist` が `set()` ごとに全状態を `JSON.stringify`（20セッション×150発言≒5.7MB で 11ms/チャンク）。ストリーミング中の全量シリアライズ（→ P2c）＋全コンポーネント再描画（→ P2b）で、使うほど重くなる
+- `persist` が `set()` ごとに全状態を `JSON.stringify`（20セッション×150発言≒5.7MB で 11ms/チャンク）。ストリーミング中の全量シリアライズで、使うほど重くなる → P2c（描画側の全再描画は P2b で解消済み）
 - lint 無し・CI 無し（テストは P2a で導入済み）
 - 起動直後に素材が無く、キャラ作成 → 世界作成 → セッション設定 → 中心人物選択 を経ないと最初の生成に辿り着けない → P3
 - Web 版は localStorage（約5MB）に全状態を置くため、実用にはならない → P5
