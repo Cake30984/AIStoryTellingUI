@@ -1,4 +1,4 @@
-import type { ImageProvider } from '../types'
+import type { ImageProvider, SessionUsage } from '../types'
 
 /**
  * 生成コストの表示（I1・I5 で単位方針を改訂）。
@@ -72,4 +72,17 @@ export function withCostSample(p: ImageProvider, key: string, cost: ImageCost): 
   const prev = Array.isArray(p.params?.costSamples) ? (p.params!.costSamples as ImageCostSample[]) : []
   const next = [{ key, ...cost, at: Date.now() }, ...prev.filter((s) => s && s.key !== key)].slice(0, 20)
   return { ...p, params: { ...(p.params ?? {}), costSamples: next } }
+}
+
+/**
+ * セッション累計の1行（P3）。**提供元の単位のまま**——トークンはトークン、コストは USD。
+ * 円換算はしない（このファイル冒頭の方針）。コストを返さない接続先では額の部分を出さない
+ * （0 と書くと「タダで動いている」と読めてしまうが、実際は「分からない」）。
+ * 何も使っていなければ null＝行ごと出さない。
+ */
+export function formatSessionUsage(usage: SessionUsage | undefined): string | null {
+  const tokens = (usage?.promptTokens ?? 0) + (usage?.completionTokens ?? 0)
+  if (tokens <= 0) return null
+  const cost = usage?.cost ?? 0
+  return cost > 0 ? `${tokens.toLocaleString()} tokens・${formatUsd(cost)}` : `${tokens.toLocaleString()} tokens`
 }

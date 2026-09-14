@@ -14,6 +14,7 @@ import {
   isDirective,
 } from '../lib/prompts'
 import { lengthLevel } from '../lib/tokens'
+import { formatSessionUsage } from '../lib/cost'
 import { getImage, useImageUrl } from '../lib/imageStore'
 import { downloadBlob } from '../lib/io'
 import { hasStructuredLines, plainTextOf } from '../lib/structured'
@@ -825,6 +826,8 @@ function ChatPanelBody({ session }: { session: Session }) {
   // ユーザーに見せる分量は文字数（F5・設計 §2.8）。トークンはコストと文脈窓の管理にだけ使う
   const sceneChars = useMemo(() => sceneCharsOf(session), [session])
   const lenLvl = lengthLevel(sceneChars)
+  // このセッションの累計（P3）。使っていなければ null＝バッジごと出さない
+  const usageLine = formatSessionUsage(session.usage)
 
   // 締め時の提案チップ（FB5-①c）。自動でレビューは開かず、シーン単位で閉じられる
   const [wrapHintHiddenFor, setWrapHintHiddenFor] = useState<string | null>(null)
@@ -1017,6 +1020,19 @@ function ChatPanelBody({ session }: { session: Session }) {
               {sceneChars.toLocaleString()}字{lenLvl === 'high' ? '・締め時' : ''}
             </span>
           </button>
+        )}
+
+        {/* このセッションの累計（P3）。単位は提供元のまま（円換算しない）。
+            コストを返さない接続先ではトークンだけ出る */}
+        {usageLine && (
+          <span
+            className="usage-badge"
+            title={`このセッションで使った累計（提供元が返した値のまま）。入力 ${(
+              session.usage?.promptTokens ?? 0
+            ).toLocaleString()} / 出力 ${(session.usage?.completionTokens ?? 0).toLocaleString()} tokens`}
+          >
+            累計 {usageLine}
+          </span>
         )}
 
         <ActivityIndicator />

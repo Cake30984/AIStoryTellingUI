@@ -33,6 +33,7 @@ import type {
   SessionImageRecord,
   SessionMode,
   SessionState,
+  SessionUsage,
   TrackerResult,
   UiPrefs,
   UsageRecord,
@@ -525,6 +526,18 @@ export function timelineInfoOf(state: SessionState | undefined): string {
 }
 
 /** 空のセッション状態（新規セッション・カセット初期化の共通の起点） */
+/**
+ * セッション累計へ1回ぶんを足す（P3）。`updatedAt` は動かさない
+ * ——使用量は本文の更新ではないので、一覧の並びや「最終更新」を動かす理由にならない。
+ */
+function addUsage(cur: SessionUsage | undefined, rec: Omit<UsageRecord, 'id' | 'at'>): SessionUsage {
+  return {
+    promptTokens: (cur?.promptTokens ?? 0) + (rec.promptTokens || 0),
+    completionTokens: (cur?.completionTokens ?? 0) + (rec.completionTokens || 0),
+    cost: (cur?.cost ?? 0) + (rec.cost ?? 0),
+  }
+}
+
 export function emptySessionState(): SessionState {
   return {
     relations: [],
@@ -2169,7 +2182,15 @@ export const useStore = create<AppState>()(
         recordUsage: (rec) =>
           set((st) => {
             const next = [...st.usageLog, { ...rec, id: uid(), at: Date.now() }]
-            return { usageLog: next.length > 1000 ? next.slice(next.length - 1000) : next }
+            // セッション累計（P3）。**加算はここ1か所**——裏方も本編も recordUsage を通るので、
+            // 呼び出し側に加算を散らすと必ずどれかを入れ忘れる
+            const sessions = rec.sessionId
+              ? st.sessions.map((s) => (s.id === rec.sessionId ? { ...s, usage: addUsage(s.usage, rec) } : s))
+              : st.sessions
+            return {
+              usageLog: next.length > 1000 ? next.slice(next.length - 1000) : next,
+              sessions,
+            }
           }),
         clearUsageLog: () => set({ usageLog: [] }),
 
@@ -2449,6 +2470,8 @@ export const useStore = create<AppState>()(
             temperature: cur.temperature,
             maxTokens: cur.maxTokens,
             archived: cur.archived,
+            // 使った額は巻き戻さない（P3）。分岐で戻っても請求は戻らない＝本文・進行と結合していない
+            usage: cur.usage,
             updatedAt: Date.now(),
           }
           set((st) => ({

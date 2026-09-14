@@ -529,6 +529,18 @@
   color: var(--bad);
 }
 
+/* セッション累計の使用量（P3）。分量バッジの隣に置く控えめな表示 */
+.usage-badge {
+  font-size: 11px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  background: var(--bg-elev2);
+  color: var(--text-faint);
+  flex: none;
+}
+
 .chat-wrap {
   position: relative;
   flex: 1;

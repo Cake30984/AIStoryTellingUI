@@ -394,6 +394,19 @@ export interface SessionState {
   recentDone: { what: string; at: number }[]
 }
 
+/**
+ * セッション累計の使用量（P3。表示専用・**加算するのは `recordUsage` の1か所だけ**）。
+ * 単位は**提供元が返したまま**——トークンはトークン、コストは USD。円換算はしない
+ * （`lib/cost.ts` の方針・`決定記録.md` §5）。コストを返さない接続先では `cost` が増えない
+ * ＝「0」ではなく「分からない」なので、表示側は 0 のとき額を出さない。
+ */
+export interface SessionUsage {
+  promptTokens: number
+  completionTokens: number
+  /** 提供元が返した課金額（USD）。返らない接続先では 0 のまま */
+  cost?: number
+}
+
 export interface Session {
   id: string
   title: string
@@ -466,6 +479,12 @@ export interface Session {
    */
   originCassetteId?: string
   messages: Message[]
+  /**
+   * このセッションで使ったぶんの累計（P3。任意フィールド＝旧データは undefined のまま）。
+   * **分岐・復元で巻き戻さない**（`restoreCheckpoint` の passthrough）＝使った額は本文の進行と
+   * 結合していないため。カセット化（`freshSessionOf`）では落とす。
+   */
+  usage?: SessionUsage
   temperature: number
   maxTokens: number
   createdAt: number

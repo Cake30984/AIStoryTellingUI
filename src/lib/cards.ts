@@ -418,6 +418,8 @@ export function freshSessionOf(session: Session): Session {
     overlay: { lore: [], characterDevelopments: [] },
     // 出自カセットは引き継がない（FB9-B。playCassette が改めて刻む）
     originCassetteId: undefined,
+    // 作者が使ったぶんの累計は配布物に載せない（P3）
+    usage: undefined,
     archived: false,
     updatedAt: now,
   }
