@@ -73,7 +73,12 @@ const appStateMigrations: Record<number, Migration> = {
   },
 }
 
-const saveDataMigrations: Record<number, Migration> = {
+/**
+ * セッション1件ぶんの移行（P2c）。`SessionStore` は**レコードごとに版番を持つ**ので、
+ * セーブデータの移行のうちセッションを触る段はここに置き、state 全体を受け取る
+ * `saveDataMigrations` は `mapSessions` でこれを包むだけにする（定義を二重に持たない）。
+ */
+const sessionMigrations: Record<number, Migration> = {
   /**
    * v1 → v2（F2・時間と予定）。`Timeline` を廃止して `SessionState` に
    * `now`/`place`/`presentIds`/`situation`/`pending`/`recentDone` を足した。
@@ -81,73 +86,75 @@ const saveDataMigrations: Record<number, Migration> = {
    * 旧 `timeline` の日付は自由文字列へ機械的に写せない（暦が違う世界がありうる）ので、
    * `timeLabel` の写しだけ拾って残りは空にする。
    */
-  1: (s) => ({
-    ...s,
-    sessions: (s?.sessions ?? []).map((sess: any) => {
-      const cur = (sess?.scenes ?? []).find((sc: any) => sc?.id === sess?.currentSceneId)
-      const { timeline: _timeline, ...rest } = sess ?? {}
-      return {
-        ...rest,
-        state: {
-          relations: sess?.state?.relations ?? [],
-          moods: sess?.state?.moods ?? [],
-          now: typeof cur?.timeLabel === 'string' ? cur.timeLabel : '',
-          place: '',
-          presentIds: [],
-          situation: '',
-          pending: [],
-          recentDone: [],
-        },
-      }
-    }),
-  }),
+  1: (sess) => {
+    const cur = (sess?.scenes ?? []).find((sc: any) => sc?.id === sess?.currentSceneId)
+    const { timeline: _timeline, ...rest } = sess ?? {}
+    return {
+      ...rest,
+      state: {
+        relations: sess?.state?.relations ?? [],
+        moods: sess?.state?.moods ?? [],
+        now: typeof cur?.timeLabel === 'string' ? cur.timeLabel : '',
+        place: '',
+        presentIds: [],
+        situation: '',
+        pending: [],
+        recentDone: [],
+      },
+    }
+  },
   /**
    * v2 → v3（F3・ペルソナ統合）。`personaId` を落として `focusCharacterId` を足す。
    * **中心人物は機械的に決められない**（ペルソナは `Character` ではなかったので写す先が無い）ので
    * 未選択にし、開始時の検証でユーザーへ選ばせる。宛先を失った関係性 prose（旧 `toId: 'hero'`）は
    * 指す相手が居なくなるため捨てる（残しても表示されず、レビューが新しい宛先で書き直す）。
    */
-  2: (s) => ({
-    ...s,
-    sessions: (s?.sessions ?? []).map((sess: any) => {
-      const { personaId: _personaId, ...rest } = sess ?? {}
-      return {
-        ...rest,
-        focusCharacterId: typeof sess?.focusCharacterId === 'string' ? sess.focusCharacterId : '',
-        // 束縛は `kind` を落として `{ tag, characterId }` だけにする（ペルソナ束縛はここで消える）
-        introBindings: (sess?.introBindings ?? [])
-          .filter((b: any) => typeof b?.tag === 'string' && typeof b?.characterId === 'string')
-          .map((b: any) => ({ tag: b.tag, characterId: b.characterId })),
-        state: {
-          ...(sess?.state ?? {}),
-          relations: (sess?.state?.relations ?? []).filter((r: any) => r?.toId !== 'hero'),
-        },
-      }
-    }),
-  }),
+  2: (sess) => {
+    const { personaId: _personaId, ...rest } = sess ?? {}
+    return {
+      ...rest,
+      focusCharacterId: typeof sess?.focusCharacterId === 'string' ? sess.focusCharacterId : '',
+      // 束縛は `kind` を落として `{ tag, characterId }` だけにする（ペルソナ束縛はここで消える）
+      introBindings: (sess?.introBindings ?? [])
+        .filter((b: any) => typeof b?.tag === 'string' && typeof b?.characterId === 'string')
+        .map((b: any) => ({ tag: b.tag, characterId: b.characterId })),
+      state: {
+        ...(sess?.state ?? {}),
+        relations: (sess?.state?.relations ?? []).filter((r: any) => r?.toId !== 'hero'),
+      },
+    }
+  },
   /**
    * v3 → v4（F4・読者モデル）。`choiceMode` を落とす（`ChoiceMode` を型ごと廃止し、
    * 選択肢は〈展開を選ぶ〉のオンデマンド生成だけになった）。
    * `endingGoal`/`ending` は任意フィールドなので足す必要はない（未設定＝目標なし・未完結）。
    */
-  3: (s) => ({
-    ...s,
-    sessions: (s?.sessions ?? []).map((sess: any) => {
-      const { choiceMode: _choiceMode, ...rest } = sess ?? {}
-      return rest
-    }),
-  }),
+  3: (sess) => {
+    const { choiceMode: _choiceMode, ...rest } = sess ?? {}
+    return rest
+  },
   /**
    * v4 → v5（計画 P1・環境音ピンの撤去）。`Scene.ambientPins` を落とす（`AmbientPin` を型ごと廃止した）。
    * 音源は内蔵カタログだったので画像と違い GC・実体削除は無い＝フィールドを消すだけでよい。
    */
-  4: (s) => ({
-    ...s,
-    sessions: (s?.sessions ?? []).map((sess: any) => ({
-      ...sess,
-      scenes: (sess?.scenes ?? []).map(dropAmbientPins),
-    })),
+  4: (sess) => ({
+    ...sess,
+    scenes: (sess?.scenes ?? []).map(dropAmbientPins),
   }),
+}
+
+/** セッション1件ぶんの段を、永続ペイロード全体を受け取る段へ持ち上げる */
+function mapSessions(step: Migration): Migration {
+  return (s) => ({ ...s, sessions: (s?.sessions ?? []).map(step) })
+}
+
+// セーブデータ（sessions / branchTrees）の段。セッションを触る分は sessionMigrations が本体。
+// **段を飛ばさない。** 0→2 のような一発変換を書くと、途中の版から上げてきたデータが素通りする。
+const saveDataMigrations: Record<number, Migration> = {
+  1: mapSessions(sessionMigrations[1]),
+  2: mapSessions(sessionMigrations[2]),
+  3: mapSessions(sessionMigrations[3]),
+  4: mapSessions(sessionMigrations[4]),
 }
 
 /** `Scene` から `ambientPins` を落とす（save v4→5 / cassette v4→5 で共用） */
@@ -252,6 +259,15 @@ function applyChain(
  */
 export function migrateAppState(persisted: unknown, from: number): MigrateResult {
   return applyChain('app', persisted, from, APP_STATE_VERSION, appStateMigrations)
+}
+
+/**
+ * セッション1件を現行のセーブデータ版へ上げる（P2c。`SessionStore` の1レコード＝1版番）。
+ * 版番がレコードごとに付くので、**移行の途中で落ちても次回は残りだけが上がる**（二重適用が起きない）。
+ * 失敗（未来の版番・欠けた段）は `migrateSubSchemas` と同じく `SchemaError` を返す＝黙って読み捨てない。
+ */
+export function migrateSession(session: any, from: number): MigrateResult {
+  return applyChain('save', session, from, SAVE_DATA_VERSION, sessionMigrations)
 }
 
 /**

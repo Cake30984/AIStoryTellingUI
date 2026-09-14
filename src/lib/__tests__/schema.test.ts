@@ -3,6 +3,7 @@ import {
   APP_STATE_VERSION,
   CASSETTE_DATA_VERSION,
   migrateAppState,
+  migrateSession,
   migrateSubSchemas,
   SAVE_DATA_VERSION,
   schemaErrorMessage,
@@ -117,6 +118,39 @@ describe('migrateSubSchemas', () => {
     expect(out).toEqual({
       ok: false,
       error: { scope: 'cassette', found: 99, supported: CASSETTE_DATA_VERSION },
+    })
+  })
+})
+
+describe('migrateSession（P2c: SessionStore の1レコード＝1版番）', () => {
+  it('セッション1件が最古の版から最新まで上がる', () => {
+    const out = migrateSession(legacySave().sessions[0], 1)
+    expect(out.ok).toBe(true)
+    const sess = out.ok ? out.state : null
+    expect('timeline' in sess).toBe(false)
+    expect('personaId' in sess).toBe(false)
+    expect('choiceMode' in sess).toBe(false)
+    expect(sess.focusCharacterId).toBe('')
+    expect(sess.state.now).toBe('8月31日 朝')
+    expect(sess.scenes.every((sc: any) => !('ambientPins' in sc))).toBe(true)
+  })
+
+  it('1件ずつ上げた結果は、全体（migrateSubSchemas）経由と同じになる', () => {
+    const viaState = migrateSubSchemas(legacySave())
+    const viaRecord = migrateSession(legacySave().sessions[0], 1)
+    expect(viaRecord.ok && viaState.ok && viaRecord.state).toEqual(viaState.ok && viaState.state.sessions[0])
+  })
+
+  it('現行版のレコードは素通し（同一参照）＝二重適用しない', () => {
+    const sess = { id: 'a', scenes: [] }
+    const out = migrateSession(sess, SAVE_DATA_VERSION)
+    expect(out.ok && out.state).toBe(sess)
+  })
+
+  it('未来の版番のレコードは黙って読まずに失敗させる', () => {
+    expect(migrateSession({ id: 'a' }, 99)).toEqual({
+      ok: false,
+      error: { scope: 'save', found: 99, supported: SAVE_DATA_VERSION },
     })
   })
 })
