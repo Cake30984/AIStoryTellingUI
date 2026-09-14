@@ -13,8 +13,11 @@
 // 移行に失敗したとき（＝未来の版番のデータを読まされたとき）は黙って落とさない。既定値で上書きすると
 // ユーザーのセーブが復旧不能になるため、書き込みを封印して起動時に案内を出す（App.tsx）。
 
-/** 永続化の入れ物の版番（zustand persist の `version`）。v1 が初版・v2 でペルソナ素材を撤去（F3） */
-export const APP_STATE_VERSION = 2
+/**
+ * 永続化の入れ物の版番（zustand persist の `version`）。
+ * v1 が初版・v2 でペルソナ素材を撤去（F3）・**v3 でセッション本体を入れ物から出した**（計画 P2c）。
+ */
+export const APP_STATE_VERSION = 3
 
 /**
  * セーブデータ（sessions / branchTrees / チェックポイント）の版番。
@@ -50,6 +53,11 @@ export interface SchemaError {
   found: number
   /** この本体が読める版番 */
   supported: number
+  /**
+   * 版番の不一致ではなく**読み出しそのものに失敗した**ときの理由（P2c）。
+   * セッション本体は別ストア（IndexedDB／ファイル）にあるので、版番の話にならない失敗がありうる。
+   */
+  reason?: string
 }
 
 const SCOPE_LABEL: Record<SchemaScope, string> = {
@@ -71,6 +79,14 @@ const appStateMigrations: Record<number, Migration> = {
     const { personas: _personas, ...rest } = s ?? {}
     return rest
   },
+  /**
+   * v2 → v3（計画 P2c・セッション本体の分割）。**ここでは何もしない。**
+   * 実際の移行（`sessions` を `SessionStore` へ移して入れ物から落とす）は読み出しの口
+   * （store.ts の `PersistStorage.getItem`）が、この `migrate` より前に済ませている。
+   * 版番を上げるのは**旧い本体が新しいデータを黙って「セッション0件」で開かないようにする**ため
+   * ——旧本体から見れば未来の版番になり、書き込みを封印して案内画面へ回る（R1）。
+   */
+  2: (s) => s,
 }
 
 /**
@@ -148,14 +164,18 @@ function mapSessions(step: Migration): Migration {
   return (s) => ({ ...s, sessions: (s?.sessions ?? []).map(step) })
 }
 
-// セーブデータ（sessions / branchTrees）の段。セッションを触る分は sessionMigrations が本体。
-// **段を飛ばさない。** 0→2 のような一発変換を書くと、途中の版から上げてきたデータが素通りする。
-const saveDataMigrations: Record<number, Migration> = {
-  1: mapSessions(sessionMigrations[1]),
-  2: mapSessions(sessionMigrations[2]),
-  3: mapSessions(sessionMigrations[3]),
-  4: mapSessions(sessionMigrations[4]),
-}
+/**
+ * セーブデータ（sessions / branchTrees）の段。**`sessionMigrations` を持ち上げたものだけ**で構成する
+ * （＝段を1本ずつ書き写さない。書き写すと片方に足し忘れる）。
+ *
+ * **セッション以外（`branchTrees` 等）を触る段をここへ直接足さないこと。** P2c 以降、セッションは
+ * `SessionStore` から**レコード単位で** `migrateSession` を通って読まれ、読み出しの口（store.ts）は
+ * そのぶんのセーブ版番を現行として `merge` へ渡す＝ここへ直接足した段は新しい経路では走らない。
+ * 必要になったら「セッション以外の残り」を掛ける道を読み出しの口に作ってから足す。
+ */
+const saveDataMigrations: Record<number, Migration> = Object.fromEntries(
+  Object.entries(sessionMigrations).map(([v, step]) => [Number(v), mapSessions(step)]),
+)
 
 /** `Scene` から `ambientPins` を落とす（save v4→5 / cassette v4→5 で共用） */
 function dropAmbientPins(scene: any): any {
@@ -285,9 +305,12 @@ export function migrateSubSchemas(persisted: any): MigrateResult {
   return applyChain('cassette', afterSave.state, cassette, CASSETTE_DATA_VERSION, cassetteMigrations)
 }
 
-/** 起動時に出す説明文。原因（新しすぎる／移行の欠落）を利用者の言葉で1行に */
+/** 起動時に出す説明文。原因（読めない／新しすぎる／移行の欠落）を利用者の言葉で1行に */
 export function schemaErrorMessage(error: SchemaError): string {
   const label = SCOPE_LABEL[error.scope]
+  if (error.reason) {
+    return `保存されている${label}を読み出せませんでした（${error.reason}）。`
+  }
   if (error.found > error.supported) {
     return `保存されている${label}は、この本体より新しいバージョン（形式 v${error.found}）で作られています。この本体が読めるのは v${error.supported} までです。`
   }
