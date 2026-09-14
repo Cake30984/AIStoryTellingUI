@@ -94,7 +94,13 @@ const inputStyle = {
  */
 export default function FirstRunWizard({ onClose }: { onClose: () => void }) {
   const providers = useStore((st) => st.providers)
-  const { upsertProvider, setDefaultModelRef } = storeActions()
+  const { upsertProvider, setDefaultModelRef, openStarterStory } = storeActions()
+
+  // 接続できたら、そのままサンプルの物語へ送り出す（P3。「完了」と同義で、行き先が1つ増えるだけ）
+  const finishWithStarter = () => {
+    openStarterStory()
+    onClose()
+  }
 
   const [pathId, setPathId] = useState<PathId | null>(null)
   const [providerId, setProviderId] = useState<string | null>(null)
@@ -291,9 +297,14 @@ export default function FirstRunWizard({ onClose }: { onClose: () => void }) {
               別の接続方法にする
             </button>
             {testResult.ok && (
-              <button className="btn primary" style={{ marginLeft: 'auto' }} onClick={onClose}>
-                完了
-              </button>
+              <>
+                <button className="btn" style={{ marginLeft: 'auto' }} onClick={onClose}>
+                  完了
+                </button>
+                <button className="btn primary" onClick={finishWithStarter}>
+                  サンプルの物語を開く
+                </button>
+              </>
             )}
           </div>
         </>
@@ -303,8 +314,11 @@ export default function FirstRunWizard({ onClose }: { onClose: () => void }) {
         <>
           <TestResultBox result={testResult} />
           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-            <button className="btn primary" style={{ marginLeft: 'auto' }} onClick={onClose}>
+            <button className="btn" style={{ marginLeft: 'auto' }} onClick={onClose}>
               完了
+            </button>
+            <button className="btn primary" onClick={finishWithStarter}>
+              サンプルの物語を開く
             </button>
           </div>
         </>

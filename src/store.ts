@@ -138,6 +138,12 @@ import {
   resolveIntroText,
   validateCasting,
 } from './lib/casting'
+import {
+  STARTER_WORLD_ID,
+  starterCharacters,
+  starterSessionSeed,
+  starterWorld,
+} from './starter'
 
 export const DEFAULT_MODEL = 'openrouter/auto'
 
@@ -756,6 +762,11 @@ interface AppState {
   sessionImageLogs: Record<string, SessionImageRecord[]>
   /** 画像記録のバックフィル（全チェックポイント走査）を実施済みか（FB6-A。初回起動時に1回だけ実行） */
   imageLogBackfillDone?: boolean
+  /**
+   * 既定コンテンツ（サンプル）を投入済みか（P3）。**初回の1回だけ自動投入するための印**で、
+   * 消した人へ勝手に戻さないためにここを見る（手動の「サンプルを追加し直す」は印を無視する）。
+   */
+  starterSeeded?: boolean
   /** 右コンテキストドック等の永続 UI 状態（UI-3） */
   ui: UiPrefs
 
@@ -888,6 +899,18 @@ interface AppState {
 
   // セッション
   createSession: (mode: SessionMode) => string
+  /**
+   * 既定コンテンツ（サンプル）を投入する（P3。`src/starter/`）。世界観・登場人物は**固定 id へ上書き**
+   * するので増殖しない。セッションだけは毎回新しい id で1本作り、その id を返す（開くのは呼び出し側）。
+   * `starterSeeded` を立てる＝自動投入は初回の1回きり。
+   */
+  seedStarterContent: () => string
+  /**
+   * サンプルの物語を開く（P3。初回ウィザードの最後と Play の空状態の行き先）。
+   * まだ無ければ投入し、**未プレイなら既定モデルを刻み直してから**開く
+   * ——サンプルは接続先を決める前に作られているため、ウィザードで決めたモデルを持っていない。
+   */
+  openStarterStory: () => string
   deleteSession: (id: string) => void
   setActive: (id: string) => void
   updateSession: (id: string, patch: Partial<Session>) => void
@@ -1366,6 +1389,7 @@ function partializeAppState(st: AppState) {
     branchTrees: st.branchTrees,
     sessionImageLogs: st.sessionImageLogs,
     imageLogBackfillDone: st.imageLogBackfillDone,
+    starterSeeded: st.starterSeeded,
     ui: st.ui,
     /** 読み出しの口が差し込む（`partialize` は書かない）。merge の正規化を通すためだけの席 */
     sessions: undefined as Session[] | undefined,
@@ -2102,6 +2126,7 @@ export const useStore = create<AppState>()(
         activeId: null,
         branchTrees: {},
         sessionImageLogs: {},
+        starterSeeded: false,
         ui: DEFAULT_UI,
 
         view: 'sessions',
@@ -2320,6 +2345,57 @@ export const useStore = create<AppState>()(
           s.model = get().defaultModelRef || s.model
           set((st) => ({ sessions: [s, ...st.sessions], activeId: s.id, view: 'sessions' }))
           return s.id // 呼び出し側で作成直後に設定モーダルを開くため（F3/R15）
+        },
+
+        seedStarterContent: () => {
+          const now = Date.now()
+          const world = { ...starterWorld(), createdAt: now, updatedAt: now }
+          const chars = starterCharacters().map((c) => ({ ...c, createdAt: now, updatedAt: now }))
+          const seed = starterSessionSeed()
+          const sceneId = uid()
+          // 素材の id は固定・セッション側は毎回振り直す（何度でも追加し直せるように）
+          const session: Session = {
+            ...seed,
+            id: uid(),
+            model: get().defaultModelRef || DEFAULT_MODEL,
+            scenes: seed.scenes.map((sc) => ({ ...sc, id: sceneId, createdAt: now })),
+            currentSceneId: sceneId,
+            state: {
+              ...seed.state,
+              pending: seed.state.pending.map((p) => ({ ...p, id: uid() })),
+            },
+            createdAt: now,
+            updatedAt: now,
+          }
+          set((st) => ({
+            worlds: st.worlds.some((w) => w.id === world.id)
+              ? st.worlds.map((w) => (w.id === world.id ? world : w))
+              : [world, ...st.worlds],
+            characters: [
+              ...chars.filter((c) => !st.characters.some((x) => x.id === c.id)),
+              ...st.characters.map((x) => chars.find((c) => c.id === x.id) ?? x),
+            ],
+            sessions: [session, ...st.sessions],
+            starterSeeded: true,
+          }))
+          return session.id
+        },
+
+        openStarterStory: () => {
+          const st = get()
+          // 出自は worldId で見る（サンプル専用の印を Session に増やさない）
+          const existing = st.sessions.find((s) => s.worldId === STARTER_WORLD_ID)
+          if (!existing) {
+            const id = get().seedStarterContent()
+            get().setActive(id)
+            return id
+          }
+          const ref = st.defaultModelRef
+          if (ref && existing.messages.length === 0 && existing.model !== ref) {
+            get().updateSession(existing.id, { model: ref })
+          }
+          get().setActive(existing.id)
+          return existing.id
         },
 
         deleteSession: (id) => {

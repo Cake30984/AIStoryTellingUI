@@ -12,7 +12,7 @@ import { ImageJobsBody } from './ImageJobsPanel'
  */
 export default function LibraryBar() {
   const imageJobs = useStore((st) => st.imageJobs)
-  const { importAnyFile, setInfoNotice } = storeActions()
+  const { importAnyFile, seedStarterContent, setInfoNotice } = storeActions()
   const [showJobs, setShowJobs] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const selecting = imageJobs.some((j) => j.status === 'selecting')
@@ -29,6 +29,18 @@ export default function LibraryBar() {
     <div className="topbar library-topbar">
       <ActivityIndicator />
       <div style={{ flex: 1 }} />
+      {/* 消してしまった人向けの入れ直し（P3）。素材は固定 id へ上書きするので増えない */}
+      <button
+        className="btn"
+        style={{ fontSize: 12, padding: '5px 12px' }}
+        onClick={() => {
+          seedStarterContent()
+          setInfoNotice('サンプルの世界観・登場人物と、サンプルの物語を1本追加しました。')
+        }}
+        title="サンプルの世界観・登場人物をライブラリへ入れ直し、サンプルの物語を1本作ります"
+      >
+        <Icon name="sparkles" size={13} /> サンプルを追加し直す
+      </button>
       <button
         className="btn"
         style={{ fontSize: 12, padding: '5px 12px' }}

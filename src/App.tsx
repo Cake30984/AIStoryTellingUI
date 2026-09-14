@@ -65,7 +65,10 @@ export default function App() {
   const infoNotice = useStore((st) => st.infoNotice)
   const schemaError = useStore((st) => st.schemaError)
   const ui = useStore((st) => st.ui)
-  const { clearError, createSession, dismissImageJobToasts, setInfoNotice } = storeActions()
+  // 空状態の行き先を決めるためだけの購読（件数＝プリミティブなので本体は購読しない）
+  const characterCount = useStore((st) => st.characters.length)
+  const { clearError, createSession, dismissImageJobToasts, openStarterStory, setInfoNotice } =
+    storeActions()
   // storage は async 化済み（Web は同期 localStorage・Tauri は T3 のファイル backend）。
   // ハイドレーション完了までスプラッシュを表示する。
   const [hydrated, setHydrated] = useState(() => useStore.persist.hasHydrated())
@@ -120,6 +123,22 @@ export default function App() {
     if (!hasUsableProvider) setShowFirstRunWizard(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hydrated, secretsReady])
+
+  // 初回起動（素材が空）なら既定コンテンツを入れて、サンプルの物語を開いた状態にする（P3）。
+  // **一度でも入れたら二度と自動投入しない**（`starterSeeded`）＝消した人へ勝手に戻さない。
+  // スキーマを読めなかった時は走らせない（書き込みは封印されている。R1）
+  useEffect(() => {
+    if (!hydrated || schemaError) return
+    const st = useStore.getState()
+    if (st.starterSeeded) return
+    if (st.characters.length > 0 || st.worlds.length > 0) {
+      // 既に自分の素材がある人（この機能より前からの利用者）には入れないが、印だけ立てる
+      useStore.setState({ starterSeeded: true })
+      return
+    }
+    st.setActive(st.seedStarterContent())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated])
 
   // 起動時に木へ対応しない孤児チェックポイント（書込み中断等の残骸）を掃除する（C3）。
   // 画像記録のバックフィル（FB6-A・初回1回）も同じタイミングで裏実行する。
@@ -236,10 +255,16 @@ export default function App() {
                 <br />
                 自動で進む物語を楽しめます。
               </p>
+              {/* 物語の導線は1本（P3）。素材が無ければサンプルへ、あれば設定を開く。
+                  ロールプレイは副次の入口として残す */}
               <div className="cta">
-                <button onClick={() => startNew('roleplay')}>ロールプレイを始める</button>
-                <button className="ghost" onClick={() => startNew('story')}>
-                  物語を始める
+                {characterCount === 0 ? (
+                  <button onClick={() => openStarterStory()}>サンプルの物語を開く</button>
+                ) : (
+                  <button onClick={() => startNew('story')}>物語を作る</button>
+                )}
+                <button className="ghost" onClick={() => startNew('roleplay')}>
+                  ロールプレイを始める
                 </button>
               </div>
               {!hasUsableProvider && (
