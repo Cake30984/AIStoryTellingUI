@@ -38,6 +38,19 @@ vi.mock('../lib/platform', async (importOriginal) => {
       deleteSession: async () => {},
       listNodeIds: async () => [],
     },
+    // P2c: セッション本体の読み書き。node には IndexedDB が無いので口ごと潰す
+    // （ここで見たいのは物語操作の回数と順序で、保存先の中身ではない）
+    sessionStore: {
+      list: async () => [],
+      getAll: async () => [],
+      get: async () => undefined,
+      put: async () => {},
+      delete: async () => {},
+    },
+    scheduleSessionWrite: () => {},
+    cancelSessionWrite: () => {},
+    flushSessionWrites: async () => {},
+    deleteSessionRecord: async () => {},
   }
 })
 

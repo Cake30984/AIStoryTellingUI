@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { createJSONStorage, persist } from 'zustand/middleware'
+import { persist, type PersistStorage, type StorageValue } from 'zustand/middleware'
 import { shallow } from 'zustand/shallow'
 import { useShallow } from 'zustand/react/shallow'
 import { useStoreWithEqualityFn } from 'zustand/traditional'
@@ -42,22 +42,31 @@ import { DEFAULT_UI, IMAGE_PROVIDER_KINDS, normalizeUiPrefs } from './types'
 import { fetchModels, streamChat } from './lib/openrouter'
 import { base64ToBlob, blobToBase64, gcImages, getImage, listImageIds, putImage, putImageAs } from './lib/imageStore'
 import {
+  backupStateSnapshot,
   blockStateWrites,
   checkpointStore,
+  deleteSessionRecord,
   IMAGE_PROVIDER_SECRET_PREFIX,
   PERSIST_KEY,
   persistProviderSecret,
   PROVIDER_SECRET_PREFIX,
   removeProviderSecret,
+  scheduleSessionWrite,
+  sessionStore,
   stateStorage,
   stripApiKeyForPersist,
   syncProviderSecrets,
+  unreadableSessionCount,
+  type SessionRecord,
+  type StoredSession,
 } from './lib/platform'
 import {
   APP_STATE_VERSION,
   CURRENT_SCHEMA_VERSIONS,
   migrateAppState,
+  migrateSession,
   migrateSubSchemas,
+  SAVE_DATA_VERSION,
   type SchemaError,
   type SchemaVersions,
 } from './lib/schema'
@@ -1320,6 +1329,170 @@ function buildStateInfo(
     }
   }
   return lines.join('\n')
+}
+
+// ---------------------------------------------------------------------------
+// 永続化の口（計画 P2c: セッション本体を入れ物から出す）
+//
+// zustand persist は `set()` のたびに**全状態**を直列化する。本文が入れ物に乗っている限り、
+// ストリーミングの1チャンクごとに全セッションを `JSON.stringify` することになる。
+// そこでセッション本体だけ `SessionStore`（Web=IndexedDB／Tauri=data/sessions/）へ移し、
+// 入れ物（localStorage／state.json）には**軽い状態だけ**を残す。
+//
+// - **読み**: ここで `sessions` を差し込んでから persist へ返す＝`migrate`・`merge` の
+//   移行と正規化（空 pending の削除／内容ありは truncated 等）を一切変えずに済む
+// - **書き**: `partialize` から `sessions` を外し、ハイドレーション後の購読が
+//   **変わったセッションだけ**を `SessionStore` へ流す（`startSessionPersistence`）
+// ---------------------------------------------------------------------------
+
+/** 入れ物に残す軽い状態（`partialize` の戻り＝永続ペイロード） */
+function partializeAppState(st: AppState) {
+  return {
+    // セーブデータ／カセット定義の版番（入れ物の版番が据え置きでも単独で上げられる）
+    schemaVersions: CURRENT_SCHEMA_VERSIONS as SchemaVersions,
+    // R3: Tauri では apiKey を落として保存する（唯一の保存先は資格情報ストア。stripApiKeyForPersist）
+    providers: stripApiKeyForPersist(st.providers),
+    // 画像生成の接続先も API キーを含むため localStorage のみ（exportBundle には含めない）
+    imageProviders: stripApiKeyForPersist(st.imageProviders),
+    lastImageProviderId: st.lastImageProviderId,
+    lastDraftModel: st.lastDraftModel,
+    defaultModelRef: st.defaultModelRef,
+    favoriteModels: st.favoriteModels,
+    characters: st.characters,
+    worlds: st.worlds,
+    // **`sessions` はここに入れない**（本体は SessionStore。P2c）
+    cassettes: st.cassettes,
+    activeId: st.activeId,
+    branchTrees: st.branchTrees,
+    sessionImageLogs: st.sessionImageLogs,
+    imageLogBackfillDone: st.imageLogBackfillDone,
+    ui: st.ui,
+    /** 読み出しの口が差し込む（`partialize` は書かない）。merge の正規化を通すためだけの席 */
+    sessions: undefined as Session[] | undefined,
+  }
+}
+
+type PersistedState = ReturnType<typeof partializeAppState>
+
+/** `SessionStore` の不透明なセッションと `Session` の橋渡し（この層は中身を解釈しない） */
+function sessionRecordOf(session: Session): SessionRecord {
+  return { v: SAVE_DATA_VERSION, session: session as unknown as StoredSession }
+}
+
+/**
+ * 読み出し中に分かった異常。`getItem` からは例外を投げられない（投げるとハイドレーションが
+ * 終わらずスプラッシュのまま固まる）ので、ここへ置いて `merge` が拾う。
+ */
+let sessionLoadError: SchemaError | null = null
+/** 読めずに飛ばしたセッションの件数（`merge` が起動時の案内に出す） */
+let sessionsSkippedOnLoad = 0
+/** 一度きりの移行（旧形式の入れ物からの引っ越し）をこの起動で行ったか */
+let legacySessionsMoved = false
+
+/** セッション本体を `SessionStore` から読み、現行のセーブ版まで上げて返す */
+async function loadSessionsFromStore(): Promise<Session[]> {
+  const records = await sessionStore.getAll()
+  sessionsSkippedOnLoad = unreadableSessionCount()
+  const out: Session[] = []
+  for (const record of records) {
+    // レコードごとに版番を持つので、移行が途中で落ちても次回は残りだけが上がる（二重適用しない）
+    const migrated = migrateSession(record.session, record.v)
+    if (!migrated.ok) {
+      // 版番の食い違いは黙って読み捨てない（1件でも封印して案内へ回す。R1）
+      sessionLoadError = migrated.error
+      return []
+    }
+    out.push(migrated.state as Session)
+  }
+  return out
+}
+
+/**
+ * 一度きりの移行: 旧形式（入れ物に `sessions` が入っている）を `SessionStore` へ移す。
+ * **全件を書き終えてから**原文を退避し、入れ物の上書きは persist に任せる（`migrate` が
+ * 走る＝版番が上がるので、ハイドレーション直後に軽い状態で上書きされる）。
+ *
+ * レコードには**そのとき保存されていたセーブ版番**を刻む（現行版ではない）。中身は旧いまま
+ * 写すだけなので、次回の読み出しで `migrateSession` が1段ずつ上げる。
+ */
+async function moveLegacySessionsToStore(sessions: unknown[], saveVersion: number, raw: string): Promise<void> {
+  for (const session of sessions) {
+    const id = (session as { id?: unknown })?.id
+    if (typeof id !== 'string' || !id) continue
+    await sessionStore.put({ v: saveVersion, session: session as StoredSession })
+  }
+  await backupStateSnapshot(raw)
+}
+
+/**
+ * 入れ物の読み書き。`createJSONStorage` の代わりに直接書く（`sessions` の出し入れを挟むため）。
+ * **`getItem` で例外を投げない**——投げるとハイドレーションが完了せず、起動画面から進まなくなる。
+ */
+const appStateStorage: PersistStorage<PersistedState> = {
+  async getItem(name) {
+    sessionLoadError = null
+    sessionsSkippedOnLoad = 0
+    const raw = await stateStorage.getItem(name)
+    const parsed = (raw === null ? null : JSON.parse(raw)) as StorageValue<PersistedState> | null
+    const payload = parsed?.state as (Partial<PersistedState> & { sessions?: unknown }) | undefined
+
+    // 旧形式（入れ物に本体が入っている）。**本体を移してから**そのまま返す＝
+    // merge の移行・正規化は旧形式のときと同じ経路を通る
+    if (payload && Array.isArray(payload.sessions)) {
+      const saveVersion =
+        typeof payload.schemaVersions?.save === 'number' ? payload.schemaVersions.save : SAVE_DATA_VERSION
+      try {
+        await moveLegacySessionsToStore(payload.sessions, saveVersion, raw ?? '')
+        legacySessionsMoved = true
+      } catch (e) {
+        // 移せていないのに入れ物を軽い状態で上書きすると本体が消える。封印して案内へ回す
+        console.error('[store] セッション本体の移行に失敗', e)
+        sessionLoadError = {
+          scope: 'save',
+          found: saveVersion,
+          supported: SAVE_DATA_VERSION,
+          reason: 'セッションの保存先へ移せませんでした',
+        }
+      }
+      return parsed
+    }
+
+    // 新形式。本体を差し込み、**セーブ版番は現行として渡す**（レコードごとに上げ済みのため、
+    // merge の migrateSubSchemas に同じ段を二重適用させない）
+    let sessions: Session[] = []
+    try {
+      sessions = await loadSessionsFromStore()
+    } catch (e) {
+      console.error('[store] セッション本体を読めませんでした', e)
+      sessionLoadError = {
+        scope: 'save',
+        found: SAVE_DATA_VERSION,
+        supported: SAVE_DATA_VERSION,
+        reason: 'セッションの保存先を開けませんでした',
+      }
+    }
+    if (!parsed) {
+      // 入れ物が空でも本体だけある状態（入れ物を消した・別ブラウザ）では拾えるものを拾う
+      if (sessions.length === 0 && !sessionLoadError) return null
+      return { state: { sessions } as PersistedState, version: APP_STATE_VERSION }
+    }
+    return {
+      ...parsed,
+      state: {
+        ...parsed.state,
+        sessions,
+        schemaVersions: { ...(parsed.state?.schemaVersions ?? CURRENT_SCHEMA_VERSIONS), save: SAVE_DATA_VERSION },
+      },
+    }
+  },
+  setItem(name, value) {
+    // `sessions` は差し込み専用の席。書き出しには載せない（partialize は undefined を入れる）
+    const { sessions: _sessions, ...state } = value.state ?? ({} as PersistedState)
+    return stateStorage.setItem(name, JSON.stringify({ ...value, state }))
+  },
+  removeItem(name) {
+    return stateStorage.removeItem(name)
+  },
 }
 
 export const useStore = create<AppState>()(
@@ -4194,7 +4367,8 @@ export const useStore = create<AppState>()(
       // キー文字列は platform.ts の PERSIST_KEY と共有（Tauri のファイル backend が旧 WebView
       // localStorage からの移行判定に使う）。
       name: PERSIST_KEY,
-      storage: createJSONStorage(() => stateStorage),
+      // 入れ物には軽い状態だけ。セッション本体の出し入れは appStateStorage が挟む（P2c）
+      storage: appStateStorage,
       // スキーマ版番（R1）。入れ物＝ここ、セーブデータとカセット定義＝partialize の schemaVersions。
       // 移行の定義は lib/schema.ts に集約する（**この2行と migrate 本体を消さない**）
       version: APP_STATE_VERSION,
@@ -4205,31 +4379,17 @@ export const useStore = create<AppState>()(
         blockStateWrites()
         return { schemaError: result.error } as Partial<AppState>
       },
-      partialize: (st) => ({
-        // セーブデータ／カセット定義の版番（入れ物の版番が据え置きでも単独で上げられる）
-        schemaVersions: CURRENT_SCHEMA_VERSIONS,
-        // R3: Tauri では apiKey を落として保存する（唯一の保存先は資格情報ストア。stripApiKeyForPersist）
-        providers: stripApiKeyForPersist(st.providers),
-        // 画像生成の接続先も API キーを含むため localStorage のみ（exportBundle には含めない）
-        imageProviders: stripApiKeyForPersist(st.imageProviders),
-        lastImageProviderId: st.lastImageProviderId,
-        lastDraftModel: st.lastDraftModel,
-        defaultModelRef: st.defaultModelRef,
-        favoriteModels: st.favoriteModels,
-        characters: st.characters,
-        worlds: st.worlds,
-        sessions: st.sessions,
-        cassettes: st.cassettes,
-        activeId: st.activeId,
-        branchTrees: st.branchTrees,
-        sessionImageLogs: st.sessionImageLogs,
-        imageLogBackfillDone: st.imageLogBackfillDone,
-        ui: st.ui,
-      }),
+      partialize: partializeAppState,
       // 生成中にタブを閉じた/リロードした際の残骸を起動時に掃除する：
       // 空の pending メッセージは削除、内容があるものは途中で切れた可能性が高いため
       // truncated を立てて「⤵ 続きを生成」で復帰できるようにする。
       merge: (persisted, current) => {
+        // セッション本体の読み出しで分かった異常（appStateStorage.getItem が置く。P2c）。
+        // 入れ物が読めていても、本体を読めていないなら書き込みは封印する
+        if (sessionLoadError) {
+          blockStateWrites()
+          return { ...current, schemaError: sessionLoadError }
+        }
         // セーブデータ／カセット定義の移行はここで毎回判定する（入れ物の版番が変わらない限り
         // zustand の migrate は呼ばれないため。R1）
         const sub = migrateSubSchemas(persisted ?? {})
@@ -4286,12 +4446,71 @@ export const useStore = create<AppState>()(
             },
           },
         }))
+        // 壊れて読めなかったセッションは1件ずつ飛ばしてある（全体は封印しない）。
+        // 黙って減らさず件数だけ伝える（保存先のファイル／行は消していない＝後から救出できる）
+        if (sessionsSkippedOnLoad > 0) {
+          merged.infoNotice = `セッション ${sessionsSkippedOnLoad} 件を読めませんでした（保存先のデータはそのまま残しています）`
+        }
         return merged
       },
     },
   ),
 )
 
+
+// ---------------------------------------------------------------------------
+// セッション本体の書き出し（計画 P2c）
+//
+// **mutation の箇所（`updateSession`・`importBundle`・`playCassette`・`restoreCheckpoint`…）を
+// 回らず、`sessions` 配列を購読して参照比較で差分を取る。** 書き出しの口が1つで済み、
+// 新しい操作を足しても取りこぼさない。
+// ---------------------------------------------------------------------------
+
+/** 最後に保存先へ反映した（＝反映を見送った）セッションの参照。id → その時の値 */
+let persistedSessions = new Map<string, Session>()
+
+function syncSessionRecords(sessions: Session[]): void {
+  const next = new Map<string, Session>()
+  for (const s of sessions) {
+    next.set(s.id, s)
+    if (persistedSessions.get(s.id) === s) continue
+    // **生成中（pending メッセージあり）は書かない。** 1チャンクごとに書く意味がなく、
+    // 中断・クラッシュ時の復旧は merge の「空 pending は削除／内容ありは truncated」で足りる
+    // （pending が下りた時点でまた参照が変わる＝完了時の1回にまとまる）
+    if (s.messages.some((m) => m.pending)) continue
+    scheduleSessionWrite(sessionRecordOf(s))
+  }
+  for (const id of persistedSessions.keys()) {
+    // 待機中の書き込みを捨ててから消す（逆にすると削除の後に書き戻されて復活する）
+    if (!next.has(id)) void deleteSessionRecord(id)
+  }
+  persistedSessions = next
+}
+
+/**
+ * ハイドレーション**完了後に**購読を張る。基準を読み込み直後の値にすることで、
+ * 起動のたびに全件を書き戻さない（初期値 [] → 読み込み済みの遷移を差分と見ない）。
+ */
+function startSessionPersistence(): void {
+  // 読めなかった状態では何も書かない（blockStateWrites と二重の歯止め。R1）
+  if (useStore.getState().schemaError) return
+  const sessions = useStore.getState().sessions
+  if (legacySessionsMoved) {
+    // 引っ越し直後だけ全件を書き直す。移行前の版番で刻んだレコードを現行版へ揃える
+    // （途中で落ちても残りは旧版のまま＝次回の読み出しで1段ずつ上がる）
+    persistedSessions = new Map()
+    syncSessionRecords(sessions)
+  } else {
+    persistedSessions = new Map(sessions.map((s) => [s.id, s]))
+  }
+  useStore.subscribe((st, prev) => {
+    if (st.sessions === prev.sessions) return
+    syncSessionRecords(st.sessions)
+  })
+}
+
+if (useStore.persist.hasHydrated()) startSessionPersistence()
+else useStore.persist.onFinishHydration(() => startSessionPersistence())
 
 // ---------------------------------------------------------------------------
 // 購読ヘルパ（計画 P2b）

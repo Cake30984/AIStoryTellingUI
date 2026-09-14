@@ -14,7 +14,7 @@ import FirstRunWizard from './components/FirstRunWizard'
 import DialogHost from './components/DialogHost'
 import CommandPalette from './components/CommandPalette'
 import { useGlobalShortcuts } from './lib/shortcuts'
-import { stateLocationLabel } from './lib/platform'
+import { sessionsLocationLabel, stateLocationLabel } from './lib/platform'
 import { isProviderUsable } from './lib/providers'
 import { schemaErrorMessage } from './lib/schema'
 import { Icon, type IconName } from './components/icons'
@@ -173,9 +173,11 @@ export default function App() {
                 更新すると、そのまま読み込めます。
               </p>
               <p>
-                更新の前に、次の場所をコピーしてバックアップを取ってください。
+                更新の前に、次の2か所をコピーしてバックアップを取ってください（設定と、物語の本体）。
                 <br />
                 <code>{stateLocationLabel()}</code>
+                <br />
+                <code>{sessionsLocationLabel()}</code>
               </p>
             </div>
           </div>
