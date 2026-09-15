@@ -44,8 +44,9 @@ React 18 + TypeScript(strict) + Vite / zustand（`persist`）/ Tauri 2（`plugin
 - `platform.ts` — `isTauri`／`appFetch`（Tauri は plugin-http で CORS-free。`omitOrigin` で Origin を外す＝ComfyUI 用）／`saveBlob`／`stateStorage`（Web: localStorage、Tauri: `data/state.json` をアトミック書込＋500ms デバウンス＋close 時 flush）／`backupStateSnapshot`／`blockStateWrites`／`CheckpointStore`（Web: IndexedDB、Tauri: `data/checkpoints/<sessionId>/<nodeId>.bin`）／`SessionStore`（Web: IndexedDB `aist-sessions`、Tauri: `data/sessions/<id>.json`。1件＝`{v, session}` で版番をレコードごとに持つ・**読み書きは id ごとに直列化**・`scheduleSessionWrite`＝500ms デバウンス・`deleteSessionRecord`＝取り消してから削除・Web はタブが隠れた時点で flush）／資格情報（`hydrateProviderSecrets`・`stripApiKeyForPersist`）
 - `openrouter.ts` — `streamChat`（SSE・`usage` 取得）／`fetchModels`／`withCacheControl`（Anthropic 系にだけ `cache_control` を2箇所）／`jsonSchema`+`jsonMode` を渡すと `response_format`（弾かれたら schema→object→なし と1段ずつ落として再送し、通った段をモデルごとにプロセス内で記憶）
 - `providers.ts` — `Provider` 型・プリセット・`parseModelRef`/`makeModelRef`・**接続先が使えるかの判定**（`isLocalEndpoint`/`requiresApiKey`/`isProviderUsable`。ローカル宛はキー不要・OpenRouter 用ヘッダも送らない）
-- `prompts.ts` — 本編の3層組み立て（`buildSystemPrompt`/`buildMessages`/`selectRawScenes`）と裏方プロンプト全部（選択肢・レビュー A/B/T・次シーン候補・結末提案・エピローグ・幕間・キャラ起案・画像起案）。進行マーカーは `MARKER_PROMPTS`/`isMarkerContent`、本文判定は `isStoryText`/`sceneCharsOf`
-- `jsonSchemas.ts` — 裏方 LLM の JSON スキーマ（`reviewSchema(part)`/`CHOICES_SCHEMA`/`ENDING_PROPOSALS_SCHEMA`/`NEXT_SCENE_SCHEMA`/`IMAGE_DRAFT_SCHEMA`/`CHARACTER_DRAFT_SCHEMA`）と `jsonModeFor(model, models)`（OpenRouter の `supported_parameters` 優先・無ければ名前で推定）
+- `prompts.ts` — 本編の3層組み立て（`buildSystemPrompt`/`buildMessages`/`selectRawScenes`）と裏方プロンプト全部（選択肢・レビュー A/B/T・次シーン候補・結末提案・エピローグ・幕間・キャラ起案・画像起案・物語の起案）。進行マーカーは `MARKER_PROMPTS`/`isMarkerContent`、本文判定は `isStoryText`/`sceneCharsOf`
+- `jsonSchemas.ts` — 裏方 LLM の JSON スキーマ（`reviewSchema(part)`/`CHOICES_SCHEMA`/`ENDING_PROPOSALS_SCHEMA`/`NEXT_SCENE_SCHEMA`/`IMAGE_DRAFT_SCHEMA`/`CHARACTER_DRAFT_SCHEMA`/`KICKOFF_SCHEMA`）と `jsonModeFor(model, models)`（OpenRouter の `supported_parameters` 優先・無ければ名前で推定）
+- `kickoff.ts` — 一行からの起案結果を `World`/`Character` へ詰める純関数（`normalizeKickoff`・`KICKOFF_TAG`）。件数の上下限・空欄・名前の空白は**受け側のここで**吸収する（スキーマでは縛らない）
 - `json.ts` — `extractJson`（修復フォールバック付き）／`partialString`（ストリーミング途中の JSON から文字列値を読む）
 - `structured.ts` — `@名前「セリフ」` 行タグのパーサ（純関数。失敗行は narration へ）／`matchCharacterByName`（名前解決の唯一の窓口）／`plainTextOf`
 - `lorebook.ts` — ロアを `alwaysOn`（system）とキーワード一致（深さ3・直近6件窓）に分ける
@@ -65,7 +66,7 @@ React 18 + TypeScript(strict) + Vite / zustand（`persist`）/ Tauri 2（`plugin
 ### `src/components/`
 - 骨格: `Rail.tsx`（Play/Library/System）／`Sidebar.tsx`（セッション一覧・素材ナビ・D&D 取込）／`ChatPanel.tsx`（会話画面本体。トップバー・本文・コンポーザー・右ドック）／`ContextDock.tsx`（状態/発見/画像/分岐/ジョブ のタブ。`StatusView`/`DiscoveryView`/`GalleryModal.GalleryBody`/`BranchTreeModal.BranchTreeBody`/`ImageJobsPanel.ImageJobsBody`）／`LibraryBar.tsx`／`CommandPalette.tsx`／`FirstRunWizard.tsx`（接続先5経路＋接続テスト）／`SettingsModal.tsx`（`SettingsBody`＝System ページ: 接続先・既定モデル・データ入出力・GC・使用状況）／`ImageProviderSettings.tsx`
 - 共通部品: `ModalShell`（全モーダル。`dirty` で破棄確認）／`DialogHost`／`MenuPopover`／`ZoomOverlay`（`document.body` へポータル）／`icons.tsx`（自前 SVG。絵文字・文字記号は使わない）／`EntityAvatar`／`NumberInput`／`CsvInput`／`HelpDetails`／`ActivityIndicator`／`IntroTagDefEditor`・`IntroTagFields`
-- Play: `StructuredMessage.tsx`（構造化本文の描画。未解決話者に ？バッジ）／`SceneReviewModal.tsx`（確定前は呼び出し単位の進行表示）／`SceneEditor`／`StoryLogModal`（あらすじ一覧）／`StatusPanel`・`DiscoveryPanel`（編集）／`EndingModal`（結末の提案）／`InterludePanel`（幕間）／`CharacterDraftModal`（発見キャラの起案→`CharacterEditor` draft）／`ImageGenModal`／`StoryExportModal`／`ReaderSettings`
+- Play: `StoryKickoffModal.tsx`（一行から始める＝起案 → そのまま `SessionEditor` へ引き継ぐ）／`StructuredMessage.tsx`（構造化本文の描画。未解決話者に ？バッジ）／`SceneReviewModal.tsx`（確定前は呼び出し単位の進行表示）／`SceneEditor`／`StoryLogModal`（あらすじ一覧）／`StatusPanel`・`DiscoveryPanel`（編集）／`EndingModal`（結末の提案）／`InterludePanel`（幕間）／`CharacterDraftModal`（発見キャラの起案→`CharacterEditor` draft）／`ImageGenModal`／`StoryExportModal`／`ReaderSettings`
 - Library: `library/CharacterLibrary`・`CharacterEditor`・`WorldLibrary`・`WorldEditor`（フルページ。基本／ロア／関係性の次元／開始テンプレート）・`CassetteLibrary`・`AvatarField`・`LibraryMultiSelect`／`CassetteEditor.tsx`／`SessionEditor.tsx`（基本／物語／進行／AIと出力 の4タブ）
 
 ## データモデル（要点）
@@ -125,6 +126,7 @@ React 18 + TypeScript(strict) + Vite / zustand（`persist`）/ Tauri 2（`plugin
 | 結末の提案／エピローグ | 「終わり方を考える」／確定時 | 本文＋状態 |
 | 幕間／幕間の反映 | 終了シーンで生成／「関係性へ反映」 | そのシーン本文＋関係 prose |
 | キャラ起案／画像起案 | ？バッジ・レビュー承認／挿絵・アバター生成 | 本文＋定義 |
+| 物語の起案 | 「一行から始める」 | 利用者が書いた一行だけ（既定モデル・素材は無い） |
 
 → **シーン終了1回＝3呼び出し、1ターン＝1呼び出し。** 無料枠（OpenRouter 未課金 50 req/日）では短編1本/日が上限になる。
 
@@ -144,6 +146,7 @@ React 18 + TypeScript(strict) + Vite / zustand（`persist`）/ Tauri 2（`plugin
 - **画像**: `startImageJob` → 直列生成 → `selecting`（自動採用しない）→ `applyImageJobResult`（挿絵は `Scene.illustrations`＋`sessionImageLogs`、アバターは `avatar.imageId`。旧画像は参照を外すだけ）。回収は `gcUnusedImages`（使用中集合＝`collectUsedImageIds`）
 - **書き出し**: `StoryExportModal`（plain/markdown/挿絵つき/共有カード画像・分岐時点指定可）。キャラ・世界・カセットは PNG カード、全データは JSON バンドル（画像同梱可）。取り込みは `importAnyFile` に一本化
 - **初回**: `FirstRunWizard`（かんたん接続=OAuth／無料枠=Gemini／品質重視／緩いモデル／PC で動かす）→ 接続テスト → `defaultModelRef` 設定 → 最後に「サンプルの物語を開く」（`openStarterStory`。「完了」と同義で行き先が1つ増えるだけ）。閉じても `Provider` 未設定なら生成時に案内
+- **一行から始める**: `kickoffStory(premise, signal)` が既定モデルへ**1呼び出し**（`KICKOFF_SCHEMA`）→ `normalizeKickoff` で `World`1・`Character`2〜4人（先頭が中心人物・タグ「起案」）→ `startPresetPatch` でセッションへ流し込んで開く。**生成は始めない**——`StoryKickoffModal` がそのまま `SessionEditor` を開き、人が直して「保存」してから始める。起案できなくても空のセッションは作る（理由は設定画面の冒頭に出す）。中止されたときだけ何も作らない
 - **既定コンテンツ**: 素材が空の初回起動で `seedStarterContent` が `src/starter/` をライブラリへ入れ、開始状態のセッションを1本作って開く。**自動投入は1回きり**（`starterSeeded`）＝消した人へ勝手に戻さない。入れ直しは Library の「サンプルを追加し直す」（素材は固定 id へ上書き＝増えない・セッションだけ1本増える）。Play の空状態は素材が無ければサンプルへ、あれば `SessionEditor` へ送る（物語の導線は1本）
 - **起動時**: hydration 後に `hydrateProviderSecrets`・`cleanupOrphanCheckpoints`・`backfillImageLogs`・`seedStarterContent`（初回のみ）
 
@@ -183,6 +186,7 @@ React 18 + TypeScript(strict) + Vite / zustand（`persist`）/ Tauri 2（`plugin
 
 **UI**
 - モーダルは `ModalShell`。ネイティブ `confirm`/`prompt` 禁止（`appConfirm`/`appPrompt`/`appChoices`）
+- `scrollableBody` のモーダル（`SessionEditor` 等）は **`modal-body` が flex 行**。中身を足すときは左ナビ＋右パネルの**内側**へ入れる（手前に兄弟として置くと横並びの1項目になり、本体が右へ押し出される）
 - カンマ区切り入力は `CsvInput`、必須の数値欄は `NumberInput`
 - アイコンは `icons.tsx` の SVG。絵文字・文字記号（★⑂✕）を UI に使わない（ユーザーが「安っぽい・意味不明」と明言）。アイコン単独は ×/⋯/✎ 等の普遍記号＋tooltip のみ
 - 用語: 素材は「キャラクター」（「キャラ」不可）・セッション内は「登場キャラクター」・作成ボタンは「＋ 〜を作る」の動詞形・内部 ID（`openrouter/auto` 等）を UI に出さない
@@ -205,6 +209,7 @@ React 18 + TypeScript(strict) + Vite / zustand（`persist`）/ Tauri 2（`plugin
 
 - lint 無し・CI 無し（テストは P2a で導入済み）
 - カセットは開始状態のセッションを内包したまま軽い状態に残る。長い物語からカセットを作ると、そのぶんが毎 `set()` の直列化に乗る（20セッション×150発言の実測で、カセット無し 0.04ms／150発言ぶんを内包したカセット1本で 0.92ms）
+- 一行からの起案（P4）は**実モデルで未検証**。配線と正規化はローカルのスタブ応答で確認済みだが、実モデルが `storyKickoffSystem` の指示（人数・名前の空白・他キャラ名を書かない）をどこまで守るかは未計測
 - Tauri 側の `data/sessions/`（P2c）と CSP（P2a）は**実機で未検証**（Windows と Rust が要る）。次に `tauri:dev` を回せるときに [`docs/開発環境と配布.md`](docs/開発環境と配布.md) §4 を一巡させる
 
 ## ドキュメント
