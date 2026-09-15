@@ -9,6 +9,7 @@ import MenuPopover from './MenuPopover'
 import type { SessionMode } from '../types'
 import SessionEditor from './SessionEditor'
 import CassetteEditor from './CassetteEditor'
+import StoryKickoffModal from './StoryKickoffModal'
 
 const LIBRARY_NAV: { key: View; label: string; icon: IconName }[] = [
   { key: 'characters', label: 'キャラクター', icon: 'users' },
@@ -51,6 +52,8 @@ export default function Sidebar() {
   const [ctxMenu, setCtxMenu] = useState<{ id: string; x: number; y: number } | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [cassetteSeedId, setCassetteSeedId] = useState<string | null>(null)
+  // 一行から始める（P4）。起案が終わると自分でセッション設定へ引き継ぐ
+  const [showKickoff, setShowKickoff] = useState(false)
   const area = areaOf(view)
 
   // セッションカード（PNG）のドロップ受付
@@ -138,6 +141,13 @@ export default function Sidebar() {
             </button>
             <button onClick={() => newSession('story')}>
               <Icon name="plus" size={14} /> 物語
+            </button>
+          </div>
+          {/* 0→1 の導線（P4）。世界観も登場人物も無いところから始める人はここ。
+              1行1ボタン＝サイドバー幅でも文言が折り返さない */}
+          <div className="new-buttons" style={{ marginTop: 0 }}>
+            <button onClick={() => setShowKickoff(true)} title="一行の前提から世界・登場人物・導入を起案する">
+              <Icon name="sparkles" size={14} /> 一行から始める
             </button>
           </div>
           <div className="new-buttons" style={{ marginTop: 0 }}>
@@ -315,6 +325,7 @@ export default function Sidebar() {
       {cassetteSeed && (
         <CassetteEditor seedSession={cassetteSeed} onClose={() => setCassetteSeedId(null)} />
       )}
+      {showKickoff && <StoryKickoffModal onClose={() => setShowKickoff(false)} />}
     </aside>
   )
 }

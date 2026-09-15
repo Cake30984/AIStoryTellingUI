@@ -17,10 +17,15 @@ type Tab = 'basic' | 'story' | 'progress' | 'ai'
 
 interface Props {
   session: Session
+  /**
+   * 冒頭に出す案内（P4。起案の下書きであること・起案が失敗した理由の表示に使う）。
+   * 通常の「セッション設定」では出さない＝何も渡さなければ今までどおり。
+   */
+  notice?: string
   onClose: () => void
 }
 
-export default function SessionEditor({ session, onClose }: Props) {
+export default function SessionEditor({ session, notice, onClose }: Props) {
   const characters = useStore((st) => st.characters)
   const worlds = useStore((st) => st.worlds)
   const providers = useStore((st) => st.providers)
@@ -132,6 +137,15 @@ export default function SessionEditor({ session, onClose }: Props) {
               ))}
             </nav>
             <div className="se-panel">
+
+          {/* 起案の下書き案内（P4）。CharacterEditor の draftNotice と同じ見せ方。
+              **`modal-body` は flex 行なので、ここ（右パネルの中）へ置く**——
+              `se-navlayout` の手前に出すと横並びの1項目になって設定欄が押し出される */}
+          {notice && (
+            <p style={{ fontSize: 12, color: 'var(--text-faint)', marginTop: 0, marginBottom: 12 }}>
+              {notice}
+            </p>
+          )}
 
           {tab === 'basic' && (
             <>

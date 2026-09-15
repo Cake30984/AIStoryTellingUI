@@ -10,6 +10,7 @@ import CassetteLibrary from './components/library/CassetteLibrary'
 import LibraryBar from './components/LibraryBar'
 import SceneReviewModal from './components/SceneReviewModal'
 import SessionEditor from './components/SessionEditor'
+import StoryKickoffModal from './components/StoryKickoffModal'
 import FirstRunWizard from './components/FirstRunWizard'
 import DialogHost from './components/DialogHost'
 import CommandPalette from './components/CommandPalette'
@@ -79,6 +80,8 @@ export default function App() {
   const [paletteOpen, setPaletteOpen] = useState(false)
   // 空状態から新規作成した直後に開くセッション設定（F3/R15）
   const [newEditorId, setNewEditorId] = useState<string | null>(null)
+  // 一行から始める（P4）。起案が終わると自分でセッション設定へ引き継ぐ
+  const [showKickoff, setShowKickoff] = useState(false)
   const startNew = (mode: 'roleplay' | 'story') => setNewEditorId(createSession(mode))
   const newEditorSession = useStore((st) =>
     newEditorId ? st.sessions.find((s) => s.id === newEditorId) : undefined,
@@ -255,13 +258,18 @@ export default function App() {
                 <br />
                 自動で進む物語を楽しめます。
               </p>
-              {/* 物語の導線は1本（P3）。素材が無ければサンプルへ、あれば設定を開く。
-                  ロールプレイは副次の入口として残す */}
+              {/* 0→1 の主導線は「一行から始める」（P4）。素材が無ければサンプル、あれば
+                  手作りの物語を次点に置く。ロールプレイは副次の入口として残す */}
               <div className="cta">
+                <button onClick={() => setShowKickoff(true)}>一行から始める</button>
                 {characterCount === 0 ? (
-                  <button onClick={() => openStarterStory()}>サンプルの物語を開く</button>
+                  <button className="ghost" onClick={() => openStarterStory()}>
+                    サンプルの物語を開く
+                  </button>
                 ) : (
-                  <button onClick={() => startNew('story')}>物語を作る</button>
+                  <button className="ghost" onClick={() => startNew('story')}>
+                    物語を作る
+                  </button>
                 )}
                 <button className="ghost" onClick={() => startNew('roleplay')}>
                   ロールプレイを始める
@@ -290,6 +298,8 @@ export default function App() {
       {newEditorSession && (
         <SessionEditor session={newEditorSession} onClose={() => setNewEditorId(null)} />
       )}
+
+      {showKickoff && <StoryKickoffModal onClose={() => setShowKickoff(false)} />}
 
       {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} />}
 
