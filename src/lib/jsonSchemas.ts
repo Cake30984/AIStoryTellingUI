@@ -45,6 +45,7 @@ function obj(properties: Record<string, unknown>): Record<string, unknown> {
 }
 
 const str = { type: 'string' } as const
+const bool = { type: 'boolean' } as const
 const arrayOf = (items: unknown) => ({ type: 'array', items })
 
 /** レビュー A（何が起きたか）の項目 */
@@ -153,6 +154,52 @@ export const CHARACTER_DRAFT_SCHEMA: JsonSchemaSpec = {
     exampleDialogues: arrayOf(str),
     greeting: str,
     tags: arrayOf(str),
+  }),
+}
+
+/**
+ * 一行の前提からの起案（P4。`storyKickoffSystem` と対）。
+ * **世界1本・登場人物2〜4人・開始テンプレートを1呼び出しで**返させる
+ * （0→1 を全部手入力させないための唯一の呼び出し。分けると待ち時間も失敗点も増える）。
+ *
+ * 件数の上下限（ロア5件以内・関係性の次元2つ・登場人物2〜4人・セリフ例5個以上）は
+ * **スキーマに書かない**——`minItems`/`maxItems` の strict 対応が接続先ごとにまちまちなため。
+ * 文章で要求し、受け側（`normalizeKickoff`）で詰める（`CHARACTER_DRAFT_SCHEMA` と同じ方針）。
+ *
+ * `startPreset` は `World.startPreset` の形に合わせてある＝`startPresetPatch` がそのまま
+ * セッションへ流し込める（起案の出口を新設しない）。
+ */
+export const KICKOFF_SCHEMA: JsonSchemaSpec = {
+  name: 'story_kickoff',
+  schema: obj({
+    world: obj({
+      name: str,
+      description: str,
+      calendarFormat: str,
+      entries: arrayOf(obj({ keys: arrayOf(str), content: str, alwaysOn: bool })),
+      relationAspects: arrayOf(obj({ name: str, guidance: str })),
+      startPreset: obj({
+        genre: str,
+        premise: str,
+        opening: str,
+        openingTitle: str,
+        openingSceneNote: str,
+        initialDirective: str,
+        startNow: str,
+      }),
+    }),
+    /** 先頭が中心人物（視点人物）。欄は `Character` の記入欄と1対1 */
+    characters: arrayOf(
+      obj({
+        name: str,
+        persona: str,
+        speechStyle: str,
+        appearance: str,
+        exampleDialogues: arrayOf(str),
+        greeting: str,
+        tags: arrayOf(str),
+      }),
+    ),
   }),
 }
 
