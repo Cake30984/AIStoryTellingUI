@@ -542,6 +542,8 @@ export type LlmRequestKind =
   | 'nextScene'
   | 'imageDraft'
   | 'characterDraft'
+  /** 一行の前提からの起案（P4。世界・登場人物・導入を1呼び出しで作る） */
+  | 'kickoff'
   | 'endingProposal'
   | 'interlude'
 

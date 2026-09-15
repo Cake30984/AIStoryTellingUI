@@ -110,6 +110,8 @@ import {
   isDirective,
   nextSceneSystem,
   reviewSystem,
+  storyKickoffSystem,
+  storyKickoffUser,
   trackerSystem,
   SCENE_START_PROMPT,
   selectRawScenes,
@@ -123,6 +125,7 @@ import {
   ENDING_PROPOSALS_SCHEMA,
   INTERLUDE_REFLECT_SCHEMA,
   jsonModeFor,
+  KICKOFF_SCHEMA,
   NEXT_SCENE_SCHEMA,
   reviewSchema,
 } from './lib/jsonSchemas'
@@ -145,6 +148,7 @@ import {
   starterSessionSeed,
   starterWorld,
 } from './starter'
+import { normalizeKickoff } from './lib/kickoff'
 
 export const DEFAULT_MODEL = 'openrouter/auto'
 
@@ -743,6 +747,20 @@ export interface ReviewCallProgress {
   note?: string
 }
 
+/**
+ * 一行からの起案（P4）の結果。**セッションは起案の成否によらず作る**
+ * ——起案できなくても空の設定画面から手で書き始められる方が、行き止まりより良い。
+ */
+export interface KickoffResult {
+  /** 開くセッション。中止されたときだけ null */
+  sessionId: string | null
+  /** 起案できた素材。失敗時は null／空配列（＝空のセッション） */
+  worldId: string | null
+  characterIds: string[]
+  /** 起案できなかった理由（設定画面の冒頭に出す） */
+  error?: string
+}
+
 /** レビュー呼び出しの表示名（進行表示に出す。何を作っている最中かが分かる粒度にする） */
 const REVIEW_CALL_LABEL: Record<ReviewPart, string> = {
   a: 'あらすじ・次シーンの候補',
@@ -924,6 +942,14 @@ interface AppState {
    * ——サンプルは接続先を決める前に作られているため、ウィザードで決めたモデルを持っていない。
    */
   openStarterStory: () => string
+  /**
+   * 一行の前提から世界・登場人物・導入を起案してセッションを1本作る（P4）。
+   * **1呼び出し**（既定モデル）→ 素材をライブラリへ → `startPresetPatch` でセッションへ流し込む。
+   * 起案できなくても**セッションは必ず作って返す**（空の `SessionEditor` を開いて手で書ける）。
+   * 生成を始めるところまではやらない＝開いた設定画面で人が直してから始める。
+   * `signal` で中止した場合だけ `sessionId: null`（何も作らない）。
+   */
+  kickoffStory: (premise: string, signal?: AbortSignal) => Promise<KickoffResult>
   deleteSession: (id: string) => void
   setActive: (id: string) => void
   updateSession: (id: string, patch: Partial<Session>) => void
@@ -2417,6 +2443,84 @@ export const useStore = create<AppState>()(
           }
           get().setActive(existing.id)
           return existing.id
+        },
+
+        kickoffStory: async (premise, signal) => {
+          const line = premise.trim()
+          const canceled = (): KickoffResult => ({ sessionId: null, worldId: null, characterIds: [] })
+          // 起案できなくても空の設定画面から書き始められるようにする（行き止まりを作らない）
+          const blank = (error: string): KickoffResult => ({
+            sessionId: get().createSession('story'),
+            worldId: null,
+            characterIds: [],
+            error,
+          })
+          // まだセッションが無いので裏方モデルの継承元も無い＝既定モデルで起案する
+          const modelRef = get().defaultModelRef || DEFAULT_MODEL
+          const { provider, model } = parseModelRef(modelRef, get().providers)
+          if (!isProviderUsable(provider) || !model) return blank(providerUnusableMessage(provider))
+
+          const t0 = performance.now()
+          let res
+          try {
+            res = await streamChat(
+              {
+                provider,
+                model,
+                messages: [
+                  { role: 'system', content: storyKickoffSystem() },
+                  { role: 'user', content: storyKickoffUser(line) },
+                ],
+                temperature: 0.9,
+                // 世界＋登場人物2〜4人を1回で返させるので、裏方の中では最も長い応答になる
+                maxTokens: 6000,
+                signal,
+                jsonSchema: KICKOFF_SCHEMA,
+                jsonMode: jsonModeFor(model, get().modelsByProvider[provider.id]),
+              },
+              () => {},
+            )
+          } catch (e) {
+            if ((e as Error).name === 'AbortError') return canceled()
+            return blank(`起案に失敗しました: ${(e as Error).message}　空の設定から書き始められます。`)
+          }
+          if (signal?.aborted) return canceled()
+
+          const draft = normalizeKickoff(extractJson<Record<string, unknown>>(res.text), line)
+          if (!draft) return blank('起案結果を読み取れませんでした。空の設定から書き始められます。')
+
+          get().upsertWorld(draft.world)
+          for (const c of draft.characters) get().upsertCharacter(c)
+          const characterIds = draft.characters.map((c) => c.id)
+          const sessionId = get().createSession('story')
+          const fresh = get().sessions.find((s) => s.id === sessionId)
+          if (!fresh) return blank('セッションを作成できませんでした。')
+          // 顔ぶれを先に据えてから開始テンプレートを流す（`startPresetPatch` は素材の写し取り1本に任せる）
+          const cast: Session = {
+            ...fresh,
+            worldId: draft.world.id,
+            characterIds,
+            focusCharacterId: characterIds[0],
+          }
+          get().updateSession(sessionId, {
+            title: draft.title,
+            worldId: cast.worldId,
+            characterIds,
+            focusCharacterId: cast.focusCharacterId,
+            ...startPresetPatch(cast, draft.world, true),
+          })
+          get().recordUsage({
+            kind: 'kickoff',
+            modelRef,
+            upstream: res.usage?.upstream,
+            promptTokens: res.usage?.promptTokens ?? 0,
+            cachedTokens: res.usage?.cachedTokens ?? 0,
+            completionTokens: res.usage?.completionTokens ?? 0,
+            cost: res.usage?.cost,
+            ms: performance.now() - t0,
+            sessionId,
+          })
+          return { sessionId, worldId: draft.world.id, characterIds }
         },
 
         deleteSession: (id) => {

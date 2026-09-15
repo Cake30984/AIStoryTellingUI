@@ -19,6 +19,7 @@ const USAGE_KIND_ORDER: LlmRequestKind[] = [
   'nextScene',
   'imageDraft',
   'characterDraft',
+  'kickoff',
   'endingProposal',
   'interlude',
 ]
@@ -29,6 +30,7 @@ const USAGE_KIND_LABELS: Record<LlmRequestKind, string> = {
   nextScene: '次シーン候補',
   imageDraft: '画像起案',
   characterDraft: 'キャラ起案',
+  kickoff: '物語の起案',
   endingProposal: '結末の提案',
   interlude: '別視点の幕間',
 }
