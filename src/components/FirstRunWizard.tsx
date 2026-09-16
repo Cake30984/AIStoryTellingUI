@@ -1,8 +1,12 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { storeActions, useStore } from '../store'
 import { isLocalEndpoint, makeModelRef, newProvider, requiresApiKey } from '../lib/providers'
-import { oauthPkceAvailable } from '../lib/platform'
-import { startOpenRouterOAuth } from '../lib/oauthPkce'
+import { oauthPkceMode } from '../lib/platform'
+import {
+  openRouterOAuthAvailable,
+  redirectToOpenRouterOAuth,
+  startOpenRouterOAuth,
+} from '../lib/oauthPkce'
 import { testProviderConnection, type ConnectionTestResult } from '../lib/openrouter'
 import type { Provider, ProviderKind } from '../types'
 import ModalShell from './ModalShell'
@@ -23,6 +27,10 @@ interface PathDef {
   /** 接続テストに使う既定モデル。空文字ならユーザーに選ばせる（Gemini/ローカルは既知のモデル名が無い） */
   presetModel: string
 }
+
+/** ローカル LLM ガイドの CORS 節（Web 版からローカル接続先を使うときの設定。P5） */
+const LOCAL_CORS_GUIDE_URL =
+  'https://github.com/Cake30984/AIStoryTellingUI/blob/main/docs/%E3%82%AC%E3%82%A4%E3%83%89_%E3%83%AD%E3%83%BC%E3%82%AB%E3%83%ABLLM%E3%81%A7%E5%8B%95%E3%81%8B%E3%81%99.md#11-%E3%83%96%E3%83%A9%E3%82%A6%E3%82%B6%E7%89%88%E3%81%8B%E3%82%89%E3%81%A4%E3%81%AA%E3%81%90%E3%81%A8%E3%81%8D%E3%81%AE%E8%A8%AD%E5%AE%9A-cors'
 
 const PATHS: PathDef[] = [
   {
@@ -92,7 +100,14 @@ const inputStyle = {
  * 初回ウィザード（R5）。3ステップ固定・分岐を作らない（プロバイダ選択→キー入力→接続テスト）。
  * OpenRouter を OAuth で選んだ場合（Tauri のみ）はキー入力が要らないため2ステップに縮む。
  */
-export default function FirstRunWizard({ onClose }: { onClose: () => void }) {
+export default function FirstRunWizard({
+  onClose,
+  oauthReturnKey,
+}: {
+  onClose: () => void
+  /** P5: Web のリダイレクト承認から戻ってきたときの API キー。開いた直後に接続テストへ進む */
+  oauthReturnKey?: string
+}) {
   const providers = useStore((st) => st.providers)
   const { upsertProvider, setDefaultModelRef, openStarterStory } = storeActions()
 
@@ -112,7 +127,9 @@ export default function FirstRunWizard({ onClose }: { onClose: () => void }) {
 
   const path = PATHS.find((p) => p.id === pathId) ?? null
   const provider = providers.find((p) => p.id === providerId) ?? null
-  const isOAuthPath = path?.id === 'oauth' && oauthPkceAvailable()
+  const isOAuthPath = path?.id === 'oauth' && openRouterOAuthAvailable()
+  // Web は承認のためにページごと離れる。押した後この画面は消えるので文言を変える（P5）
+  const oauthLeavesPage = oauthPkceMode() === 'redirect'
   const totalSteps = isOAuthPath ? 2 : 3
   // ステップ番号: 1=選択, 2=キー入力(OAuth なら承認〜テスト結果まで2に同居), 3=接続テスト結果
   const step = pathId === null ? 1 : isOAuthPath ? 2 : testResult === null ? 2 : 3
@@ -143,26 +160,52 @@ export default function FirstRunWizard({ onClose }: { onClose: () => void }) {
     setOauthBusy(true)
     setTestResult(null)
     try {
+      if (oauthLeavesPage) {
+        // ここで戻らない（ページごと OpenRouter へ移動する）。続きは App が戻りを拾って再開する。
+        // busy を降ろさないのは、移動が始まるまでボタンを「移動中…」のまま押せなくしておくため
+        await redirectToOpenRouterOAuth('wizard')
+        return
+      }
       const apiKey = await startOpenRouterOAuth()
       if (provider) updateProvider({ apiKey })
+      setOauthBusy(false)
       await runTest(apiKey)
     } catch (e) {
       setTestResult({ ok: false, kind: 'unknown', message: (e as Error).message })
-    } finally {
       setOauthBusy(false)
     }
   }
 
   const runTest = async (apiKeyOverride?: string) => {
     if (!provider) return
+    await runTestOn(apiKeyOverride !== undefined ? { ...provider, apiKey: apiKeyOverride } : provider, model)
+  }
+
+  /** 接続テスト本体。**state ではなく引数の接続先・モデルを見る**（承認直後は state がまだ古い） */
+  const runTestOn = async (target: Provider, modelId: string) => {
     setTestState('testing')
     setTestResult(null)
-    const target = apiKeyOverride !== undefined ? { ...provider, apiKey: apiKeyOverride } : provider
-    const result = await testProviderConnection(target, model)
+    const result = await testProviderConnection(target, modelId)
     setTestResult(result)
     setTestState('idle')
-    if (result.ok) setDefaultModelRef(makeModelRef(target.id, model))
+    if (result.ok) setDefaultModelRef(makeModelRef(target.id, modelId))
   }
+
+  // P5: Web のリダイレクト承認から戻ってきた場合。App が鍵を接続先へ入れた状態で開くので、
+  // OAuth 経路を選んだ状態にして接続テストまで一気に進める（デスクトップ版と同じ画面に着地させる）
+  const oauthReturnHandled = useRef(false)
+  useEffect(() => {
+    if (!oauthReturnKey || oauthReturnHandled.current) return
+    oauthReturnHandled.current = true
+    const def = PATHS[0]
+    const target = providers.find((p) => p.kind === 'openrouter')
+    if (!target) return
+    setPathId(def.id)
+    setProviderId(target.id)
+    setModel(def.presetModel)
+    void runTestOn({ ...target, apiKey: oauthReturnKey }, def.presetModel)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [oauthReturnKey])
 
   const retryFromStep1 = () => {
     setPathId(null)
@@ -192,9 +235,9 @@ export default function FirstRunWizard({ onClose }: { onClose: () => void }) {
               >
                 <div style={{ fontWeight: 600, marginBottom: 4 }}>
                   {p.label}
-                  {p.id === 'oauth' && !oauthPkceAvailable() && (
+                  {p.id === 'oauth' && !openRouterOAuthAvailable() && (
                     <span className="badge" style={{ marginLeft: 8, fontWeight: 400 }}>
-                      Web 版はキー貼り付けのみ
+                      この環境ではキー貼り付けのみ
                     </span>
                   )}
                 </div>
@@ -214,10 +257,14 @@ export default function FirstRunWizard({ onClose }: { onClose: () => void }) {
       {path && provider && isOAuthPath && testResult?.ok !== true && (
         <>
           <p className="desc" style={{ marginTop: 0 }}>
-            ブラウザで OpenRouter の承認画面が開きます。「Allow」を選ぶとこのアプリに戻り、自動的に接続テストまで行います。
+            {oauthLeavesPage
+              ? 'OpenRouter の承認画面へ移動します。「Allow」を選ぶとこのページに戻り、自動的に接続テストまで行います。'
+              : 'ブラウザで OpenRouter の承認画面が開きます。「Allow」を選ぶとこのアプリに戻り、自動的に接続テストまで行います。'}
           </p>
           <button className="btn primary" style={{ width: '100%' }} onClick={() => void runOAuth()} disabled={oauthBusy}>
-            {oauthBusy ? '承認待ち…（ブラウザで承認してください）' : (
+            {oauthBusy ? (
+              oauthLeavesPage ? '承認画面へ移動中…' : '承認待ち…（ブラウザで承認してください）'
+            ) : (
               <>
                 <Icon name="refresh-cw" size={14} /> ブラウザで承認する
               </>
@@ -256,6 +303,17 @@ export default function FirstRunWizard({ onClose }: { onClose: () => void }) {
           )}
           {isLocalEndpoint(provider.baseUrl) && (
             <p className="desc">この接続先はローカル扱いのため API キーは不要です。</p>
+          )}
+          {/* P5: ブラウザ版はページとローカルサーバの間に CORS があるので、サーバ側の設定が要る */}
+          {oauthLeavesPage && isLocalEndpoint(provider.baseUrl) && (
+            <p className="desc">
+              ブラウザ版からローカルのサーバにつなぐには、サーバ側で接続元を許可する設定が必要です
+              （Ollama は <code>OLLAMA_ORIGINS</code>、LM Studio は CORS を有効化）。手順は{' '}
+              <a href={LOCAL_CORS_GUIDE_URL} target="_blank" rel="noreferrer" style={{ color: 'var(--accent)' }}>
+                ローカル LLM で動かす（CORS の設定）
+              </a>
+              。
+            </p>
           )}
           <label className="sub-label">モデル</label>
           <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>

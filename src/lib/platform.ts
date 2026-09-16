@@ -4,9 +4,14 @@ export function isTauri(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 }
 
-/** R4: OAuth (PKCE) 接続はローカル受け口を Rust 側で立てる関係で Tauri 限定（Web には実装しない） */
-export function oauthPkceAvailable(): boolean {
-  return isTauri()
+/**
+ * OAuth (PKCE) の受け取り方（R4／P5）。**どちらの環境でも使える**が、認可後に戻ってくる経路が違う。
+ * - `listener`（Tauri）: Rust 側が 127.0.0.1 に一回きりの受け口を立て、`startOpenRouterOAuth` が鍵を返す
+ * - `redirect`（Web）: 自分のページ URL を `callback_url` にして**ページごと離れる**。
+ *   戻り先が `?code=` 付きで再読み込みされるので、鍵は起動時に受け取る（`oauthPkce.ts`）
+ */
+export function oauthPkceMode(): 'listener' | 'redirect' {
+  return isTauri() ? 'listener' : 'redirect'
 }
 
 /** zustand persist の永続化キー。Tauri のファイル移行判定（旧 WebView localStorage の検出）にも使う */

@@ -2,8 +2,12 @@ import { useRef, useState } from 'react'
 import { storeActions, useStore } from '../store'
 import { downloadBundle, downloadBlob } from '../lib/io'
 import { PROVIDER_PRESETS, defaultOpenRouterProvider, modelRefLabel, newProvider } from '../lib/providers'
-import { oauthPkceAvailable } from '../lib/platform'
-import { startOpenRouterOAuth } from '../lib/oauthPkce'
+import { oauthPkceMode } from '../lib/platform'
+import {
+  openRouterOAuthAvailable,
+  redirectToOpenRouterOAuth,
+  startOpenRouterOAuth,
+} from '../lib/oauthPkce'
 import ImageProviderSettings from './ImageProviderSettings'
 import ModelPicker from './ModelPicker'
 import { appConfirm } from '../lib/dialogs'
@@ -74,19 +78,27 @@ export function SettingsBody() {
 
   const fileRef = useRef<HTMLInputElement>(null)
 
+  // Web は承認のためにページごと離れる（戻りは App が拾って接続先へ入れる。P5）
+  const oauthLeavesPage = oauthPkceMode() === 'redirect'
+
   const connectOpenRouterOAuth = async () => {
     setOauthBusy(true)
     setOauthError('')
     try {
+      if (oauthLeavesPage) {
+        // ここで戻らない（ページごと OpenRouter へ移動する）。busy は降ろさない
+        await redirectToOpenRouterOAuth('settings')
+        return
+      }
       const apiKey = await startOpenRouterOAuth()
       const existing = providers.find((p) => p.id === 'openrouter')
       const next = existing ? { ...existing, apiKey } : defaultOpenRouterProvider(apiKey)
       upsertProvider(next)
       setLocalKeys((k) => ({ ...k, [next.id]: apiKey }))
       setNotice('OpenRouter にブラウザ承認で接続しました。')
+      setOauthBusy(false)
     } catch (e) {
       setOauthError((e as Error).message)
-    } finally {
       setOauthBusy(false)
     }
   }
@@ -170,11 +182,11 @@ export function SettingsBody() {
               ）。
             </div>
 
-            {oauthPkceAvailable() && (
+            {openRouterOAuthAvailable() && (
               <div style={{ marginBottom: 10 }}>
                 <button className="btn primary" style={{ width: '100%' }} onClick={connectOpenRouterOAuth} disabled={oauthBusy}>
                   {oauthBusy ? (
-                    '承認待ち…（ブラウザで承認してください）'
+                    oauthLeavesPage ? '承認画面へ移動中…' : '承認待ち…（ブラウザで承認してください）'
                   ) : (
                     <>
                       <Icon name="refresh-cw" size={14} /> OpenRouter にブラウザで接続（キーの貼り付け不要）

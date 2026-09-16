@@ -16,7 +16,8 @@ import DialogHost from './components/DialogHost'
 import CommandPalette from './components/CommandPalette'
 import { useGlobalShortcuts } from './lib/shortcuts'
 import { sessionsLocationLabel, stateLocationLabel } from './lib/platform'
-import { isProviderUsable } from './lib/providers'
+import { completeOpenRouterOAuthRedirect, pendingOAuthRedirect } from './lib/oauthPkce'
+import { defaultOpenRouterProvider, isProviderUsable } from './lib/providers'
 import { schemaErrorMessage } from './lib/schema'
 import { Icon, type IconName } from './components/icons'
 
@@ -68,7 +69,7 @@ export default function App() {
   const ui = useStore((st) => st.ui)
   // 空状態の行き先を決めるためだけの購読（件数＝プリミティブなので本体は購読しない）
   const characterCount = useStore((st) => st.characters.length)
-  const { clearError, createSession, dismissImageJobToasts, openStarterStory, setInfoNotice } =
+  const { clearError, createSession, dismissImageJobToasts, openStarterStory, setInfoNotice, upsertProvider } =
     storeActions()
   // storage は async 化済み（Web は同期 localStorage・Tauri は T3 のファイル backend）。
   // ハイドレーション完了までスプラッシュを表示する。
@@ -121,11 +122,45 @@ export default function App() {
   // 使える接続先が無ければ初回ウィザードを開く（R5）。System 画面への強制遷移はやめた
   // ——ウィザードがその場で接続先を作るところまで面倒を見るため、行き先を奪う必要がない
   const [showFirstRunWizard, setShowFirstRunWizard] = useState(false)
+
+  // P5: Web のブラウザ承認はページごと離れて `?code=` 付きで戻ってくる。**接続先の判定より先に**
+  // 鍵を受け取ってしまう（先にウィザードが開くと、承認したのに手入力の画面へ着地する）。
+  // 判定が要るのはこの1回だけなので、初期値で「戻りかどうか」を確定させておく
+  const [oauthResolved, setOauthResolved] = useState(() => !pendingOAuthRedirect())
+  const [oauthReturnKey, setOauthReturnKey] = useState<string | undefined>(undefined)
   useEffect(() => {
-    if (!hydrated || !secretsReady) return
+    if (oauthResolved || !hydrated || !secretsReady) return
+    // スキーマを読めなかった時は書き込みが封印されている。受け取っても保存できないので捨てる（R1）
+    if (schemaError) {
+      setOauthResolved(true)
+      return
+    }
+    void (async () => {
+      try {
+        const { apiKey, origin } = await completeOpenRouterOAuthRedirect()
+        const st = useStore.getState()
+        const existing = st.providers.find((p) => p.id === 'openrouter')
+        upsertProvider(existing ? { ...existing, apiKey } : defaultOpenRouterProvider(apiKey))
+        if (origin === 'wizard') {
+          setOauthReturnKey(apiKey)
+          setShowFirstRunWizard(true)
+        } else {
+          setInfoNotice('OpenRouter にブラウザ承認で接続しました。')
+        }
+      } catch (e) {
+        setInfoNotice(`ブラウザ承認を完了できませんでした：${(e as Error).message}`)
+      } finally {
+        setOauthResolved(true)
+      }
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated, secretsReady, schemaError, oauthResolved])
+
+  useEffect(() => {
+    if (!hydrated || !secretsReady || !oauthResolved) return
     if (!hasUsableProvider) setShowFirstRunWizard(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hydrated, secretsReady])
+  }, [hydrated, secretsReady, oauthResolved])
 
   // 初回起動（素材が空）なら既定コンテンツを入れて、サンプルの物語を開いた状態にする（P3）。
   // **一度でも入れたら二度と自動投入しない**（`starterSeeded`）＝消した人へ勝手に戻さない。
@@ -293,7 +328,15 @@ export default function App() {
         view === 'sessions' && <SceneReviewModal />}
 
 
-      {showFirstRunWizard && <FirstRunWizard onClose={() => setShowFirstRunWizard(false)} />}
+      {showFirstRunWizard && (
+        <FirstRunWizard
+          oauthReturnKey={oauthReturnKey}
+          onClose={() => {
+            setShowFirstRunWizard(false)
+            setOauthReturnKey(undefined)
+          }}
+        />
+      )}
 
       {newEditorSession && (
         <SessionEditor session={newEditorSession} onClose={() => setNewEditorId(null)} />
