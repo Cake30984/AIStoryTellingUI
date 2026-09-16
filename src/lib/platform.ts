@@ -31,6 +31,14 @@ export function registerServiceWorker(): void {
   })
 }
 
+/**
+ * 保存先がブラウザの中だけか（P5）。Web 版は localStorage と IndexedDB しか持たないので、
+ * 「消える条件」と書き出しの案内を初回に1回だけ出す判断に使う。
+ */
+export function isBrowserStorage(): boolean {
+  return !isTauri()
+}
+
 /** zustand persist の永続化キー。Tauri のファイル移行判定（旧 WebView localStorage の検出）にも使う */
 export const PERSIST_KEY = 'ai-storytelling-store-v3'
 

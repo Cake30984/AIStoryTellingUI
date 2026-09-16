@@ -798,6 +798,11 @@ interface AppState {
    * 消した人へ勝手に戻さないためにここを見る（手動の「サンプルを追加し直す」は印を無視する）。
    */
   starterSeeded?: boolean
+  /**
+   * Web 版の「データはこのブラウザにだけある」案内を出したか（P5）。**1回だけ出すための印**。
+   * Tauri 版では使わない（保存先がファイルなので案内自体を出さない）。
+   */
+  storageNoticeSeen?: boolean
   /** 右コンテキストドック等の永続 UI 状態（UI-3） */
   ui: UiPrefs
 
@@ -883,6 +888,8 @@ interface AppState {
   setUiPrefs: (patch: Partial<UiPrefs>) => void
   /** 一時案内メッセージのセット/クリア（F2） */
   setInfoNotice: (msg: string | null) => void
+  /** Web 版の保存先案内を出し終えた印を立てる（P5。二度と出さない） */
+  markStorageNoticeSeen: () => void
   /** LLM 呼び出し1回ぶんの実測を記録する（PC0）。上限1000件の FIFO */
   recordUsage: (rec: Omit<UsageRecord, 'id' | 'at'>) => void
   /** 実測記録をすべて消去する（PC0） */
@@ -1429,6 +1436,7 @@ function partializeAppState(st: AppState) {
     sessionImageLogs: st.sessionImageLogs,
     imageLogBackfillDone: st.imageLogBackfillDone,
     starterSeeded: st.starterSeeded,
+    storageNoticeSeen: st.storageNoticeSeen,
     ui: st.ui,
     /** 読み出しの口が差し込む（`partialize` は書かない）。merge の正規化を通すためだけの席 */
     sessions: undefined as Session[] | undefined,
@@ -2166,6 +2174,7 @@ export const useStore = create<AppState>()(
         branchTrees: {},
         sessionImageLogs: {},
         starterSeeded: false,
+        storageNoticeSeen: false,
         ui: DEFAULT_UI,
 
         view: 'sessions',
@@ -2205,6 +2214,8 @@ export const useStore = create<AppState>()(
             }
           }),
         setInfoNotice: (msg) => set({ infoNotice: msg }),
+
+        markStorageNoticeSeen: () => set({ storageNoticeSeen: true }),
         recordUsage: (rec) =>
           set((st) => {
             const next = [...st.usageLog, { ...rec, id: uid(), at: Date.now() }]

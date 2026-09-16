@@ -12,10 +12,11 @@ import SceneReviewModal from './components/SceneReviewModal'
 import SessionEditor from './components/SessionEditor'
 import StoryKickoffModal from './components/StoryKickoffModal'
 import FirstRunWizard from './components/FirstRunWizard'
+import WebStorageNotice from './components/WebStorageNotice'
 import DialogHost from './components/DialogHost'
 import CommandPalette from './components/CommandPalette'
 import { useGlobalShortcuts } from './lib/shortcuts'
-import { sessionsLocationLabel, stateLocationLabel } from './lib/platform'
+import { isBrowserStorage, sessionsLocationLabel, stateLocationLabel } from './lib/platform'
 import { completeOpenRouterOAuthRedirect, pendingOAuthRedirect } from './lib/oauthPkce'
 import { defaultOpenRouterProvider, isProviderUsable } from './lib/providers'
 import { schemaErrorMessage } from './lib/schema'
@@ -161,6 +162,17 @@ export default function App() {
     if (!hasUsableProvider) setShowFirstRunWizard(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hydrated, secretsReady, oauthResolved])
+
+  // ブラウザ版だけ、保存先の案内を初回に1回だけ出す（P5）。ウィザードと重ねない
+  // ——順番は「接続先を決める」が先で、保存先の話はそのあと（下の描画側で待たせる）
+  const [showStorageNotice, setShowStorageNotice] = useState(false)
+  useEffect(() => {
+    if (!hydrated || schemaError || !oauthResolved) return
+    if (!isBrowserStorage()) return
+    if (useStore.getState().storageNoticeSeen) return
+    setShowStorageNotice(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated, schemaError, oauthResolved])
 
   // 初回起動（素材が空）なら既定コンテンツを入れて、サンプルの物語を開いた状態にする（P3）。
   // **一度でも入れたら二度と自動投入しない**（`starterSeeded`）＝消した人へ勝手に戻さない。
@@ -336,6 +348,11 @@ export default function App() {
             setOauthReturnKey(undefined)
           }}
         />
+      )}
+
+      {/* ウィザードが出ている間は待たせる（モーダルを2枚重ねない） */}
+      {showStorageNotice && !showFirstRunWizard && (
+        <WebStorageNotice onClose={() => setShowStorageNotice(false)} />
       )}
 
       {newEditorSession && (
