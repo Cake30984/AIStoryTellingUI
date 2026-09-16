@@ -5,8 +5,14 @@
     <!-- CSP: vite.config.ts が差し替える（dev は HMR 用に ws: とインラインスクリプトを許す。
          Tauri 版の正は src-tauri/tauri.conf.json の security.csp なので、そちらのビルドでは消える） -->
     <!--CSP-->
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>デリスト</title>
+    <!-- PWA（P5）。パスはすべて相対＝サブパス配信でもそのまま動く（vite.config.ts の base も相対） -->
+    <link rel="icon" type="image/png" href="./favicon.png" />
+    <link rel="apple-touch-icon" href="./icon-192.png" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#0f1117" />
+    <meta name="description" content="好きな LLM で AI が自動で書き進める物語を読む、クライアント完結のアプリ。" />
   </head>
   <body>
     <div id="root"></div>

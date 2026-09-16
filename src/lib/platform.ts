@@ -14,6 +14,23 @@ export function oauthPkceMode(): 'listener' | 'redirect' {
   return isTauri() ? 'listener' : 'redirect'
 }
 
+/**
+ * PWA の Service Worker を登録する（P5。実体は `public/sw.js`）。
+ * - Tauri 版では登録しない（ローカルのファイルを配るので意味がなく、更新の挙動も変わる）
+ * - dev でも登録しない（HMR と噛み合わない）。確認は `npm run build` → `npm run preview` で行う
+ * - 登録先は**ページと同じ場所**（`sw.js` の位置がそのまま scope になる。サブパス配信でも合う）
+ */
+export function registerServiceWorker(): void {
+  if (isTauri()) return
+  if (!import.meta.env.PROD) return
+  if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return
+  window.addEventListener('load', () => {
+    void navigator.serviceWorker.register(new URL('sw.js', document.baseURI).href).catch(() => {
+      // 登録できなくてもアプリは動く（インストールできないだけ）。ここで騒がない
+    })
+  })
+}
+
 /** zustand persist の永続化キー。Tauri のファイル移行判定（旧 WebView localStorage の検出）にも使う */
 export const PERSIST_KEY = 'ai-storytelling-store-v3'
 

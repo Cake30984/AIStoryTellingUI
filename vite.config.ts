@@ -1,4 +1,5 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 
@@ -35,6 +36,45 @@ function cspContent(dev: boolean): string {
   ].join('; ')
 }
 
+/**
+ * PWA の Service Worker（`public/sw.js`）にビルド成果物の一覧とビルド ID を差し込む（P5）。
+ * `public/` の中身はバンドラを通らないので、**出力後の `dist/sw.js` を書き換える**。
+ * 先に一覧を持たせておかないと、初回訪問（SW が効く前に読み込みが終わる）のあとオフラインにすると
+ * JS/CSS だけ取れずに白画面になる。Tauri 版は SW を登録しないので、そのビルドでは触らない。
+ */
+function swAssets(): Plugin {
+  let assets: string[] = []
+  let outDir = 'dist'
+  return {
+    name: 'delist-sw-assets',
+    apply: 'build',
+    configResolved(config) {
+      outDir = config.build.outDir
+    },
+    generateBundle(_options, bundle) {
+      assets = Object.keys(bundle)
+        .filter((name) => name !== 'index.html')
+        .map((name) => `./${name}`)
+    },
+    // public/ のコピーもバンドルの書き出しも終わったあとに差し替える
+    closeBundle() {
+      if (isTauri) return
+      const swPath = new URL(`./${outDir}/sw.js`, import.meta.url)
+      let code: string
+      try {
+        code = readFileSync(swPath, 'utf-8')
+      } catch {
+        return // sw.js を置かない構成なら何もしない
+      }
+      const buildId = createHash('sha256').update(assets.join('\n')).digest('hex').slice(0, 12)
+      writeFileSync(
+        swPath,
+        code.replace('__BUILD_ID__', buildId).replace('__ASSETS__', JSON.stringify(assets)),
+      )
+    },
+  }
+}
+
 const CSP_PLACEHOLDER = '<!--CSP-->'
 
 function cspMeta(): Plugin {
@@ -52,7 +92,14 @@ function cspMeta(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [react(), cspMeta()],
+  /**
+   * Web 版は**相対パス**で出す（P5）。静的ホスティングの置き場所（GitHub Pages のリポジトリ名の下・
+   * 自サイトの `/delist/`・ドメイン直下）がどれでも、ビルドし直さずそのまま動く。ルーティングを
+   * 持たない1ページのアプリなので、これで困る場面が無い（index.html・manifest・SW も相対で書く）。
+   * Tauri 版は `tauri.localhost` の直下に置かれるので既定のまま（実機検証の条件を変えない）。
+   */
+  base: isTauri ? '/' : './',
+  plugins: [react(), cspMeta(), swAssets()],
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
   },
