@@ -205,7 +205,7 @@ React 18 + TypeScript(strict) + Vite / zustand（`persist`）/ Tauri 2（`plugin
 - コストは円換算しない（画像も、セッション累計＝`formatSessionUsage` も。提供元の課金単位のまま出す）
 - ComfyUI のワークフローは「プレースホルダがあれば手動置換・無ければ自動検出」の排他
 - **Web 版は静的ホスティングに置く前提**（P5）。`base` は相対（`vite.config.ts`。Tauri ビルドだけ `/`）＝ドメイン直下でもサブパスでも同じ成果物が動く。`index.html`・`manifest.webmanifest`・`sw.js` の中のパスも**すべて相対**で書く（絶対パスを1つ混ぜるとサブパス配信で壊れる）
-- **Service Worker（`public/sw.js`）が触るのは同一オリジンの GET だけ。** API（別オリジン）は素通し。ビルド成果物の一覧とキャッシュ名は `vite.config.ts` の `swAssets` が `dist/sw.js` へ差し込む（`public/` はバンドラを通らないので出力後に書き換える）。**初回訪問は SW が効く前に読み込みが終わる**ので、install で成果物を先に取っておかないとオフラインで白画面になる
+- **Service Worker（`public/sw.js`）が触るのは同一オリジンの GET だけ。** API（別オリジン）は素通し。ビルド成果物の一覧とキャッシュ名は `vite.config.ts` の `swAssets` が `dist/sw.js` へ差し込む（`public/` はバンドラを通らないので出力後に書き換える。**Tauri ビルドでは差し込まず `sw.js` ごと落とす**）。**初回訪問は SW が効く前に読み込みが終わる**ので、install で成果物を先に取っておかないとオフラインで白画面になる
 - **狭い画面（720px 以下）の規則は `layout.css` の末尾の1ブロックだけ**（サイドバーを本文の上へ・右ドックを本文に重ねる）。デスクトップ版の最小幅は 960px なので実質 Web 版だけの話。ここを増やしてモバイル最適化を作り込まない
 - **CSP の出所は2つだけ**。Tauri 版＝`src-tauri/tauri.conf.json` の `app.security.csp`（Tauri がヘッダで注入）、Web 版＝`index.html` の `<!--CSP-->` を `vite.config.ts` が meta へ差し替える（Tauri ビルドでは消す＝二重に掛けない）。dev だけ `ws://localhost:5173` と `script-src 'unsafe-inline'`（Vite の HMR と react-refresh のプリアンブル）を足す。`frame-ancestors` は meta では無視されるので入れない。外部から読むリソース（画像・フォント・スクリプト）を足すときは両方を直す
 

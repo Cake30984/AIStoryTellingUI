@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
@@ -58,8 +58,13 @@ function swAssets(): Plugin {
     },
     // public/ のコピーもバンドルの書き出しも終わったあとに差し替える
     closeBundle() {
-      if (isTauri) return
       const swPath = new URL(`./${outDir}/sw.js`, import.meta.url)
+      if (isTauri) {
+        // Tauri 版は SW を登録しない。差し替え前の（プレースホルダが残った）ファイルを
+        // 同梱しても意味が無く、中身は JS として壊れているので落とす
+        rmSync(swPath, { force: true })
+        return
+      }
       let code: string
       try {
         code = readFileSync(swPath, 'utf-8')
