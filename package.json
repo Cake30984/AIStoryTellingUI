@@ -3,7 +3,12 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "OpenRouter を使った AI ロールプレイ & 自動ストーリー進行 UI",
+  "description": "デリスト（Delist / Delusion Story）— 好きな LLM で AI が書き進める物語を読む、クライアント完結（BYOK）のアプリ",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Cake30984/AIStoryTellingUI.git"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc && vitest run && vite build",

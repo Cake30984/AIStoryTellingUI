@@ -27,6 +27,9 @@
   },
   "bundle": {
     "active": true,
+    "publisher": "tokatokage",
+    "copyright": "Copyright (c) 2026 tokatokage",
+    "license": "MIT",
     "targets": [
       "nsis"
     ],

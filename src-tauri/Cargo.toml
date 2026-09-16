@@ -1,10 +1,10 @@
 [package]
 name = "app"
 version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
-license = ""
-repository = ""
+description = "デリスト（Delist / Delusion Story）— AI が書き進める物語を読む BYOK アプリのデスクトップ版"
+authors = ["tokatokage"]
+license = "MIT"
+repository = "https://github.com/Cake30984/AIStoryTellingUI"
 edition = "2021"
 rust-version = "1.77.2"
 
