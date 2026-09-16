@@ -11,6 +11,7 @@ import { testProviderConnection, type ConnectionTestResult } from '../lib/openro
 import type { Provider, ProviderKind } from '../types'
 import ModalShell from './ModalShell'
 import ModelPicker from './ModelPicker'
+import HelpDetails from './HelpDetails'
 import { Icon } from './icons'
 
 type PathId = 'oauth' | 'free' | 'quality' | 'uncensored' | 'local'
@@ -27,10 +28,6 @@ interface PathDef {
   /** 接続テストに使う既定モデル。空文字ならユーザーに選ばせる（Gemini/ローカルは既知のモデル名が無い） */
   presetModel: string
 }
-
-/** ローカル LLM ガイドの CORS 節（Web 版からローカル接続先を使うときの設定。P5） */
-const LOCAL_CORS_GUIDE_URL =
-  'https://github.com/Cake30984/AIStoryTellingUI/blob/main/docs/%E3%82%AC%E3%82%A4%E3%83%89_%E3%83%AD%E3%83%BC%E3%82%AB%E3%83%ABLLM%E3%81%A7%E5%8B%95%E3%81%8B%E3%81%99.md#11-%E3%83%96%E3%83%A9%E3%82%A6%E3%82%B6%E7%89%88%E3%81%8B%E3%82%89%E3%81%A4%E3%81%AA%E3%81%90%E3%81%A8%E3%81%8D%E3%81%AE%E8%A8%AD%E5%AE%9A-cors'
 
 const PATHS: PathDef[] = [
   {
@@ -304,17 +301,9 @@ export default function FirstRunWizard({
           {isLocalEndpoint(provider.baseUrl) && (
             <p className="desc">この接続先はローカル扱いのため API キーは不要です。</p>
           )}
-          {/* P5: ブラウザ版はページとローカルサーバの間に CORS があるので、サーバ側の設定が要る */}
-          {oauthLeavesPage && isLocalEndpoint(provider.baseUrl) && (
-            <p className="desc">
-              ブラウザ版からローカルのサーバにつなぐには、サーバ側で接続元を許可する設定が必要です
-              （Ollama は <code>OLLAMA_ORIGINS</code>、LM Studio は CORS を有効化）。手順は{' '}
-              <a href={LOCAL_CORS_GUIDE_URL} target="_blank" rel="noreferrer" style={{ color: 'var(--accent)' }}>
-                ローカル LLM で動かす（CORS の設定）
-              </a>
-              。
-            </p>
-          )}
+          {/* P5: ブラウザ版はページとローカルサーバの間に CORS があるので、サーバ側の設定が要る。
+              ここは接続テストが失敗する直前の画面なので、リンク先ではなくその場で手順を出す */}
+          {oauthLeavesPage && isLocalEndpoint(provider.baseUrl) && <LocalCorsHelp />}
           <label className="sub-label">モデル</label>
           <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
             <input
@@ -394,6 +383,39 @@ export default function FirstRunWizard({
         />
       )}
     </ModalShell>
+  )
+}
+
+/**
+ * ブラウザ版からローカルサーバへつなぐときの CORS 案内（P5）。
+ * 詳しい手順は `docs/ガイド_ローカルLLMで動かす.md` §11 と同じ内容。
+ */
+function LocalCorsHelp() {
+  return (
+    <>
+      <p className="desc" style={{ color: 'var(--accent)' }}>
+        ブラウザから自分の PC のサーバにつなぐには、<strong>サーバ側でこのページからの接続を許可する設定</strong>が必要です。
+      </p>
+      <HelpDetails summary="許可のしかた（Ollama / LM Studio）">
+        <p>
+          許可する「接続元」は、いまこのページを開いているアドレスのドメイン部分
+          （<code>{typeof location === 'undefined' ? '' : location.origin}</code>）です。
+        </p>
+        <p>
+          <strong>Ollama</strong>: 環境変数 <code>OLLAMA_ORIGINS</code> にこの接続元を入れて Ollama を起動し直します。
+          Windows は「システム環境変数の編集」から追加し、タスクトレイの Ollama を終了して起動し直してください。
+        </p>
+        <p>
+          <strong>LM Studio</strong>: Developer / Local Server タブの <code>Enable CORS</code> を ON にして
+          Start Server を押し直します（接続元の指定は要りません）。
+        </p>
+        <p>
+          設定してもつながらないときは、ブラウザの開発者ツール（F12）のコンソールに
+          <code>Access-Control-Allow-Origin</code> が出ていないか見てください。
+          この設定が不要なデスクトップ版に切り替えるのも手です。
+        </p>
+      </HelpDetails>
+    </>
   )
 }
 
