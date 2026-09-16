@@ -38,7 +38,7 @@ React 18 + TypeScript(strict) + Vite / zustand（`persist`）/ Tauri 2（`plugin
 
 ## ディレクトリ
 
-`src/types.ts` — 全データ型（**最初に読む**）／`src/store.ts` — zustand ストア（状態・全アクション・永続化の口・チェックポイント・描画の購読ヘルパ。4,500行の単一ファイル）／`src/App.tsx` — レール＋サイドバー＋メイン＋常駐モーダルの組み立て・起動時処理／`src/styles/` — `tokens`/`base`/`layout`/`chat`/`composer`/`panels`.css（`index.css` が順に import。色・z-index・spacing は `tokens.css`）／`src-tauri/` — Tauri シェル（`lib.rs`＝plugin 登録＋資格情報の save/load/delete、`oauth.rs`＝PKCE の 127.0.0.1 受け口、`capabilities/default.json`＝http は `http://*:*`/`https://*:*`・fs は `$APPDATA/**`、`installer-hooks.nsh`＝アンインストール時の資格情報削除、`tauri.conf.json` の `app.security.csp`＝**デスクトップ版の CSP の正**）／`src/starter/` — 既定コンテンツ（サンプルの世界観1・登場人物3・開始セッションの雛形。純データ＝`store.ts` を import しない）／`src/**/__tests__/` — vitest のテスト（`*.test.ts`。`src/lib/__tests__/fixtures.ts` は共通のダミーデータ）／`public/` — そのまま `dist/` へ入る静的ファイル（PWA。`manifest.webmanifest`・`sw.js`・`icon-192/512`・`icon-maskable-512`・`favicon.png`。アイコンはリポジトリ直下の `icon.png` から作った）
+`src/types.ts` — 全データ型（**最初に読む**）／`src/store.ts` — zustand ストア（状態・全アクション・永続化の口・チェックポイント・描画の購読ヘルパ。4,500行の単一ファイル）／`src/App.tsx` — レール＋サイドバー＋メイン＋常駐モーダルの組み立て・起動時処理／`src/styles/` — `tokens`/`base`/`layout`/`chat`/`composer`/`panels`.css（`index.css` が順に import。色・z-index・spacing は `tokens.css`）／`src-tauri/` — Tauri シェル（`lib.rs`＝plugin 登録＋資格情報の save/load/delete、`oauth.rs`＝PKCE の 127.0.0.1 受け口、`capabilities/default.json`＝http は `http://*:*`/`https://*:*`・fs は `$APPDATA/**`、`installer-hooks.nsh`＝アンインストール時の資格情報削除、`tauri.conf.json` の `app.security.csp`＝**デスクトップ版の CSP の正**）／`src/starter/` — 既定コンテンツ（サンプルの世界観1・登場人物3・開始セッションの雛形。純データ＝`store.ts` を import しない）／`src/**/__tests__/` — vitest のテスト（`*.test.ts`。`src/lib/__tests__/fixtures.ts` は共通のダミーデータ）／`public/` — そのまま `dist/` へ入る静的ファイル（PWA。`manifest.webmanifest`・`sw.js`・`icon-192/512`・`icon-maskable-512`・`favicon.png`。アイコンはリポジトリ直下の `icon.png` から作った）／`scripts/` — 開発・実験用の node スクリプト（`baseline.mjs`＝対照実験の対照側。依存無し・`src/starter/index.ts` を Node の型剥がしで直接 import する。出力先 `scripts/out/` は ignore）
 
 ### `src/lib/`
 - `platform.ts` — `isTauri`／`oauthPkceMode`（`listener`=Tauri／`redirect`=Web）／`isBrowserStorage`／`registerServiceWorker`（Web の本番ビルドでだけ `sw.js` を登録）／`appFetch`（Tauri は plugin-http で CORS-free。`omitOrigin` で Origin を外す＝ComfyUI 用）／`saveBlob`／`stateStorage`（Web: localStorage、Tauri: `data/state.json` をアトミック書込＋500ms デバウンス＋close 時 flush）／`backupStateSnapshot`／`blockStateWrites`／`CheckpointStore`（Web: IndexedDB、Tauri: `data/checkpoints/<sessionId>/<nodeId>.bin`）／`SessionStore`（Web: IndexedDB `aist-sessions`、Tauri: `data/sessions/<id>.json`。1件＝`{v, session}` で版番をレコードごとに持つ・**読み書きは id ごとに直列化**・`scheduleSessionWrite`＝500ms デバウンス・`deleteSessionRecord`＝取り消してから削除・Web はタブが隠れた時点で flush）／資格情報（`hydrateProviderSecrets`・`stripApiKeyForPersist`）
@@ -215,6 +215,7 @@ React 18 + TypeScript(strict) + Vite / zustand（`persist`）/ Tauri 2（`plugin
 - カセットは開始状態のセッションを内包したまま軽い状態に残る。長い物語からカセットを作ると、そのぶんが毎 `set()` の直列化に乗る（20セッション×150発言の実測で、カセット無し 0.04ms／150発言ぶんを内包したカセット1本で 0.92ms）
 - 一行からの起案（P4）は**実モデルで未検証**。配線と正規化はローカルのスタブ応答で確認済みだが、実モデルが `storyKickoffSystem` の指示（人数・名前の空白・他キャラ名を書かない）をどこまで守るかは未計測
 - Tauri 側の `data/sessions/`（P2c）と CSP（P2a）は**実機で未検証**（Windows と Rust が要る）。次に `tauri:dev` を回せるときに [`docs/開発環境と配布.md`](docs/開発環境と配布.md) §4 を一巡させる
+- 中核主張「状態機械があると長編でも素のチャットより読める」は**未検証**。道具（`scripts/baseline.mjs`・`docs/実験_対照読み比べ.md`）は P6 で用意済みだが、人に読ませて判定する工程はまだ。結果が出るまで README・公開文にこの主張を書かない
 - Web 版は**まだどこにも置いていない**（P5 は成果物と手順まで。公開は P7・A1 待ち）。ローカルのサブパス配信で PWA のインストール条件・オフライン復帰・OAuth の往復（認可ページはスタブ）まで確認済みだが、**公開 URL と実モデルでの通しは未実施**
 
 ## ドキュメント
@@ -229,6 +230,7 @@ React 18 + TypeScript(strict) + Vite / zustand（`persist`）/ Tauri 2（`plugin
 | [`docs/設計_プロンプト構造とキャッシュ.md`](docs/設計_プロンプト構造とキャッシュ.md) | 3層構造とキャッシュの設計理由（実装済み。現状の正はこのファイル） |
 | [`docs/設計_入力の二分化とローカルLLM案内.md`](docs/設計_入力の二分化とローカルLLM案内.md) | `kind:'directive'` の設計理由 |
 | [`docs/計測_時間と予定.md`](docs/計測_時間と予定.md)／[`docs/計測_別視点の幕間.md`](docs/計測_別視点の幕間.md) | 現行設計を決めた実測 |
+| [`docs/実験_対照読み比べ.md`](docs/実験_対照読み比べ.md) | 中核主張（状態機械があると長編でも読める）を人に読ませて確かめる手順・質問票・判定基準。対照側は `scripts/baseline.mjs` |
 | [`docs/カセット作成ガイド_AI用.md`](docs/カセット作成ガイド_AI用.md) | カセット JSON を書くためのガイド（利用者・AI 向け） |
 | [`docs/ガイド_ローカルLLMで動かす.md`](docs/ガイド_ローカルLLMで動かす.md) | Ollama / LM Studio 接続ガイド（利用者向け） |
 | [`docs/環境音_音源調達リスト.md`](docs/環境音_音源調達リスト.md) | **撤去済み**環境音の、過去の同梱音源の出所とライセンス記録（消さない） |
