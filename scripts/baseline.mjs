@@ -7,7 +7,7 @@
  * **シーン分割・あらすじ要約・レビュー（関係性・時間・予定の更新）・ロアのキーワード注入は無い。**
  * 定義を全部貼ってから「続けて」を連打する使い方、そのままである。
  *
- * デリスト側と揃えているもの: 素材（同じ TS 定数を import する＝写しを持たない）・導入文・
+ * デルシア側と揃えているもの: 素材（同じ TS 定数を import する＝写しを持たない）・導入文・
  * 「続けて」の文面・文体ルール・セリフの出力形式・温度。**違いは状態機械の有無だけ**にする。
  * 文体ルールと出力形式の文面は `src/lib/prompts.ts` の `buildSystemPrompt` を写している
  * （そちらを変えたら揃える。アプリ本体からは import しない＝この script は依存パッケージ無しで動く）。
@@ -99,7 +99,7 @@ function characterBlock(c, label) {
 }
 
 /**
- * 定義を全部まとめる。デリストが**ターンごと・シーンごとに出し入れしているもの**を、ここでは
+ * 定義を全部まとめる。デルシアが**ターンごと・シーンごとに出し入れしているもの**を、ここでは
  * 静的な定義としてぜんぶ最初から置く（ロアは全件常時・開始時の場面と予定も定義として書く）。
  * 状態機械が作るもの（あらすじ・関係性 prose・気分・時間の更新・突き合わせの一文）は**無い**。
  */
@@ -151,7 +151,7 @@ function buildFlatSystemPrompt({ world, characters, session }) {
   if (s.premise.trim()) sParts.push(`あらすじ・前提: ${s.premise.trim()}`)
   if (sParts.length) parts.push(`【物語設定】\n${sParts.join('\n')}`)
 
-  // 最初の方向付け。デリストでは最初のシーンに居る間だけ注入されるが、シーンが無いのでずっと置く
+  // 最初の方向付け。デルシアでは最初のシーンに居る間だけ注入されるが、シーンが無いのでずっと置く
   const directive = s.initialDirective?.trim()
   if (directive) {
     parts.push(
@@ -185,7 +185,7 @@ function buildFlatSystemPrompt({ world, characters, session }) {
   return parts.join('\n\n')
 }
 
-/** デリストの `CONTINUE_PROMPT` と同文 */
+/** デルシアの `CONTINUE_PROMPT` と同文 */
 const CONTINUE_PROMPT = '（続けて。物語をさらに展開させてください。）'
 
 /** 導入文の `@タグ` を実名へ（`resolveIntroText` と同じ結果） */
@@ -200,7 +200,7 @@ function resolveIntro(opening, bindings, characters) {
 
 /**
  * `@名前「セリフ」` → `名前「セリフ」`（`structured.ts` の `plainTextOf` と同じ規則）。
- * デリスト側の書き出しはこの形になるので、対照側も同じ見た目に落とす。
+ * デルシア側の書き出しはこの形になるので、対照側も同じ見た目に落とす。
  */
 const NARRATION_NAMES = new Set(['地の文', '地文', 'ナレーション', 'ナレーター', 'narration', 'narrator'])
 function plainTextOf(content) {

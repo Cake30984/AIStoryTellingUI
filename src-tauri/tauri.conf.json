@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "Delist",
+  "productName": "Delusia",
   "version": "0.1.0",
-  "identifier": "com.tokatokage.delist",
+  "identifier": "com.tokatokage.delusia",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "デリスト",
+        "title": "デルシア",
         "width": 1280,
         "height": 800,
         "minWidth": 960,

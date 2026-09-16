@@ -15,7 +15,7 @@
 !macro NSIS_HOOK_POSTUNINSTALL
   ${If} $UpdateMode <> 1
     DetailPrint "資格情報ストアから API キーを削除しています..."
-    ; cmdkey の一覧から `LegacyGeneric:target=<id>.com.tokatokage.delist` を抜いて消す。
+    ; cmdkey の一覧から `LegacyGeneric:target=<id>.com.tokatokage.delusia` を抜いて消す。
     ; ラベル（"Target:"）は環境によって訳語が変わりうるので、ラベルではなく
     ; ターゲット名そのものを正規表現で拾う。接続先の id は動的（provider:<uuid> 等）なので
     ; 静的に列挙できず、前の版が残した孤児エントリもここで一緒に片付く。
@@ -26,7 +26,7 @@
     ; PowerShell の $ は NSIS で $$ と書く（$_ をそのまま書くと「不明な変数」警告が出て、
     ; 未定義の挙動〔今は素通し〕に依存することになる）。部分式 $( ) は NSIS が言語文字列として
     ; 解釈するため PowerShell 側で使わないこと。
-    nsExec::ExecToLog `powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "cmdkey /list | Select-String 'LegacyGeneric:target=[^\s]+com\.tokatokage\.delist' -AllMatches | ForEach-Object { $$_.Matches } | ForEach-Object { $$t = $$_.Value; cmdkey /delete:$$t | Out-Null }"`
+    nsExec::ExecToLog `powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "cmdkey /list | Select-String 'LegacyGeneric:target=[^\s]+com\.tokatokage\.delusia' -AllMatches | ForEach-Object { $$_.Matches } | ForEach-Object { $$t = $$_.Value; cmdkey /delete:$$t | Out-Null }"`
     Pop $0
     DetailPrint "資格情報の削除: 終了コード $0"
 

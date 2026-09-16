@@ -22,7 +22,7 @@ export class OAuthPkceError extends Error {}
 export type OAuthOrigin = 'wizard' | 'settings'
 
 /** リダイレクト方式の途中経過を置く sessionStorage のキー（タブ内だけ・タブを閉じれば消える） */
-const REDIRECT_KEY = 'delist-oauth-pkce'
+const REDIRECT_KEY = 'delusia-oauth-pkce'
 
 interface PendingRedirect {
   codeVerifier: string

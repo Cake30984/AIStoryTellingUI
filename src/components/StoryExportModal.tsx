@@ -139,7 +139,7 @@ export default function StoryExportModal({ sessionId, nodeId, onClose }: Props) 
       const blob = await renderStoryCard({
         title: workTitle,
         excerpt: excerptOf(session, targetSceneId),
-        attribution: `デリスト『${workTitle}』より`,
+        attribution: `デルシア『${workTitle}』より`,
         illustration,
       })
       await downloadBlob(blob, `${workTitle}-card.png`)

@@ -192,7 +192,7 @@ export async function sessionToIllustratedMarkdown(
 
 /** 末尾に添える出典（要件④）。「宣伝臭くならない範囲で」1行だけ・製品名＋（あれば）カセット名 */
 export function attributionFooter(workTitle: string, format: ExportFormat): string {
-  const line = `デリスト『${workTitle}』より`
+  const line = `デルシア『${workTitle}』より`
   return format === 'markdown' ? `\n\n---\n\n*${line}*\n` : `\n\n――${line}――\n`
 }
 

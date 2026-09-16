@@ -16,7 +16,7 @@ import {
   startOpenRouterOAuth,
 } from '../oauthPkce'
 
-const REDIRECT_KEY = 'delist-oauth-pkce'
+const REDIRECT_KEY = 'delusia-oauth-pkce'
 
 /** node 環境には無いブラウザの器だけを最小限に用意する（jsdom は入れない方針） */
 function installBrowserGlobals(search: string) {
@@ -29,7 +29,7 @@ function installBrowserGlobals(search: string) {
   }
   g.location = {
     origin: 'https://example.com',
-    pathname: '/delist/',
+    pathname: '/delusia/',
     hash: '',
     search,
     assign: vi.fn(),
@@ -83,7 +83,7 @@ describe('承認の開始', () => {
     const url = new URL(env.location.assign.mock.calls[0][0] as string)
     expect(url.origin + url.pathname).toBe('https://openrouter.ai/auth')
     // クエリとハッシュを落とした「自分のページ」に戻す（?code= を二重に持たせない）
-    expect(url.searchParams.get('callback_url')).toBe('https://example.com/delist/')
+    expect(url.searchParams.get('callback_url')).toBe('https://example.com/delusia/')
     expect(url.searchParams.get('code_challenge_method')).toBe('S256')
     // チャレンジは検証子そのものではない（SHA-256 の base64url）
     expect(url.searchParams.get('code_challenge')).not.toBe(pending.codeVerifier)
@@ -139,7 +139,7 @@ describe('戻りの消費', () => {
 
     await expect(completeOpenRouterOAuthRedirect()).rejects.toThrow(/HTTP 400/)
     expect(env.map.get(REDIRECT_KEY)).toBeUndefined()
-    expect(history.replaceState).toHaveBeenCalledWith(null, '', 'https://example.com/delist/')
+    expect(history.replaceState).toHaveBeenCalledWith(null, '', 'https://example.com/delusia/')
   })
 
   it('検証子が無ければ交換しに行かない', async () => {

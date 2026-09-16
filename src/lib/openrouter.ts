@@ -71,7 +71,7 @@ function commonHeaders(provider: Provider): Record<string, string> {
    */
   if (provider.kind === 'openrouter' && !isLocalEndpoint(provider.baseUrl)) {
     headers['HTTP-Referer'] = location.origin
-    headers['X-Title'] = 'Delist'
+    headers['X-Title'] = 'Delusia'
   }
   return headers
 }

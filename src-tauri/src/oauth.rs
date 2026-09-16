@@ -26,7 +26,7 @@ pub struct OAuthCallbackResult {
 }
 
 const RESPONSE_OK: &str = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nConnection: close\r\n\r\n\
-  <!doctype html><meta charset=\"utf-8\"><title>デリスト</title>\
+  <!doctype html><meta charset=\"utf-8\"><title>デルシア</title>\
   <body style=\"font-family:sans-serif;text-align:center;padding:48px\">\
   <p>アプリに戻ってください。このタブは閉じて構いません。</p></body>";
 

@@ -195,7 +195,7 @@ function buildCharaCard(character: Character): CharaCardV2 {
       scenario: '',
       first_mes: character.greeting,
       mes_example: character.exampleDialogues,
-      creator_notes: 'デリストで作成',
+      creator_notes: 'デルシアで作成',
       system_prompt: '',
       post_history_instructions: '',
       alternate_greetings: [],

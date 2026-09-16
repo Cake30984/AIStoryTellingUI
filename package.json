@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "デリスト（Delist / Delusion Story）— 好きな LLM で AI が書き進める物語を読む、クライアント完結（BYOK）のアプリ",
+  "description": "デルシア（Delusia）— 好きな LLM で AI が書き進める物語を読む、クライアント完結（BYOK）のアプリ",
   "license": "MIT",
   "repository": {
     "type": "git",

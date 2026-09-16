@@ -3,7 +3,7 @@ mod oauth;
 // R3: API キーを OS の資格情報ストアへ分離する（平文 state.json に置かない）。
 // service 名はアプリの identifier（tauri.conf.json）に固定し、id（"provider:<uuid>" 等。
 // platform.ts の PROVIDER_SECRET_PREFIX / IMAGE_PROVIDER_SECRET_PREFIX）を account 名に使う。
-const SECRET_SERVICE: &str = "com.tokatokage.delist";
+const SECRET_SERVICE: &str = "com.tokatokage.delusia";
 
 #[tauri::command]
 fn save_secret(id: String, value: String) -> Result<(), String> {

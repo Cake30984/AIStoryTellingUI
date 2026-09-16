@@ -1,6 +1,6 @@
-# AGENTS.md — デリスト（Delist / Delusion Story）
+# AGENTS.md — デルシア（Delusia）
 
-サークル **とかとかげ**（`tokatokage.com`）／製品名 **デリスト**（副題 Delusion Story）。Tauri の `productName` は `Delist`、識別子 **`com.tokatokage.delist`**（＝`%APPDATA%\<identifier>\` が保存先。公開後は変更不可）。
+サークル **とかとかげ**（`tokatokage.com`）／製品名 **デルシア**（英字 `Delusia`。delusion（妄想）＋ -ia（土地名の接尾辞）の造語。由来「Delusion Story」は README に一行書くだけで、副題・併記にはしない）。Tauri の `productName` は `Delusia`、識別子 **`com.tokatokage.delusia`**（＝`%APPDATA%\<identifier>\` が保存先。公開後は変更不可）。
 `cards.ts` の `extensions.aistorytelling` はカードのデータ形式キーなので改名しない。
 
 好きな LLM（OpenRouter・OpenAI 互換・ローカル）で **AI が自動で書き進める物語を読む**／**キャラと会話する**、クライアント完結（BYOK）のアプリ。**配布経路は2つ**——Tauri 2 デスクトップ版（Windows・未署名）と、静的ホスティングに置く Web 版（Vite・PWA。P5）。機能は同じで、違うのは保存先・通信の制約・ファイル入出力だけ。UI 文言・コメント・ユーザーとのやり取りは日本語。

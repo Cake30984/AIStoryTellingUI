@@ -46,7 +46,7 @@ function swAssets(): Plugin {
   let assets: string[] = []
   let outDir = 'dist'
   return {
-    name: 'delist-sw-assets',
+    name: 'delusia-sw-assets',
     apply: 'build',
     configResolved(config) {
       outDir = config.build.outDir
@@ -84,7 +84,7 @@ const CSP_PLACEHOLDER = '<!--CSP-->'
 
 function cspMeta(): Plugin {
   return {
-    name: 'delist-csp-meta',
+    name: 'delusia-csp-meta',
     transformIndexHtml(html, ctx) {
       // 置き場所は index.html 側の目印で決める（CSP は自分より後ろの読み込みにしか効かないので、
       // script/link より前＝head の先頭近くに置く必要がある）
@@ -99,7 +99,7 @@ function cspMeta(): Plugin {
 export default defineConfig({
   /**
    * Web 版は**相対パス**で出す（P5）。静的ホスティングの置き場所（GitHub Pages のリポジトリ名の下・
-   * 自サイトの `/delist/`・ドメイン直下）がどれでも、ビルドし直さずそのまま動く。ルーティングを
+   * 自サイトの `/delusia/`・ドメイン直下）がどれでも、ビルドし直さずそのまま動く。ルーティングを
    * 持たない1ページのアプリなので、これで困る場面が無い（index.html・manifest・SW も相対で書く）。
    * Tauri 版は `tauri.localhost` の直下に置かれるので既定のまま（実機検証の条件を変えない）。
    */

@@ -132,7 +132,7 @@ export function blockStateWrites(): void {
 /** 永続データの保存場所（バックアップを促す案内の表示用。identifier は tauri.conf.json と対応） */
 export function stateLocationLabel(): string {
   return isTauri()
-    ? '%APPDATA%\\com.tokatokage.delist\\data\\state.json'
+    ? '%APPDATA%\\com.tokatokage.delusia\\data\\state.json'
     : `ブラウザの localStorage（キー: ${PERSIST_KEY}）`
 }
 
@@ -275,7 +275,7 @@ export async function backupStateSnapshot(raw: string): Promise<void> {
 /** 退避先の場所（案内の表示用） */
 export function stateBackupLocationLabel(): string {
   return isTauri()
-    ? '%APPDATA%\\com.tokatokage.delist\\data\\state.json.bak'
+    ? '%APPDATA%\\com.tokatokage.delusia\\data\\state.json.bak'
     : `ブラウザの localStorage（キー: ${PERSIST_KEY}-bak）`
 }
 
@@ -701,7 +701,7 @@ export const sessionStore: SessionStore = isTauri() ? tauriSessionStore : webSes
 /** 永続データの保存場所（セッション本体。schemaError の案内でバックアップ先として出す） */
 export function sessionsLocationLabel(): string {
   return isTauri()
-    ? `%APPDATA%\\com.tokatokage.delist\\${SESSIONS_DIR}\\`
+    ? `%APPDATA%\\com.tokatokage.delusia\\${SESSIONS_DIR}\\`
     : `ブラウザの IndexedDB（${SESSION_DB_NAME}）`
 }
 

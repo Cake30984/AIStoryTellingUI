@@ -440,7 +440,7 @@ export function SettingsBody() {
 
           {/* アプリ名はサイドバーから撤去し、ここに控えめに置く（F3/R19） */}
           <p className="desc" style={{ marginTop: 32, textAlign: 'center' }}>
-            デリスト
+            デルシア
           </p>
 
           {showDefaultPicker && (

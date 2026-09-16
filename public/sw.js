@@ -11,7 +11,7 @@
 
 // ビルドごとに変わる名前（`vite.config.ts` の swAssets プラグインが差し替える）。
 // 名前が変われば activate で前のビルドのキャッシュが丸ごと消える＝取りこぼしが残らない
-const CACHE = 'delist-shell-__BUILD_ID__'
+const CACHE = 'delusia-shell-__BUILD_ID__'
 
 // インストール時に取るもの。`./` はナビゲーションのフォールバック。末尾の展開はビルド成果物
 // （ハッシュ付きの JS/CSS）の一覧で、ビルド ID と同じくプラグインが差し替える。
