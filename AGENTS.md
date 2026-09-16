@@ -3,7 +3,7 @@
 サークル **とかとかげ**（`tokatokage.com`）／製品名 **デリスト**（副題 Delusion Story）。Tauri の `productName` は `Delist`、識別子 **`com.tokatokage.delist`**（＝`%APPDATA%\<identifier>\` が保存先。公開後は変更不可）。
 `cards.ts` の `extensions.aistorytelling` はカードのデータ形式キーなので改名しない。
 
-好きな LLM（OpenRouter・OpenAI 互換・ローカル）で **AI が自動で書き進める物語を読む**／**キャラと会話する**、クライアント完結（BYOK）のアプリ。**Tauri 2 デスクトップ版が正式版**、Web 版（Vite）を併存。UI 文言・コメント・ユーザーとのやり取りは日本語。
+好きな LLM（OpenRouter・OpenAI 互換・ローカル）で **AI が自動で書き進める物語を読む**／**キャラと会話する**、クライアント完結（BYOK）のアプリ。**配布経路は2つ**——Tauri 2 デスクトップ版（Windows・未署名）と、静的ホスティングに置く Web 版（Vite・PWA。P5）。機能は同じで、違うのは保存先・通信の制約・ファイル入出力だけ。UI 文言・コメント・ユーザーとのやり取りは日本語。
 
 > **このファイルは「現在の状態」だけを書く。** 経緯・却下案は [`docs/決定記録.md`](docs/決定記録.md)、進行中の計画は [`docs/計画_レビュー対応.md`](docs/計画_レビュー対応.md)、完了済みの設計書は `docs/archive/`（**リンクを辿るとき以外は読まない**）。
 > **ファイル編集を伴うコミットで、ここに書かれた振る舞い・規約・データモデルが変わるなら同じコミットで更新する。** 履歴は書かない（git がある）。
@@ -38,10 +38,10 @@ React 18 + TypeScript(strict) + Vite / zustand（`persist`）/ Tauri 2（`plugin
 
 ## ディレクトリ
 
-`src/types.ts` — 全データ型（**最初に読む**）／`src/store.ts` — zustand ストア（状態・全アクション・永続化の口・チェックポイント・描画の購読ヘルパ。4,500行の単一ファイル）／`src/App.tsx` — レール＋サイドバー＋メイン＋常駐モーダルの組み立て・起動時処理／`src/styles/` — `tokens`/`base`/`layout`/`chat`/`composer`/`panels`.css（`index.css` が順に import。色・z-index・spacing は `tokens.css`）／`src-tauri/` — Tauri シェル（`lib.rs`＝plugin 登録＋資格情報の save/load/delete、`oauth.rs`＝PKCE の 127.0.0.1 受け口、`capabilities/default.json`＝http は `http://*:*`/`https://*:*`・fs は `$APPDATA/**`、`installer-hooks.nsh`＝アンインストール時の資格情報削除、`tauri.conf.json` の `app.security.csp`＝**デスクトップ版の CSP の正**）／`src/starter/` — 既定コンテンツ（サンプルの世界観1・登場人物3・開始セッションの雛形。純データ＝`store.ts` を import しない）／`src/**/__tests__/` — vitest のテスト（`*.test.ts`。`src/lib/__tests__/fixtures.ts` は共通のダミーデータ）
+`src/types.ts` — 全データ型（**最初に読む**）／`src/store.ts` — zustand ストア（状態・全アクション・永続化の口・チェックポイント・描画の購読ヘルパ。4,500行の単一ファイル）／`src/App.tsx` — レール＋サイドバー＋メイン＋常駐モーダルの組み立て・起動時処理／`src/styles/` — `tokens`/`base`/`layout`/`chat`/`composer`/`panels`.css（`index.css` が順に import。色・z-index・spacing は `tokens.css`）／`src-tauri/` — Tauri シェル（`lib.rs`＝plugin 登録＋資格情報の save/load/delete、`oauth.rs`＝PKCE の 127.0.0.1 受け口、`capabilities/default.json`＝http は `http://*:*`/`https://*:*`・fs は `$APPDATA/**`、`installer-hooks.nsh`＝アンインストール時の資格情報削除、`tauri.conf.json` の `app.security.csp`＝**デスクトップ版の CSP の正**）／`src/starter/` — 既定コンテンツ（サンプルの世界観1・登場人物3・開始セッションの雛形。純データ＝`store.ts` を import しない）／`src/**/__tests__/` — vitest のテスト（`*.test.ts`。`src/lib/__tests__/fixtures.ts` は共通のダミーデータ）／`public/` — そのまま `dist/` へ入る静的ファイル（PWA。`manifest.webmanifest`・`sw.js`・`icon-192/512`・`icon-maskable-512`・`favicon.png`。アイコンはリポジトリ直下の `icon.png` から作った）
 
 ### `src/lib/`
-- `platform.ts` — `isTauri`／`appFetch`（Tauri は plugin-http で CORS-free。`omitOrigin` で Origin を外す＝ComfyUI 用）／`saveBlob`／`stateStorage`（Web: localStorage、Tauri: `data/state.json` をアトミック書込＋500ms デバウンス＋close 時 flush）／`backupStateSnapshot`／`blockStateWrites`／`CheckpointStore`（Web: IndexedDB、Tauri: `data/checkpoints/<sessionId>/<nodeId>.bin`）／`SessionStore`（Web: IndexedDB `aist-sessions`、Tauri: `data/sessions/<id>.json`。1件＝`{v, session}` で版番をレコードごとに持つ・**読み書きは id ごとに直列化**・`scheduleSessionWrite`＝500ms デバウンス・`deleteSessionRecord`＝取り消してから削除・Web はタブが隠れた時点で flush）／資格情報（`hydrateProviderSecrets`・`stripApiKeyForPersist`）
+- `platform.ts` — `isTauri`／`oauthPkceMode`（`listener`=Tauri／`redirect`=Web）／`isBrowserStorage`／`registerServiceWorker`（Web の本番ビルドでだけ `sw.js` を登録）／`appFetch`（Tauri は plugin-http で CORS-free。`omitOrigin` で Origin を外す＝ComfyUI 用）／`saveBlob`／`stateStorage`（Web: localStorage、Tauri: `data/state.json` をアトミック書込＋500ms デバウンス＋close 時 flush）／`backupStateSnapshot`／`blockStateWrites`／`CheckpointStore`（Web: IndexedDB、Tauri: `data/checkpoints/<sessionId>/<nodeId>.bin`）／`SessionStore`（Web: IndexedDB `aist-sessions`、Tauri: `data/sessions/<id>.json`。1件＝`{v, session}` で版番をレコードごとに持つ・**読み書きは id ごとに直列化**・`scheduleSessionWrite`＝500ms デバウンス・`deleteSessionRecord`＝取り消してから削除・Web はタブが隠れた時点で flush）／資格情報（`hydrateProviderSecrets`・`stripApiKeyForPersist`）
 - `openrouter.ts` — `streamChat`（SSE・`usage` 取得）／`fetchModels`／`withCacheControl`（Anthropic 系にだけ `cache_control` を2箇所）／`jsonSchema`+`jsonMode` を渡すと `response_format`（弾かれたら schema→object→なし と1段ずつ落として再送し、通った段をモデルごとにプロセス内で記憶）
 - `providers.ts` — `Provider` 型・プリセット・`parseModelRef`/`makeModelRef`・**接続先が使えるかの判定**（`isLocalEndpoint`/`requiresApiKey`/`isProviderUsable`。ローカル宛はキー不要・OpenRouter 用ヘッダも送らない）
 - `prompts.ts` — 本編の3層組み立て（`buildSystemPrompt`/`buildMessages`/`selectRawScenes`）と裏方プロンプト全部（選択肢・レビュー A/B/T・次シーン候補・結末提案・エピローグ・幕間・キャラ起案・画像起案・物語の起案）。進行マーカーは `MARKER_PROMPTS`/`isMarkerContent`、本文判定は `isStoryText`/`sceneCharsOf`
@@ -61,10 +61,10 @@ React 18 + TypeScript(strict) + Vite / zustand（`persist`）/ Tauri 2（`plugin
 - `imageGen.ts` — 画像生成の抽象層。`generateImage` → `ImageGenResult{blob,cost?}`。種別は **`openrouter-image`（`/images`・コストを返す唯一の種別）／`comfyui`（`/prompt`→`/history`→`/view`）／`openai-image` の3つ**（`IMAGE_PROVIDER_KINDS`。旧 civitai/modelslab は persist から `merge` で読み捨てる）。定型タグの結合は `combineWithDefaults` の1箇所
 - `comfyWorkflow.ts`（API Format ワークフローのリンク追跡による自動注入・純関数）／`promptTags.ts`／`imageSetup.ts`（初回案内を断ったかの非永続フラグ）／`cost.ts`（課金単位のまま表示。現在は usd のみ）／`imageJobs.ts`（ジョブ型・AbortController の Map・`useBlobUrl`）／`avatarGen.ts`
 - `storyExport.ts` — 物語の書き出し（plain/markdown/挿絵つき markdown・分岐時点も可・`isBackstage` で指示とマーカーを落とす）／`storyCard.ts` — 共有用の1枚画像（1080×1350）
-- `oauthPkce.ts` — OpenRouter OAuth（PKCE。`state` 無しなので nonce 入り一回きり受け口で代替）／`checkpoint.ts`（gzip）／`dialogs.ts`（`appConfirm`/`appPrompt`/`appChoices`）／`modalStack.ts`／`shortcuts.ts`（`Ctrl+K` パレット・`Ctrl+1/2/3`・`Ctrl+G` 続ける・`Ctrl+.` 没入）／`useCardDrop.ts`／`useMultiSelect.ts`
+- `oauthPkce.ts` — OpenRouter OAuth（PKCE）。Tauri は `startOpenRouterOAuth`（Rust の一回きり受け口。`state` 無しなので nonce 入り URL で代替）、Web は `redirectToOpenRouterOAuth` → 戻りで `pendingOAuthRedirect`／`completeOpenRouterOAuthRedirect`（`code_verifier` はそのタブの `sessionStorage`。成否によらず使い捨て）。UI の可否判定は `openRouterOAuthAvailable` 1本／`checkpoint.ts`（gzip）／`dialogs.ts`（`appConfirm`/`appPrompt`/`appChoices`）／`modalStack.ts`／`shortcuts.ts`（`Ctrl+K` パレット・`Ctrl+1/2/3`・`Ctrl+G` 続ける・`Ctrl+.` 没入）／`useCardDrop.ts`／`useMultiSelect.ts`
 
 ### `src/components/`
-- 骨格: `Rail.tsx`（Play/Library/System）／`Sidebar.tsx`（セッション一覧・素材ナビ・D&D 取込）／`ChatPanel.tsx`（会話画面本体。トップバー・本文・コンポーザー・右ドック）／`ContextDock.tsx`（状態/発見/画像/分岐/ジョブ のタブ。`StatusView`/`DiscoveryView`/`GalleryModal.GalleryBody`/`BranchTreeModal.BranchTreeBody`/`ImageJobsPanel.ImageJobsBody`）／`LibraryBar.tsx`／`CommandPalette.tsx`／`FirstRunWizard.tsx`（接続先5経路＋接続テスト）／`SettingsModal.tsx`（`SettingsBody`＝System ページ: 接続先・既定モデル・データ入出力・GC・使用状況）／`ImageProviderSettings.tsx`
+- 骨格: `WebStorageNotice.tsx`（ブラウザ版の保存先の初回案内。P5）／`Rail.tsx`（Play/Library/System）／`Sidebar.tsx`（セッション一覧・素材ナビ・D&D 取込）／`ChatPanel.tsx`（会話画面本体。トップバー・本文・コンポーザー・右ドック）／`ContextDock.tsx`（状態/発見/画像/分岐/ジョブ のタブ。`StatusView`/`DiscoveryView`/`GalleryModal.GalleryBody`/`BranchTreeModal.BranchTreeBody`/`ImageJobsPanel.ImageJobsBody`）／`LibraryBar.tsx`／`CommandPalette.tsx`／`FirstRunWizard.tsx`（接続先5経路＋接続テスト）／`SettingsModal.tsx`（`SettingsBody`＝System ページ: 接続先・既定モデル・データ入出力・GC・使用状況）／`ImageProviderSettings.tsx`
 - 共通部品: `ModalShell`（全モーダル。`dirty` で破棄確認）／`DialogHost`／`MenuPopover`／`ZoomOverlay`（`document.body` へポータル）／`icons.tsx`（自前 SVG。絵文字・文字記号は使わない）／`EntityAvatar`／`NumberInput`／`CsvInput`／`HelpDetails`／`ActivityIndicator`／`IntroTagDefEditor`・`IntroTagFields`
 - Play: `StoryKickoffModal.tsx`（一行から始める＝起案 → そのまま `SessionEditor` へ引き継ぐ）／`StructuredMessage.tsx`（構造化本文の描画。未解決話者に ？バッジ）／`SceneReviewModal.tsx`（確定前は呼び出し単位の進行表示）／`SceneEditor`／`StoryLogModal`（あらすじ一覧）／`StatusPanel`・`DiscoveryPanel`（編集）／`EndingModal`（結末の提案）／`InterludePanel`（幕間）／`CharacterDraftModal`（発見キャラの起案→`CharacterEditor` draft）／`ImageGenModal`／`StoryExportModal`／`ReaderSettings`
 - Library: `library/CharacterLibrary`・`CharacterEditor`・`WorldLibrary`・`WorldEditor`（フルページ。基本／ロア／関係性の次元／開始テンプレート）・`CassetteLibrary`・`AvatarField`・`LibraryMultiSelect`／`CassetteEditor.tsx`／`SessionEditor.tsx`（基本／物語／進行／AIと出力 の4タブ）
@@ -81,7 +81,7 @@ React 18 + TypeScript(strict) + Vite / zustand（`persist`）/ Tauri 2（`plugin
 - **SessionOverlay** — `lore`（発見ロア）／`characterDevelopments`。素材を汚さないための上乗せ。本編には素材＋overlay の実効ビュー（`effectiveWorld`/`effectiveCharacter`）で注入。`promoteOverlay*` で素材へ **move**
 - **Scene** — `title`/`note`（時・場所・居る人物）/`summary`/`timeLabel?`/`foreground?`（突き合わせ済みの一文）/`illustrations?`/`interludes?`/`endedAt?`
 - **Message** — `role`/`characterId?`/`sceneId?`/`content`/`choices?`/`truncated?`/`pending?`/`kind?: 'directive'`（書き手への指示。判定は `isDirective`）
-- **AppState 直下（Session の外に置くもの）** — `branchTrees: Record<sessionId, BranchTree>`／`sessionImageLogs`／`cassettes: Cassette[]`／`ui: UiPrefs`／`defaultModelRef`／`favoriteModels`／`lastImageProviderId`／`lastDraftModel`／`starterSeeded`（既定コンテンツを一度入れたか）。**`branchTrees`・`sessionImageLogs` を Session に入れない**（スナップショットに含まれて再帰肥大・復元で巻き戻る）
+- **AppState 直下（Session の外に置くもの）** — `branchTrees: Record<sessionId, BranchTree>`／`sessionImageLogs`／`cassettes: Cassette[]`／`ui: UiPrefs`／`defaultModelRef`／`favoriteModels`／`lastImageProviderId`／`lastDraftModel`／`starterSeeded`（既定コンテンツを一度入れたか）／`storageNoticeSeen`（ブラウザ版の保存先案内を出したか。P5）。**`branchTrees`・`sessionImageLogs` を Session に入れない**（スナップショットに含まれて再帰肥大・復元で巻き戻る）
 - **非永続（`partialize` 除外）** — `imageJobs`/`imageJobToasts`/`reviewProgress`/`sceneReview`/`endingProposals`/`interludeReflection`/`characterDraftQueue`/`scrollTarget`/`usageLog`/`schemaError`/`modelsByProvider`/各 `is*` フラグ
 - **BranchNode/BranchTree** — `{id,parentId,kind:'action'|'scene',label,timeLabel?,createdAt,imageIds,bytes,ending?,star?,branchName?,anchorMessageId?}`／`{currentId,nodes}`。実体（gzip した Session）は `CheckpointStore`
 - **Cassette** — `{id,title,description,coverImageId?,session(開始状態),createdAt}`。棚に置く配布単位。`playCassette` が新セッションへ複製し `originCassetteId` を刻む
@@ -145,7 +145,8 @@ React 18 + TypeScript(strict) + Vite / zustand（`persist`）/ Tauri 2（`plugin
 - **発見キャラ**: 構造化本文の未解決話者の ？バッジ／レビューの `newCharacters` 承認 → `queueCharacterDrafts`（既知の名前・`NARRATION_NAMES`・待機中同名は弾く）→ `CharacterDraftModal` が起案 → `addDiscoveredCharacter`（ライブラリの通常キャラ＋`characterIds` へ追加）
 - **画像**: `startImageJob` → 直列生成 → `selecting`（自動採用しない）→ `applyImageJobResult`（挿絵は `Scene.illustrations`＋`sessionImageLogs`、アバターは `avatar.imageId`。旧画像は参照を外すだけ）。回収は `gcUnusedImages`（使用中集合＝`collectUsedImageIds`）
 - **書き出し**: `StoryExportModal`（plain/markdown/挿絵つき/共有カード画像・分岐時点指定可）。キャラ・世界・カセットは PNG カード、全データは JSON バンドル（画像同梱可）。取り込みは `importAnyFile` に一本化
-- **初回**: `FirstRunWizard`（かんたん接続=OAuth／無料枠=Gemini／品質重視／緩いモデル／PC で動かす）→ 接続テスト → `defaultModelRef` 設定 → 最後に「サンプルの物語を開く」（`openStarterStory`。「完了」と同義で行き先が1つ増えるだけ）。閉じても `Provider` 未設定なら生成時に案内
+- **初回**: `FirstRunWizard`（かんたん接続=OAuth／無料枠=Gemini／品質重視／緩いモデル／PC で動かす）→ 接続テスト → `defaultModelRef` 設定 → 最後に「サンプルの物語を開く」（`openStarterStory`。「完了」と同義で行き先が1つ増えるだけ）。閉じても `Provider` 未設定なら生成時に案内。**ブラウザ版はウィザードを閉じたあと1回だけ** `WebStorageNotice`（保存先・消える条件・書き出し。`storageNoticeSeen`）
+- **ブラウザ承認（OAuth）**: Tauri はその場で鍵が返る。**Web はページごと OpenRouter へ移動し、`?code=` 付きで戻ってくる**——App が起動時に `pendingOAuthRedirect` を見て交換し、接続先へ鍵を入れてからウィザードを開き直す（開いた画面が `settings` なら通知だけ）。**接続先の判定より先に**この処理を通す（先にウィザードが開くと、承認したのに手入力の画面へ着地する）
 - **一行から始める**: `kickoffStory(premise, signal)` が既定モデルへ**1呼び出し**（`KICKOFF_SCHEMA`）→ `normalizeKickoff` で `World`1・`Character`2〜4人（先頭が中心人物・タグ「起案」）→ `startPresetPatch` でセッションへ流し込んで開く。**生成は始めない**——`StoryKickoffModal` がそのまま `SessionEditor` を開き、人が直して「保存」してから始める。起案できなくても空のセッションは作る（理由は設定画面の冒頭に出す）。中止されたときだけ何も作らない
 - **既定コンテンツ**: 素材が空の初回起動で `seedStarterContent` が `src/starter/` をライブラリへ入れ、開始状態のセッションを1本作って開く。**自動投入は1回きり**（`starterSeeded`）＝消した人へ勝手に戻さない。入れ直しは Library の「サンプルを追加し直す」（素材は固定 id へ上書き＝増えない・セッションだけ1本増える）。Play の空状態は素材が無ければサンプルへ、あれば `SessionEditor` へ送る（物語の導線は1本）
 - **起動時**: hydration 後に `hydrateProviderSecrets`・`cleanupOrphanCheckpoints`・`backfillImageLogs`・`seedStarterContent`（初回のみ）
@@ -203,6 +204,9 @@ React 18 + TypeScript(strict) + Vite / zustand（`persist`）/ Tauri 2（`plugin
 - 画像生成の定型タグ・画風の結合は `generateImage` の1箇所。`promptStyle==='natural'` では結合しない
 - コストは円換算しない（画像も、セッション累計＝`formatSessionUsage` も。提供元の課金単位のまま出す）
 - ComfyUI のワークフローは「プレースホルダがあれば手動置換・無ければ自動検出」の排他
+- **Web 版は静的ホスティングに置く前提**（P5）。`base` は相対（`vite.config.ts`。Tauri ビルドだけ `/`）＝ドメイン直下でもサブパスでも同じ成果物が動く。`index.html`・`manifest.webmanifest`・`sw.js` の中のパスも**すべて相対**で書く（絶対パスを1つ混ぜるとサブパス配信で壊れる）
+- **Service Worker（`public/sw.js`）が触るのは同一オリジンの GET だけ。** API（別オリジン）は素通し。ビルド成果物の一覧とキャッシュ名は `vite.config.ts` の `swAssets` が `dist/sw.js` へ差し込む（`public/` はバンドラを通らないので出力後に書き換える）。**初回訪問は SW が効く前に読み込みが終わる**ので、install で成果物を先に取っておかないとオフラインで白画面になる
+- **狭い画面（720px 以下）の規則は `layout.css` の末尾の1ブロックだけ**（サイドバーを本文の上へ・右ドックを本文に重ねる）。デスクトップ版の最小幅は 960px なので実質 Web 版だけの話。ここを増やしてモバイル最適化を作り込まない
 - **CSP の出所は2つだけ**。Tauri 版＝`src-tauri/tauri.conf.json` の `app.security.csp`（Tauri がヘッダで注入）、Web 版＝`index.html` の `<!--CSP-->` を `vite.config.ts` が meta へ差し替える（Tauri ビルドでは消す＝二重に掛けない）。dev だけ `ws://localhost:5173` と `script-src 'unsafe-inline'`（Vite の HMR と react-refresh のプリアンブル）を足す。`frame-ancestors` は meta では無視されるので入れない。外部から読むリソース（画像・フォント・スクリプト）を足すときは両方を直す
 
 ## 既知の問題（2026-09-13 のレビューで確定。対処は計画書）
@@ -211,6 +215,7 @@ React 18 + TypeScript(strict) + Vite / zustand（`persist`）/ Tauri 2（`plugin
 - カセットは開始状態のセッションを内包したまま軽い状態に残る。長い物語からカセットを作ると、そのぶんが毎 `set()` の直列化に乗る（20セッション×150発言の実測で、カセット無し 0.04ms／150発言ぶんを内包したカセット1本で 0.92ms）
 - 一行からの起案（P4）は**実モデルで未検証**。配線と正規化はローカルのスタブ応答で確認済みだが、実モデルが `storyKickoffSystem` の指示（人数・名前の空白・他キャラ名を書かない）をどこまで守るかは未計測
 - Tauri 側の `data/sessions/`（P2c）と CSP（P2a）は**実機で未検証**（Windows と Rust が要る）。次に `tauri:dev` を回せるときに [`docs/開発環境と配布.md`](docs/開発環境と配布.md) §4 を一巡させる
+- Web 版は**まだどこにも置いていない**（P5 は成果物と手順まで。公開は P7・A1 待ち）。ローカルのサブパス配信で PWA のインストール条件・オフライン復帰・OAuth の往復（認可ページはスタブ）まで確認済みだが、**公開 URL と実モデルでの通しは未実施**
 
 ## ドキュメント
 
