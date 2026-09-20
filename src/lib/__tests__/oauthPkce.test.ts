@@ -96,6 +96,14 @@ describe('承認の開始', () => {
     await redirectToOpenRouterOAuth('settings')
     expect(env.map.get(REDIRECT_KEY)).not.toBe(first)
   })
+
+  it('ウィザードで選んでいたモデルを一緒に預ける（空なら入れない）', async () => {
+    await redirectToOpenRouterOAuth('wizard', ' openai/gpt-5.6-terra ')
+    expect((JSON.parse(env.map.get(REDIRECT_KEY) as string) as { model?: string }).model).toBe('openai/gpt-5.6-terra')
+
+    await redirectToOpenRouterOAuth('wizard', '')
+    expect('model' in (JSON.parse(env.map.get(REDIRECT_KEY) as string) as object)).toBe(false)
+  })
 })
 
 describe('戻りの判定', () => {
@@ -117,6 +125,16 @@ describe('戻りの消費', () => {
   beforeEach(() => {
     env = installBrowserGlobals('?code=the-code')
     env.map.set(REDIRECT_KEY, JSON.stringify({ codeVerifier: 'the-verifier', origin: 'settings' }))
+  })
+
+  it('預けたモデル id もそのまま返す', async () => {
+    env.map.set(REDIRECT_KEY, JSON.stringify({ codeVerifier: 'v', origin: 'wizard', model: 'deepseek/deepseek-v4-pro-0813' }))
+    appFetch.mockResolvedValue({ ok: true, json: async () => ({ key: 'sk-or-v1-xxx' }) })
+    expect(await completeOpenRouterOAuthRedirect()).toEqual({
+      apiKey: 'sk-or-v1-xxx',
+      origin: 'wizard',
+      model: 'deepseek/deepseek-v4-pro-0813',
+    })
   })
 
   it('コードを鍵へ交換し、開始した画面を返す', async () => {

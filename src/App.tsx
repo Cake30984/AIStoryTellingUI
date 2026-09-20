@@ -129,6 +129,7 @@ export default function App() {
   // 判定が要るのはこの1回だけなので、初期値で「戻りかどうか」を確定させておく
   const [oauthResolved, setOauthResolved] = useState(() => !pendingOAuthRedirect())
   const [oauthReturnKey, setOauthReturnKey] = useState<string | undefined>(undefined)
+  const [oauthReturnModel, setOauthReturnModel] = useState<string | undefined>(undefined)
   useEffect(() => {
     if (oauthResolved || !hydrated || !secretsReady) return
     // スキーマを読めなかった時は書き込みが封印されている。受け取っても保存できないので捨てる（R1）
@@ -138,12 +139,13 @@ export default function App() {
     }
     void (async () => {
       try {
-        const { apiKey, origin } = await completeOpenRouterOAuthRedirect()
+        const { apiKey, origin, model } = await completeOpenRouterOAuthRedirect()
         const st = useStore.getState()
         const existing = st.providers.find((p) => p.id === 'openrouter')
         upsertProvider(existing ? { ...existing, apiKey } : defaultOpenRouterProvider(apiKey))
         if (origin === 'wizard') {
           setOauthReturnKey(apiKey)
+          setOauthReturnModel(model)
           setShowFirstRunWizard(true)
         } else {
           setInfoNotice('OpenRouter にブラウザ承認で接続しました。')
@@ -343,6 +345,7 @@ export default function App() {
       {showFirstRunWizard && (
         <FirstRunWizard
           oauthReturnKey={oauthReturnKey}
+          oauthReturnModel={oauthReturnModel}
           onClose={() => {
             setShowFirstRunWizard(false)
             setOauthReturnKey(undefined)

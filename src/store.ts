@@ -149,8 +149,12 @@ import {
   starterWorld,
 } from './starter'
 import { normalizeKickoff } from './lib/kickoff'
+import { RECOMMENDED_MODELS } from './lib/recommendedModels'
 
-export const DEFAULT_MODEL = 'openrouter/auto'
+/** 既定モデル参照が無いときの素のモデル id。推奨リストの先頭（P7 A-1。`openrouter/auto` は使わない） */
+export const DEFAULT_MODEL = RECOMMENDED_MODELS[0].id
+/** 2026-09 までの既定。旧カセットに刻印されたままの下書きを「未設定」と見なす比較にだけ使う */
+const LEGACY_DEFAULT_MODEL = 'openrouter/auto'
 
 export type View = 'sessions' | 'characters' | 'worlds' | 'cassettes' | 'system'
 
@@ -4367,9 +4371,9 @@ export const useStore = create<AppState>()(
           // 同梱セッションを丸ごと複製して新しい id で開始（何度でも最初から遊べる）
           const cloned = JSON.parse(JSON.stringify(cas.session)) as Session
           // カセットはモデル参照を持たない（freshSessionOf が空にする）ため既定モデルで開始する。
-          // 旧カセット（DEFAULT_MODEL が刻印されたままの下書き）も未設定として扱う
+          // 旧カセット（DEFAULT_MODEL / 旧既定が刻印されたままの下書き）も未設定として扱う
           const model =
-            cloned.model && cloned.model !== DEFAULT_MODEL
+            cloned.model && cloned.model !== DEFAULT_MODEL && cloned.model !== LEGACY_DEFAULT_MODEL
               ? cloned.model
               : get().defaultModelRef || DEFAULT_MODEL
           // 出自を刻む（FB9-B。カセット棚の到達エンディング数はこれを集計キーにする）

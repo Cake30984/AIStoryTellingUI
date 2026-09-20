@@ -27,6 +27,8 @@ const REDIRECT_KEY = 'delusia-oauth-pkce'
 interface PendingRedirect {
   codeVerifier: string
   origin: OAuthOrigin
+  /** ウィザードで承認へ出る前に選んでいたモデル id（P7 A-1）。無ければ戻った側が推奨の先頭を使う */
+  model?: string
 }
 
 function randomBytes(n: number): Uint8Array {
@@ -163,7 +165,7 @@ export function openRouterOAuthAvailable(): boolean {
  * OpenRouter の認可ページへ**ページごと移動する**（Web）。戻り先はこのページで、
  * `?code=` 付きで再読み込みされる。呼び出し後この関数は返らない。
  */
-export async function redirectToOpenRouterOAuth(origin: OAuthOrigin): Promise<void> {
+export async function redirectToOpenRouterOAuth(origin: OAuthOrigin, model?: string): Promise<void> {
   const store = sessionStore()
   if (!store) {
     throw new OAuthPkceError(
@@ -172,7 +174,7 @@ export async function redirectToOpenRouterOAuth(origin: OAuthOrigin): Promise<vo
   }
   const codeVerifier = base64UrlEncode(randomBytes(32))
   const codeChallenge = base64UrlEncode(await sha256(codeVerifier))
-  const pending: PendingRedirect = { codeVerifier, origin }
+  const pending: PendingRedirect = { codeVerifier, origin, ...(model?.trim() ? { model: model.trim() } : {}) }
   store.setItem(REDIRECT_KEY, JSON.stringify(pending))
 
   const authorizeUrl =
@@ -201,7 +203,7 @@ function clearCodeFromUrl(): void {
  * 戻ってきた `?code=` を API キーへ交換する（Web）。検証子と URL のコードは**成否によらず使い捨て**
  * ＝リロードで同じコードを再送しない。失敗は `OAuthPkceError`。
  */
-export async function completeOpenRouterOAuthRedirect(): Promise<{ apiKey: string; origin: OAuthOrigin }> {
+export async function completeOpenRouterOAuthRedirect(): Promise<{ apiKey: string; origin: OAuthOrigin; model?: string }> {
   const store = sessionStore()
   const raw = store?.getItem(REDIRECT_KEY) ?? null
   const code = new URLSearchParams(location.search).get('code')
@@ -218,5 +220,9 @@ export async function completeOpenRouterOAuthRedirect(): Promise<{ apiKey: strin
   if (!code) throw new OAuthPkceError('認証コードを受け取れませんでした。もう一度お試しください。')
 
   const apiKey = await exchangeCodeForKey(code, pending.codeVerifier)
-  return { apiKey, origin: pending.origin === 'settings' ? 'settings' : 'wizard' }
+  return {
+    apiKey,
+    origin: pending.origin === 'settings' ? 'settings' : 'wizard',
+    ...(typeof pending.model === 'string' && pending.model ? { model: pending.model } : {}),
+  }
 }

@@ -8,13 +8,15 @@ import {
   startOpenRouterOAuth,
 } from '../lib/oauthPkce'
 import { testProviderConnection, type ConnectionTestResult } from '../lib/openrouter'
+import { RECOMMENDED_MODELS } from '../lib/recommendedModels'
 import type { Provider, ProviderKind } from '../types'
 import ModalShell from './ModalShell'
 import ModelPicker from './ModelPicker'
+import RecommendedModelList from './RecommendedModelList'
 import HelpDetails from './HelpDetails'
 import { Icon } from './icons'
 
-type PathId = 'oauth' | 'free' | 'quality' | 'uncensored' | 'local'
+type PathId = 'openrouter' | 'free' | 'local'
 
 interface PathDef {
   id: PathId
@@ -25,20 +27,23 @@ interface PathDef {
   presetLabel: string
   presetKind: ProviderKind
   presetBaseUrl: string
-  /** 接続テストに使う既定モデル。空文字ならユーザーに選ばせる（Gemini/ローカルは既知のモデル名が無い） */
+  /**
+   * 接続テストに使う既定モデル。空文字ならユーザーに選ばせる（Gemini/ローカルは既知のモデル名が無い）。
+   * OpenRouter は推奨リストの先頭（`RECOMMENDED_MODELS`）。
+   */
   presetModel: string
 }
 
 const PATHS: PathDef[] = [
   {
-    id: 'oauth',
-    label: 'かんたん接続',
-    desc: 'OpenRouter を使います。多くのモデルをまとめて利用できます。',
-    note: 'ブラウザで承認するだけ',
+    id: 'openrouter',
+    label: 'OpenRouter で接続',
+    desc: '1 つのキーで多くのモデルを使えます。推奨モデルを説明と価格つきで示します。',
+    note: '従量課金',
     presetLabel: 'OpenRouter',
     presetKind: 'openrouter',
     presetBaseUrl: 'https://openrouter.ai/api/v1',
-    presetModel: 'openrouter/auto',
+    presetModel: RECOMMENDED_MODELS[0].id,
   },
   {
     id: 'free',
@@ -49,25 +54,6 @@ const PATHS: PathDef[] = [
     presetKind: 'openai',
     presetBaseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
     presetModel: '',
-  },
-  {
-    id: 'quality',
-    label: '品質重視',
-    desc: 'OpenRouter 経由で Claude / GPT など高品質なモデルを使います。',
-    note: '従量課金',
-    presetLabel: 'OpenRouter',
-    presetKind: 'openrouter',
-    presetBaseUrl: 'https://openrouter.ai/api/v1',
-    presetModel: 'openrouter/auto',
-  },
-  {
-    id: 'uncensored',
-    label: '表現の制限が緩いモデル',
-    desc: 'OpenRouter 経由で表現の制限が緩いモデルを使います。あとからモデルを選び直せます。',
-    presetLabel: 'OpenRouter',
-    presetKind: 'openrouter',
-    presetBaseUrl: 'https://openrouter.ai/api/v1',
-    presetModel: 'openrouter/auto',
   },
   {
     id: 'local',
@@ -100,10 +86,13 @@ const inputStyle = {
 export default function FirstRunWizard({
   onClose,
   oauthReturnKey,
+  oauthReturnModel,
 }: {
   onClose: () => void
   /** P5: Web のリダイレクト承認から戻ってきたときの API キー。開いた直後に接続テストへ進む */
   oauthReturnKey?: string
+  /** 承認へ出る前に選んでいたモデル（ページを離れるので `sessionStorage` 経由で戻ってくる）。無ければ推奨の先頭 */
+  oauthReturnModel?: string
 }) {
   const providers = useStore((st) => st.providers)
   const { upsertProvider, setDefaultModelRef, openStarterStory } = storeActions()
@@ -124,7 +113,8 @@ export default function FirstRunWizard({
 
   const path = PATHS.find((p) => p.id === pathId) ?? null
   const provider = providers.find((p) => p.id === providerId) ?? null
-  const isOAuthPath = path?.id === 'oauth' && openRouterOAuthAvailable()
+  const isOpenRouterPath = path?.id === 'openrouter'
+  const isOAuthPath = isOpenRouterPath && openRouterOAuthAvailable()
   // Web は承認のためにページごと離れる。押した後この画面は消えるので文言を変える（P5）
   const oauthLeavesPage = oauthPkceMode() === 'redirect'
   const totalSteps = isOAuthPath ? 2 : 3
@@ -134,8 +124,8 @@ export default function FirstRunWizard({
   const choosePath = (def: PathDef) => {
     let draft: Provider
     if (def.presetKind === 'openrouter') {
-      // OpenRouter 系3経路は同じ接続先を共有する（初期状態の既定 id='openrouter' を再利用し、
-      // 空の重複エントリを作らない）
+      // OpenRouter は初期状態の既定 id='openrouter' を再利用する（空の重複エントリを作らない。
+      // 設定画面の OAuth も同じ id に鍵を入れる）
       const existing = providers.find((p) => p.kind === 'openrouter')
       draft = existing ?? { ...newProvider(), id: 'openrouter', kind: 'openrouter', label: def.presetLabel, baseUrl: def.presetBaseUrl }
     } else {
@@ -159,8 +149,9 @@ export default function FirstRunWizard({
     try {
       if (oauthLeavesPage) {
         // ここで戻らない（ページごと OpenRouter へ移動する）。続きは App が戻りを拾って再開する。
+        // 選んでいたモデルも一緒に預ける（戻った時に選び直しにならないように）。
         // busy を降ろさないのは、移動が始まるまでボタンを「移動中…」のまま押せなくしておくため
-        await redirectToOpenRouterOAuth('wizard')
+        await redirectToOpenRouterOAuth('wizard', model)
         return
       }
       const apiKey = await startOpenRouterOAuth()
@@ -197,10 +188,11 @@ export default function FirstRunWizard({
     const def = PATHS[0]
     const target = providers.find((p) => p.kind === 'openrouter')
     if (!target) return
+    const returnModel = oauthReturnModel?.trim() || def.presetModel
     setPathId(def.id)
     setProviderId(target.id)
-    setModel(def.presetModel)
-    void runTestOn({ ...target, apiKey: oauthReturnKey }, def.presetModel)
+    setModel(returnModel)
+    void runTestOn({ ...target, apiKey: oauthReturnKey }, returnModel)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [oauthReturnKey])
 
@@ -232,7 +224,7 @@ export default function FirstRunWizard({
               >
                 <div style={{ fontWeight: 600, marginBottom: 4 }}>
                   {p.label}
-                  {p.id === 'oauth' && !openRouterOAuthAvailable() && (
+                  {p.id === 'openrouter' && !openRouterOAuthAvailable() && (
                     <span className="badge" style={{ marginLeft: 8, fontWeight: 400 }}>
                       この環境ではキー貼り付けのみ
                     </span>
@@ -241,7 +233,8 @@ export default function FirstRunWizard({
                 <div className="desc" style={{ margin: 0 }}>{p.desc}</div>
                 {p.note && (
                   <div className="desc" style={{ margin: '4px 0 0', color: 'var(--accent)' }}>
-                    {p.note}
+                    {/* OpenRouter の「承認するだけ」は OAuth が使える環境でだけ本当（使えない環境はバッジで補う） */}
+                    {p.id === 'openrouter' && openRouterOAuthAvailable() ? `ブラウザで承認するだけ。${p.note}` : p.note}
                   </div>
                 )}
               </button>
@@ -250,29 +243,59 @@ export default function FirstRunWizard({
         </>
       )}
 
-      {/* ステップ2 (OAuth): ブラウザ承認 */}
+      {/* ステップ2 (OAuth): モデルを選んでブラウザ承認。承認済み（鍵がある）なら再テストだけできる */}
       {path && provider && isOAuthPath && testResult?.ok !== true && (
         <>
-          <p className="desc" style={{ marginTop: 0 }}>
-            {oauthLeavesPage
-              ? 'OpenRouter の承認画面へ移動します。「Allow」を選ぶとこのページに戻り、自動的に接続テストまで行います。'
-              : 'ブラウザで OpenRouter の承認画面が開きます。「Allow」を選ぶとこのアプリに戻り、自動的に接続テストまで行います。'}
-          </p>
-          <button className="btn primary" style={{ width: '100%' }} onClick={() => void runOAuth()} disabled={oauthBusy}>
-            {oauthBusy ? (
-              oauthLeavesPage ? '承認画面へ移動中…' : '承認待ち…（ブラウザで承認してください）'
-            ) : (
-              <>
-                <Icon name="refresh-cw" size={14} /> ブラウザで承認する
-              </>
-            )}
-          </button>
-          {testResult && !testResult.ok && <TestResultBox result={testResult} />}
-          <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-            <button className="btn" onClick={retryFromStep1}>
-              別の接続方法にする
-            </button>
-          </div>
+          <label className="sub-label">モデル</label>
+          <RecommendedModelList provider={provider} value={model} onChange={setModel} onOpenPicker={() => setShowModelPicker(true)} />
+          {testResult && !testResult.ok && <TestResultBox result={testResult} retryHint={isOpenRouterPath} />}
+          {provider.apiKey.trim() ? (
+            <>
+              <button
+                className="btn primary"
+                style={{ width: '100%' }}
+                onClick={() => void runTest()}
+                disabled={testState === 'testing' || oauthBusy || !model.trim()}
+              >
+                {testState === 'testing' ? '接続テスト中…' : '接続テストを実行'}
+              </button>
+              <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                <button className="btn" onClick={() => void runOAuth()} disabled={oauthBusy || testState === 'testing'}>
+                  {oauthBusy ? '承認待ち…' : 'ブラウザで承認し直す'}
+                </button>
+                <button className="btn" onClick={retryFromStep1}>
+                  別の接続方法にする
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="desc">
+                {oauthLeavesPage
+                  ? 'OpenRouter の承認画面へ移動します。「Allow」を選ぶとこのページに戻り、選んだモデルで接続テストまで行います。'
+                  : 'ブラウザで OpenRouter の承認画面が開きます。「Allow」を選ぶとこのアプリに戻り、選んだモデルで接続テストまで行います。'}
+              </p>
+              <button
+                className="btn primary"
+                style={{ width: '100%' }}
+                onClick={() => void runOAuth()}
+                disabled={oauthBusy || !model.trim()}
+              >
+                {oauthBusy ? (
+                  oauthLeavesPage ? '承認画面へ移動中…' : '承認待ち…（ブラウザで承認してください）'
+                ) : (
+                  <>
+                    <Icon name="refresh-cw" size={14} /> ブラウザで承認する
+                  </>
+                )}
+              </button>
+              <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                <button className="btn" onClick={retryFromStep1}>
+                  別の接続方法にする
+                </button>
+              </div>
+            </>
+          )}
         </>
       )}
 
@@ -305,17 +328,21 @@ export default function FirstRunWizard({
               ここは接続テストが失敗する直前の画面なので、リンク先ではなくその場で手順を出す */}
           {oauthLeavesPage && isLocalEndpoint(provider.baseUrl) && <LocalCorsHelp />}
           <label className="sub-label">モデル</label>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-            <input
-              style={{ ...inputStyle, marginBottom: 0, flex: 1 }}
-              placeholder="モデル名（例: gemini-2.5-flash / llama3.1 など）"
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-            />
-            <button className="btn" onClick={() => setShowModelPicker(true)}>
-              一覧から選ぶ
-            </button>
-          </div>
+          {isOpenRouterPath ? (
+            <RecommendedModelList provider={provider} value={model} onChange={setModel} onOpenPicker={() => setShowModelPicker(true)} />
+          ) : (
+            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+              <input
+                style={{ ...inputStyle, marginBottom: 0, flex: 1 }}
+                placeholder="モデル名（例: gemini-2.5-flash / llama3.1 など）"
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+              />
+              <button className="btn" onClick={() => setShowModelPicker(true)}>
+                一覧から選ぶ
+              </button>
+            </div>
+          )}
           <button
             className="btn primary"
             style={{ width: '100%' }}
@@ -335,10 +362,10 @@ export default function FirstRunWizard({
       {/* ステップ3: 接続テスト結果（通常経路の再テストもここに戻ってくる） */}
       {path && provider && !isOAuthPath && testResult !== null && (
         <>
-          <TestResultBox result={testResult} />
+          <TestResultBox result={testResult} retryHint={isOpenRouterPath && !testResult.ok} />
           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
             <button className="btn" onClick={goToModelSelection}>
-              設定を変更してやり直す
+              {isOpenRouterPath && !testResult.ok ? 'モデルを選び直す' : '設定を変更してやり直す'}
             </button>
             <button className="btn" onClick={retryFromStep1}>
               別の接続方法にする
@@ -419,8 +446,12 @@ function LocalCorsHelp() {
   )
 }
 
-/** エラー翻訳の結果表示（R5）。ok/kind に応じて次の一手の文言を出し分ける */
-function TestResultBox({ result }: { result: ConnectionTestResult }) {
+/**
+ * エラー翻訳の結果表示（R5）。ok/kind に応じて次の一手の文言を出し分ける。
+ * `retryHint`（OpenRouter 経路）: 失敗時に「別の推奨モデルを選ぶ」ことを促す。**自動で別のモデルには切り替えない**
+ * （P7 A-1。勝手に変わると拒否や文体の変化の理由を利用者が追えない）
+ */
+function TestResultBox({ result, retryHint = false }: { result: ConnectionTestResult; retryHint?: boolean }) {
   if (result.ok) {
     return (
       <p className="notice" style={{ color: 'var(--ok)' }}>
@@ -431,6 +462,12 @@ function TestResultBox({ result }: { result: ConnectionTestResult }) {
   return (
     <p className="notice" style={{ color: 'var(--danger)' }}>
       {result.message}
+      {retryHint && (result.kind === 'invalid_model' || result.kind === 'content_filter' || result.kind === 'unknown') && (
+        <>
+          <br />
+          別の推奨モデルを選んで、もう一度接続テストを実行してください。
+        </>
+      )}
     </p>
   )
 }

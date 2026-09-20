@@ -145,7 +145,7 @@ React 18 + TypeScript(strict) + Vite / zustand（`persist`）/ Tauri 2（`plugin
 - **発見キャラ**: 構造化本文の未解決話者の ？バッジ／レビューの `newCharacters` 承認 → `queueCharacterDrafts`（既知の名前・`NARRATION_NAMES`・待機中同名は弾く）→ `CharacterDraftModal` が起案 → `addDiscoveredCharacter`（ライブラリの通常キャラ＋`characterIds` へ追加）
 - **画像**: `startImageJob` → 直列生成 → `selecting`（自動採用しない）→ `applyImageJobResult`（挿絵は `Scene.illustrations`＋`sessionImageLogs`、アバターは `avatar.imageId`。旧画像は参照を外すだけ）。回収は `gcUnusedImages`（使用中集合＝`collectUsedImageIds`）
 - **書き出し**: `StoryExportModal`（plain/markdown/挿絵つき/共有カード画像・分岐時点指定可）。キャラ・世界・カセットは PNG カード、全データは JSON バンドル（画像同梱可）。取り込みは `importAnyFile` に一本化
-- **初回**: `FirstRunWizard`（かんたん接続=OAuth／無料枠=Gemini／品質重視／緩いモデル／PC で動かす）→ 接続テスト → `defaultModelRef` 設定 → 最後に「サンプルの物語を開く」（`openStarterStory`。「完了」と同義で行き先が1つ増えるだけ）。閉じても `Provider` 未設定なら生成時に案内。**ブラウザ版はウィザードを閉じたあと1回だけ** `WebStorageNotice`（保存先・消える条件・書き出し。`storageNoticeSeen`）
+- **初回**: `FirstRunWizard`（OpenRouter で接続=OAuth または鍵貼り付け・**推奨モデル4件を `RECOMMENDED_MODELS` から一言説明つきで一覧表示。価格は表示のたびに `/models` から取り、一覧に無い id は出さない。失敗時は選び直し（自動フォールバックしない）**／無料枠=Gemini／PC で動かす）→ 接続テスト → `defaultModelRef` 設定 → 最後に「サンプルの物語を開く」（`openStarterStory`。「完了」と同義で行き先が1つ増えるだけ）。閉じても `Provider` 未設定なら生成時に案内。**ブラウザ版はウィザードを閉じたあと1回だけ** `WebStorageNotice`（保存先・消える条件・書き出し。`storageNoticeSeen`）
 - **ブラウザ承認（OAuth）**: Tauri はその場で鍵が返る。**Web はページごと OpenRouter へ移動し、`?code=` 付きで戻ってくる**——App が起動時に `pendingOAuthRedirect` を見て交換し、接続先へ鍵を入れてからウィザードを開き直す（開いた画面が `settings` なら通知だけ）。**接続先の判定より先に**この処理を通す（先にウィザードが開くと、承認したのに手入力の画面へ着地する）
 - **一行から始める**: `kickoffStory(premise, signal)` が既定モデルへ**1呼び出し**（`KICKOFF_SCHEMA`）→ `normalizeKickoff` で `World`1・`Character`2〜4人（先頭が中心人物・タグ「起案」）→ `startPresetPatch` でセッションへ流し込んで開く。**生成は始めない**——`StoryKickoffModal` がそのまま `SessionEditor` を開き、人が直して「保存」してから始める。起案できなくても空のセッションは作る（理由は設定画面の冒頭に出す）。中止されたときだけ何も作らない
 - **既定コンテンツ**: 素材が空の初回起動で `seedStarterContent` が `src/starter/` をライブラリへ入れ、開始状態のセッションを1本作って開く。**自動投入は1回きり**（`starterSeeded`）＝消した人へ勝手に戻さない。入れ直しは Library の「サンプルを追加し直す」（素材は固定 id へ上書き＝増えない・セッションだけ1本増える）。Play の空状態は素材が無ければサンプルへ、あれば `SessionEditor` へ送る（物語の導線は1本）
@@ -219,7 +219,6 @@ React 18 + TypeScript(strict) + Vite / zustand（`persist`）/ Tauri 2（`plugin
 - Web 版は**まだどこにも置いていない**（P5 は成果物と手順まで。公開は P7・A1 待ち）。ローカルのサブパス配信で PWA のインストール条件・オフライン復帰・OAuth の往復（認可ページはスタブ）まで確認済みだが、**公開 URL と実モデルでの通しは未実施**
 - **撤去済み環境音（`src/assets/ambient/`）が git 履歴に残っている**（FLAC 約127MB＋Opus 約12MB＝リポジトリの97%）。VSQ plus+ の規約と照らして **public 化の前に履歴から削除する**（手順は計画書 P7 段階 B・理由は `決定記録.md` §9）
 - **コミット作者のメールアドレス**が273コミットに入っている。public 化の前に noreply へ置換する（同じく P7 段階 B で音源 purge と1回でやる）
-- 初回ウィザードの既定モデルが3経路とも `openrouter/auto`。「品質重視」「表現の制限が緩いモデル」の説明と挙動が食い違い、README の費用の目安も書けない（対処は計画書 P7 段階 A-1）
 
 ## ドキュメント
 
