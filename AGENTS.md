@@ -25,6 +25,7 @@
 - リモート `https://github.com/Cake30984/AIStoryTellingUI.git`／ブランチ `main`
 - **1つの変更ごとに `git commit` → `git push origin main`。** メッセージは日本語で端的に
 - `samples/`・`_ambient_work/`（撤去済み環境音の作業残骸）・`run.bat` は ignore 済みのローカル作業物。指示が無い限り触らない
+- **public リポジトリ。** 秘密・個人情報（API キー・実在のメールアドレス・Windows のユーザー名を含むパス等）をコミットしない。作業機の `git config user.email` は GitHub の noreply アドレスにする
 
 ## 技術スタックと基本方針
 

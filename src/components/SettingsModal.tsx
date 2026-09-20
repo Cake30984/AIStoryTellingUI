@@ -441,6 +441,15 @@ export function SettingsBody() {
           {/* アプリ名はサイドバーから撤去し、ここに控えめに置く（F3/R19） */}
           <p className="desc" style={{ marginTop: 32, textAlign: 'center' }}>
             デルシア
+            <br />
+            <a
+              href="https://github.com/Cake30984/AIStoryTellingUI/blob/main/docs/利用規約とプライバシー.md"
+              target="_blank"
+              rel="noreferrer"
+              style={{ color: 'var(--accent)' }}
+            >
+              利用規約とプライバシー
+            </a>
           </p>
 
           {showDefaultPicker && (
