@@ -28,8 +28,9 @@ interface PathDef {
   presetKind: ProviderKind
   presetBaseUrl: string
   /**
-   * 接続テストに使う既定モデル。空文字ならユーザーに選ばせる（Gemini/ローカルは既知のモデル名が無い）。
-   * OpenRouter は推奨リストの先頭（`RECOMMENDED_MODELS`）。
+   * 接続テストに使う既定モデル。空文字ならユーザーに選ばせる（ローカルは既知のモデル名が無い）。
+   * OpenRouter は推奨リストの先頭（`RECOMMENDED_MODELS`）。Gemini は無料枠で新規ユーザーに開放されている
+   * Flash 系（2026-09 時点で `gemini-2.5-flash` は新規停止・`gemini-3.6-flash` を実測で確認）。
    */
   presetModel: string
 }
@@ -38,7 +39,7 @@ const PATHS: PathDef[] = [
   {
     id: 'openrouter',
     label: 'OpenRouter で接続',
-    desc: '1 つのキーで多くのモデルを使えます。推奨モデルを説明と価格つきで示します。',
+    desc: '実績のある外部の有料サービスです。アカウントが必要になります。有名な多数のモデルを利用できます。',
     note: '従量課金',
     presetLabel: 'OpenRouter',
     presetKind: 'openrouter',
@@ -53,7 +54,7 @@ const PATHS: PathDef[] = [
     presetLabel: 'Gemini（無料枠）',
     presetKind: 'openai',
     presetBaseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
-    presetModel: '',
+    presetModel: 'gemini-3.6-flash',
   },
   {
     id: 'local',
@@ -211,7 +212,7 @@ export default function FirstRunWizard({
       {pathId === null && (
         <>
           <p className="desc" style={{ marginTop: 0 }}>
-            物語の生成には LLM（AI モデル）への接続が必要です。使い方に近いものを選んでください。
+            物語の生成には LLM（AI モデル）への接続が必要です。いずれかの方法を選択してください。
             あとから設定でいつでも変更できます。
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -334,7 +335,7 @@ export default function FirstRunWizard({
             <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
               <input
                 style={{ ...inputStyle, marginBottom: 0, flex: 1 }}
-                placeholder="モデル名（例: gemini-2.5-flash / llama3.1 など）"
+                placeholder="モデル名（例: gemini-3.6-flash / llama3.1 など）"
                 value={model}
                 onChange={(e) => setModel(e.target.value)}
               />

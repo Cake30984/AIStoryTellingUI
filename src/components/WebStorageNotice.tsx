@@ -9,16 +9,11 @@ import HelpDetails from './HelpDetails'
  * 言いたいことは3つだけ: どこにあるか／どうすると消えるか／どう持ち出すか。
  */
 export default function WebStorageNotice({ onClose }: { onClose: () => void }) {
-  const { markStorageNoticeSeen, setView } = storeActions()
+  const { markStorageNoticeSeen } = storeActions()
 
   const close = () => {
     markStorageNoticeSeen()
     onClose()
-  }
-
-  const goToExport = () => {
-    setView('system')
-    close()
   }
 
   return (
@@ -26,22 +21,17 @@ export default function WebStorageNotice({ onClose }: { onClose: () => void }) {
       title="データの保存先について"
       onClose={close}
       footer={
-        <>
-          <button className="btn" onClick={goToExport}>
-            書き出しの画面を見る
-          </button>
-          <button className="btn primary" onClick={close}>
-            わかりました
-          </button>
-        </>
+        <button className="btn primary" onClick={close}>
+          わかりました
+        </button>
       }
     >
       <p className="desc" style={{ marginTop: 0 }}>
-        物語・キャラクター・世界観・画像は、<strong>すべてこのブラウザの中にだけ保存されます</strong>。
-        当方のサーバーには送られません（生成のリクエストは、あなたが選んだ提供元へ直接送られます）。
+        物語・キャラクター・世界観・画像は、<strong>このブラウザでのみ保存されます</strong>
+        （生成のリクエストは、選択された提供元へ直接送られます）。
       </p>
       <p className="desc">
-        つまり<strong>消える条件があります</strong>。大事な物語は、ときどき書き出して手元に置いてください
+        Cookie とサイトデータを削除するなどの操作によって失われます。時々書き出して手元に置いてください
         （設定 &gt; データ入出力 &gt;「全データをエクスポート」）。
       </p>
       <HelpDetails summary="消える条件・引き継げない条件">
