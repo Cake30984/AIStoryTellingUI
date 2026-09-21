@@ -27,14 +27,9 @@ export const STARTER_CHARACTER_IDS = {
   ghost: 'c_starter_ren',
 } as const
 
-/** 導入文の置換タグ（実名を焼き込まないため。`introBindings` が実キャラへ結ぶ） */
-const TAG_HERO = '主人公'
-const TAG_CAPTAIN = '部長'
-
 /**
  * 導入（開始時に一度だけそのまま掲載される本文）。Web 小説の素の形＝セリフは「」で1発話1行、
  * 話者は地の文で分かるように書く（行頭の `@タグ「…」` ラベルは構造化出力の撤去で廃止）。
- * 置換タグ `@タグ` は地の文の中でだけ使う（開始時に実名へ置き換わる）。
  */
 const OPENING = `　坂をのぼりきると、海が見えた。
 　自転車を押す手のひらが汗ばんでいる。越してきて三週間、この坂にはまだ慣れない。
@@ -145,10 +140,6 @@ export function starterWorld(): World {
       initialDirective: INITIAL_DIRECTIVE,
       newCharacterPolicy: 'allow',
       authorNote: '',
-      introTags: [
-        { id: 'it_starter_hero', tag: TAG_HERO, note: '中心人物' },
-        { id: 'it_starter_captain', tag: TAG_CAPTAIN, note: '天文部の部長' },
-      ],
       startNow: START_NOW,
       initialPending: INITIAL_PENDING,
     },
@@ -252,10 +243,6 @@ export function starterSessionSeed(): Session {
     ],
     worldId: STARTER_WORLD_ID,
     focusCharacterId: STARTER_CHARACTER_IDS.focus,
-    introBindings: [
-      { tag: TAG_HERO, characterId: STARTER_CHARACTER_IDS.focus },
-      { tag: TAG_CAPTAIN, characterId: STARTER_CHARACTER_IDS.captain },
-    ],
     authorNote: '',
     story: {
       premise: PREMISE,
@@ -263,10 +250,6 @@ export function starterSessionSeed(): Session {
       opening: OPENING,
       openingTitle: OPENING_TITLE,
       initialDirective: INITIAL_DIRECTIVE,
-      introTags: [
-        { id: 'it_starter_hero', tag: TAG_HERO, note: '中心人物' },
-        { id: 'it_starter_captain', tag: TAG_CAPTAIN, note: '天文部の部長' },
-      ],
     },
     scenes: [
       {

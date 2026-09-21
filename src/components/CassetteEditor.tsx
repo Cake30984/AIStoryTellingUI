@@ -7,8 +7,6 @@ import { generateDefaultAvatar, normalizeImage } from '../lib/avatarGen'
 import ModalShell from './ModalShell'
 import EntityAvatar from './EntityAvatar'
 import { Icon } from './icons'
-import IntroTagDefEditor from './IntroTagDefEditor'
-import IntroTagFields from './IntroTagFields'
 
 type Tab = 'basic' | 'world' | 'cast' | 'start'
 
@@ -350,17 +348,6 @@ export default function CassetteEditor({ cassette, seedSession, onClose }: Props
                   onChange={(e) => patchSession({ story: { ...s.story, opening: e.target.value } })}
                 />
               </div>
-              <IntroTagDefEditor
-                tags={s.story.introTags ?? []}
-                onChange={(introTags) => patchSession({ story: { ...s.story, introTags } })}
-                opening={s.story.opening}
-                onOpeningChange={(opening) => patchSession({ story: { ...s.story, opening } })}
-              />
-              <IntroTagFields
-                session={s}
-                characters={characters}
-                onChange={(introBindings) => patchSession({ introBindings })}
-              />
               <div className="field">
                 <label>固定メモ（常に踏まえる重要事項・任意）</label>
                 <div className="desc">

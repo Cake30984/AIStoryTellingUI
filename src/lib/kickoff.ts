@@ -134,8 +134,6 @@ export function normalizeKickoff(raw: unknown, premise: string): KickoffDraft | 
     openingSceneNote: text(p.openingSceneNote),
     initialDirective: text(p.initialDirective),
     startNow: text(p.startNow),
-    // 起案では触らない項目。置換タグは実名で書かせている（素材ではなく1本の物語のための起案）ので空
-    introTags: [],
   }
 
   const name = text(w.name) || text(p.openingTitle) || line.slice(0, MAX_NAME_LEN) || '起案した世界'

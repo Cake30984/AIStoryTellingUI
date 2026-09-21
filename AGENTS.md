@@ -52,7 +52,6 @@ React 18 + TypeScript(strict) + Vite / zustand（`persist`）/ Tauri 2（`plugin
 - `names.ts` — `matchCharacterByName`（名前解決の唯一の窓口。レビューの発見キャラが既知の人物を誤検出しないため）／`NARRATION_NAMES`。本文は素のテキスト＝行タグのパーサは無い（構造化出力は 2026-09-21 に撤去。旧データの `@名前「」` は `schema.ts` の `flattenSpeakerTags` が移行で剥がす）
 - `lorebook.ts` — ロアを `alwaysOn`（system）とキーワード一致（深さ3・直近6件窓）に分ける
 - `tokens.ts` — 文字数（ユーザー向け）とトークン（コスト・窓）の単位。閾値 `SCENE_WIND_DOWN_CHARS`(3000)/`SCENE_WRAP_UP_CHARS`(4500)/`RAW_WINDOW_TOKENS`(12000)
-- `casting.ts` — 導入文の置換タグ `@タグ`（`findIntroTagRefs`/`resolveIntroText`/`validateCasting`/`normalize*`）
 - `schema.ts` — 版番（`APP_STATE_VERSION`=2／`SAVE_DATA_VERSION`=5／`CASSETTE_DATA_VERSION`=5）と移行連鎖
 - `version.ts` — `APP_VERSION`（`vite.config.ts` が package.json から注入）・`compareVersions`
 - `io.ts` — `downloadBundle`/`downloadBlob`（内部で `saveBlob`）／`parseBundle`（未知キーは捨てずに持ち回る）
@@ -77,7 +76,7 @@ React 18 + TypeScript(strict) + Vite / zustand（`persist`）/ Tauri 2（`plugin
 - **Provider**（LLM 接続先）／**ImageProvider**（画像接続先）— どちらも persist のみ・**エクスポートに含めない**。Tauri では `apiKey` を資格情報ストアへ分離し `state.json` には空で書く
 - **Character** — 人格・口調・外見・セリフ例・`developments`（成長ログ）・`avatar`・`imagePrompt?`・`tags`。中心人物も同じ型
 - **World** — `description`（常時）＋`entries: LoreEntry[]`（`keys`/`alwaysOn`/`enabled`）＋`relationAspects`（関係性の次元）＋`calendarFormat?`＋`startPreset?: WorldStartPreset`（セッション作成時に**コピー**される推奨初期設定。素材側は不変）
-- **Session** — `characterIds`／`worldId`／**`focusCharacterId`**（中心人物・必須。空文字＝未選択で開始不可）／`authorNote`／`story: StorySetup`（genre/premise/opening/openingTitle/initialDirective/introTags）／`introBindings`／`scenes`／`currentSceneId`／`narrativeStyle`／`reviewSplit?`／`rawWindowFromSceneId?`／`newCharacterPolicy?`／`state`／`overlay`／`endingGoal?`／`ending?`／`archived?`／`originCassetteId?`／`messages`／`usage?`（このセッションの累計。下記）／`model`・`reviewModel`・`choicesModel`／`temperature`／`maxTokens`
+- **Session** — `characterIds`／`worldId`／**`focusCharacterId`**（中心人物・必須。空文字＝未選択で開始不可）／`authorNote`／`story: StorySetup`（genre/premise/opening/openingTitle/initialDirective）／`scenes`／`currentSceneId`／`narrativeStyle`／`reviewSplit?`／`rawWindowFromSceneId?`／`newCharacterPolicy?`／`state`／`overlay`／`endingGoal?`／`ending?`／`archived?`／`originCassetteId?`／`messages`／`usage?`（このセッションの累計。下記）／`model`・`reviewModel`・`choicesModel`／`temperature`／`maxTokens`
 - **SessionState** — `relations: Relation[]`（キャラ→中心人物の有向 prose。`stance`＋次元ごとの `note`）／`moods`／`now`（自由文字列）／`place`／`presentIds`／`situation`／`pending: PendingSlip[]`（`when`/`what`）／`recentDone`
 - **SessionOverlay** — `lore`（発見ロア）／`characterDevelopments`。素材を汚さないための上乗せ。本編には素材＋overlay の実効ビュー（`effectiveWorld`/`effectiveCharacter`）で注入。`promoteOverlay*` で素材へ **move**
 - **Scene** — `title`/`note`（時・場所・居る人物）/`summary`/`timeLabel?`/`foreground?`（突き合わせ済みの一文）/`illustrations?`/`interludes?`/`endedAt?`
@@ -133,7 +132,7 @@ React 18 + TypeScript(strict) + Vite / zustand（`persist`）/ Tauri 2（`plugin
 
 ## 主要な振る舞い
 
-- **開始**: `startStory()`。`focusCharacterId` 未選択・置換タグ未束縛なら拒否。導入文（`story.opening`）があれば AI 生成せずそのまま最初の assistant メッセージに載せる
+- **開始**: `startStory()`。`focusCharacterId` 未選択なら拒否。導入文（`story.opening`）があれば AI 生成せず書かれたまま最初の assistant メッセージに載せる
 - **物語モード（読者モデル）**: 入力はすべて `kind:'directive'`。主操作は「続ける」（`continueStory(pace)`。`PACE_PROMPTS` のマーカーを user に積む）／〈もっと詳しく〉〈先へ飛ばす〉／「やり直す」（`regenerate`＝現在シーン末尾の assistant を捨てて再生成）／〈展開を選ぶ〉（`pickDirection`）。ロールプレイだけ「演じて書く／書き手に指示」のチップが残る
 - **生成** `runCompletion`: `isProviderUsable` 判定 → 空の pending メッセージを積む → `streamChat` → 一時エラーは最大3回リトライ（何も受信していない時のみ）→ `finish_reason==='length'` なら `truncated`（「続きを生成」`continueLast` は同一メッセージへ追記）→ チェックポイント記録
 - **二重送信ガード** `claimStoryTurn(sessionId, parentNodeId)`: 物語を進める操作（`send`/`continueStory`/`continueLast`/`regenerate`/`regenerateFrom`/`startStory`/`beginScene`）は `ensureLineTip` をこれ経由で呼ぶ。`isStreaming` を見てから `await ensureLineTip` が返るまでは生成が始まっていないので、**同期でロックを立ててから待つ**。生成を伴わない操作（`editMessage`/`deleteMessage`/`prepareSceneReview` 等）は `ensureLineTip` を直接呼ぶ

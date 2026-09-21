@@ -137,13 +137,6 @@ import {
   providerUnusableMessage,
 } from './lib/providers'
 import {
-  castingIssueLabel,
-  normalizeIntroBindings,
-  normalizeIntroTags,
-  resolveIntroText,
-  validateCasting,
-} from './lib/casting'
-import {
   STARTER_WORLD_ID,
   starterCharacters,
   starterSessionSeed,
@@ -394,7 +387,6 @@ export function hasStartPreset(world: World | undefined | null): boolean {
     p.authorNote?.trim() ||
     p.openingSceneNote?.trim() ||
     !!p.newCharacterPolicy ||
-    (p.introTags?.length ?? 0) > 0 ||
     !!p.startNow?.trim() ||
     (p.initialPending?.length ?? 0) > 0
   )
@@ -433,10 +425,6 @@ export function startPresetPatch(d: Session, world: World, overwrite: boolean): 
     }
     if (p.initialDirective?.trim() && (overwrite || !(d.story.initialDirective ?? '').trim())) {
       story.initialDirective = p.initialDirective
-      changed = true
-    }
-    if ((p.introTags?.length ?? 0) > 0 && (overwrite || !(d.story.introTags?.length ?? 0))) {
-      story.introTags = p.introTags
       changed = true
     }
     if (changed) patch.story = story
@@ -588,7 +576,6 @@ function newSession(mode: SessionMode): Session {
     characterIds: [],
     worldId: null,
     focusCharacterId: '',
-    introBindings: [],
     authorNote: '',
     story: { premise: '', genre: '', opening: '', openingTitle: '', initialDirective: '' },
     scenes: [scene],
@@ -877,8 +864,8 @@ interface AppState {
   scrollTarget: { sessionId: string; messageId: string; seq: number } | null
   /**
    * キャラ化待ちの発見キャラ（FB7-E。非永続・partialize から除外）。
-   * 検出の2経路——構造化本文の未解決話者の ？バッジ／レビューの `newCharacters` 承認——を
-   * ここへ集約し、ChatPanel が先頭1件ぶんだけ `CharacterDraftModal` を開く（＝採用フローは1本）。
+   * レビューの `newCharacters` 承認がここへ積み、ChatPanel が先頭1件ぶんだけ `CharacterDraftModal` を
+   * 開く（採用フローは1本。本文の ？バッジ経路は構造化出力とともに 2026-09-21 に撤去）。
    */
   characterDraftQueue: { sessionId: string; name: string; note?: string }[]
   /** LLM 呼び出しの実測記録（PC0。docs/詳細設計_プロンプト構造とキャッシュ.md §2）。非永続・partialize から除外 */
@@ -2867,7 +2854,7 @@ export const useStore = create<AppState>()(
               .join('\n')
             // 未解禁キャラ（CG1）はレビューにも渡さない。`refs.characters` が唯一の「解禁済み」の
             // 供給元なので、そこから可視の id を作って以降の一覧（関係性・数）を絞る。
-            // **発見キャラの重複判定（newCharacters / ？バッジ）はゲート前の `s.characterIds` を
+            // **発見キャラの重複判定（newCharacters）はゲート前の `s.characterIds` を
             // 見続ける**＝未解禁キャラの名前が本文に出ても新キャラとして二重に起案されない（設計 §1.4）
             const visibleIds = new Set(refs.characters.map((c) => c.id))
             // 中心人物は自分自身への関係を持たない（F3）
@@ -3953,35 +3940,12 @@ export const useStore = create<AppState>()(
           const scene = currentScene(s)
           if (!scene) return
 
-          // 導入文は開始前にだけ置換タグを実名へ解決する。未解決のまま履歴・チェックポイント・イベント消化を
-          // 作らないことで、@タグが few-shot としてモデルへ流れるのを防ぐ（A-1）。
-          const openingTemplate = s.mode === 'story' ? s.story.opening.trim() : ''
-          let opening = openingTemplate
+          // 導入文は書かれたまま掲載する（置換タグは 2026-09-21 に撤去。実名は導入文に直接書く）
+          const opening = s.mode === 'story' ? s.story.opening.trim() : ''
           // 中心人物は必須（F3。物語モードでは視点、ロールプレイでは演じる人物）
           if (!s.characterIds.includes(s.focusCharacterId)) {
             set({ error: '中心人物が未選択です。セッション設定の「基本」で登場キャラから1人選んでください。' })
             return
-          }
-          // roleplay では導入文を掲載しないため、残存する導入文中の @タグ で開始をブロックしない
-          const validationSession =
-            s.mode === 'story' ? s : { ...s, story: { ...s.story, opening: '' } }
-          const issues = validateCasting(validationSession, get().characters)
-          if (issues.length > 0) {
-            // 配役モーダルは F1-d で撤去したので、置換タグの不足はエラー文言で伝える
-            set({ error: issues.map(castingIssueLabel).join(' ') })
-            return
-          }
-          if (openingTemplate) {
-            const resolved = resolveIntroText(openingTemplate, {
-              tags: s.story.introTags,
-              bindings: s.introBindings,
-              characters: get().characters.filter((c) => s.characterIds.includes(c.id)),
-            })
-            if (resolved.issues.length > 0) {
-              set({ error: `開始できません。${resolved.issues.map(castingIssueLabel).join(' ')}` })
-              return
-            }
-            opening = resolved.content
           }
 
           // 復元後の開始やり直し（開始時点へ戻った場合等）の上書きガード（FB6-C）＋二重送信ガード（P2a）
@@ -4223,14 +4187,9 @@ export const useStore = create<AppState>()(
           const incomingWorlds = (bundle.worlds ?? []).map((w: any) => ({
             ...w,
             relationAspects: Array.isArray(w.relationAspects) ? w.relationAspects : [],
-            ...(w.startPreset
-              ? { startPreset: { ...w.startPreset, introTags: normalizeIntroTags(w.startPreset.introTags) } }
-              : {}),
           }))
           const incomingSessions = (bundle.sessions ?? []).map((sess: any) => ({
             ...sess,
-            introBindings: normalizeIntroBindings(sess.introBindings),
-            story: { ...sess.story, introTags: normalizeIntroTags(sess.story?.introTags) },
             overlay:
               sess.overlay && Array.isArray(sess.overlay.lore) && Array.isArray(sess.overlay.characterDevelopments)
                 ? sess.overlay
@@ -4249,19 +4208,7 @@ export const useStore = create<AppState>()(
               sessions: mergeById(st.sessions, incomingSessions),
               cassettes: mergeById(
                 st.cassettes,
-                (bundle.cassettes ?? []).map((cassette: any) => ({
-                  ...cassette,
-                  session: cassette.session
-                    ? {
-                        ...cassette.session,
-                        introBindings: normalizeIntroBindings(cassette.session.introBindings),
-                        story: {
-                          ...cassette.session.story,
-                          introTags: normalizeIntroTags(cassette.session.story?.introTags),
-                        },
-                      }
-                    : cassette.session,
-                })),
+                bundle.cassettes ?? [],
               ),
               // 画像の永続記録はセッション単位で record id の dedupe マージ（FB6-A）
               sessionImageLogs: mergeImageLogs(st.sessionImageLogs, bundle.sessionImageLogs ?? {}),
@@ -4622,12 +4569,6 @@ export const useStore = create<AppState>()(
         const merged = { ...current, ...p, ui: normalizeUiPrefs({ ...current.ui, ...(p.ui ?? {}) }) }
         // 撤去した種別（civitai / modelslab。計画 P1）の画像接続先は読み捨てる。persist のみの項目なので版番は上げない
         merged.imageProviders = (merged.imageProviders ?? []).filter((ip) => IMAGE_PROVIDER_KINDS.includes(ip.kind))
-        merged.worlds = (merged.worlds ?? []).map((world) => ({
-          ...world,
-          ...(world.startPreset
-            ? { startPreset: { ...world.startPreset, introTags: normalizeIntroTags(world.startPreset.introTags) } }
-            : {}),
-        }))
         merged.sessions = (merged.sessions ?? []).map((s) => {
           // story に opening/openingTitle を後方補完（旧セッションは undefined のため .trim() が例外になる。FB2-B）。
           // s.story を先に spread してから既定値を当てることで initialDirective 等の他フィールドを落とさない。
@@ -4637,7 +4578,6 @@ export const useStore = create<AppState>()(
             genre: s.story?.genre ?? '',
             opening: s.story?.opening ?? '',
             openingTitle: s.story?.openingTitle ?? '',
-            introTags: normalizeIntroTags(s.story?.introTags),
           }
           const messages = s.messages.some((m) => m.pending)
             ? s.messages
@@ -4647,21 +4587,9 @@ export const useStore = create<AppState>()(
           return {
             ...s,
             story,
-            introBindings: normalizeIntroBindings(s.introBindings),
             messages,
           }
         })
-        merged.cassettes = (merged.cassettes ?? []).map((cassette) => ({
-          ...cassette,
-          session: {
-            ...cassette.session,
-            introBindings: normalizeIntroBindings(cassette.session?.introBindings),
-            story: {
-              ...cassette.session?.story,
-              introTags: normalizeIntroTags(cassette.session?.story?.introTags),
-            },
-          },
-        }))
         // 壊れて読めなかったセッションは1件ずつ飛ばしてある（全体は封印しない）。
         // 黙って減らさず件数だけ伝える（保存先のファイル／行は消していない＝後から救出できる）
         if (sessionsSkippedOnLoad > 0) {

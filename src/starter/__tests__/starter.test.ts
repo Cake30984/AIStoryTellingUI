@@ -6,7 +6,6 @@ import {
   starterSessionSeed,
   starterWorld,
 } from '..'
-import { resolveIntroText, validateCasting } from '../../lib/casting'
 
 /**
  * 既定コンテンツ（P3）の配線を守る網。**文章の良し悪しは見ない**——
@@ -32,18 +31,11 @@ describe('starter content', () => {
     expect(characters[0].id).toBe(session.focusCharacterId)
   })
 
-  it('導入文に置換タグの残りや行頭の話者ラベルが無く、開始ブロッカーも無い', () => {
-    expect(validateCasting(session, characters)).toEqual([])
-    const { content, issues } = resolveIntroText(session.story.opening, {
-      tags: session.story.introTags,
-      bindings: session.introBindings,
-      characters,
-    })
-    expect(issues).toEqual([])
-    // 解決後にタグ名が残らない
-    for (const tag of session.story.introTags ?? []) expect(content).not.toContain(`@${tag.tag}`)
+  it('導入文は書かれたまま掲載される形＝@ の残りや行頭の話者ラベルが無い', () => {
+    // 置換タグは撤去済み（2026-09-21）。@ が残っていればそのまま画面に出てしまう
+    expect(session.story.opening).not.toContain('@')
     // Web 小説の素の形＝行頭に @名前 のラベルを持つ行が無い（構造化出力の撤去）
-    expect(content.split('\n').some((line) => line.startsWith('@'))).toBe(false)
+    expect(session.story.opening.split('\n').some((line: string) => line.startsWith('@'))).toBe(false)
     // 名前に空白を含まない＝本文中の呼び名からの前方一致解決が効く形であること
     for (const c of characters) expect(c.name).not.toMatch(/\s/)
   })
@@ -70,7 +62,6 @@ describe('starter content', () => {
     expect(session.story.opening).toBe(p.opening)
     expect(session.story.openingTitle).toBe(p.openingTitle)
     expect(session.story.initialDirective).toBe(p.initialDirective)
-    expect(session.story.introTags).toEqual(p.introTags)
     expect(session.authorNote).toBe(p.authorNote)
     expect(session.newCharacterPolicy).toBe(p.newCharacterPolicy)
     expect(session.scenes[0].note).toBe(p.openingSceneNote)

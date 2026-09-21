@@ -91,8 +91,11 @@ describe('migrateSubSchemas', () => {
     expect(state.sessions[0].state.relations).toEqual([{ fromId: 'c1', toId: 'c2', stance: '残る' }])
   })
 
-  it('v2→v3: introBindings は kind を落とし、不正な行を読み捨てる', () => {
-    expect(state.sessions[0].introBindings).toEqual([{ tag: '主人公', characterId: 'c1' }])
+  it('v2→v3 → v6→v7: introBindings は一度正規化されたのち、置換タグの撤去で落ちる', () => {
+    const viaV3 = migrateSession(legacySave().sessions[0], 1)
+    expect(viaV3.ok).toBe(true)
+    expect('introBindings' in state.sessions[0]).toBe(false)
+    expect('introTags' in state.sessions[0].story).toBe(false)
   })
 
   it('v3→v4: choiceMode を落とす', () => {
@@ -103,12 +106,16 @@ describe('migrateSubSchemas', () => {
     expect(state.sessions[0].scenes.every((sc: any) => !('ambientPins' in sc))).toBe(true)
   })
 
-  it('v5→v6: structuredOutput を落とし、本文の @名前「」を剥がす（置換タグの @ は残す）', () => {
+  it('v5→v6: structuredOutput を落とし、本文の @名前「」を剥がす', () => {
     const sess = state.sessions[0]
     expect('structuredOutput' in sess).toBe(false)
     expect(sess.messages[0].content).toBe('　風が吹く。\n美咲「やった」\n「遠くで鐘が鳴る」')
     expect(sess.messages[1].content).toBe('続けて')
-    expect(sess.story.opening).toBe('　鐘が鳴った。\n@主人公「……ただいま」\n店主「いらっしゃい」')
+  })
+
+  it('v6→v7: 置換タグを落とし、v5→v6 で残した導入文の @タグ「」行も剥がす', () => {
+    const sess = state.sessions[0]
+    expect(sess.story.opening).toBe('　鐘が鳴った。\n主人公「……ただいま」\n店主「いらっしゃい」')
   })
 
   it('カセットが内包するセッションにも同じ変換が掛かる', () => {
@@ -120,7 +127,9 @@ describe('migrateSubSchemas', () => {
     expect(cas.state.relations).toEqual([])
     expect('ambientPins' in cas.scenes[0]).toBe(false)
     expect('structuredOutput' in cas).toBe(false)
-    expect(cas.story.opening).toBe('@主人公「ただいま」\nマスター「いらっしゃい」')
+    expect('introBindings' in cas).toBe(false)
+    expect('introTags' in cas.story).toBe(false)
+    expect(cas.story.opening).toBe('主人公「ただいま」\nマスター「いらっしゃい」')
   })
 
   it('版番が無いデータは現行版とみなして素通しする', () => {
@@ -203,7 +212,7 @@ describe('migrateAppState', () => {
     expect(out.ok && out.state).toEqual({ providers: [] })
   })
 
-  it('v3→v4 で世界観の開始設定の導入文から @名前「」を剥がす（置換タグは残す・opening が無い世界は触らない）', () => {
+  it('v3→v4 以降で世界観の開始設定の導入文から @名前「」を剥がす（opening が無い世界は触らない）', () => {
     const out = migrateAppState(
       {
         worlds: [
@@ -213,8 +222,17 @@ describe('migrateAppState', () => {
       },
       3,
     )
-    expect(out.ok && out.state.worlds[0].startPreset.opening).toBe('@主人公「ただいま」\n店主「いらっしゃい」')
+    expect(out.ok && out.state.worlds[0].startPreset.opening).toBe('主人公「ただいま」\n店主「いらっしゃい」')
+    expect(out.ok && out.state.worlds[0].startPreset.introTags).toBeUndefined()
     expect(out.ok && out.state.worlds[1]).toEqual({ id: 'w2' })
+  })
+
+  it('v4→v5 で世界観の開始設定から introTags を落とし、残っていた @タグ「」行を剥がす', () => {
+    const out = migrateAppState(
+      { worlds: [{ id: 'w1', startPreset: { opening: '@主人公「ただいま」', introTags: [{ tag: '主人公' }] } }] },
+      4,
+    )
+    expect(out.ok && out.state.worlds[0].startPreset).toEqual({ opening: '主人公「ただいま」' })
   })
 
   it('現行版なら何もしない', () => {

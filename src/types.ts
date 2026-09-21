@@ -98,11 +98,6 @@ export interface WorldStartPreset {
    * 「誰がこの場に居るか」を作者が指定できる唯一の場所。空なら何もしない。
    */
   openingSceneNote?: string
-  /**
-   * 置換タグの定義（→ session.story.introTags。A-1）。世界選択時に他項目と同じ規則でセッションへ
-   * コピーされ、以後はセッション側で自由に追加・削除できる（素材＝再利用資源のため実名は焼き込まない）。
-   */
-  introTags?: IntroTag[]
   /** 開始時点の現在時刻（→ session.state.now。例: 「4月7日 朝」）。空なら物語側で決めさせる */
   startNow?: string
   /**
@@ -110,24 +105,6 @@ export interface WorldStartPreset {
    * 廃止した特別イベントの受け皿。条件も id 参照も持たない。
    */
   initialPending?: { when: string; what: string }[]
-}
-
-/**
- * 導入文専用の置換タグ（A-1）。世界の開始テンプレートで定義する自由な @文字列
- * （実名を含まない・世界選択時にセッションへコピーされる）。実キャラへの対応付けは
- * セッション/カセット側の `Session.introBindings` が持つ（参照のみ・実名を焼き込まない）。
- */
-export interface IntroTag {
-  id: string
-  /** @ を除いた表示名（例: ヒロイン）。導入文では @ヒロイン のように書く */
-  tag: string
-  note?: string
-}
-
-/** 置換タグ（`IntroTag.tag`）→ 実キャラ の対応付け（セッション/カセット固有。A-1） */
-export interface IntroTagBinding {
-  tag: string
-  characterId: string
 }
 
 /** 世界観（ロアブック＋ゲームシステム定義） */
@@ -292,12 +269,6 @@ export interface StorySetup {
    * 2シーン目以降は自動的に効かなくなる。
    */
   initialDirective?: string
-  /**
-   * 置換タグの定義（A-1）。世界選択時に `WorldStartPreset.introTags` からコピーされ、
-   * 以後はセッション側で自由に編集できる（World 素材は不変）。導入文の `@タグ` はここで定義した
-   * タグのみを対象に解決する。
-   */
-  introTags?: IntroTag[]
 }
 
 /**
@@ -425,8 +396,6 @@ export interface Session {
    * **「中心なし」は許さない**が、作りかけのセッションでは空文字＝未選択（開始時に検証で弾く）。
    */
   focusCharacterId: string
-  /** 置換タグ（`story.introTags`）→ 実キャラ の対応付け（A-1） */
-  introBindings?: IntroTagBinding[]
   /** 常に記憶させたい固定メモ（作者ノート） */
   authorNote: string
   story: StorySetup

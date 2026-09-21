@@ -4,7 +4,6 @@ import { getImage, putImage } from './imageStore'
 import { generateDefaultAvatar, normalizeImage } from './avatarGen'
 import { downloadBlob } from './io'
 import { appConfirm } from './dialogs'
-import { normalizeIntroBindings, normalizeIntroTags } from './casting'
 import { APP_VERSION, compareVersions, majorOf } from './version'
 
 function uid(): string {
@@ -309,8 +308,6 @@ function normalizeStartPreset(raw: any): WorldStartPreset | undefined {
   if (raw.newCharacterPolicy === 'allow' || raw.newCharacterPolicy === 'avoid') {
     p.newCharacterPolicy = raw.newCharacterPolicy
   }
-  const introTags = normalizeIntroTags(raw.introTags)
-  if (introTags.length > 0) p.introTags = introTags
   if (typeof raw.startNow === 'string' && raw.startNow.trim()) p.startNow = raw.startNow.trim()
   if (Array.isArray(raw.initialPending)) {
     const pending = raw.initialPending
@@ -474,11 +471,7 @@ function normalizeSessionBundle(raw: any): SessionCardBundle | null {
       ? { ...norm, avatar: { ...norm.avatar, imageId: src.avatar.imageId } }
       : norm
   return {
-    session: {
-      ...raw.session,
-      introBindings: normalizeIntroBindings(raw.session?.introBindings),
-      story: { ...raw.session.story, introTags: normalizeIntroTags(raw.session?.story?.introTags) },
-    },
+    session: raw.session,
     characters: Array.isArray(raw.characters)
       ? raw.characters.map((c: any) => keepImageId(normalizeCharacterFromExtension(c), c))
       : [],

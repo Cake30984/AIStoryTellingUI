@@ -8,8 +8,6 @@ import EntityAvatar from './EntityAvatar'
 import CassetteEditor from './CassetteEditor'
 import ModalShell from './ModalShell'
 import { Icon, type IconName } from './icons'
-import IntroTagDefEditor from './IntroTagDefEditor'
-import IntroTagFields from './IntroTagFields'
 
 type PickerTarget = 'main' | 'review' | 'choices'
 /** FB8-E3: 「基本＝誰と・どの世界で」「物語＝どう始まるか」「進行」「AIと出力」の4タブ */
@@ -72,7 +70,6 @@ export default function SessionEditor({ session, notice, onClose }: Props) {
       characterIds: d.characterIds,
       worldId: d.worldId,
       focusCharacterId: d.focusCharacterId,
-      introBindings: d.introBindings,
       authorNote: d.authorNote,
       story: d.story,
       scenes,
@@ -341,17 +338,6 @@ export default function SessionEditor({ session, notice, onClose }: Props) {
                       onChange={(e) => patch({ story: { ...d.story, opening: e.target.value } })}
                     />
                   </div>
-                  <IntroTagDefEditor
-                    tags={d.story.introTags ?? []}
-                    onChange={(introTags) => patch({ story: { ...d.story, introTags } })}
-                    opening={d.story.opening}
-                    onOpeningChange={(opening) => patch({ story: { ...d.story, opening } })}
-                  />
-                  <IntroTagFields
-                    session={d}
-                    characters={characters}
-                    onChange={(introBindings) => patch({ introBindings })}
-                  />
 
               <div className="field">
                 <label>固定メモ（常に踏まえる重要事項・任意）</label>

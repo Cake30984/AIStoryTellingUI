@@ -79,12 +79,9 @@ AI にカセットを作らせたいときは、この 1 ファイルをその�
 | `cassettes[0].session.worldId` | `worlds[0].id` | ✔ |
 | `cassettes[0].session.characterIds[]` | 各 `characters[].id` | ✔ |
 | `cassettes[0].session.focusCharacterId` | **`session.characterIds[]` に含まれる id** | ✔ |
-| `cassettes[0].session.introBindings[].tag` | `startPreset.introTags[].tag` | 導入文で置換タグ `@タグ` を使うなら ✔ |
-| `cassettes[0].session.introBindings[].characterId` | `characters[].id` | 同上 ✔ |
-| 導入文 `opening` の置換タグ `@タグ` | `startPreset.introTags[].tag` | 導入文で置換タグを使うなら ✔ |
 | `cassettes[0].session.currentSceneId` | `session.scenes[0].id` | ✔ |
 
-また `cassettes[0].session.story.premise`/`genre`/`opening`/`openingTitle`/`initialDirective`/`introTags` は
+また `cassettes[0].session.story.premise`/`genre`/`opening`/`openingTitle`/`initialDirective` は
 `worlds[0].startPreset` の同名項目と **同じ内容にそろえる**（開始テンプレートと実セッションを一致させる）。
 `session.authorNote` は `startPreset.authorNote`、`session.newCharacterPolicy` は `startPreset.newCharacterPolicy`、
 `session.scenes[0].note` は `startPreset.openingSceneNote`、
@@ -206,10 +203,6 @@ AI にカセットを作らせたいときは、この 1 ファイルをその�
   "initialDirective": "最初のシーンだけ効く、書き手 AI への非表示の方向づけ（例: まず店の掃除をさせ、マスターの寡黙さを描く）",
   "newCharacterPolicy": "allow",     // "allow"=未定義の人物を AI が新しく出してよい / "avoid"=出さない（モブは無名で描かせる）
   "authorNote": "常に記憶させたい固定メモ（任意・空文字可）",
-  "introTags": [                     // 導入文の @タグ 定義（§5.1）
-    { "id": "it_master", "tag": "マスター", "note": "店の主" },
-    { "id": "it_hero",   "tag": "主人公",   "note": "中心人物" }
-  ],
   "startNow": "4月7日 朝",           // 開始時点の日時（任意・自由な書き方。空なら物語側で決めさせる）
   "initialPending": [                // 最初から控えている予定（§5.2）
     { "when": "三日後の夜", "what": "店の最後の営業日を迎える" }
@@ -230,18 +223,14 @@ AI にカセットを作らせたいときは、この 1 ファイルをその�
 ```
 　カウベルが鳴った。
 「……いらっしゃい」
-　十年ぶりの、@マスターの声だった。
+　十年ぶりの、雨宮の声だった。
 「ただいま、って言っていいのかな」
 ```
 
-- **人物の名前を地の文に書くときは、実キャラ名ではなく置換タグ `@タグ` を使う。** 開始時に実名へ
-  置き換わる（`@` は消える）。実名を焼き込むと素材を別の物語へ使い回せなくなる。
-  タグ→実キャラの対応付けは `session.introBindings`（§6）が持つ。
-  **`@` の後に書けるのは `introTags[].tag` で定義したタグだけ。定義していないタグは置換されずそのまま画面に出る。**
-- **束縛先のキャラには必ず `name` を入れる。** 名前が空のキャラへ対応付けても解決できず、
-  「対応先が未解決です」で開始できなくなる。
-- タグの直後に助詞や句読点が続いてよい（`@マスターの声` → `〈実名〉の声`）。タグ名が別のタグ名の
-  先頭部分になる組み合わせ（`主人公` と `主人公の友人`）は長い方から解決されるので混ざらない。
+- **人物の名前は `characters[].name` の表記をそのまま書く**（別名・敬称を付けない）。導入文は書かれた
+  とおりに掲載されるだけで、置き換えの仕組みは無い（旧「置換タグ `@タグ`」は 2026-09-21 に撤去。
+  `@` を書くとそのまま画面に出る）。
+- 中心人物の名前は書かなくてよい場面が多い（中心人物の視点で始めるので「わたし」「自分」で足りる）。
 
 ### 5.2 initialPending（最初から控えている予定）
 
@@ -282,10 +271,6 @@ AI にカセットを作らせたいときは、この 1 ファイルをその�
     "characterIds": ["c_hero", "c_a", "c_b"],   // 参加キャラ（characters の id）。中心人物も含める
     "worldId": "w_xxx",
     "focusCharacterId": "c_hero",   // ★必須。characterIds のどれか1つ（§6.1）
-    "introBindings": [                        // 導入文の @タグ → 実キャラ
-      { "tag": "マスター", "characterId": "c_a" },
-      { "tag": "主人公",   "characterId": "c_hero" }
-    ],
     "authorNote": "",            // startPreset.authorNote と同じ
     "newCharacterPolicy": "allow",  // startPreset.newCharacterPolicy と同じ
     "story": {
@@ -293,8 +278,7 @@ AI にカセットを作らせたいときは、この 1 ファイルをその�
       "genre": "…",             // startPreset.genre と同じ
       "opening": "…",           // startPreset.opening と同じ
       "openingTitle": "…",      // startPreset.openingTitle と同じ
-      "initialDirective": "…",  // startPreset.initialDirective と同じ
-      "introTags": [ /* startPreset.introTags と同じ */ ]
+      "initialDirective": "…"   // startPreset.initialDirective と同じ
     },
     "scenes": [
       { "id": "scene_1", "title": "シーン 1",
@@ -358,7 +342,7 @@ AI にカセットを作らせたいときは、この 1 ファイルをその�
 | `stats` / `counters` / `achievements`（数と実績） | `relationAspects`（言葉の次元）だけを使う |
 | `endings` / `epilogueGuidance`（結末定義） | 何も書かない。終わり方はプレイ中に AI が提案する |
 | `scheduledEvents`（特別イベント） | `startPreset.initialPending`（§5.2） |
-| `roles` / `roleAssignments`（配役） | 何も書かない。`introTags`＋`introBindings` だけが残る |
+| `roles` / `roleAssignments`（配役）・`introTags` / `introBindings`（置換タグ） | 何も書かない。導入文には実名を直接書く（§5.1） |
 | `timeline`（固定タイムライン） | `startPreset.startNow`（自由な文字列） |
 | `personas` / `personaId` | `characters` ＋ `session.focusCharacterId` |
 | `characterGates`（キャラの登場条件） | 何も書かない。`newCharacterPolicy` で AI に任せる |
@@ -387,13 +371,12 @@ AI にカセットを作らせたいときは、この 1 ファイルをその�
 - [ ] `session.worldId` / `characterIds` が実在する素材 id を指している
 - [ ] **`session.focusCharacterId` が `characterIds` に含まれている**（空でない）
 - [ ] `session` が開始状態（messages 空・1 シーン・relations/moods/overlay 空・ending 無し）
-- [ ] `story` と `startPreset` の内容が一致（premise/genre/opening/openingTitle/initialDirective/introTags/authorNote/newCharacterPolicy、`scenes[0].note` = `openingSceneNote`、`state.now` = `startNow`、`state.pending` = `initialPending`）
+- [ ] `story` と `startPreset` の内容が一致（premise/genre/opening/openingTitle/initialDirective/authorNote/newCharacterPolicy、`scenes[0].note` = `openingSceneNote`、`state.now` = `startNow`、`state.pending` = `initialPending`）
 
 撤去済み項目を書いていないか:
 - [ ] `condition` / `stats` / `counters` / `achievements` / `endings` を**書いていない**
 - [ ] `scheduledEvents` / `roles` / `roleAssignments` / `characterGates` を**書いていない**
-- [ ] `timeline` / `personas` / `personaId` / `choiceMode` を**書いていない**
-- [ ] `introBindings` の各要素が `{ "tag": ..., "characterId": ... }` の形（`kind` を書いていない）
+- [ ] `timeline` / `personas` / `personaId` / `choiceMode` / `introTags` / `introBindings` を**書いていない**
 
 中身:
 - [ ] `relationAspects` が 2〜4 個ある
@@ -403,7 +386,7 @@ AI にカセットを作らせたいときは、この 1 ファイルをその�
 - [ ] キャラの `persona`/`speechStyle`/`appearance` に他キャラの名前が入っていない
 
 導入文:
-- [ ] `opening` の置換タグ `@タグ` がすべて `startPreset.introTags[].tag` にあり、`session.introBindings` で対応付けられている
+- [ ] `opening` に `@` を書いていない（置換の仕組みは無く、そのまま画面に出る）
 - [ ] `opening` の行頭に `@名前「…」`・`名前：` のような話者ラベルを書いていない（セリフは「」だけ）
 - [ ] `openingSceneNote` に時・場所・その場に居る人物が書かれている
 
@@ -426,7 +409,7 @@ AI にカセットを作らせたいときは、この 1 ファイルをその�
     "startPreset": {
       "genre": "", "premise": "", "opening": "", "openingTitle": "",
       "openingSceneNote": "", "initialDirective": "", "newCharacterPolicy": "allow", "authorNote": "",
-      "introTags": [], "startNow": "", "initialPending": []
+      "startNow": "", "initialPending": []
     },
     "createdAt": 0, "updatedAt": 0
   }],
@@ -441,8 +424,8 @@ AI にカセットを作らせたいときは、この 1 ファイルをその�
     "session": {
       "id": "s1", "title": "", "mode": "story", "model": "", "reviewModel": "", "choicesModel": "",
       "characterIds": ["c1"], "worldId": "w1", "focusCharacterId": "c1",
-      "introBindings": [], "authorNote": "", "newCharacterPolicy": "allow",
-      "story": { "premise": "", "genre": "", "opening": "", "openingTitle": "", "initialDirective": "", "introTags": [] },
+      "authorNote": "", "newCharacterPolicy": "allow",
+      "story": { "premise": "", "genre": "", "opening": "", "openingTitle": "", "initialDirective": "" },
       "scenes": [{ "id": "sc1", "title": "シーン 1", "note": "", "summary": "", "createdAt": 0 }],
       "currentSceneId": "sc1",
       "narrativeStyle": "novel",

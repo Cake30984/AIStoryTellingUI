@@ -17,7 +17,7 @@
  * 永続化の入れ物の版番（zustand persist の `version`）。
  * v1 が初版・v2 でペルソナ素材を撤去（F3）・**v3 でセッション本体を入れ物から出した**（計画 P2c）。
  */
-export const APP_STATE_VERSION = 4
+export const APP_STATE_VERSION = 5
 
 /**
  * セーブデータ（sessions / branchTrees / チェックポイント）の版番。
@@ -28,10 +28,10 @@ export const APP_STATE_VERSION = 4
  * 1本書く（＝**もう「あとから足せない」状態ではない**。migrate が入ったのでスキーマの
  * 判断を先送りしても復旧可能になった）。
  */
-export const SAVE_DATA_VERSION = 6
+export const SAVE_DATA_VERSION = 7
 
 /** カセット定義（cassettes）の版番 */
-export const CASSETTE_DATA_VERSION = 6
+export const CASSETTE_DATA_VERSION = 7
 
 /** 永続ペイロードに同梱する版番。app 側は zustand が別に持つのでここには入れない */
 export interface SchemaVersions {
@@ -101,6 +101,26 @@ const appStateMigrations: Record<number, Migration> = {
             if (!preset || typeof preset.opening !== 'string') return w
             const keep = new Set<string>((preset.introTags ?? []).map((t: any) => t?.tag).filter(Boolean))
             return { ...w, startPreset: { ...preset, opening: flattenSpeakerTags(preset.opening, keep) } }
+          }),
+        }
+      : s,
+  /**
+   * v4 → v5（置換タグの撤去。2026-09-21）。`World.startPreset.introTags` を落とし（型ごと廃止）、
+   * v3→v4 で残しておいた `@タグ「…」` 行のラベルも剥がす（もう解決する仕組みが無い）。
+   * 地の文に残る `@タグ` はそのまま（画面に文字として出るだけ。公開前なので後方互換は取らない）。
+   */
+  4: (s) =>
+    Array.isArray(s?.worlds)
+      ? {
+          ...s,
+          worlds: s.worlds.map((w: any) => {
+            const preset = w?.startPreset
+            if (!preset) return w
+            const { introTags: _introTags, ...rest } = preset
+            return {
+              ...w,
+              startPreset: typeof rest.opening === 'string' ? { ...rest, opening: flattenSpeakerTags(rest.opening) } : rest,
+            }
           }),
         }
       : s,
@@ -218,6 +238,23 @@ const sessionMigrations: Record<number, Migration> = {
    * 原文で載る**ので、ラベルを残すとモデルが旧形式を真似し続ける＝表示だけでなく本文を直す。
    */
   5: dropStructuredOutput,
+  /**
+   * v6 → v7（置換タグの撤去。2026-09-21）。`introBindings`・`story.introTags` を落とし（型ごと廃止）、
+   * v5→v6 で残しておいた導入文の `@タグ「…」` 行のラベルも剥がす。
+   */
+  6: dropIntroTags,
+}
+
+/** セッションから置換タグの定義と対応付けを落とす（save v6→7 / cassette v6→7 で共用） */
+function dropIntroTags(sess: any): any {
+  const { introBindings: _introBindings, ...rest } = sess ?? {}
+  const story = sess?.story
+  if (!story) return rest
+  const { introTags: _introTags, ...storyRest } = story
+  return {
+    ...rest,
+    story: typeof storyRest.opening === 'string' ? { ...storyRest, opening: flattenSpeakerTags(storyRest.opening) } : storyRest,
+  }
 }
 
 /** セッション1件ぶんの段を、永続ペイロード全体を受け取る段へ持ち上げる */
@@ -313,6 +350,11 @@ const cassetteMigrations: Record<number, Migration> = {
   5: (s) => ({
     ...s,
     cassettes: (s?.cassettes ?? []).map((cas: any) => ({ ...cas, session: dropStructuredOutput(cas?.session) })),
+  }),
+  /** v6 → v7（置換タグの撤去）。カセットが内包するセッションからも `introBindings`・`story.introTags` を落とす */
+  6: (s) => ({
+    ...s,
+    cassettes: (s?.cassettes ?? []).map((cas: any) => ({ ...cas, session: dropIntroTags(cas?.session) })),
   }),
 }
 

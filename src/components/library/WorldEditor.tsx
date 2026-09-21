@@ -7,7 +7,6 @@ import type {
   WorldStartPreset,
 } from '../../types'
 import CsvInput from '../CsvInput'
-import IntroTagDefEditor from '../IntroTagDefEditor'
 import { exportWorldCard } from '../../lib/cards'
 import { appConfirm } from '../../lib/dialogs'
 import { Icon } from '../icons'
@@ -233,12 +232,6 @@ export default function WorldEditor({ world, onClose }: Props) {
                   onChange={(e) => patchPreset({ opening: e.target.value })}
                 />
               </div>
-              <IntroTagDefEditor
-                tags={sp.introTags ?? []}
-                onChange={(introTags) => patchPreset({ introTags })}
-                opening={sp.opening ?? ''}
-                onOpeningChange={(opening) => patchPreset({ opening })}
-              />
               <div className="field">
                 <label>最初の方向付け（非表示・任意）</label>
                 <div className="desc">
