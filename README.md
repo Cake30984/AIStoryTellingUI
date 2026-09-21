@@ -8,6 +8,10 @@
 
 名前の **Delusia** は delusion（妄想）＋ -ia（土地名の接尾辞）の造語で、「妄想が物語になる場所」の意です。
 
+| 物語を読む画面 | キャラクター・世界観を作る画面 |
+|---|---|
+| ![物語を読む画面](docs/images/story-screen.webp) | ![キャラクター一覧画面](docs/images/characters-screen.webp) |
+
 ## 始め方
 
 ### 1. ブラウザで試す（インストール不要）
