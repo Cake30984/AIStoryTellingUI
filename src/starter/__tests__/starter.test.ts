@@ -32,7 +32,7 @@ describe('starter content', () => {
     expect(characters[0].id).toBe(session.focusCharacterId)
   })
 
-  it('導入文の @タグ がすべて実名へ解決できる（開始ブロッカーが無い）', () => {
+  it('導入文に置換タグの残りや行頭の話者ラベルが無く、開始ブロッカーも無い', () => {
     expect(validateCasting(session, characters)).toEqual([])
     const { content, issues } = resolveIntroText(session.story.opening, {
       tags: session.story.introTags,
@@ -40,10 +40,11 @@ describe('starter content', () => {
       characters,
     })
     expect(issues).toEqual([])
-    // 解決後にタグ名が残らない（＝すべて実名へ置き換わっている）
+    // 解決後にタグ名が残らない
     for (const tag of session.story.introTags ?? []) expect(content).not.toContain(`@${tag.tag}`)
-    expect(content).toContain(`@${characters[0].name}`)
-    // 話者名が「名前に空白を含まない」＝ @名前 の前方一致解決が効く形であること
+    // Web 小説の素の形＝行頭に @名前 のラベルを持つ行が無い（構造化出力の撤去）
+    expect(content.split('\n').some((line) => line.startsWith('@'))).toBe(false)
+    // 名前に空白を含まない＝本文中の呼び名からの前方一致解決が効く形であること
     for (const c of characters) expect(c.name).not.toMatch(/\s/)
   })
 

@@ -390,17 +390,6 @@ export default function CassetteEditor({ cassette, seedSession, onClose }: Props
                   </button>
                 </div>
               </div>
-              <div className="field">
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={s.structuredOutput ?? false}
-                    onChange={(e) => patchSession({ structuredOutput: e.target.checked })}
-                    style={{ width: 'auto', marginRight: 8 }}
-                  />
-                  構造化出力（@名前「セリフ」の行形式で書かせる）
-                </label>
-              </div>
               {/* 新しい登場人物の登場ポリシー（発見キャラ・FB7-E） */}
               <div className="field">
                 <label>新しい登場人物</label>

@@ -4,11 +4,9 @@
 // ①そのまま貼れる（プレーン/Markdown）②画像1枚で完結する形も出せる③挿絵つき
 // ④出典が自然に入る（宣伝臭くならない範囲で）⑤プレイヤーの選択が見える。
 //
-// 新しい保存経路は作らない（既存の io.ts の saveBlob に乗せる）。構造化出力のマークアップは
-// structured.ts の plainTextOf で剥がす（話者名は地の文に馴染む形へ）。
+// 新しい保存経路は作らない（既存の io.ts の saveBlob に乗せる）。
 
 import type { Character, Message, Scene, SceneIllustration, Session } from '../types'
-import { plainTextOf } from './structured'
 import { isDirective, isMarkerContent } from './prompts'
 import { blobToBase64, getImage } from './imageStore'
 import { checkpointStore } from './platform'
@@ -31,9 +29,8 @@ function effectiveSceneId(m: Message, session: Session): string | undefined {
   return m.sceneId ?? (session.currentSceneId ?? undefined)
 }
 
-/** assistant メッセージの話者名（構造化出力 ON なら plainTextOf 側で行内に出るためここでは付けない） */
-function assistantSpeakerOf(m: Message, session: Session, characters: Character[]): string | undefined {
-  if (session.structuredOutput) return undefined
+/** assistant メッセージの話者名（会話劇でメッセージに話者が付いているときだけ。小説形式は `characterId` を持たない） */
+function assistantSpeakerOf(m: Message, characters: Character[]): string | undefined {
   if (!m.characterId) return undefined
   return characters.find((c) => c.id === m.characterId)?.name
 }
@@ -102,13 +99,13 @@ export function sessionToText(
     }
     sceneSeen = true
 
-    const text = plainTextOf(m.content).trim()
+    const text = m.content.trim()
     if (!text) continue
 
     if (m.role === 'user') {
       lines.push(chosenLine(focusName, text))
     } else {
-      const speaker = assistantSpeakerOf(m, session, characters)
+      const speaker = assistantSpeakerOf(m, characters)
       if (speaker) lines.push(speakerLine(speaker))
       lines.push(text)
     }
@@ -165,12 +162,12 @@ export async function sessionToIllustratedMarkdown(
     }
     sceneSeen = true
 
-    const text = plainTextOf(m.content).trim()
+    const text = m.content.trim()
     if (text) {
       if (m.role === 'user') {
         lines.push(`> **${focusName}：** ${text}`)
       } else {
-        const speaker = assistantSpeakerOf(m, session, characters)
+        const speaker = assistantSpeakerOf(m, characters)
         if (speaker) lines.push(`**${speaker}**`)
         lines.push(text)
       }
@@ -211,7 +208,7 @@ export async function loadSessionSnapshot(sessionId: string, nodeId: string): Pr
 export function exportableScenes(session: Session): Scene[] {
   const idsWithContent = new Set(
     session.messages
-      .filter((m) => !isBackstage(m) && plainTextOf(m.content).trim())
+      .filter((m) => !isBackstage(m) && m.content.trim())
       .map((m) => effectiveSceneId(m, session))
       .filter((id): id is string => !!id),
   )
@@ -224,7 +221,7 @@ export function excerptOf(session: Session, sceneId: string | undefined, maxChar
   const targetSceneId = sceneId ?? scenesWithContent[scenesWithContent.length - 1]?.id
   const texts = session.messages
     .filter((m) => m.role === 'assistant' && effectiveSceneId(m, session) === targetSceneId)
-    .map((m) => plainTextOf(m.content).trim())
+    .map((m) => m.content.trim())
     .filter(Boolean)
   const joined = texts.join('\n')
   if (joined.length <= maxChars) return joined

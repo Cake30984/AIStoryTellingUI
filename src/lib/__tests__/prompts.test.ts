@@ -74,6 +74,13 @@ describe('buildSystemPrompt', () => {
     expect(avoid).toContain('新たに登場させないでください')
     expect(buildSystemPrompt(session, refs)).toContain('新しく登場させて構いません')
   })
+
+  it('本文の形式は Web 小説の素の形（行頭の話者ラベルを求めない・@名前 の形式指示を含まない）', () => {
+    const out = buildSystemPrompt(session, refs)
+    expect(out).toContain('行頭に話者名や記号のラベルを付けないでください')
+    expect(out).not.toContain('@名前')
+    expect(out).not.toContain('セリフの出力形式')
+  })
 })
 
 describe('buildMessages', () => {
@@ -89,7 +96,7 @@ describe('buildMessages', () => {
     const out = buildMessages(session, refs)
     expect(out[0].role).toBe('system')
     expect(out[out.length - 1].role).toBe('user')
-    expect(out[out.length - 1].content).toContain('（地の文とセリフを織り交ぜて')
+    expect(out[out.length - 1].content).toContain('（地の文とセリフ「」を織り交ぜて')
   })
 
   it('深さ3の1通は末尾から3件手前に入る', () => {

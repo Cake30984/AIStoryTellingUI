@@ -1,9 +1,9 @@
 // 裏方 LLM 呼び出し（レビュー・選択肢・次シーン候補・画像プロンプト起案）の出力を
 // JSON スキーマで固定するための定義（docs/詳細設計_プロンプト構造とキャッシュ.md §10）。
 //
-// **用語**: 本プロジェクトの「構造化出力」（`Session.structuredOutput`）は本文を
-// `@名前「セリフ」` の行形式で書かせる機能で、別物。こちらは API の `response_format`
-// （json_schema）で**裏方の JSON を機械的に強制する**もの＝本書では「JSON スキーマ」と呼ぶ。
+// **用語**: こちらは API の `response_format`（json_schema）で**裏方の JSON を機械的に
+// 強制する**もの＝本書では「JSON スキーマ」と呼ぶ（本文を行形式で書かせる旧「構造化出力」は
+// 2026-09-21 に撤去した。名前が同じだけで別物だった）。
 
 import type { OpenRouterModel, PromptStyle } from '../types'
 import type { ReviewPart } from './prompts'

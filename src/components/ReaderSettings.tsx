@@ -101,9 +101,9 @@ export default function ReaderSettings() {
               {...UI_LIMITS.contentWidth}
               onChange={(contentWidth) => setUiPrefs({ contentWidth })}
             />
-            {/* 文字サイズを上げるとアイコンだけ相対的に小さく見えるので、同じ場所で揃えられるようにする */}
+            {/* 会話劇の吹き出しアイコン。文字サイズを上げるとアイコンだけ相対的に小さく見えるので、同じ場所で揃えられるようにする */}
             <RsField
-              label="話者アイコン"
+              label="話者アイコン（会話劇）"
               value={ui.speakerIconSize}
               {...UI_LIMITS.speakerIconSize}
               onChange={(speakerIconSize) => setUiPrefs({ speakerIconSize })}

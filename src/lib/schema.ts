@@ -17,7 +17,7 @@
  * 永続化の入れ物の版番（zustand persist の `version`）。
  * v1 が初版・v2 でペルソナ素材を撤去（F3）・**v3 でセッション本体を入れ物から出した**（計画 P2c）。
  */
-export const APP_STATE_VERSION = 3
+export const APP_STATE_VERSION = 4
 
 /**
  * セーブデータ（sessions / branchTrees / チェックポイント）の版番。
@@ -28,10 +28,10 @@ export const APP_STATE_VERSION = 3
  * 1本書く（＝**もう「あとから足せない」状態ではない**。migrate が入ったのでスキーマの
  * 判断を先送りしても復旧可能になった）。
  */
-export const SAVE_DATA_VERSION = 5
+export const SAVE_DATA_VERSION = 6
 
 /** カセット定義（cassettes）の版番 */
-export const CASSETTE_DATA_VERSION = 5
+export const CASSETTE_DATA_VERSION = 6
 
 /** 永続ペイロードに同梱する版番。app 側は zustand が別に持つのでここには入れない */
 export interface SchemaVersions {
@@ -87,6 +87,61 @@ const appStateMigrations: Record<number, Migration> = {
    * ——旧本体から見れば未来の版番になり、書き込みを封印して案内画面へ回る（R1）。
    */
   2: (s) => s,
+  /**
+   * v3 → v4（構造化出力の撤去。2026-09-21）。素材の世界観が持つ開始設定の導入文
+   * （`World.startPreset.opening`）から `@名前「セリフ」` の話者ラベルを剥がす。
+   * 置換タグ（`startPreset.introTags`）の `@タグ` は開始時に実名へ解決する構文なので残す。
+   */
+  3: (s) =>
+    Array.isArray(s?.worlds)
+      ? {
+          ...s,
+          worlds: s.worlds.map((w: any) => {
+            const preset = w?.startPreset
+            if (!preset || typeof preset.opening !== 'string') return w
+            const keep = new Set<string>((preset.introTags ?? []).map((t: any) => t?.tag).filter(Boolean))
+            return { ...w, startPreset: { ...preset, opening: flattenSpeakerTags(preset.opening, keep) } }
+          }),
+        }
+      : s,
+}
+
+/**
+ * `@名前「セリフ」` の話者ラベルを自然な表記へ落とす（構造化出力の撤去。save v5→6 / cassette v5→6 / app v3→4 で共用）。
+ * `@美咲「やった」` → `美咲「やった」`／`@地の文「…」` → `「…」`（ラベルを剥がした本文）。
+ * `@` で始まらない行・`「` を含まない行・`keepTags` にある名前（置換タグ）の行はそのまま。
+ * 旧レンダラ（`structured.ts`・削除済み）の `plainTextOf` と同じ規則。
+ */
+export function flattenSpeakerTags(text: string, keepTags: ReadonlySet<string> = new Set()): string {
+  const narrationNames = new Set(['地の文', '地文', 'ナレーション', 'ナレーター', 'narration', 'narrator'])
+  return text
+    .split('\n')
+    .map((line) => {
+      if (!line.startsWith('@')) return line
+      const m = line.slice(1).match(/^([^「]{1,24})「/)
+      if (!m) return line
+      const name = m[1].trim()
+      if (!name || keepTags.has(name)) return line
+      const rest = line.slice(m[0].length) // 「 から後ろ（先頭の @ ぶんと 「 ぶんが相殺）
+      return narrationNames.has(name.toLowerCase()) ? rest : `${name}${rest}`
+    })
+    .join('\n')
+}
+
+/** セッションから `structuredOutput` を落とし、本文と導入文の話者ラベルを剥がす（save v5→6 / cassette v5→6 で共用） */
+function dropStructuredOutput(sess: any): any {
+  const { structuredOutput: _structuredOutput, ...rest } = sess ?? {}
+  const keep = new Set<string>((sess?.story?.introTags ?? []).map((t: any) => t?.tag).filter(Boolean))
+  const story = sess?.story
+  return {
+    ...rest,
+    ...(story && typeof story.opening === 'string'
+      ? { story: { ...story, opening: flattenSpeakerTags(story.opening, keep) } }
+      : {}),
+    messages: (sess?.messages ?? []).map((m: any) =>
+      typeof m?.content === 'string' ? { ...m, content: flattenSpeakerTags(m.content) } : m,
+    ),
+  }
 }
 
 /**
@@ -157,6 +212,12 @@ const sessionMigrations: Record<number, Migration> = {
     ...sess,
     scenes: (sess?.scenes ?? []).map(dropAmbientPins),
   }),
+  /**
+   * v5 → v6（構造化出力の撤去。2026-09-21）。`structuredOutput` を落とし（型ごと廃止）、
+   * 既に書かれた本文の `@名前「セリフ」` を `名前「セリフ」` に剥がす。**履歴は次のプロンプトに
+   * 原文で載る**ので、ラベルを残すとモデルが旧形式を真似し続ける＝表示だけでなく本文を直す。
+   */
+  5: dropStructuredOutput,
 }
 
 /** セッション1件ぶんの段を、永続ペイロード全体を受け取る段へ持ち上げる */
@@ -247,6 +308,11 @@ const cassetteMigrations: Record<number, Migration> = {
         scenes: (cas?.session?.scenes ?? []).map(dropAmbientPins),
       },
     })),
+  }),
+  /** v5 → v6（構造化出力の撤去）。カセットが内包する開始状態のセッションにも同じ変換を掛ける */
+  5: (s) => ({
+    ...s,
+    cassettes: (s?.cassettes ?? []).map((cas: any) => ({ ...cas, session: dropStructuredOutput(cas?.session) })),
   }),
 }
 

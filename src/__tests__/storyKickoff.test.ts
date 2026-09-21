@@ -62,7 +62,7 @@ const KICKOFF = {
     startPreset: {
       genre: '現代・港町／静かな再生',
       premise: '灯台が来年で消える町に、一人の若者が戻ってくる。',
-      opening: '　港は凪いでいた。\n@灯野 みなと「……ただいま」',
+      opening: '　港は凪いでいた。\n「……ただいま」',
       openingTitle: '十二月、最後の灯',
       openingSceneNote: '十二月三日の夕方。港の突堤。',
       initialDirective: '再会の理由をまだ明かさない。',
@@ -116,9 +116,9 @@ describe('kickoffStory', () => {
     expect(s.story.genre).toBe('現代・港町／静かな再生')
     expect(s.story.openingTitle).toBe('十二月、最後の灯')
     expect(s.story.initialDirective).toBe('再会の理由をまだ明かさない。')
-    // 名前の空白は落ち、導入の話者ラベルも揃っている（P3 の罠）
+    // 名前の空白は落ちる（P3 の罠）。導入文はそのまま
     expect(st.characters.find((c) => c.id === s.focusCharacterId)!.name).toBe('灯野みなと')
-    expect(s.story.opening).toContain('@灯野みなと「')
+    expect(s.story.opening).toBe('港は凪いでいた。\n「……ただいま」')
     expect(s.state.now).toBe('12月3日 夕方')
     // 生成はまだ始めない（開いた設定画面で人が直してから始める）
     expect(s.messages).toEqual([])

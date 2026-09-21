@@ -79,9 +79,9 @@ AI にカセットを作らせたいときは、この 1 ファイルをその�
 | `cassettes[0].session.worldId` | `worlds[0].id` | ✔ |
 | `cassettes[0].session.characterIds[]` | 各 `characters[].id` | ✔ |
 | `cassettes[0].session.focusCharacterId` | **`session.characterIds[]` に含まれる id** | ✔ |
-| `cassettes[0].session.introBindings[].tag` | `startPreset.introTags[].tag` | 導入文で `@タグ` を使うなら ✔ |
+| `cassettes[0].session.introBindings[].tag` | `startPreset.introTags[].tag` | 導入文で置換タグ `@タグ` を使うなら ✔ |
 | `cassettes[0].session.introBindings[].characterId` | `characters[].id` | 同上 ✔ |
-| 導入文 `opening` の `@タグ` | `startPreset.introTags[].tag` | 導入文で `@` を使うなら ✔ |
+| 導入文 `opening` の置換タグ `@タグ` | `startPreset.introTags[].tag` | 導入文で置換タグを使うなら ✔ |
 | `cassettes[0].session.currentSceneId` | `session.scenes[0].id` | ✔ |
 
 また `cassettes[0].session.story.premise`/`genre`/`opening`/`openingTitle`/`initialDirective`/`introTags` は
@@ -222,25 +222,26 @@ AI にカセットを作らせたいときは、この 1 ファイルをその�
 
 ### 5.1 導入文（`opening`）の書式
 
-- 地の文＋セリフで、映画の冒頭のように世界へ引き込む。
-- **セリフは `@タグ「セリフ」` の1行1発話**で書く。行頭に `@`、続けて名前、そのまま鉤括弧。
+- 地の文＋セリフで、映画の冒頭のように世界へ引き込む。**Web 小説の素の形**で書く。
+- **セリフは鉤括弧「」で1発話1行。** 誰のセリフかは前後の地の文（動作・表情・呼びかけ）で分かるようにする。
+  行頭に `@名前「…」` や `名前：` のような話者ラベルは**付けない**（画面にそのまま文字として出る。
+  旧「構造化出力」は 2026-09-21 に撤去した）。
 
 ```
 　カウベルが鳴った。
-@マスター「……いらっしゃい」
-　十年ぶりの声だった。
-@主人公「ただいま、って言っていいのかな」
+「……いらっしゃい」
+　十年ぶりの、@マスターの声だった。
+「ただいま、って言っていいのかな」
 ```
 
-- **`(感情)` のような括弧は付けない。** `@マスター(neutral)「…」` と書くと、`マスター(neutral)` という
-  名前の人物として扱われ、正体不明の話者になってしまう。
-- **`@` の後に書けるのは `introTags[].tag` で定義したタグだけ。**
-  実キャラ名を直接書かない（素材は再利用されるので、実名を焼き込むと使い回せなくなる）。
+- **人物の名前を地の文に書くときは、実キャラ名ではなく置換タグ `@タグ` を使う。** 開始時に実名へ
+  置き換わる（`@` は消える）。実名を焼き込むと素材を別の物語へ使い回せなくなる。
   タグ→実キャラの対応付けは `session.introBindings`（§6）が持つ。
-  **定義していないタグを `@` で書くと、置換されずそのまま画面に出る。**
+  **`@` の後に書けるのは `introTags[].tag` で定義したタグだけ。定義していないタグは置換されずそのまま画面に出る。**
 - **束縛先のキャラには必ず `name` を入れる。** 名前が空のキャラへ対応付けても解決できず、
   「対応先が未解決です」で開始できなくなる。
-- 地の文には `@` を付けない。地の文の中に鉤括弧のセリフを埋め込まない（発話は必ず `@` 行に分ける）。
+- タグの直後に助詞や句読点が続いてよい（`@マスターの声` → `〈実名〉の声`）。タグ名が別のタグ名の
+  先頭部分になる組み合わせ（`主人公` と `主人公の友人`）は長い方から解決されるので混ざらない。
 
 ### 5.2 initialPending（最初から控えている予定）
 
@@ -312,7 +313,6 @@ AI にカセットを作らせたいときは、この 1 ファイルをその�
       "recentDone": []
     },
     "overlay": { "lore": [], "characterDevelopments": [] },
-    "structuredOutput": true,    // 導入文で @タグ「…」 を使うなら true
     "messages": [],              // 必ず空（未プレイ）
     "temperature": 0.9,
     "maxTokens": 32768,
@@ -403,8 +403,8 @@ AI にカセットを作らせたいときは、この 1 ファイルをその�
 - [ ] キャラの `persona`/`speechStyle`/`appearance` に他キャラの名前が入っていない
 
 導入文:
-- [ ] `opening` の `@タグ` がすべて `startPreset.introTags[].tag` にあり、`session.introBindings` で対応付けられている
-- [ ] `opening` の `@` 行に `(感情)` のような括弧を書いていない
+- [ ] `opening` の置換タグ `@タグ` がすべて `startPreset.introTags[].tag` にあり、`session.introBindings` で対応付けられている
+- [ ] `opening` の行頭に `@名前「…」`・`名前：` のような話者ラベルを書いていない（セリフは「」だけ）
 - [ ] `openingSceneNote` に時・場所・その場に居る人物が書かれている
 
 その他:
@@ -448,7 +448,7 @@ AI にカセットを作らせたいときは、この 1 ファイルをその�
       "narrativeStyle": "novel",
       "state": { "relations": [], "moods": [], "now": "", "place": "", "presentIds": [], "situation": "", "pending": [], "recentDone": [] },
       "overlay": { "lore": [], "characterDevelopments": [] },
-      "structuredOutput": true, "messages": [], "temperature": 0.9, "maxTokens": 32768,
+      "messages": [], "temperature": 0.9, "maxTokens": 32768,
       "createdAt": 0, "updatedAt": 0
     }
   }]

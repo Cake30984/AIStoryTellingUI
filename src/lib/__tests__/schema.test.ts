@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   APP_STATE_VERSION,
   CASSETTE_DATA_VERSION,
+  flattenSpeakerTags,
   migrateAppState,
   migrateSession,
   migrateSubSchemas,
@@ -24,6 +25,15 @@ function legacySave() {
           { tag: '壊れ', characterId: null },
         ],
         timeline: { day: 3 },
+        structuredOutput: true,
+        story: {
+          opening: '　鐘が鳴った。\n@主人公「……ただいま」\n@店主「いらっしゃい」',
+          introTags: [{ tag: '主人公' }],
+        },
+        messages: [
+          { id: 'm1', role: 'assistant', content: '　風が吹く。\n@美咲「やった」\n@地の文「遠くで鐘が鳴る」' },
+          { id: 'm2', role: 'user', content: '続けて' },
+        ],
         scenes: [
           { id: 's1', ambientPins: [{ id: 'p1' }] },
           { id: 's2', timeLabel: '8月31日 朝', ambientPins: [] },
@@ -44,6 +54,8 @@ function legacySave() {
           personaId: 'hero',
           choiceMode: 'always',
           timeline: { day: 1 },
+          structuredOutput: true,
+          story: { opening: '@主人公「ただいま」\n@マスター「いらっしゃい」', introTags: [{ tag: '主人公' }] },
           introBindings: [{ tag: '主人公', characterId: 'c1', kind: 'character' }],
           scenes: [{ id: 's1', ambientPins: [{ id: 'p1' }] }],
           state: { relations: [{ fromId: 'c1', toId: 'hero', stance: '旧' }], moods: [] },
@@ -91,6 +103,14 @@ describe('migrateSubSchemas', () => {
     expect(state.sessions[0].scenes.every((sc: any) => !('ambientPins' in sc))).toBe(true)
   })
 
+  it('v5→v6: structuredOutput を落とし、本文の @名前「」を剥がす（置換タグの @ は残す）', () => {
+    const sess = state.sessions[0]
+    expect('structuredOutput' in sess).toBe(false)
+    expect(sess.messages[0].content).toBe('　風が吹く。\n美咲「やった」\n「遠くで鐘が鳴る」')
+    expect(sess.messages[1].content).toBe('続けて')
+    expect(sess.story.opening).toBe('　鐘が鳴った。\n@主人公「……ただいま」\n店主「いらっしゃい」')
+  })
+
   it('カセットが内包するセッションにも同じ変換が掛かる', () => {
     const cas = state.cassettes[0].session
     expect('timeline' in cas).toBe(false)
@@ -99,6 +119,8 @@ describe('migrateSubSchemas', () => {
     expect(cas.focusCharacterId).toBe('')
     expect(cas.state.relations).toEqual([])
     expect('ambientPins' in cas.scenes[0]).toBe(false)
+    expect('structuredOutput' in cas).toBe(false)
+    expect(cas.story.opening).toBe('@主人公「ただいま」\nマスター「いらっしゃい」')
   })
 
   it('版番が無いデータは現行版とみなして素通しする', () => {
@@ -181,6 +203,20 @@ describe('migrateAppState', () => {
     expect(out.ok && out.state).toEqual({ providers: [] })
   })
 
+  it('v3→v4 で世界観の開始設定の導入文から @名前「」を剥がす（置換タグは残す・opening が無い世界は触らない）', () => {
+    const out = migrateAppState(
+      {
+        worlds: [
+          { id: 'w1', startPreset: { opening: '@主人公「ただいま」\n@店主「いらっしゃい」', introTags: [{ tag: '主人公' }] } },
+          { id: 'w2' },
+        ],
+      },
+      3,
+    )
+    expect(out.ok && out.state.worlds[0].startPreset.opening).toBe('@主人公「ただいま」\n店主「いらっしゃい」')
+    expect(out.ok && out.state.worlds[1]).toEqual({ id: 'w2' })
+  })
+
   it('現行版なら何もしない', () => {
     const state = { providers: [] }
     const out = migrateAppState(state, APP_STATE_VERSION)
@@ -204,5 +240,27 @@ describe('schemaErrorMessage', () => {
 
   it('移行の欠落は「移行できませんでした」と説明する', () => {
     expect(schemaErrorMessage({ scope: 'cassette', found: 2, supported: 5 })).toContain('移行できませんでした')
+  })
+})
+
+describe('flattenSpeakerTags（構造化出力の撤去）', () => {
+  it('@名前「セリフ」から @ を落とす', () => {
+    expect(flattenSpeakerTags('@美咲「やった」')).toBe('美咲「やった」')
+  })
+
+  it('@地の文 ラベルは本文だけ残す（大小文字を無視）', () => {
+    expect(flattenSpeakerTags('@地の文「鐘が鳴った」')).toBe('「鐘が鳴った」')
+    expect(flattenSpeakerTags('@Narrator「the bell rang」')).toBe('「the bell rang」')
+  })
+
+  it('通常の地の文・「 の無い @ 行・@ だけの行は変わらない', () => {
+    const text = '窓の外は雨だった。\n\n遠くで鐘が鳴る。\n@美咲は窓を開けた。\n@'
+    expect(flattenSpeakerTags(text)).toBe(text)
+  })
+
+  it('keepTags にある名前（置換タグ）の行は残す', () => {
+    expect(flattenSpeakerTags('@主人公「ただいま」\n@美咲「おかえり」', new Set(['主人公']))).toBe(
+      '@主人公「ただいま」\n美咲「おかえり」',
+    )
   })
 })

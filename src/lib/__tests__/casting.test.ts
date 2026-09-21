@@ -32,12 +32,12 @@ describe('findIntroTagRefs', () => {
 describe('resolveIntroText', () => {
   it('束縛済みのタグを実名へ置き換える', () => {
     const out = resolveIntroText('@主人公 は歩き出した。', { tags, bindings, characters })
-    expect(out).toEqual({ content: '@美咲 は歩き出した。', issues: [] })
+    expect(out).toEqual({ content: '美咲 は歩き出した。', issues: [] })
   })
 
   it('長い名前を先に当てる（前方一致事故を防ぐ）', () => {
     const out = resolveIntroText('@主人公の友人 が @主人公 を呼んだ。', { tags, bindings, characters })
-    expect(out.content).toBe('@田中 が @美咲 を呼んだ。')
+    expect(out.content).toBe('田中 が 美咲 を呼んだ。')
   })
 
   it('束縛が無いタグは置換せず unbound-tag を返す', () => {
@@ -69,7 +69,7 @@ describe('resolveIntroText', () => {
       ],
       characters,
     })
-    expect(out.content).toBe('@美咲')
+    expect(out.content).toBe('美咲')
   })
 })
 

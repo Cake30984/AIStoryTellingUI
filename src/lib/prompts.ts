@@ -1,7 +1,6 @@
 import type { Character, Message, PromptStyle, Scene, Session, World } from '../types'
 import type { ChatMessage } from './openrouter'
 import { splitLoreEntries } from './lorebook'
-import { plainTextOf } from './structured'
 import {
   estimateTokens,
   RAW_WINDOW_BRIDGE_TOKENS,
@@ -228,8 +227,8 @@ export function buildSystemPrompt(session: Session, refs: ResolvedRefs): string 
     parts.push(
       `あなたは熟練の小説家です。情景・心情・行動を描く「地の文」と、登場人物のセリフ「…」を自然に織り交ぜた小説形式で執筆します。\n` +
         `【執筆ルール】\n` +
-        `- 地の文と会話を混在させ、一篇の小説のように書いてください。セリフは鉤括弧「」で示します。\n` +
-        `${session.structuredOutput ? '' : '- 誰の発言か紛らわしい場合のみ、「名前「セリフ」」の形で話者を示してください（多用しすぎない）。\n'}` +
+        `- 地の文と会話を混在させ、Web 小説のように書いてください。セリフは鉤括弧「」で示し、1発話を1行にします。\n` +
+        `- 誰のセリフかは前後の地の文（動作・表情・呼びかけ）で分かるように書き、行頭に話者名や記号のラベルを付けないでください。\n` +
         `- 1回の応答で1〜3段落。情景→会話→展開、と流れを作り、物語を前へ進めてください。\n` +
         `- 場面の終わりに、続きが気になる引きや${heroName}が行動したくなる余白を残してください。\n` +
         `- ${heroName}（ユーザー）の心情や決断を勝手に断定しすぎず、選択の余地を残してください。\n` +
@@ -255,18 +254,8 @@ export function buildSystemPrompt(session: Session, refs: ResolvedRefs): string 
 
   // 6.5 シーンのペース制御（FB5-①）と 7. 今回の話者指定は深さ0へ移した（PC1+PC4）。
   // どちらも毎ターン変わりうるので system に置くとキャッシュが全損する。
-
-  // 8. セリフの出力形式（構造化出力）
-  if (session.structuredOutput) {
-    parts.push(
-      `【セリフの出力形式（厳守）】\n` +
-        `- 登場人物のセリフは、1発話につき1行で、行頭を「@名前」にしてから鉤括弧のセリフを続けてください。\n` +
-        `  例: @美咲「ほんとに？　ありがとう！」\n` +
-        `- 地の文（情景・心情・行動の描写）は行頭に @ を付けず、普通の文章として書いてください。\n` +
-        `- セリフ行に地の文を混ぜない。地の文に鉤括弧のセリフを埋め込まない（発話は必ず @ 行に分ける）。\n` +
-        `- 名前は【登場人物】の表記を正確に使ってください。名前の無い脇役は「@店員「…」」のように役割名で構いません。`,
-    )
-  }
+  // （旧 8.「セリフの出力形式」＝構造化出力は 2026-09-21 に撤去。行頭ラベルの有無がモデルごとに揺れ、
+  //   表示が安定しなかった。本文は Web 小説の素の形に寄せる）
 
   return parts.join('\n\n')
 }
@@ -330,9 +319,7 @@ function depthZeroContent(
       parts.push(
         `【今回の応答】\n` +
           `この場面で最も自然に発言するキャラクターを1人選び、その人物として応答してください。` +
-          (session.structuredOutput
-            ? `セリフはすべて @名前 行で書くため、応答の先頭に「キャラ名: 」は付けないでください。`
-            : `応答は必ず「キャラ名: 」で始めてください。`),
+          `応答は必ず「キャラ名: 」で始めてください。`,
       )
     }
   }
@@ -356,11 +343,7 @@ function depthZeroContent(
   }
 
   // 形式の再掲（system の詳細な指示から遠ざかった分の押さえ。短く）
-  parts.push(
-    session.structuredOutput
-      ? `（セリフは行頭 @名前 の1行、地の文は @ を付けない。1〜3段落で書く。）`
-      : `（地の文とセリフを織り交ぜて1〜3段落。）`,
-  )
+  parts.push(`（地の文とセリフ「」を織り交ぜて1〜3段落。行頭に話者名のラベルは付けない。）`)
 
   return parts.join('\n\n')
 }
@@ -506,8 +489,8 @@ export function buildMessages(
     role: 'system',
     content: buildSystemPrompt(session, refs),
   }
-  // 会話劇のグループ時のみ、誰の発言かをテキストに織り込む（構造化出力ONでは @ 行が話者を運ぶためスキップ）
-  const multi = session.narrativeStyle !== 'novel' && refs.characters.length > 1 && !session.structuredOutput
+  // 会話劇のグループ時のみ、誰の発言かをテキストに織り込む
+  const multi = session.narrativeStyle !== 'novel' && refs.characters.length > 1
   const nameOf = (id?: string) => refs.characters.find((c) => c.id === id)?.name
   const toChat = (m: Message): ChatMessage => {
     if (m.role === 'assistant' && multi) {
@@ -688,9 +671,9 @@ function choicesCharacterLine(c: Character): string {
   return desc ? `${c.name}: ${desc}` : c.name
 }
 
-/** 末尾 count 件の本文を自然表記（`plainTextOf`）の行にする。話者名の織り込みは `buildMessages` と同じ規則 */
+/** 末尾 count 件の本文を行にする。話者名の織り込みは `buildMessages` と同じ規則 */
 function recentPlainLines(session: Session, refs: ResolvedRefs, count: number): string[] {
-  const multi = session.narrativeStyle !== 'novel' && refs.characters.length > 1 && !session.structuredOutput
+  const multi = session.narrativeStyle !== 'novel' && refs.characters.length > 1
   const nameOf = (id?: string) => refs.characters.find((c) => c.id === id)?.name
   const history = session.messages
     .filter((m) => m.content.trim().length > 0)
@@ -698,7 +681,7 @@ function recentPlainLines(session: Session, refs: ResolvedRefs, count: number): 
     .filter((m) => !isDirective(m))
     .filter((m) => !refs.currentSceneId || !m.sceneId || m.sceneId === refs.currentSceneId)
   return history.slice(-count).map((m) => {
-    const text = plainTextOf(m.content)
+    const text = m.content
     if (m.role === 'assistant' && multi) {
       const nm = nameOf(m.characterId)
       return nm ? `${nm}: ${text}` : text
@@ -715,7 +698,7 @@ const CHOICES_RECENT_MESSAGES = 4
  *
  * 本編の system・履歴全文は使わず、選択肢の質に効く要素だけを user 1通へ圧縮する:
  * 【登場人物】（名前＋一言）／【状態（現在）】（`refs.stateInfo`）／
- * 【直前のあらすじ】（`priorSummaries` の末尾1件のみ）／【直近の本文】（末尾数件・`plainTextOf` 適用）。
+ * 【直前のあらすじ】（`priorSummaries` の末尾1件のみ）／【直近の本文】（末尾数件）。
  * 続く user 1通は従来どおり `choicesUserNudge`。
  *
  * 上位設計 PC2（R1 との system 接頭辞共有）は却下し、この「文脈を削る」対案を採る——
@@ -1133,9 +1116,9 @@ export function storyKickoffSystem(): string {
     `\n【world.startPreset】\n` +
     `- genre はジャンルとトーンを短く（例:「現代・学園／静かな青春」）。premise は前提を2〜4文にふくらませたあらすじ。\n` +
     `- opening は**物語の最初の本文そのもの**（そのまま画面に載る。8〜16行）。` +
-    `セリフは1発話1行で行頭を「@名前」にして鉤括弧を続け、地の文は行頭に @ を付けない。\n` +
-    `  例: @美咲「ほんとに？　ありがとう！」\n` +
-    `- **opening の @名前 には、characters で作った名前をそのまま使う**（別名・愛称・敬称を付けない）。\n` +
+    `Web 小説の書き方で、セリフは鉤括弧「」で1発話1行、誰のセリフかは前後の地の文で分かるようにする。` +
+    `行頭に「@名前」「名前：」のような話者ラベルを付けない。\n` +
+    `- **opening で人物を呼ぶときは、characters で作った名前をそのまま使う**（別名・愛称・敬称を付けない）。\n` +
     `- opening は中心人物の視点で始め、**最後の行を次の一手が要る場所で止める**（問いかけ・誘い・差し出された手）。\n` +
     `- openingTitle は導入の見出し（10文字前後）。openingSceneNote は最初の場面の状況メモ` +
     `（いつ・どこ・**その場に居る人物の名前**を1〜2文で。居ない登場人物はここに書かない）。\n` +

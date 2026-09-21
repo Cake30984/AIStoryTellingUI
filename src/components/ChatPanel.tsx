@@ -17,7 +17,6 @@ import { lengthLevel } from '../lib/tokens'
 import { formatSessionUsage } from '../lib/cost'
 import { getImage, useImageUrl } from '../lib/imageStore'
 import { downloadBlob } from '../lib/io'
-import { hasStructuredLines, plainTextOf } from '../lib/structured'
 import { appConfirm } from '../lib/dialogs'
 import { isImageSetupDismissed } from '../lib/imageSetup'
 import ImageGenModal from './ImageGenModal'
@@ -43,7 +42,6 @@ import CassetteEditor from './CassetteEditor'
 import EntityAvatar from './EntityAvatar'
 import ContextDock from './ContextDock'
 import ReaderSettings from './ReaderSettings'
-import { StructuredChatBody, StructuredNovelBody } from './StructuredMessage'
 import ZoomOverlay from './ZoomOverlay'
 import { PromptCaption } from './GalleryModal'
 import { Icon } from './icons'
@@ -62,12 +60,12 @@ interface Props {
 interface SessionMeta {
   id: string
   mode: SessionMode
-  /** セッションの顔ぶれ全員（CS1）。**既に書かれた本文の話者解決**に使う */
+  /** セッションの顔ぶれ全員（CS1）。会話劇の話者表示と中心人物の解決に使う */
   cast: Character[]
   /** 中心人物（F3） */
   focus?: Character
   focusCharacterId: string
-  /** ライブラリのキャラクター全員（？バッジの抑止判定に使う） */
+  /** ライブラリのキャラクター全員（会話劇で参加者から外れた話者のメッセージも名前を出すため） */
   libraryCharacters: Character[]
   currentSceneId: string | null
   novel: boolean
@@ -88,7 +86,6 @@ interface MessageActions {
   remove: (messageId: string) => void
   regenerateFrom: (messageId: string) => void
   branchFrom: (messageId: string) => void
-  defineSpeaker: (name: string) => void
   illustrate: (sceneId: string, messageId: string) => void
   removeIllustration: (sceneId: string, illId: string) => void
   regenerateIllustration: (
@@ -344,23 +341,10 @@ const MessageRow = memo(function MessageRow({
   if (meta.novel) {
     if (editing) return <div className="prose-block" data-msg-id={m.id}>{editBox()}</div>
     if (m.role === 'assistant') {
-      const structured = hasStructuredLines(m.content, meta.cast)
       return (
         <div className="prose-block" data-msg-id={m.id}>
-          {structured ? (
-            <StructuredNovelBody
-              content={m.content}
-              participants={meta.cast}
-              pending={!!m.pending && isStreaming}
-              onDefineSpeaker={act.defineSpeaker}
-              libraryCharacters={meta.libraryCharacters}
-            />
-          ) : (
-            <>
-              {renderProse(m.content)}
-              {m.pending && isStreaming && <span className="cursor" />}
-            </>
-          )}
+          {renderProse(m.content)}
+          {m.pending && isStreaming && <span className="cursor" />}
           {msgActions()}
         </div>
       )
@@ -368,21 +352,6 @@ const MessageRow = memo(function MessageRow({
     return (
       <div className="prose-action" data-msg-id={m.id}>
         {m.content}
-        {msgActions()}
-      </div>
-    )
-  }
-
-  if (m.role === 'assistant' && !editing && hasStructuredLines(m.content, meta.cast)) {
-    return (
-      <div className="st-message" data-msg-id={m.id}>
-        <StructuredChatBody
-          content={m.content}
-          participants={meta.cast}
-          pending={!!m.pending && isStreaming}
-          onDefineSpeaker={act.defineSpeaker}
-          libraryCharacters={meta.libraryCharacters}
-        />
         {msgActions()}
       </div>
     )
@@ -797,7 +766,6 @@ function ChatPanelBody({ session }: { session: Session }) {
       remove: (id) => void st.deleteMessage(id),
       regenerateFrom: (id) => void st.regenerateFrom(id),
       branchFrom: (id) => void st.branchFromMessage(id),
-      defineSpeaker: (name) => st.queueCharacterDrafts(session.id, [{ name, note: '' }]),
       illustrate: (sceneId, messageId) => setIllustGenFor({ sceneId, messageId }),
       removeIllustration: (sceneId, illId) => st.removeIllustration(session.id, sceneId, illId),
       regenerateIllustration: (sceneId, messageId, prompt, negative) =>
@@ -1482,7 +1450,7 @@ function ChatPanelBody({ session }: { session: Session }) {
           const recent: string[] = []
           let used = 0
           for (let i = ctxMsgs.length - 1; i >= 0; i--) {
-            const c = plainTextOf(ctxMsgs[i].content)
+            const c = ctxMsgs[i].content
             if (used + c.length > budget && recent.length > 0) break
             recent.unshift(c)
             used += c.length

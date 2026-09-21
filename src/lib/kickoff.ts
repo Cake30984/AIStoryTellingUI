@@ -47,23 +47,12 @@ function record(v: unknown): Record<string, unknown> | undefined {
 }
 
 /**
- * 話者名の表記を整える。**空白を落とす**のが本体（P3 の罠）——
- * `matchCharacterByName` の前方一致は「七海 すず」と `@七海` を結べず、
- * 定義したのに ？バッジが出たままになる。
+ * 人物名の表記を整える。**空白を落とす**のが本体（P3 の罠）——
+ * `matchCharacterByName` の前方一致は「七海 すず」と本文中の「七海」を結べず、
+ * レビューが既知の人物を新キャラとして挙げ直してしまう。
  */
 export function compactName(raw: string): string {
   return raw.replace(/\s+/g, '').slice(0, MAX_NAME_LEN)
-}
-
-/**
- * 導入本文の話者ラベル（行頭 `@名前「`）を `compactName` と同じ規則へ揃える。
- * 登場人物側の名前だけ直しても、本文が「@七海 すず「…」」のままなら解決できない。
- */
-export function compactSpeakerTags(opening: string): string {
-  return opening
-    .split('\n')
-    .map((line) => (line.startsWith('@') ? line.replace(/^@([^「]{1,40})/, (_m, n) => `@${compactName(n)}`) : line))
-    .join('\n')
 }
 
 export interface KickoffDraft {
@@ -140,7 +129,7 @@ export function normalizeKickoff(raw: unknown, premise: string): KickoffDraft | 
   const startPreset: WorldStartPreset = {
     genre: text(p.genre),
     premise: text(p.premise) || line,
-    opening: compactSpeakerTags(text(p.opening)),
+    opening: text(p.opening),
     openingTitle: text(p.openingTitle),
     openingSceneNote: text(p.openingSceneNote),
     initialDirective: text(p.initialDirective),

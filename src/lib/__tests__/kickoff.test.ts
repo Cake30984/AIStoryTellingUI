@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { KICKOFF_SCHEMA } from '../jsonSchemas'
-import { compactSpeakerTags, KICKOFF_TAG, normalizeKickoff } from '../kickoff'
-import { matchCharacterByName, parseStructured } from '../structured'
+import { KICKOFF_TAG, normalizeKickoff } from '../kickoff'
+import { matchCharacterByName } from '../names'
 
 /**
  * 一行から始める（P4）の契約を守る網。
@@ -25,7 +25,7 @@ const good = {
     startPreset: {
       genre: '現代・港町／静かな再生',
       premise: '灯台が来年で消える町に、一人の若者が戻ってくる。',
-      opening: '　港は凪いでいた。\n@灯野 みなと「……ただいま、って言う相手もいないな」\n　風が塩の匂いを運ぶ。',
+      opening: '　港は凪いでいた。\n「……ただいま、って言う相手もいないな」\n　風が塩の匂いを運ぶ。',
       openingTitle: '十二月、最後の灯',
       openingSceneNote: '十二月三日の夕方。港の突堤。居るのは灯野みなとと磯貝ふゆ。',
       initialDirective: '再会の理由をまだ明かさない。灯台の光だけを見せる。',
@@ -129,14 +129,9 @@ describe('normalizeKickoff', () => {
     expect(d.world.startPreset?.startNow).toBe('12月3日 夕方')
   })
 
-  it('名前の空白を落とし、導入本文の話者ラベルも同じ規則で揃える（？バッジが出ない）', () => {
+  it('名前の空白を落とし、本文中の呼び名から素材へ解決できる。導入本文は触らない', () => {
     const d = normalizeKickoff(good, '一行')!
-    const opening = d.world.startPreset!.opening!
-    expect(opening).toContain('@灯野みなと「')
-    // 実際に本文として解釈させ、話者が素材へ解決できることまで見る
-    const parsed = parseStructured(opening, d.characters)
-    const dialogue = parsed.find((l) => l.kind === 'dialogue')!
-    expect(dialogue.kind === 'dialogue' && dialogue.characterId).toBe(d.characters[0].id)
+    expect(d.world.startPreset!.opening).toBe(good.world.startPreset.opening.trim())
     expect(matchCharacterByName('灯野みなと', d.characters)).toBe(d.characters[0].id)
   })
 
@@ -198,12 +193,5 @@ describe('normalizeKickoff', () => {
     expect(normalizeKickoff({ ...good, characters: [{ name: '  ' }] }, '一行')).toBeNull()
     expect(normalizeKickoff('（説明文だけ返ってきた）', '一行')).toBeNull()
     expect(normalizeKickoff(null, '一行')).toBeNull()
-  })
-})
-
-describe('compactSpeakerTags', () => {
-  it('地の文と鉤括弧の中身は触らない', () => {
-    const src = '　海が 見えた。\n@七海 すず「わたし、 まだ 慣れない」\n　風が吹く。'
-    expect(compactSpeakerTags(src)).toBe('　海が 見えた。\n@七海すず「わたし、 まだ 慣れない」\n　風が吹く。')
   })
 })

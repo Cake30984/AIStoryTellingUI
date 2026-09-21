@@ -445,8 +445,6 @@ export interface Session {
   state: SessionState
   /** 発見・深化した設定の上乗せ（セッション固有・素材は不変） */
   overlay: SessionOverlay
-  /** 構造化出力（本編を @名前「セリフ」の行形式で書かせる。undefined=OFF。設計は docs/設計_構造化出力.md） */
-  structuredOutput?: boolean
   /**
    * レビューを2本（A=何が起きたか / B=状態がどう動いたか）に分けて並列実行する（PC-A A-2。
    * undefined=true＝既定ON）。docs/詳細設計_プロンプト構造とキャッシュ.md §3.2
@@ -780,8 +778,8 @@ export interface UiPrefs {
   /** 本文の幅（px。--content-width と連動。既定 760。F2で数値化） */
   contentWidth: number
   /**
-   * セリフに付く話者アイコンの大きさ（px。`--speaker-icon-size` と連動。既定 22）。
-   * 小説形式の行頭アイコン（`.st-speaker`）と会話劇の吹き出しアイコン（`.avatar`）の両方に効く。
+   * 会話劇の吹き出しに付く話者アイコン（`.avatar`）の大きさ（px。`--speaker-icon-size` と連動。既定 22）。
+   * 小説形式では本文にアイコンを出さない（行頭の話者アイコン＝構造化出力は 2026-09-21 に撤去）。
    * 文字サイズを上げるとアイコンだけ相対的に小さく見えるため、同じ場所で調整できるようにしてある。
    */
   speakerIconSize: number

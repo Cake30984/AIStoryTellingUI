@@ -132,7 +132,8 @@ export function resolveIntroText(
   if (!pattern) return { content: text, issues: [] }
   const content = text.replace(pattern, (source, name: string) => {
     const resolved = resolveTagName(bindingByTag.get(name), args.characters)
-    return resolved ? `@${resolved}` : source
+    // 実名だけを残す（`@` は置換タグの構文であって本文の表記ではない。構造化出力の撤去で行頭ラベルも廃止）
+    return resolved ?? source
   })
   return { content, issues: [] }
 }

@@ -49,7 +49,7 @@ React 18 + TypeScript(strict) + Vite / zustand（`persist`）/ Tauri 2（`plugin
 - `jsonSchemas.ts` — 裏方 LLM の JSON スキーマ（`reviewSchema(part)`/`CHOICES_SCHEMA`/`ENDING_PROPOSALS_SCHEMA`/`NEXT_SCENE_SCHEMA`/`IMAGE_DRAFT_SCHEMA`/`CHARACTER_DRAFT_SCHEMA`/`KICKOFF_SCHEMA`）と `jsonModeFor(model, models)`（OpenRouter の `supported_parameters` 優先・無ければ名前で推定）
 - `kickoff.ts` — 一行からの起案結果を `World`/`Character` へ詰める純関数（`normalizeKickoff`・`KICKOFF_TAG`）。件数の上下限・空欄・名前の空白は**受け側のここで**吸収する（スキーマでは縛らない）
 - `json.ts` — `extractJson`（修復フォールバック付き）／`partialString`（ストリーミング途中の JSON から文字列値を読む）
-- `structured.ts` — `@名前「セリフ」` 行タグのパーサ（純関数。失敗行は narration へ）／`matchCharacterByName`（名前解決の唯一の窓口）／`plainTextOf`
+- `names.ts` — `matchCharacterByName`（名前解決の唯一の窓口。レビューの発見キャラが既知の人物を誤検出しないため）／`NARRATION_NAMES`。本文は素のテキスト＝行タグのパーサは無い（構造化出力は 2026-09-21 に撤去。旧データの `@名前「」` は `schema.ts` の `flattenSpeakerTags` が移行で剥がす）
 - `lorebook.ts` — ロアを `alwaysOn`（system）とキーワード一致（深さ3・直近6件窓）に分ける
 - `tokens.ts` — 文字数（ユーザー向け）とトークン（コスト・窓）の単位。閾値 `SCENE_WIND_DOWN_CHARS`(3000)/`SCENE_WRAP_UP_CHARS`(4500)/`RAW_WINDOW_TOKENS`(12000)
 - `casting.ts` — 導入文の置換タグ `@タグ`（`findIntroTagRefs`/`resolveIntroText`/`validateCasting`/`normalize*`）
@@ -67,7 +67,7 @@ React 18 + TypeScript(strict) + Vite / zustand（`persist`）/ Tauri 2（`plugin
 ### `src/components/`
 - 骨格: `WebStorageNotice.tsx`（ブラウザ版の保存先の初回案内。P5）／`Rail.tsx`（Play/Library/System）／`Sidebar.tsx`（セッション一覧・素材ナビ・D&D 取込）／`ChatPanel.tsx`（会話画面本体。トップバー・本文・コンポーザー・右ドック）／`ContextDock.tsx`（状態/発見/画像/分岐/ジョブ のタブ。`StatusView`/`DiscoveryView`/`GalleryModal.GalleryBody`/`BranchTreeModal.BranchTreeBody`/`ImageJobsPanel.ImageJobsBody`）／`LibraryBar.tsx`／`CommandPalette.tsx`／`FirstRunWizard.tsx`（接続先5経路＋接続テスト）／`SettingsModal.tsx`（`SettingsBody`＝System ページ: 接続先・既定モデル・データ入出力・GC・使用状況）／`ImageProviderSettings.tsx`
 - 共通部品: `ModalShell`（全モーダル。`dirty` で破棄確認）／`DialogHost`／`MenuPopover`／`ZoomOverlay`（`document.body` へポータル）／`icons.tsx`（自前 SVG。絵文字・文字記号は使わない）／`EntityAvatar`／`NumberInput`／`CsvInput`／`HelpDetails`／`ActivityIndicator`／`IntroTagDefEditor`・`IntroTagFields`
-- Play: `StoryKickoffModal.tsx`（一行から始める＝起案 → そのまま `SessionEditor` へ引き継ぐ）／`StructuredMessage.tsx`（構造化本文の描画。未解決話者に ？バッジ）／`SceneReviewModal.tsx`（確定前は呼び出し単位の進行表示）／`SceneEditor`／`StoryLogModal`（あらすじ一覧）／`StatusPanel`・`DiscoveryPanel`（編集）／`EndingModal`（結末の提案）／`InterludePanel`（幕間）／`CharacterDraftModal`（発見キャラの起案→`CharacterEditor` draft）／`ImageGenModal`／`StoryExportModal`／`ReaderSettings`
+- Play: `StoryKickoffModal.tsx`（一行から始める＝起案 → そのまま `SessionEditor` へ引き継ぐ）／`SceneReviewModal.tsx`（確定前は呼び出し単位の進行表示）／`SceneEditor`／`StoryLogModal`（あらすじ一覧）／`StatusPanel`・`DiscoveryPanel`（編集）／`EndingModal`（結末の提案）／`InterludePanel`（幕間）／`CharacterDraftModal`（発見キャラの起案→`CharacterEditor` draft）／`ImageGenModal`／`StoryExportModal`／`ReaderSettings`
 - Library: `library/CharacterLibrary`・`CharacterEditor`・`WorldLibrary`・`WorldEditor`（フルページ。基本／ロア／関係性の次元／開始テンプレート）・`CassetteLibrary`・`AvatarField`・`LibraryMultiSelect`／`CassetteEditor.tsx`／`SessionEditor.tsx`（基本／物語／進行／AIと出力 の4タブ）
 
 ## データモデル（要点）
@@ -77,7 +77,7 @@ React 18 + TypeScript(strict) + Vite / zustand（`persist`）/ Tauri 2（`plugin
 - **Provider**（LLM 接続先）／**ImageProvider**（画像接続先）— どちらも persist のみ・**エクスポートに含めない**。Tauri では `apiKey` を資格情報ストアへ分離し `state.json` には空で書く
 - **Character** — 人格・口調・外見・セリフ例・`developments`（成長ログ）・`avatar`・`imagePrompt?`・`tags`。中心人物も同じ型
 - **World** — `description`（常時）＋`entries: LoreEntry[]`（`keys`/`alwaysOn`/`enabled`）＋`relationAspects`（関係性の次元）＋`calendarFormat?`＋`startPreset?: WorldStartPreset`（セッション作成時に**コピー**される推奨初期設定。素材側は不変）
-- **Session** — `characterIds`／`worldId`／**`focusCharacterId`**（中心人物・必須。空文字＝未選択で開始不可）／`authorNote`／`story: StorySetup`（genre/premise/opening/openingTitle/initialDirective/introTags）／`introBindings`／`scenes`／`currentSceneId`／`narrativeStyle`／`structuredOutput?`／`reviewSplit?`／`rawWindowFromSceneId?`／`newCharacterPolicy?`／`state`／`overlay`／`endingGoal?`／`ending?`／`archived?`／`originCassetteId?`／`messages`／`usage?`（このセッションの累計。下記）／`model`・`reviewModel`・`choicesModel`／`temperature`／`maxTokens`
+- **Session** — `characterIds`／`worldId`／**`focusCharacterId`**（中心人物・必須。空文字＝未選択で開始不可）／`authorNote`／`story: StorySetup`（genre/premise/opening/openingTitle/initialDirective/introTags）／`introBindings`／`scenes`／`currentSceneId`／`narrativeStyle`／`reviewSplit?`／`rawWindowFromSceneId?`／`newCharacterPolicy?`／`state`／`overlay`／`endingGoal?`／`ending?`／`archived?`／`originCassetteId?`／`messages`／`usage?`（このセッションの累計。下記）／`model`・`reviewModel`・`choicesModel`／`temperature`／`maxTokens`
 - **SessionState** — `relations: Relation[]`（キャラ→中心人物の有向 prose。`stance`＋次元ごとの `note`）／`moods`／`now`（自由文字列）／`place`／`presentIds`／`situation`／`pending: PendingSlip[]`（`when`/`what`）／`recentDone`
 - **SessionOverlay** — `lore`（発見ロア）／`characterDevelopments`。素材を汚さないための上乗せ。本編には素材＋overlay の実効ビュー（`effectiveWorld`/`effectiveCharacter`）で注入。`promoteOverlay*` で素材へ **move**
 - **Scene** — `title`/`note`（時・場所・居る人物）/`summary`/`timeLabel?`/`foreground?`（突き合わせ済みの一文）/`illustrations?`/`interludes?`/`endedAt?`
@@ -108,7 +108,7 @@ React 18 + TypeScript(strict) + Vite / zustand（`persist`）/ Tauri 2（`plugin
 
 | 層 | 変わる頻度 | 中身 |
 |---|---|---|
-| system（`buildSystemPrompt`） | **シーン境界でのみ** | 世界観概要＋常時ロア／これまでのあらすじ／【現在の場面】＝`scene.note`／【時間】＝`state.now`／【状態】＝関係性 prose・気分／登場人物定義（中心人物ラベル付き）／新しい登場人物の方針／【中心人物】／【目指す結末】／物語設定（ジャンル・前提・最初のシーンだけ初期方向付け）／文体ルール／構造化出力の形式 |
+| system（`buildSystemPrompt`） | **シーン境界でのみ** | 世界観概要＋常時ロア／これまでのあらすじ／【現在の場面】＝`scene.note`／【時間】＝`state.now`／【状態】＝関係性 prose・気分／登場人物定義（中心人物ラベル付き）／新しい登場人物の方針／【中心人物】／【目指す結末】／物語設定（ジャンル・前提・最初のシーンだけ初期方向付け）／文体ルール（Web 小説の素の形＝セリフは「」・行頭に話者ラベルを付けない） |
 | 深さ3（履歴末尾から3件手前。足りなければ system 直後） | 毎ターン | 【今回の場面に関わる設定】＝キーワード一致ロア／【常に踏まえる重要事項】＝`authorNote`＋`CONSEQUENCE_CLAUSE` |
 | 深さ0（末尾） | 毎ターン | 【今回の応答】話者指定（会話劇）／【いまの状況】＝`scene.foreground`／【シーンの収束】/【締め】ナッジ（文字数閾値超過時）／形式の短い再掲 |
 
@@ -126,7 +126,7 @@ React 18 + TypeScript(strict) + Vite / zustand（`persist`）/ Tauri 2（`plugin
 | 選択肢 | 〈展開を選ぶ〉を押したとき | `choicesMessages`（専用に圧縮） |
 | 結末の提案／エピローグ | 「終わり方を考える」／確定時 | 本文＋状態 |
 | 幕間／幕間の反映 | 終了シーンで生成／「関係性へ反映」 | そのシーン本文＋関係 prose |
-| キャラ起案／画像起案 | ？バッジ・レビュー承認／挿絵・アバター生成 | 本文＋定義 |
+| キャラ起案／画像起案 | レビュー承認／挿絵・アバター生成 | 本文＋定義 |
 | 物語の起案 | 「一行から始める」 | 利用者が書いた一行だけ（既定モデル・素材は無い） |
 
 → **シーン終了1回＝3呼び出し、1ターン＝1呼び出し。** 無料枠（OpenRouter 未課金 50 req/日）では短編1本/日が上限になる。
@@ -143,7 +143,7 @@ React 18 + TypeScript(strict) + Vite / zustand（`persist`）/ Tauri 2（`plugin
 - **復元と移動**: `restoreCheckpoint` はスナップショットで全置換（`title/model/reviewModel/choicesModel/temperature/maxTokens/archived` だけ現在値維持）。`navigateToNode` はパス外なら線の先端を復元して該当メッセージへスクロール（`scrollTarget`）。復元自体は何も消さない
 - **結末**: `proposeEndings` → `setEndingGoal`（system の【目指す結末】）または `concludeStory`（エピローグシーンを書いて `ending` 確定 → 進行系を隠し「やり直す」だけ残す）。分岐で戻れば未確定
 - **幕間**: 終了シーンの末尾に `generateInterlude(sceneId, characterId)`（中心人物以外）。`reflectInterlude` で関係 prose の差分を出し `confirmInterludeReflection` で反映
-- **発見キャラ**: 構造化本文の未解決話者の ？バッジ／レビューの `newCharacters` 承認 → `queueCharacterDrafts`（既知の名前・`NARRATION_NAMES`・待機中同名は弾く）→ `CharacterDraftModal` が起案 → `addDiscoveredCharacter`（ライブラリの通常キャラ＋`characterIds` へ追加）
+- **発見キャラ**: レビューの `newCharacters` 承認 → `queueCharacterDrafts`（既知の名前・`NARRATION_NAMES`・待機中同名は弾く）→ `CharacterDraftModal` が起案 → `addDiscoveredCharacter`（ライブラリの通常キャラ＋`characterIds` へ追加）
 - **画像**: `startImageJob` → 直列生成 → `selecting`（自動採用しない）→ `applyImageJobResult`（挿絵は `Scene.illustrations`＋`sessionImageLogs`、アバターは `avatar.imageId`。旧画像は参照を外すだけ）。回収は `gcUnusedImages`（使用中集合＝`collectUsedImageIds`）
 - **書き出し**: `StoryExportModal`（plain/markdown/挿絵つき/共有カード画像・分岐時点指定可）。キャラ・世界・カセットは PNG カード、全データは JSON バンドル（画像同梱可）。取り込みは `importAnyFile` に一本化
 - **初回**: `FirstRunWizard`（OpenRouter で接続=OAuth または鍵貼り付け・**推奨モデル4件を `RECOMMENDED_MODELS` から一言説明つきで一覧表示。価格は表示のたびに `/models` から取り、一覧に無い id は出さない。失敗時は選び直し（自動フォールバックしない）**／無料枠=Gemini／PC で動かす）→ 接続テスト → `defaultModelRef` 設定 → 最後に「サンプルの物語を開く」（`openStarterStory`。「完了」と同義で行き先が1つ増えるだけ）。閉じても `Provider` 未設定なら生成時に案内。**ブラウザ版はウィザードを閉じたあと1回だけ** `WebStorageNotice`（保存先・消える条件・書き出し。`storageNoticeSeen`）

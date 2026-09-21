@@ -12,7 +12,6 @@ import { isProviderUsable, parseModelRef } from '../lib/providers'
 import { extractJson } from '../lib/json'
 import { CHARACTER_DRAFT_SCHEMA, jsonModeFor } from '../lib/jsonSchemas'
 import { characterDraftContextUser, characterDraftSystem, isDirective } from '../lib/prompts'
-import { plainTextOf } from '../lib/structured'
 import type { Character, Session } from '../types'
 import ModalShell from './ModalShell'
 import CharacterEditor from './library/CharacterEditor'
@@ -70,7 +69,7 @@ export default function CharacterDraftModal({ session, name, note, onClose }: Pr
       }
       const scene = currentScene(session)
       const world = worlds.find((w) => w.id === session.worldId)
-      // 本文は現在シーンの末尾から予算ぶん遡る（裏方文脈なので `plainTextOf` で自然表記へ整流）
+      // 本文は現在シーンの末尾から予算ぶん遡る
       const recent: string[] = []
       let used = 0
       // 書き手への指示は本文ではないので起案の材料から落とす（IN1）
@@ -78,7 +77,7 @@ export default function CharacterDraftModal({ session, name, note, onClose }: Pr
         (m) => m.content.trim() && !isDirective(m) && (!scene || !m.sceneId || m.sceneId === scene.id),
       )
       for (let i = pool.length - 1; i >= 0; i--) {
-        const text = plainTextOf(pool[i].content)
+        const text = pool[i].content
         if (used + text.length > CONTEXT_BUDGET && recent.length > 0) break
         recent.unshift(text)
         used += text.length

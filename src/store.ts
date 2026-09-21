@@ -68,12 +68,13 @@ import {
   migrateSession,
   migrateSubSchemas,
   SAVE_DATA_VERSION,
+  schemaErrorMessage,
   type SchemaError,
   type SchemaVersions,
 } from './lib/schema'
 import { gunzipText, gzipText } from './lib/checkpoint'
 import { normalizeImage } from './lib/avatarGen'
-import { matchCharacterByName, NARRATION_NAMES, parseStructured, plainTextOf } from './lib/structured'
+import { matchCharacterByName, NARRATION_NAMES } from './lib/names'
 import { generateImage, resolveImageApiKey } from './lib/imageGen'
 import { costKeyOf, withCostSample } from './lib/cost'
 import {
@@ -595,7 +596,6 @@ function newSession(mode: SessionMode): Session {
     narrativeStyle: mode === 'story' ? 'novel' : 'chat',
     state: emptySessionState(),
     overlay: { lore: [], characterDevelopments: [] },
-    structuredOutput: true,
     messages: [],
     temperature: 0.9,
     // max_tokens は打ち切り上限（書き終われば自然に止まる＝大きくてもコスト増なし）。
@@ -625,7 +625,7 @@ export function currentScene(s: Session): Scene | undefined {
  * **現在シーンの顔ぶれではなくセッションの参加キャラ全員**を返す
  * （今のシーンに出ていないだけの参加キャラを「新キャラ」と誤検出しないため）。
  * 中心人物も `characterIds` の一員なので特別扱いは要らない（F3 でペルソナを統合した）。
- * 名前の照合は必ず `matchCharacterByName`（`structured.ts`）へ通す＝別名・前方一致の規則を1本に保つ。
+ * 名前の照合は必ず `matchCharacterByName`（`names.ts`）へ通す＝別名・前方一致の規則を1本に保つ。
  */
 export function knownSpeakersOf(session: Session, characters: Character[]): { id: string; name: string }[] {
   return session.characterIds
@@ -1350,7 +1350,7 @@ function actionCheckpointLabel(session: Session): string {
   const lastAssistant = [...session.messages]
     .reverse()
     .find((m) => m.role === 'assistant' && m.content.trim())
-  if (lastAssistant) return headOf(plainTextOf(lastAssistant.content), 16)
+  if (lastAssistant) return headOf(lastAssistant.content, 16)
   // 本文がまだ無い場合はユーザー入力（マーカーを除く）から
   const lastUser = [...session.messages]
     .reverse()
@@ -1361,7 +1361,7 @@ function actionCheckpointLabel(session: Session): string {
         !isDirective(m) && // 「もっと暗くして」等の指示がツリーの行ラベルになると中身が分からない（IN1）
         !isMarkerContent(m.content),
     )
-  if (lastUser) return headOf(plainTextOf(lastUser.content), 16)
+  if (lastUser) return headOf(lastUser.content, 16)
   return '（無題）'
 }
 
@@ -1889,7 +1889,6 @@ export const useStore = create<AppState>()(
           })
         }
 
-        const structuredOn = !!s.structuredOutput
         let acc = appendToId ? (target()?.messages.find((m) => m.id === appendToId)?.content ?? '') : ''
 
         const writeDelta = (chunk: string) => {
@@ -1962,13 +1961,7 @@ export const useStore = create<AppState>()(
               if (m.id !== assistantId) return m
               let content = m.content
               let characterId = m.characterId
-              if (structuredOn) {
-                // 構造化出力ON: 最初の @ 行の話者を代表 characterId に採用する（名前: 剥がしはしない＝ @ 行を壊さない）
-                if (!novel && !characterId && refs.characters.length > 1) {
-                  const first = parseStructured(content, refs.characters).find((l) => l.kind === 'dialogue')
-                  if (first?.characterId) characterId = first.characterId
-                }
-              } else if (!novel && !characterId && refs.characters.length > 1) {
+              if (!novel && !characterId && refs.characters.length > 1) {
                 // おまかせ(会話劇・複数キャラ・話者未指定)時は先頭の「名前:」から話者を判定
                 const match = content.match(/^\s*([^:：\n]{1,20})[:：]\s*/)
                 if (match) {
@@ -2579,9 +2572,13 @@ export const useStore = create<AppState>()(
           const raw = await checkpointStore.get(sessionId, nodeId)
           if (!raw) throw new Error('チェックポイントが見つかりません。')
           const parsed = JSON.parse(await gunzipText(raw)) as { v: number; session: Session }
+          // スナップショットは記録時のセーブ版で眠っているので、現行版まで上げてから使う
+          // （旧版の本文や落としたフィールドをそのまま持ち帰らない）
+          const migrated = migrateSession(parsed.session, parsed.v)
+          if (!migrated.ok) throw new Error(schemaErrorMessage(migrated.error))
           // プレイ用ノブだけ現在値を維持（passthrough）。それ以外はスナップショットから復元する
           const restored: Session = {
-            ...parsed.session,
+            ...(migrated.state as Session),
             title: cur.title,
             model: cur.model,
             reviewModel: cur.reviewModel,
@@ -2855,7 +2852,7 @@ export const useStore = create<AppState>()(
               .map((m) =>
                 m.role === 'user'
                   ? `${refs.focus?.name || 'ユーザー'}: ${m.content}`
-                  : `${nameOf(m.characterId)}: ${plainTextOf(m.content)}`,
+                  : `${nameOf(m.characterId)}: ${m.content}`,
               )
               .join('\n')
 
@@ -3598,7 +3595,7 @@ export const useStore = create<AppState>()(
           const isCur = sceneId === s.currentSceneId
           const sceneText = s.messages
             .filter((m) => (m.sceneId === sceneId || (isCur && !m.sceneId)) && isStoryText(m))
-            .map((m) => plainTextOf(m.content).trim())
+            .map((m) => m.content.trim())
             .filter(Boolean)
             .join('\n\n')
           if (!sceneText.trim()) {
