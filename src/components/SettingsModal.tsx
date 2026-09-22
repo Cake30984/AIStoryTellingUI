@@ -170,16 +170,6 @@ export function SettingsBody() {
             <label>接続先（API プロバイダ）</label>
             <div className="desc">
               API キーはこのブラウザ内にのみ保存され、外部送信はされません（API リクエストを除く）。
-              OpenRouter は多くのモデルをまとめて利用できる便利なサービスです（
-              <a
-                href="https://openrouter.ai/keys"
-                target="_blank"
-                rel="noreferrer"
-                style={{ color: 'var(--accent)' }}
-              >
-                openrouter.ai/keys
-              </a>
-              ）。
             </div>
 
             {openRouterOAuthAvailable() && (

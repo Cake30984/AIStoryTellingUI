@@ -43,7 +43,7 @@
 
 - **ブラウザ版**: Chrome / Edge / Firefox / Safari の新しめのもの（スマートフォンでも本文は読めますが、画面は PC 向けです）
 - **デスクトップ版**: Windows 10 / 11（64bit）
-- 接続先の LLM: OpenRouter・OpenAI 互換 API・Gemini（OpenAI 互換エンドポイント）・**ローカル（Ollama / LM Studio）**
+- 接続先の LLM: OpenRouter・OpenAI・Gemini・Claude（いずれも OpenAI 互換エンドポイント）・その他の OpenAI 互換 API・**ローカル（Ollama / LM Studio）**
 - 画像生成（任意）: OpenRouter / OpenAI 互換の画像 API / **ComfyUI（ローカル）**
 
 ## API キーと接続先
@@ -55,6 +55,10 @@
 | OpenRouter で接続 | 1 つのキーで多くのモデルを使えます。ブラウザ承認（OAuth）ならキーのコピペが不要。従量課金 |
 | 無料枠で始める | Gemini の無料枠。**入力が提供元の品質改善に使われうる**点に注意 |
 | PC で動かす | ローカルモデル（Ollama など）。**外部にデータを送りません** |
+
+迷ったら **OpenRouter** をおすすめします。1 つのアカウントで下の推奨モデルをすべて試せ、接続テストに失敗しても別のモデルへ乗り換えるだけで済みます。
+Gemini の無料枠は 1 日のリクエスト回数に上限があり（既定の `gemini-3.5-flash-lite` で 300 回程度）、短い物語を試すには足りますが、長く遊ぶなら有料の接続先へ移してください。
+設定画面の「接続先を追加」では OpenRouter / OpenAI / Gemini / Claude / DeepSeek / Groq をプリセットから選べます（URL が最初から入っているだけで、中身はどれも OpenAI 互換です）。
 
 ### 推奨モデル（OpenRouter）
 

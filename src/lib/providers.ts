@@ -14,18 +14,36 @@ export interface ProviderPreset {
   baseUrl: string
 }
 
+/** Gemini の OpenAI 互換エンドポイント（初回ウィザードの「無料枠」と設定のプリセットで共用） */
+export const GEMINI_OPENAI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/openai'
+
+/** Anthropic（Claude）の OpenAI 互換エンドポイント。ブラウザ直叩きには専用ヘッダが要る（`openrouter.ts` の `commonHeaders`） */
+export const ANTHROPIC_OPENAI_BASE_URL = 'https://api.anthropic.com/v1'
+
 /**
  * 主要プロバイダのプリセット（base URL 補完用）。
+ * Gemini / Claude も中身は OpenAI 互換（`kind:'openai'`）で、URL だけ最初から入っている独立の選択肢。
  * ※ ブラウザから直叩き可能かどうかは各社の CORS ポリシー次第。
  *    確実動作が確認されているのは OpenRouter のみ。
  */
 export const PROVIDER_PRESETS: ProviderPreset[] = [
   { label: 'OpenRouter', kind: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1' },
   { label: 'OpenAI', kind: 'openai', baseUrl: 'https://api.openai.com/v1' },
+  { label: 'Gemini', kind: 'openai', baseUrl: GEMINI_OPENAI_BASE_URL },
+  { label: 'Claude', kind: 'openai', baseUrl: ANTHROPIC_OPENAI_BASE_URL },
   { label: 'DeepSeek', kind: 'openai', baseUrl: 'https://api.deepseek.com/v1' },
   { label: 'Groq', kind: 'openai', baseUrl: 'https://api.groq.com/openai/v1' },
   { label: 'OpenAI互換（カスタム）', kind: 'openai', baseUrl: '' },
 ]
+
+/** Anthropic 直叩き（`api.anthropic.com`）か。ブラウザ向けの追加ヘッダと `/models` の認証方式が他社と違う */
+export function isAnthropicEndpoint(baseUrl: string): boolean {
+  try {
+    return /(^|\.)anthropic\.com$/i.test(new URL(baseUrl).hostname)
+  } catch {
+    return false
+  }
+}
 
 /** デフォルトの OpenRouter プロバイダを生成（v6→v7 移行・初期状態用） */
 export function defaultOpenRouterProvider(apiKey: string): Provider {

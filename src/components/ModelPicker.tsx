@@ -37,8 +37,9 @@ export default function ModelPicker({ current, onPick, onClose }: Props) {
 
   const filtered = useMemo(() => {
     const term = q.toLowerCase().trim()
-    const match = (m: { id: string; name: string }) =>
-      !term || m.id.toLowerCase().includes(term) || m.name.toLowerCase().includes(term)
+    // `name` は `fetchModels` で必ず埋まるが、念のため無くても落とさない（落ちると画面ごと消える）
+    const match = (m: { id: string; name?: string }) =>
+      !term || m.id.toLowerCase().includes(term) || (m.name ?? '').toLowerCase().includes(term)
     const list = models.filter(match)
     // お気に入りを上に
     return [...list].sort((a, b) => {
@@ -132,7 +133,7 @@ export default function ModelPicker({ current, onPick, onClose }: Props) {
                     <Icon name="star" size={14} filled={fav} />
                   </button>
                   <div className="m-name">
-                    <div className="n">{m.name}</div>
+                    <div className="n">{m.name || m.id}</div>
                     <div className="id">{m.id}</div>
                   </div>
                   {ctx && <span className="m-ctx">{ctx}</span>}

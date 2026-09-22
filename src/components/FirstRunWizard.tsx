@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { storeActions, useStore } from '../store'
-import { isLocalEndpoint, makeModelRef, newProvider, requiresApiKey } from '../lib/providers'
+import { GEMINI_OPENAI_BASE_URL, isLocalEndpoint, makeModelRef, newProvider, requiresApiKey } from '../lib/providers'
 import { oauthPkceMode } from '../lib/platform'
 import {
   openRouterOAuthAvailable,
@@ -30,7 +30,8 @@ interface PathDef {
   /**
    * 接続テストに使う既定モデル。空文字ならユーザーに選ばせる（ローカルは既知のモデル名が無い）。
    * OpenRouter は推奨リストの先頭（`RECOMMENDED_MODELS`）。Gemini は無料枠で新規ユーザーに開放されている
-   * Flash 系（2026-09 時点で `gemini-2.5-flash` は新規停止・`gemini-3.6-flash` を実測で確認）。
+   * Flash 系のうち **1 日のリクエスト上限が多いもの**を選ぶ（2026-09 時点: `gemini-2.5-flash` は新規停止、
+   * `gemini-3.6-flash` は通るが 20 回/日で体験版として足りない、`gemini-3.5-flash-lite` は 300 回/日程度で品質も十分）。
    */
   presetModel: string
 }
@@ -53,8 +54,8 @@ const PATHS: PathDef[] = [
     note: '入力が提供元の品質改善に使われる場合があります',
     presetLabel: 'Gemini（無料枠）',
     presetKind: 'openai',
-    presetBaseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
-    presetModel: 'gemini-3.6-flash',
+    presetBaseUrl: GEMINI_OPENAI_BASE_URL,
+    presetModel: 'gemini-3.5-flash-lite',
   },
   {
     id: 'local',
@@ -335,7 +336,7 @@ export default function FirstRunWizard({
             <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
               <input
                 style={{ ...inputStyle, marginBottom: 0, flex: 1 }}
-                placeholder="モデル名（例: gemini-3.6-flash / llama3.1 など）"
+                placeholder="モデル名（例: gemini-3.5-flash-lite / llama3.1 など）"
                 value={model}
                 onChange={(e) => setModel(e.target.value)}
               />

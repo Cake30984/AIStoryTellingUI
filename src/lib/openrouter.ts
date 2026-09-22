@@ -1,6 +1,6 @@
 import type { OpenRouterModel, Provider, Role } from '../types'
 import { appFetch } from './platform'
-import { isLocalEndpoint } from './providers'
+import { isAnthropicEndpoint, isLocalEndpoint } from './providers'
 import { weakerJsonMode, type JsonMode, type JsonSchemaSpec } from './jsonSchemas'
 import { estimateTokens } from './tokens'
 
@@ -73,6 +73,14 @@ function commonHeaders(provider: Provider): Record<string, string> {
     headers['HTTP-Referer'] = location.origin
     headers['X-Title'] = 'Delusia'
   }
+  /*
+   * Anthropic 直叩き（プリセット「Claude」）。api.anthropic.com はブラウザからの直接アクセスを
+   * このヘッダが無いと CORS で拒否する（BYOK でキーがユーザー自身のものだと明示するための opt-in）。
+   * Tauri 版は CORS 対象外だが、送っても害は無いので判定は接続先だけで行う。
+   */
+  if (isAnthropicEndpoint(provider.baseUrl)) {
+    headers['anthropic-dangerous-direct-browser-access'] = 'true'
+  }
   return headers
 }
 
@@ -96,11 +104,7 @@ function isAnthropic(provider: Provider, model: string): boolean {
   // OpenRouter 経由（`anthropic/claude-…`）
   if (/^anthropic\//i.test(model)) return true
   // Anthropic 直叩き（OpenAI 互換エンドポイント）
-  try {
-    return /(^|\.)anthropic\.com$/i.test(new URL(provider.baseUrl).hostname)
-  } catch {
-    return false
-  }
+  return isAnthropicEndpoint(provider.baseUrl)
 }
 
 /**
@@ -307,21 +311,40 @@ export async function streamChat(
   }
 }
 
+/** `/models` 用の認証ヘッダ。Anthropic 直叩きだけは OpenAI 互換の `/models` が無く、ネイティブ API の形で叩く */
+function modelsHeaders(provider: Provider): Record<string, string> | undefined {
+  if (isAnthropicEndpoint(provider.baseUrl)) {
+    return {
+      'x-api-key': provider.apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true',
+    }
+  }
+  return provider.apiKey ? { Authorization: `Bearer ${provider.apiKey}` } : undefined
+}
+
 /** 利用可能なモデル一覧を取得 */
 export async function fetchModels(provider: Provider): Promise<OpenRouterModel[]> {
-  const res = await appFetch(`${provider.baseUrl}/models`, {
+  // Anthropic のネイティブ `/models` はページング（既定 20 件）なので上限を明示する
+  const url = `${provider.baseUrl}/models` + (isAnthropicEndpoint(provider.baseUrl) ? '?limit=1000' : '')
+  const res = await appFetch(url, {
     // ブラウザの HTTP キャッシュは Authorization ヘッダの違いをキャッシュキーに含めないため、
     // no-store にしないと「別接続先が同じ baseUrl へキー付きで取得済み」の場合に
     // キー無しリクエストでもキャッシュされた成功レスポンスが返ってしまう。
     cache: 'no-store',
-    headers: provider.apiKey ? { Authorization: `Bearer ${provider.apiKey}` } : undefined,
+    headers: modelsHeaders(provider),
   })
   if (!res.ok) {
     throw new Error(`モデル一覧の取得に失敗しました (${res.status})`)
   }
   const json = await res.json()
-  const data: OpenRouterModel[] = json.data ?? []
-  return data.filter(m => m.id).sort((a, b) => (a.name ?? a.id).localeCompare(b.name ?? b.id))
+  const data: (OpenRouterModel & { display_name?: string })[] = json.data ?? []
+  return data
+    .filter(m => m.id)
+    // `name` を持つのは OpenRouter だけ。Gemini の OpenAI 互換 `/models` は id のみ・Anthropic は `display_name`。
+    // 空のまま返すと検索の `name.toLowerCase()` で落ちてモデル選択画面ごと消えるので、ここで必ず埋める
+    .map(m => ({ ...m, name: m.name ?? m.display_name ?? m.id }))
+    .sort((a, b) => a.name.localeCompare(b.name))
 }
 
 /** 接続テストの結果種別。R5 のエラー翻訳表と対応させる（ウィザードが `kind` で導線を出し分ける） */
