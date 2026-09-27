@@ -26,7 +26,7 @@
 - **1つの変更ごとに `git commit` → `git push origin main`。** メッセージは日本語で端的に
 - `samples/`・`_ambient_work/`（撤去済み環境音の作業残骸）・`run.bat` は ignore 済みのローカル作業物。指示が無い限り触らない
 - **public リポジトリ。** 秘密・個人情報（API キー・実在のメールアドレス・Windows のユーザー名を含むパス等）をコミットしない。作業機の `git config user.email` は GitHub の noreply アドレスにする
-- **履歴は 2026-09-21 に書き換え済み**（`git filter-repo` で撤去済み環境音と個人メールを全履歴から除去し force-push）。それ以前のクローンは使わずに取り直す
+- **履歴は 2026-09-21 と 2026-09-27 に書き換え済み**（`git filter-repo` で撤去済み環境音・個人メール・Windows ユーザー名を含むパスを全履歴から除去し force-push）。それ以前のクローンは使わずに取り直す
 
 ## 技術スタックと基本方針
 
