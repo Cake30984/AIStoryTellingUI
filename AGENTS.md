@@ -217,7 +217,7 @@ React 18 + TypeScript(strict) + Vite / zustand（`persist`）/ Tauri 2（`plugin
 - 一行からの起案（P4）は**実モデルで未検証**。配線と正規化はローカルのスタブ応答で確認済みだが、実モデルが `storyKickoffSystem` の指示（人数・名前の空白・他キャラ名を書かない）をどこまで守るかは未計測
 - Tauri 側の `data/sessions/`（P2c）と CSP（P2a）は**実機で未検証**（Windows と Rust が要る）。次に `tauri:dev` を回せるときに [`docs/開発環境と配布.md`](docs/開発環境と配布.md) §4 を一巡させる
 - 中核主張「状態機械があると長編でも素のチャットより読める」は**未検証**。道具（`scripts/baseline.mjs`・`docs/実験_対照読み比べ.md`）は P6 で用意済みだが、人に読ませて判定する工程はまだ。結果が出るまで README・公開文にこの主張を書かない
-- Web 版は**まだどこにも置いていない**（P5 は成果物と手順まで。公開は P7・A1 待ち）。ローカルのサブパス配信で PWA のインストール条件・オフライン復帰・OAuth の往復（認可ページはスタブ）まで確認済みだが、**公開 URL と実モデルでの通しは未実施**
+- Web 版は `https://delusia.tokatokage.com/`（Cloudflare Pages の直接アップロード・2026-10-22 公開）。公開 URL で PWA・データ保持・実キー生成（OpenRouter の OAuth と手動キー・Gemini）まで確認済み。**`main` に push しても自動では反映されない**——再配置の手順は [`docs/開発環境と配布.md`](docs/開発環境と配布.md) §2b
 
 ## ドキュメント
 
